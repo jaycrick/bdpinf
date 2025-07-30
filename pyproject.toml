@@ -1,0 +1,37 @@
+[tool.poetry]
+name = "inf-bp-texts"
+version = "0.1.0"
+description = "A Python platform for performing inference and analysis on various datasets downloaded from APIs"
+authors = ["JC <jcacademicresearch@gmail.com>"]
+readme = "README.rst"
+packages = [{include = "inf_bp_texts", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.13"
+requests = "^2.32.4"
+pandas = "^2.3.1"
+numpy = "^2.0.0"
+scikit-learn = "^1.5.0"
+matplotlib = "^3.8.0"
+seaborn = "^0.13.0"
+jupyter = "^1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.0.0"
+pytest = "^8.0.0"
+flake8 = "^7.0.0"
+
+[tool.black]
+line-length = 88
+target-version = ['py313']
+include = '\.pyi?$'
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
