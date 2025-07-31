@@ -1,6 +1,7 @@
 """
 Tests for inf-bp-texts package.
 """
+
 import os
 import tempfile
 
@@ -21,4 +22,5 @@ def test_ensure_directory():
 def test_package_import():
     """Test that the package can be imported."""
     import inf_bp_texts
+
     assert inf_bp_texts.__version__ == "0.1.0"

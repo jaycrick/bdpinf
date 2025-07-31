@@ -1,6 +1,7 @@
 """
 Common utilities for API data collection and processing.
 """
+
 import os
 import urllib.request
 from typing import Optional
