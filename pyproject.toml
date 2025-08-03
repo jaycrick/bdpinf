@@ -19,12 +19,26 @@ jupyter = "^1.0.0"
 [tool.poetry.group.dev.dependencies]
 black = "^24.0.0"
 pytest = "^8.0.0"
-flake8 = "^7.0.0"
+mypy = "^1.17.1"
+ruff = "^0.12.7"
+isort = "^6.0.1"
+pre-commit = "^4.2.0"
 
 [tool.black]
 line-length = 88
 target-version = ['py313']
 include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["inf_bp_texts"]
+
+[tool.mypy]
+strict = true
+pretty = true
+show_error_codes = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

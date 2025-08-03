@@ -5,12 +5,10 @@ Tests for inf-bp-texts package.
 import os
 import tempfile
 
-import pytest
-
-from inf_bp_texts.utils import download_file, ensure_directory
+from inf_bp_texts.utils import ensure_directory
 
 
-def test_ensure_directory():
+def test_ensure_directory() -> None:
     """Test directory creation utility."""
     with tempfile.TemporaryDirectory() as temp_dir:
         test_path = os.path.join(temp_dir, "test_subdir", "nested")
@@ -19,7 +17,7 @@ def test_ensure_directory():
         assert os.path.isdir(test_path)
 
 
-def test_package_import():
+def test_package_import() -> None:
     """Test that the package can be imported."""
     import inf_bp_texts
 
