@@ -1,5 +1,11 @@
 manuscripts/
 
+# Quarto
+*_files/
+*.html
+*.pdf
+.quarto/
+
 # Python.gitignore
 # Byte-compiled / optimized / DLL files
 __pycache__/
