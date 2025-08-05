@@ -42,4 +42,6 @@ repos:
         additional_dependencies:
           - pandas-stubs
           - types-requests
+          - scipy-stubs
+          - plotly-stubs
         files: ^src/
