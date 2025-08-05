@@ -20,13 +20,6 @@ repos:
       - id: ruff-format
         args: [--diff]
 
-  # Black code formatting
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
-        language_version: python3.13
-
   # isort import sorting
   - repo: https://github.com/pycqa/isort
     rev: 6.0.1
