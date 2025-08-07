@@ -30,7 +30,7 @@ class BirthDeathProcess:
 
     Mathematical formulations:
     - P_n(T) = (μ-λ)²/λ² × exp[(μ-λ)T] × (1-exp[(μ-λ)T])^(n-1) / (1-μ/λ×exp[(μ-λ)T])^(n+1)
-    - f(t) = λe^(-λt) × (μe^((λ-μ)t) - μ) / (λe^((λ-μ)T) - μ)
+    - f(t) = (λe^(-λt) - μe^(-(λ-μ)T)*e^(-μt)) / (1 - e^(-(λ-μ)T))
     """
 
     def __init__(
@@ -155,6 +155,123 @@ class BirthDeathProcess:
             self.birth_rate * time_window * self.survival_probability(age)
         )
 
+    def _calculate_population_probability(
+        self,
+        lambda_param: float,
+        mu_param: float,
+        time: float,
+        n: int,
+    ) -> np.float64:
+        """
+        Calculate P_n(T) - probability of n individuals at time T.
+
+        Based on birth-death process theory from:
+        Arley, Niels, and Vibeke Borchsenius.
+        "On the Theory of Infinite Systems of Differential Equations
+        and Their Application to the Theory of Stochastic Processes
+        and the Perturbation Theory of Quantum Mechanics."
+        Acta Mathematica 76, nos. 3–4 (1945): 261–322.
+        https://doi.org/10.1007/BF02551579.
+
+        Args:
+            lambda_param: Birth rate (λ)
+            mu_param: Death rate (μ)
+            time: Time T (float)
+            n: Number of individuals (integer)
+
+        Returns:
+            Log probability of n individuals at time T
+        """
+        # P_n(t) = (μ-λ)²/λ² * exp[(μ-λ)T] * (1-exp[(μ-λ)T])^(n-1) / (1-μ/λ*exp[(μ-λ)T])^(n+1)
+
+        mu_minus_lambda = mu_param - lambda_param
+        exp_term = np.exp(mu_minus_lambda * time)
+
+        # Numerical stability checks
+        if not np.isfinite(exp_term) or exp_term <= 0:
+            return np.float64(-np.inf)
+
+        # Calculate log P_n(T) to avoid overflow
+        try:
+            # log(coeff) = 2*log|μ-λ| - 2*log(λ)
+            log_coeff = 2 * np.log(np.abs(mu_minus_lambda)) - 2 * np.log(lambda_param)
+
+            # log(exp_term) = (μ-λ)T
+            log_exp_term = mu_minus_lambda * time
+
+            # log(1 - exp[(μ-λ)T])^(n-1)
+            one_minus_exp = 1 - exp_term
+
+            # log(1 - μ/λ * exp[(μ-λ)T])^(n+1)
+            denominator_term = 1 - (mu_param / lambda_param) * exp_term
+            if denominator_term * one_minus_exp <= 0:
+                return np.float64(-np.inf)
+
+            log_numerator_part2 = (n - 1) * np.log(np.abs(one_minus_exp))
+            log_denominator = (n + 1) * np.log(np.abs(denominator_term))
+
+            log_P_n_T = log_coeff + log_exp_term + log_numerator_part2 - log_denominator
+
+        except (ValueError, FloatingPointError, OverflowError):
+            return np.float64(-np.inf)
+
+        return np.float64(log_P_n_T)
+
+    def _calculate_age_density(
+        self,
+        lambda_param: float,
+        mu_param: float,
+        age_t: float,
+        T: float,
+    ) -> np.float64:
+        """
+        Calculate log age density f(t) for a manuscript of given age.
+
+        The age density function is:
+        f(t) = (λe^(-λt) - μe^(-(λ-μ)T)*e^(-μt)) / (1 - e^(-(λ-μ)T))
+
+        This is calculated in log space for numerical stability:
+        log f(t) = log(λe^(-λt) - μe^(-(λ-μ)T)*e^(-μt)) - log(1 - e^(-(λ-μ)T))
+
+        Args:
+            lambda_param: Birth rate (λ)
+            mu_param: Death rate (μ)
+            age_t: Age of the manuscript
+            T: Total observation time
+
+        Returns:
+            Log age density f(t)
+        """
+        try:
+            lambda_minus_mu = lambda_param - mu_param
+
+            # Calculate log f(t) in parts to avoid overflow
+            # Numerator: λe^(-λt) - μe^(-(λ-μ)T)*e^(-μt)
+            term1 = lambda_param * np.exp(-lambda_param * age_t)
+            term2 = (
+                mu_param * np.exp(-(lambda_minus_mu) * T) * np.exp(-mu_param * age_t)
+            )
+
+            numerator = term1 - term2
+
+            # Denominator: 1 - e^(-(λ-μ)T)
+            exp_neg_diff_T = np.exp(-(lambda_minus_mu) * T)
+            denominator = 1 - exp_neg_diff_T
+
+            if denominator * numerator <= 0:
+                return np.float64(-np.inf)
+
+            log_numerator = np.log(np.abs(numerator))
+            log_denominator = np.log(np.abs(denominator))
+
+            # log f(t) = log(numerator) - log(denominator)
+            log_density = log_numerator - log_denominator
+
+            return np.float64(log_density)
+
+        except (ValueError, FloatingPointError, OverflowError):
+            return np.float64(-np.inf)
+
     def log_likelihood(
         self,
         birth_rate: Optional[float] = None,
@@ -203,89 +320,37 @@ class BirthDeathProcess:
         T = np.float64(np.max(ages))
 
         # Total number of observed manuscripts
-        n_total = int(np.sum(counts))
+        n_total: int = int(np.sum(counts))
 
         if n_total == 0:
             return np.float64(-np.inf)
 
         # 1. Calculate P_n(T) - probability of n individuals at time T
-        # P_n(t) = (μ-λ)²/λ² * exp[(μ-λ)T] * (1-exp[(μ-λ)T])^(n-1) / (1-μ/λ*exp[(μ-λ)T])^(n+1)
 
-        mu_minus_lambda = mu_param - lambda_param
-        exp_term = np.exp(mu_minus_lambda * T)
-
-        # Numerical stability checks
-        if not np.isfinite(exp_term) or exp_term <= 0:
-            return np.float64(-np.inf)
-
-        # Calculate log P_n(T) to avoid overflow
-        try:
-            # log(coeff) = 2*log|μ-λ| - 2*log(λ)
-            log_coeff = 2 * np.log(np.abs(mu_minus_lambda)) - 2 * np.log(lambda_param)
-
-            # log(exp_term) = (μ-λ)T
-            log_exp_term = mu_minus_lambda * T
-
-            # log(1 - exp[(μ-λ)T])^(n-1)
-            one_minus_exp = 1 - exp_term
-            if one_minus_exp <= 0:
-                return np.float64(-np.inf)
-            log_numerator_part2 = (n_total - 1) * np.log(one_minus_exp)
-
-            # log(1 - μ/λ * exp[(μ-λ)T])^(n+1)
-            denominator_term = 1 - (mu_param / lambda_param) * exp_term
-            if denominator_term <= 0:
-                return np.float64(-np.inf)
-            log_denominator = (n_total + 1) * np.log(denominator_term)
-
-            log_P_n_T = log_coeff + log_exp_term + log_numerator_part2 - log_denominator
-
-        except (ValueError, FloatingPointError, OverflowError):
+        log_P_n_T = self._calculate_population_probability(
+            lambda_param, mu_param, T, n_total
+        )
+        if not np.isfinite(log_P_n_T):
             return np.float64(-np.inf)
 
         # 2. Calculate age density for each manuscript
         # f(t) = λe^(-λt) * (μe^((λ-μ)t) - μ) / (λe^((λ-μ)T) - μ)
 
-        lambda_minus_mu = lambda_param - mu_param  # -(μ-λ)
-
         # For each age t, calculate the log density
         log_densities = np.zeros_like(ages, dtype=np.float64)
-
-        # Pre-calculate denominator for all ages (same for all t)
-        exp_diff_T = np.exp(lambda_minus_mu * T)
-        denom_common = lambda_param * exp_diff_T - mu_param
-
-        if denom_common <= 0:
-            return np.float64(-np.inf)
-
-        log_denom_common = np.log(denom_common)
 
         for i, age_t in enumerate(ages):
             if counts[i] == 0:
                 continue
 
-            try:
-                # Calculate log f(t) in parts to avoid overflow
-                # log(λe^(-λt)) = log(λ) - λt
-                log_lambda_exp = np.log(lambda_param) - lambda_param * age_t
+            # Use helper function to calculate log age density
+            log_density = self._calculate_age_density(lambda_param, mu_param, age_t, T)
 
-                # μe^((λ-μ)t) - μ = μ(e^((λ-μ)t) - 1)
-                exp_diff_t = np.exp(lambda_minus_mu * age_t)
-                numerator_term = mu_param * (exp_diff_t - 1)
-
-                if numerator_term <= 0:
-                    return np.float64(-np.inf)
-
-                log_numerator_term = np.log(numerator_term)
-
-                # log f(t) = log(λe^(-λt)) + log(numerator_term) - log(denominator)
-                log_density = log_lambda_exp + log_numerator_term - log_denom_common
-
-                # Add log density weighted by count
-                log_densities[i] = counts[i] * log_density
-
-            except (ValueError, FloatingPointError, OverflowError):
+            if not np.isfinite(log_density):
                 return np.float64(-np.inf)
+
+            # Add log density weighted by count
+            log_densities[i] = counts[i] * log_density
 
         # 3. Total log-likelihood = log(P_n(T)) + sum of log densities
         total_log_likelihood = log_P_n_T + np.sum(log_densities)
@@ -335,85 +400,35 @@ class BirthDeathProcess:
         T = np.float64(np.max(ages))
 
         # Total number of observed manuscripts
-        n_total = int(np.sum(counts))
+        n_total: int = int(np.sum(counts))
+        assert isinstance(n_total, int)  # Type hint for mypy
 
         if n_total == 0:
             return np.float64(-np.inf)
 
-        # Same calculation as in log_likelihood method
-        mu_minus_lambda = mu_param - lambda_param
-        exp_term = np.exp(mu_minus_lambda * T)
-
-        # Numerical stability checks
-        if not np.isfinite(exp_term) or exp_term <= 0:
-            return np.float64(-np.inf)
-
-        # Calculate log P_n(T) to avoid overflow
-        try:
-            # log(coeff) = 2*log|μ-λ| - 2*log(λ)
-            log_coeff = 2 * np.log(np.abs(mu_minus_lambda)) - 2 * np.log(lambda_param)
-
-            # log(exp_term) = (μ-λ)T
-            log_exp_term = mu_minus_lambda * T
-
-            # log(1 - exp[(μ-λ)T])^(n-1)
-            one_minus_exp = 1 - exp_term
-            if one_minus_exp <= 0:
-                return np.float64(-np.inf)
-            log_numerator_part2 = (n_total - 1) * np.log(one_minus_exp)
-
-            # log(1 - μ/λ * exp[(μ-λ)T])^(n+1)
-            denominator_term = 1 - (mu_param / lambda_param) * exp_term
-            if denominator_term <= 0:
-                return np.float64(-np.inf)
-            log_denominator = (n_total + 1) * np.log(denominator_term)
-
-            log_P_n_T = log_coeff + log_exp_term + log_numerator_part2 - log_denominator
-
-        except (ValueError, FloatingPointError, OverflowError):
+        # Calculate P_n(T) using helper method
+        log_P_n_T = self._calculate_population_probability(
+            lambda_param, mu_param, T, n_total
+        )
+        if not np.isfinite(log_P_n_T):
             return np.float64(-np.inf)
 
         # 2. Calculate age density for each manuscript
-        lambda_minus_mu = lambda_param - mu_param  # -(μ-λ)
-
         # For each age t, calculate the log density
         log_densities = np.zeros_like(ages, dtype=np.float64)
-
-        # Pre-calculate denominator for all ages (same for all t)
-        exp_diff_T = np.exp(lambda_minus_mu * T)
-        denom_common = lambda_param * exp_diff_T - mu_param
-
-        if denom_common <= 0:
-            return np.float64(-np.inf)
-
-        log_denom_common = np.log(denom_common)
 
         for i, age_t in enumerate(ages):
             if counts[i] == 0:
                 continue
 
-            try:
-                # Calculate log f(t) in parts to avoid overflow
-                # log(λe^(-λt)) = log(λ) - λt
-                log_lambda_exp = np.log(lambda_param) - lambda_param * age_t
+            # Use helper function to calculate log age density
+            log_density = self._calculate_age_density(lambda_param, mu_param, age_t, T)
 
-                # μe^((λ-μ)t) - μ = μ(e^((λ-μ)t) - 1)
-                exp_diff_t = np.exp(lambda_minus_mu * age_t)
-                numerator_term = mu_param * (exp_diff_t - 1)
-
-                if numerator_term <= 0:
-                    return np.float64(-np.inf)
-
-                log_numerator_term = np.log(numerator_term)
-
-                # log f(t) = log(λe^(-λt)) + log(numerator_term) - log(denominator)
-                log_density = log_lambda_exp + log_numerator_term - log_denom_common
-
-                # Add log density weighted by count
-                log_densities[i] = counts[i] * log_density
-
-            except (ValueError, FloatingPointError, OverflowError):
+            if not np.isfinite(log_density):
                 return np.float64(-np.inf)
+
+            # Add log density weighted by count
+            log_densities[i] = counts[i] * log_density
 
         # 3. Total log-likelihood = log(P_n(T)) + sum of log densities
         total_log_likelihood = log_P_n_T + np.sum(log_densities)
