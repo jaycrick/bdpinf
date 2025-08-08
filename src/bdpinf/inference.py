@@ -182,37 +182,54 @@ class BirthDeathProcess:
         Returns:
             Log probability of n individuals at time T
         """
-        # P_n(t) = (μ-λ)²/λ² * exp[(μ-λ)T] * (1-exp[(μ-λ)T])^(n-1) / (1-μ/λ*exp[(μ-λ)T])^(n+1)
-
-        mu_minus_lambda = mu_param - lambda_param
-        exp_term = np.exp(mu_minus_lambda * time)
-
-        # Numerical stability checks
-        if not np.isfinite(exp_term) or exp_term <= 0:
-            return np.float64(-np.inf)
-
-        # Calculate log P_n(T) to avoid overflow
         try:
-            # log(coeff) = 2*log|μ-λ| - 2*log(λ)
-            log_coeff = 2 * np.log(np.abs(mu_minus_lambda)) - 2 * np.log(lambda_param)
-
-            # log(exp_term) = (μ-λ)T
-            log_exp_term = mu_minus_lambda * time
-
-            # log(1 - exp[(μ-λ)T])^(n-1)
-            one_minus_exp = 1 - exp_term
-
-            # log(1 - μ/λ * exp[(μ-λ)T])^(n+1)
-            denominator_term = 1 - (mu_param / lambda_param) * exp_term
-            if denominator_term * one_minus_exp <= 0:
+            # Handle edge cases
+            if lambda_param <= 0 or mu_param <= 0:
                 return np.float64(-np.inf)
 
-            log_numerator_part2 = (n - 1) * np.log(np.abs(one_minus_exp))
-            log_denominator = (n + 1) * np.log(np.abs(denominator_term))
+            lambda_minus_mu = lambda_param - mu_param
 
-            log_P_n_T = log_coeff + log_exp_term + log_numerator_part2 - log_denominator
+            # Handle the case where λ ≈ μ
+            if abs(lambda_minus_mu) < 1e-12:
+                # Use limiting case formula or small perturbation
+                if lambda_param >= mu_param:
+                    lambda_minus_mu = 1e-12
+                else:
+                    lambda_minus_mu = -1e-12
 
-        except (ValueError, FloatingPointError, OverflowError):
+            exp_term = np.exp(lambda_minus_mu * time)
+
+            # Check for numerical overflow/underflow
+            if not np.isfinite(exp_term):
+                return np.float64(-np.inf)
+
+            # Calculate alpha_t and beta_t with numerical stability checks
+            denominator = lambda_param * exp_term - mu_param
+            if abs(denominator) < 1e-15:
+                return np.float64(-np.inf)
+
+            alpha_t = mu_param * (exp_term - 1) / denominator
+
+            if not np.isfinite(alpha_t) or alpha_t >= 1 or alpha_t <= 0:
+                return np.float64(-np.inf)
+
+            beta_t = lambda_param / mu_param * alpha_t
+
+            if not np.isfinite(beta_t) or beta_t >= 1 or beta_t <= 0:
+                return np.float64(-np.inf)
+
+            # Calculate log probability: log(1 - alpha_t) + log(1 - beta_t) + (n - 1) * log(beta_t)
+            term1 = np.log(1 - alpha_t)
+            term2 = np.log(1 - beta_t)
+            term3 = (n - 1) * np.log(beta_t)
+
+            # Check each term for validity
+            if not (np.isfinite(term1) and np.isfinite(term2) and np.isfinite(term3)):
+                return np.float64(-np.inf)
+
+            log_P_n_T = term1 + term2 + term3
+
+        except (ValueError, FloatingPointError, OverflowError, ZeroDivisionError):
             return np.float64(-np.inf)
 
         return np.float64(log_P_n_T)
@@ -964,24 +981,27 @@ class BirthDeathProcess:
 
 
 def prepare_manuscript_data(
-    df: pd.DataFrame, current_year: int = 2025, date_column: str = "midYear"
+    df: pd.DataFrame, current_year: int = 1500, date_column: str = "midYear"
 ) -> pd.DataFrame:
     """
     Prepare manuscript data for birth-death process analysis.
 
     Args:
         df: DataFrame with manuscript data
-        current_year: Current year for age calculation
+        current_year: Current year for age calculation (default 1500 for medieval manuscript analysis)
         date_column: Column containing manuscript dates
 
     Returns:
-        DataFrame with age calculations and binned data
+        DataFrame with age calculations and binned data, filtered to manuscripts before current_year
     """
-    # Calculate ages
+    # Filter manuscripts to only include those with dates before current_year
     manuscript_data = df.copy()
+    manuscript_data = manuscript_data[manuscript_data[date_column] < current_year]
+
+    # Calculate ages (manuscripts created before current_year will have positive ages)
     manuscript_data["age"] = current_year - manuscript_data[date_column]
 
-    # Remove manuscripts with negative ages (future dates)
+    # Remove manuscripts with negative ages (future dates) - should be minimal after filtering
     manuscript_data = manuscript_data[manuscript_data["age"] >= 0]
 
     # Add century and period groupings for analysis
@@ -1171,22 +1191,28 @@ def example_analysis() -> None:
     """
     print("=== Birth-Death Process Analysis Example ===")
 
-    # Create synthetic data for demonstration
+    # Create synthetic data for demonstration (medieval manuscript scenario)
     np.random.seed(42)
     true_birth_rate = 0.5
     true_death_rate = 0.001
 
-    ages = np.linspace(10, 1500, 30, dtype=np.float64)
-    true_counts = true_birth_rate * np.exp(-true_death_rate * ages)
+    # Create manuscripts from years 500-1400 CE (medieval period)
+    manuscript_years = np.linspace(500, 1400, 30, dtype=np.float64)
+    ages_at_1500 = 1500 - manuscript_years  # Ages when observed in 1500 CE
+    true_counts = true_birth_rate * np.exp(-true_death_rate * ages_at_1500)
     observed_counts = np.random.poisson(true_counts)
 
     synthetic_data = pd.DataFrame(
-        {"age": ages, "count": observed_counts, "midYear": 2025 - ages}
+        {"age": ages_at_1500, "count": observed_counts, "midYear": manuscript_years}
     )
 
-    print("Synthetic data created with true parameters:")
+    print("Synthetic medieval manuscript data created with true parameters:")
     print(f"  Birth rate (λ): {true_birth_rate}")
     print(f"  Death rate (μ): {true_death_rate}")
+    print(
+        f"  Manuscript years: {manuscript_years.min():.0f}-{manuscript_years.max():.0f} CE"
+    )
+    print("  Analysis cutoff: 1500 CE")
 
     # Fit model
     model = BirthDeathProcess(birth_rate=1.0, death_rate=0.01)
