@@ -13,7 +13,7 @@ class TestSimulation:
 
     def test_simulation_basic(self):
         """Test basic simulation functionality."""
-        process = BirthDeathProcess(birth_rate=0.1, death_rate=0.02)
+        process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.02)
 
         # Run simulation
         df = process.simulate(max_time=100.0, random_seed=42)
@@ -25,13 +25,14 @@ class TestSimulation:
         assert process.final_time == 100.0
         assert isinstance(process.creation_times, list)
 
-        # Ages should be updated
-        assert len(process.ages) == len(process.creation_times)
+        # Ages should be calculated consistently
+        ages = process.get_manuscript_ages()
+        assert len(ages) == len(process.creation_times)
 
     def test_simulation_with_seed_reproducible(self):
         """Test that simulation with same seed is reproducible."""
-        process1 = BirthDeathProcess(birth_rate=0.1, death_rate=0.02)
-        process2 = BirthDeathProcess(birth_rate=0.1, death_rate=0.02)
+        process1 = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.02)
+        process2 = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.02)
 
         df1 = process1.simulate(max_time=100.0, random_seed=42)
         df2 = process2.simulate(max_time=100.0, random_seed=42)
@@ -42,8 +43,8 @@ class TestSimulation:
 
     def test_simulation_different_seeds_different_results(self):
         """Test that different seeds give different results."""
-        process1 = BirthDeathProcess(birth_rate=0.1, death_rate=0.02)
-        process2 = BirthDeathProcess(birth_rate=0.1, death_rate=0.02)
+        process1 = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.02)
+        process2 = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.02)
 
         df1 = process1.simulate(max_time=100.0, random_seed=42)
         df2 = process2.simulate(max_time=100.0, random_seed=123)
@@ -58,7 +59,7 @@ class TestSimulation:
 
     def test_simulation_dataframe_structure(self):
         """Test that simulation returns properly structured DataFrame."""
-        process = BirthDeathProcess(birth_rate=0.2, death_rate=0.01)
+        process = BirthDeathProcess([], 1000.0, birth_rate=0.2, death_rate=0.01)
 
         df = process.simulate(max_time=50.0, random_seed=42)
 
@@ -97,29 +98,32 @@ class TestSimulation:
 
     def test_simulation_ages_consistency(self):
         """Test that ages are calculated correctly after simulation."""
-        process = BirthDeathProcess(birth_rate=0.15, death_rate=0.03)
+        process = BirthDeathProcess([], 1000.0, birth_rate=0.15, death_rate=0.03)
 
         df = process.simulate(max_time=80.0, random_seed=42)
 
         # Check that self.ages matches manual calculation
         if len(process.creation_times) > 0:
+            assert process.final_time is not None
             manual_ages = [process.final_time - ct for ct in process.creation_times]
-            np.testing.assert_array_almost_equal(process.ages, manual_ages)
+            np.testing.assert_array_almost_equal(
+                process.get_manuscript_ages(), manual_ages
+            )
 
             # Check that ages for surviving manuscripts match self.ages
             # self.ages contains ages for all manuscripts that survived to final_time
             surviving = df[df["survived"]]
             if len(surviving) > 0:
                 df_ages = surviving["age"].values
-                # All surviving manuscripts should have ages that match process.ages
+                # All surviving manuscripts should have ages that match process.get_manuscript_ages()
                 np.testing.assert_array_almost_equal(
-                    sorted(df_ages), sorted(process.ages)
+                    sorted(df_ages), sorted(process.get_manuscript_ages())
                 )
 
     def test_simulation_empty_result(self):
         """Test simulation that might produce no manuscripts."""
         # Very low birth rate, high death rate, short time
-        process = BirthDeathProcess(birth_rate=0.001, death_rate=1.0)
+        process = BirthDeathProcess([], 1000.0, birth_rate=0.001, death_rate=1.0)
 
         df = process.simulate(max_time=1.0, random_seed=42)
 
@@ -129,16 +133,16 @@ class TestSimulation:
         # Check that the process state is still valid
         assert process.final_time == 1.0
         assert isinstance(process.creation_times, list)
-        assert isinstance(process.ages, np.ndarray)
+        assert isinstance(process.get_manuscript_ages(), np.ndarray)
 
     def test_simulation_resets_process(self):
         """Test that simulation resets the process state."""
-        process = BirthDeathProcess(birth_rate=0.1, death_rate=0.02)
+        process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.02)
 
         # Set some initial state
         process.creation_times = [10.0, 20.0, 30.0]
         process.set_final_time(100.0)
-        initial_ages = process.ages.copy()
+        initial_ages = process.get_manuscript_ages().copy()
 
         # Run simulation - should reset the state
         process.simulate(max_time=50.0, random_seed=42)
@@ -148,8 +152,8 @@ class TestSimulation:
         # creation_times should be from simulation, not initial values
         assert process.creation_times != [10.0, 20.0, 30.0]
         # ages should be recalculated
-        if len(process.ages) > 0:
-            assert not np.array_equal(process.ages, initial_ages)
+        if len(process.get_manuscript_ages()) > 0:
+            assert not np.array_equal(process.get_manuscript_ages(), initial_ages)
 
     def test_simulation_parameter_effects(self):
         """Test that birth/death rates affect simulation results as expected."""
@@ -157,11 +161,11 @@ class TestSimulation:
         random_seed = 42
 
         # High birth rate, low death rate - should produce many manuscripts
-        high_birth = BirthDeathProcess(birth_rate=0.5, death_rate=0.01)
+        high_birth = BirthDeathProcess([], 1000.0, birth_rate=0.5, death_rate=0.01)
         df_high_birth = high_birth.simulate(max_time=max_time, random_seed=random_seed)
 
         # Low birth rate, high death rate - should produce few manuscripts
-        low_birth = BirthDeathProcess(birth_rate=0.01, death_rate=0.1)
+        low_birth = BirthDeathProcess([], 1000.0, birth_rate=0.01, death_rate=0.1)
         df_low_birth = low_birth.simulate(
             max_time=max_time, random_seed=random_seed + 1
         )
@@ -179,7 +183,7 @@ class TestSimulation:
 
     def test_simulation_time_bounds(self):
         """Test that all creation times are within the specified bounds."""
-        process = BirthDeathProcess(birth_rate=0.2, death_rate=0.05)
+        process = BirthDeathProcess([], 1000.0, birth_rate=0.2, death_rate=0.05)
 
         max_time = 75.0
         df = process.simulate(max_time=max_time, random_seed=42)
@@ -194,13 +198,13 @@ class TestSimulation:
 
     def test_simulation_ages_non_negative(self):
         """Test that all calculated ages are non-negative."""
-        process = BirthDeathProcess(birth_rate=0.1, death_rate=0.02)
+        process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.02)
 
         df = process.simulate(max_time=60.0, random_seed=42)
 
         # All ages in self.ages should be non-negative
-        if len(process.ages) > 0:
-            assert all(age >= 0 for age in process.ages)
+        if len(process.get_manuscript_ages()) > 0:
+            assert all(age >= 0 for age in process.get_manuscript_ages())
 
         # All ages in DataFrame should be non-negative
         surviving = df[df["survived"]]

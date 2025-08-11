@@ -33,13 +33,11 @@ class TestFitting:
             assert "birth_rate" in result
             assert "death_rate" in result
             assert "log_likelihood" in result
-            assert "aic" in result
-            assert "bic" in result
             assert process.fitted
 
     def test_fit_from_self_data_no_ages(self):
         """Test fitting fails with no ages."""
-        process = BirthDeathProcess()
+        process = BirthDeathProcess([], 1000.0)  # Empty creation_times
 
         with pytest.raises(ValueError, match="No ages data available"):
             process.fit_from_self_data()
@@ -64,7 +62,7 @@ class TestFitting:
         ages = np.random.exponential(scale=200, size=50)
         df = pd.DataFrame({"age": ages, "count": np.ones(len(ages))})
 
-        process = BirthDeathProcess()
+        process = BirthDeathProcess([], 1000.0)  # Empty initial data
         result = process.fit(df)
 
         # Fitting might fail with random data, but should return valid structure
@@ -76,14 +74,17 @@ class TestFitting:
             assert "death_rate" in result
             assert process.fitted
 
-    def test_fit_external_data_with_counts(self):
-        """Test fitting with explicit count column."""
-        df = pd.DataFrame(
-            {"age": [100.0, 200.0, 300.0, 400.0], "count": [5.0, 3.0, 2.0, 1.0]}
-        )
+    def test_fit_external_data_with_individual_records(self):
+        """Test fitting with individual manuscript records."""
+        # Create individual manuscript records instead of aggregated counts
+        ages = []
+        for age, count in [(100.0, 5), (200.0, 3), (300.0, 2), (400.0, 1)]:
+            ages.extend([age] * count)
 
-        process = BirthDeathProcess()
-        result = process.fit(df, count_column="count")
+        df = pd.DataFrame({"age": ages})
+
+        process = BirthDeathProcess([], 1000.0)  # Empty initial data
+        result = process.fit(df)
 
         # Should return valid result structure
         assert isinstance(result, dict)
@@ -124,13 +125,13 @@ class TestFitting:
 
     def test_fit_no_valid_data_points(self):
         """Test fitting fails with no valid data points."""
-        # DataFrame with all zero counts
-        df = pd.DataFrame({"age": [100.0, 200.0, 300.0], "count": [0.0, 0.0, 0.0]})
+        # DataFrame with no data
+        df = pd.DataFrame({"age": []})
 
-        process = BirthDeathProcess()
+        process = BirthDeathProcess([], 1000.0)  # Empty initial data
 
         with pytest.raises(ValueError, match="No valid data points for fitting"):
-            process.fit(df, count_column="count")
+            process.fit(df)
 
     def test_fit_different_methods(self):
         """Test fitting with different optimization methods."""
@@ -162,8 +163,6 @@ class TestFitting:
                 "birth_rate",
                 "death_rate",
                 "log_likelihood",
-                "aic",
-                "bic",
                 "n_data_points",
                 "optimization_result",
                 "ages_used",
@@ -177,8 +176,6 @@ class TestFitting:
             assert isinstance(result["birth_rate"], (float, np.float64))
             assert isinstance(result["death_rate"], (float, np.float64))
             assert isinstance(result["log_likelihood"], (float, np.float64))
-            assert isinstance(result["aic"], (float, np.float64))
-            assert isinstance(result["bic"], (float, np.float64))
             assert isinstance(result["n_data_points"], int)
 
     def test_fit_updates_process_parameters(self):
@@ -213,23 +210,27 @@ class TestFitting:
             }
         )
 
-        process = BirthDeathProcess()
+        process = BirthDeathProcess([], 1000.0)  # Empty initial data
         result = process.fit(df, age_column="manuscript_age")
 
         assert result["success"]
 
     def test_fit_preserves_original_ages(self):
-        """Test that fitting with external data preserves original ages."""
+        """Test that fitting with external data preserves original process data."""
         process = BirthDeathProcess(
             creation_times=[50.0, 150.0, 250.0], final_time=500.0
         )
 
-        original_ages = process.ages.copy()
+        original_ages = process.get_manuscript_ages().copy()
+        original_creation_times = process.creation_times.copy()
+        original_final_time = process.final_time
 
         # Fit with external data
         df = pd.DataFrame({"age": [100.0, 200.0, 300.0], "count": [1.0, 1.0, 1.0]})
 
         process.fit(df)
 
-        # Original ages should be preserved
-        np.testing.assert_array_equal(process.ages, original_ages)
+        # Original process data should be preserved
+        np.testing.assert_array_equal(process.get_manuscript_ages(), original_ages)
+        assert process.creation_times == original_creation_times
+        assert process.final_time == original_final_time

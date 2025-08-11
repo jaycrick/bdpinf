@@ -35,49 +35,79 @@ class BirthDeathProcess:
 
     def __init__(
         self,
-        birth_rate: float = 1.0,
-        death_rate: float = 0.1,
-        creation_times: Optional[List[float]] = None,
-        final_time: Optional[float] = None,
+        creation_times: List[float],
+        final_time: float,
+        start_time: Optional[float] = None,
+        birth_rate: Optional[float] = None,
+        death_rate: Optional[float] = None,
     ):
         """
-        Initialize birth-death process with parameters and process history.
+        Initialize birth-death process with observation data.
 
         Args:
-            birth_rate: Manuscript creation rate (λ)
-            death_rate: Manuscript loss rate (μ)
             creation_times: List of times when manuscripts were created
             final_time: Time when the process was terminated/observed
+            start_time: Start time of the observation period (optional, defaults to 0)
+            birth_rate: Manuscript creation rate (λ) - optional, can be fitted later
+            death_rate: Manuscript loss rate (μ) - optional, can be fitted later
         """
-        self.birth_rate: np.float64 = np.float64(birth_rate)
-        self.death_rate: np.float64 = np.float64(death_rate)
-        self.creation_times: List[float] = (
-            creation_times if creation_times is not None else []
+        self.creation_times: List[float] = creation_times.copy()
+        self.start_time: float = start_time if start_time is not None else 0.0
+        self._final_time: float = final_time
+
+        # Parameters can be provided at initialization or fitted later
+        self.birth_rate: Optional[np.float64] = (
+            np.float64(birth_rate) if birth_rate is not None else None
         )
-        self.final_time: Optional[float] = final_time
-        self.fitted: bool = False
+        self.death_rate: Optional[np.float64] = (
+            np.float64(death_rate) if death_rate is not None else None
+        )
+
+        # Remove manuscripts created after final_time
+        self._filter_creation_times()
+
+        # Set fitted status based on whether parameters were provided
+        self.fitted: bool = self.birth_rate is not None and self.death_rate is not None
         self.fit_results: Optional[Dict[str, Any]] = None
 
-        # Calculate ages from creation times and final time
-        self._update_ages()
+    @property
+    def final_time(self) -> float:
+        """Get the final observation time."""
+        return self._final_time
 
-    def _update_ages(self) -> None:
-        """Update the ages array when creation_times or final_time change."""
-        if self.final_time is not None and self.creation_times:
-            self.ages = np.array(
-                [self.final_time - ct for ct in self.creation_times], dtype=np.float64
-            )
-        else:
-            self.ages = np.array([], dtype=np.float64)
+    @final_time.setter
+    def final_time(self, value: float) -> None:
+        """Set the final observation time and filter creation times."""
+        self._final_time = value
+        self._filter_creation_times()
+
+    def _filter_creation_times(self) -> None:
+        """Remove manuscripts created after final_time with a warning message."""
+        if not self.creation_times:
+            return
+
+        original_count = len(self.creation_times)
+        self.creation_times = [
+            ct for ct in self.creation_times if ct <= self._final_time
+        ]
+        removed_count = original_count - len(self.creation_times)
+
+        if removed_count > 0:
+            print(f"{removed_count} manuscripts after time {self._final_time} removed")
 
     def get_manuscript_ages(self) -> NDArray[np.float64]:
         """
-        Get manuscript ages based on creation times and final time.
+        Calculate manuscript ages from creation times and final time.
 
         Returns:
             Array of manuscript ages (final_time - creation_time for each manuscript)
         """
-        return self.ages
+        if self.final_time is not None and self.creation_times:
+            return np.array(
+                [self.final_time - ct for ct in self.creation_times], dtype=np.float64
+            )
+        else:
+            return np.array([], dtype=np.float64)
 
     def add_manuscript(self, creation_time: float) -> None:
         """
@@ -87,7 +117,6 @@ class BirthDeathProcess:
             creation_time: Time when the manuscript was created
         """
         self.creation_times.append(creation_time)
-        self._update_ages()
 
     def set_final_time(self, final_time: float) -> None:
         """
@@ -97,7 +126,6 @@ class BirthDeathProcess:
             final_time: Time when the process was observed/terminated
         """
         self.final_time = final_time
-        self._update_ages()
 
     def get_process_summary(self) -> Dict[str, Any]:
         """
@@ -107,53 +135,28 @@ class BirthDeathProcess:
             Dictionary with process information
         """
         summary: Dict[str, Any] = {
-            "birth_rate": float(self.birth_rate),
-            "death_rate": float(self.death_rate),
             "n_manuscripts": len(self.creation_times),
             "final_time": self.final_time,
+            "fitted": self.fitted,
         }
 
-        if len(self.ages) > 0:
+        # Include parameters if they've been set (either at initialization or through fitting)
+        if self.birth_rate is not None:
+            summary["birth_rate"] = float(self.birth_rate)
+        if self.death_rate is not None:
+            summary["death_rate"] = float(self.death_rate)
+
+        ages = self.get_manuscript_ages()
+        if len(ages) > 0:
             summary.update(
                 {
-                    "min_age": float(self.ages.min()),
-                    "max_age": float(self.ages.max()),
-                    "mean_age": float(self.ages.mean()),
+                    "min_age": float(ages.min()),
+                    "max_age": float(ages.max()),
+                    "mean_age": float(ages.mean()),
                 }
             )
 
         return summary
-
-    def survival_probability(self, age: float) -> np.float64:
-        """
-        Calculate survival probability for a manuscript of given age.
-
-        For a birth-death process, the survival probability is:
-        P(survival | age) = exp(-μ * age)
-
-        Args:
-            age: Age of manuscript in years
-
-        Returns:
-            Probability of survival
-        """
-        return np.float64(np.exp(-self.death_rate * age))
-
-    def expected_manuscripts(self, age: float, time_window: float = 1.0) -> np.float64:
-        """
-        Calculate expected number of manuscripts created in a time window
-        that survive to a given age.
-
-        Args:
-            age: Age of manuscripts
-            time_window: Time window for manuscript creation
-
-        Returns:
-            Expected number of surviving manuscripts
-        """
-        return np.float64(
-            self.birth_rate * time_window * self.survival_probability(age)
-        )
 
     def _calculate_population_probability(
         self,
@@ -161,6 +164,7 @@ class BirthDeathProcess:
         mu_param: float,
         time: float,
         n: int,
+        log_scale_params: bool = False,
     ) -> np.float64:
         """
         Calculate P_n(T) - probability of n individuals at time T.
@@ -173,66 +177,98 @@ class BirthDeathProcess:
         Acta Mathematica 76, nos. 3–4 (1945): 261–322.
         https://doi.org/10.1007/BF02551579.
 
+        Formula: log P_n(T) = log(1 - α_t) + log(1 - β_t) + (n-1) * log(β_t)
+        where:
+        - α_t = μ(e^((λ-μ)T) - 1) / (λe^((λ-μ)T) - μ)
+        - β_t = (λ/μ) * α_t
+
         Args:
-            lambda_param: Birth rate (λ)
-            mu_param: Death rate (μ)
-            time: Time T (float)
-            n: Number of individuals (integer)
+            lambda_param: Birth rate (λ) > 0
+            mu_param: Death rate (μ) > 0
+            time: Time T (float) >= 0
+            n: Number of individuals (integer) >= 1
+            log_scale_params: If True, parameters are in log scale
 
         Returns:
             Log probability of n individuals at time T
         """
         try:
-            # Handle edge cases
-            if lambda_param <= 0 or mu_param <= 0:
+            # Input validation
+            if n < 1:
                 return np.float64(-np.inf)
 
-            lambda_minus_mu = lambda_param - mu_param
-
-            # Handle the case where λ ≈ μ
-            if abs(lambda_minus_mu) < 1e-12:
-                # Use limiting case formula or small perturbation
-                if lambda_param >= mu_param:
-                    lambda_minus_mu = 1e-12
-                else:
-                    lambda_minus_mu = -1e-12
-
-            exp_term = np.exp(lambda_minus_mu * time)
-
-            # Check for numerical overflow/underflow
-            if not np.isfinite(exp_term):
+            if time < 0:
                 return np.float64(-np.inf)
 
-            # Calculate alpha_t and beta_t with numerical stability checks
-            denominator = lambda_param * exp_term - mu_param
-            if abs(denominator) < 1e-15:
+            # Handle parameter scaling
+            if log_scale_params:
+                log_lambda = lambda_param
+                log_mu = mu_param
+                # Convert log parameters back to original scale
+                lambda_val = np.exp(lambda_param)
+                mu_val = np.exp(mu_param)
+            else:
+                # Validate positive parameters
+                if lambda_param <= 0 or mu_param <= 0:
+                    return np.float64(-np.inf)
+                lambda_val = lambda_param
+                mu_val = mu_param
+                log_lambda = np.log(lambda_param)
+                log_mu = np.log(mu_param)
+
+            # Check for numerical stability in log space
+            if abs(log_lambda - log_mu) < 1e-12:
+                # Limiting case: λ ≈ μ
+                rate_time_product = lambda_val * time
+                alpha_t = beta_t = rate_time_product / (1 + rate_time_product)
+            else:
+                # General case: λ ≠ μ
+                lambda_minus_mu = lambda_val - mu_val
+                exponent = lambda_minus_mu * time
+
+                exp_term = np.exp(exponent)
+
+                # Check for numerical issues
+                if not np.isfinite(exp_term):
+                    return np.float64(-np.inf)
+
+                # Calculate α_t = μ(e^((λ-μ)T) - 1) / (λe^((λ-μ)T) - μ)
+                denominator = lambda_val * exp_term - mu_val
+                alpha_t = mu_val * (exp_term - 1) / denominator
+
+                # Calculate β_t = (λ/μ) * α_t
+                beta_t = (lambda_val / mu_val) * alpha_t
+
+            # Validate α_t and β_t are in valid range (0, 1)
+            if not (0 < alpha_t < 1):
                 return np.float64(-np.inf)
 
-            alpha_t = mu_param * (exp_term - 1) / denominator
-
-            if not np.isfinite(alpha_t) or alpha_t >= 1 or alpha_t <= 0:
+            if not (0 < beta_t < 1):
                 return np.float64(-np.inf)
 
-            beta_t = lambda_param / mu_param * alpha_t
+            # Calculate final log probability
+            log_term1 = np.log(1 - alpha_t)
+            log_term2 = np.log(1 - beta_t)
+            log_term3 = (n - 1) * np.log(beta_t)
 
-            if not np.isfinite(beta_t) or beta_t >= 1 or beta_t <= 0:
+            # Check all terms are finite
+            if not (
+                np.isfinite(log_term1)
+                and np.isfinite(log_term2)
+                and np.isfinite(log_term3)
+            ):
                 return np.float64(-np.inf)
 
-            # Calculate log probability: log(1 - alpha_t) + log(1 - beta_t) + (n - 1) * log(beta_t)
-            term1 = np.log(1 - alpha_t)
-            term2 = np.log(1 - beta_t)
-            term3 = (n - 1) * np.log(beta_t)
+            log_probability = log_term1 + log_term2 + log_term3
 
-            # Check each term for validity
-            if not (np.isfinite(term1) and np.isfinite(term2) and np.isfinite(term3)):
+            # Final numerical check
+            if not np.isfinite(log_probability):
                 return np.float64(-np.inf)
 
-            log_P_n_T = term1 + term2 + term3
+            return np.float64(log_probability)
 
         except (ValueError, FloatingPointError, OverflowError, ZeroDivisionError):
             return np.float64(-np.inf)
-
-        return np.float64(log_P_n_T)
 
     def _calculate_age_density(
         self,
@@ -240,6 +276,7 @@ class BirthDeathProcess:
         mu_param: float,
         age_t: float,
         T: float,
+        log_scale_params: bool = False,
     ) -> np.float64:
         """
         Calculate log age density f(t) for a manuscript of given age.
@@ -251,132 +288,237 @@ class BirthDeathProcess:
         log f(t) = log(λe^(-λt) - μe^(-(λ-μ)T)*e^(-μt)) - log(1 - e^(-(λ-μ)T))
 
         Args:
-            lambda_param: Birth rate (λ)
-            mu_param: Death rate (μ)
-            age_t: Age of the manuscript
-            T: Total observation time
+            lambda_param: Birth rate (λ) > 0
+            mu_param: Death rate (μ) > 0
+            time: Time T (float) >= 0
+            n: Number of individuals (integer) >= 1
+            log_scale_params: If True, parameters are in log scale
 
         Returns:
             Log age density f(t)
         """
         try:
-            lambda_minus_mu = lambda_param - mu_param
-
-            # Calculate log f(t) in parts to avoid overflow
-            # Numerator: λe^(-λt) - μe^(-(λ-μ)T)*e^(-μt)
-            term1 = lambda_param * np.exp(-lambda_param * age_t)
-            term2 = (
-                mu_param * np.exp(-(lambda_minus_mu) * T) * np.exp(-mu_param * age_t)
-            )
-
-            numerator = term1 - term2
-
-            # Denominator: 1 - e^(-(λ-μ)T)
-            exp_neg_diff_T = np.exp(-(lambda_minus_mu) * T)
-            denominator = 1 - exp_neg_diff_T
-
-            if denominator * numerator <= 0:
+            # Input validation
+            if age_t < 0:
                 return np.float64(-np.inf)
 
-            log_numerator = np.log(np.abs(numerator))
-            log_denominator = np.log(np.abs(denominator))
+            if T < age_t:
+                return np.float64(-np.inf)
 
-            # log f(t) = log(numerator) - log(denominator)
+            # Handle parameter scaling
+            if log_scale_params:
+                log_lambda = lambda_param
+                log_mu = mu_param
+                # Convert log parameters back to original scale
+                lambda_val = np.exp(lambda_param)
+                mu_val = np.exp(mu_param)
+            else:
+                # Validate positive parameters
+                if lambda_param <= 0 or mu_param <= 0:
+                    return np.float64(-np.inf)
+                lambda_val = lambda_param
+                mu_val = mu_param
+                log_lambda = np.log(lambda_param)
+                log_mu = np.log(mu_param)
+
+            # Check for numerical stability in parameter space
+            if abs(log_lambda - log_mu) < 1e-12:
+                # Limiting case: λ ≈ μ
+                # Use simplified formula from L'Hôpital's rule
+
+                # Check for potential overflow in rate calculations
+                lambda_age_product = lambda_val * age_t
+                lambda_time_diff = lambda_val * (T - age_t)
+
+                log_numerator = -lambda_age_product + np.log(1 + lambda_time_diff)
+                log_denominator = np.log(T)
+
+                # Check for numerical validity
+                if not (np.isfinite(log_numerator) and np.isfinite(log_denominator)):
+                    return np.float64(-np.inf)
+
+            else:
+                # General case: λ ≠ μ
+                lambda_minus_mu = lambda_val - mu_val
+                rate_diff_time = lambda_minus_mu * T
+
+                # Calculate numerator terms
+                numerator_term1 = lambda_val * np.exp(-lambda_val * age_t)
+                numerator_term2 = (
+                    mu_val * np.exp(-rate_diff_time) * np.exp(-mu_val * age_t)
+                )
+
+                numerator = numerator_term1 - numerator_term2
+                denominator = 1 - np.exp(-rate_diff_time)
+
+                if not np.sign(numerator) == np.sign(denominator):
+                    return np.float64(-np.inf)
+
+                log_numerator = np.log(abs(numerator))
+                log_denominator = np.log(abs(denominator))
+
+                # Check for numerical validity
+                if not (np.isfinite(log_numerator) and np.isfinite(log_denominator)):
+                    return np.float64(-np.inf)
+
+            # Calculate final log density
             log_density = log_numerator - log_denominator
+
+            # Final numerical check
+            if not np.isfinite(log_density):
+                return np.float64(-np.inf)
 
             return np.float64(log_density)
 
-        except (ValueError, FloatingPointError, OverflowError):
+        except (ValueError, FloatingPointError, OverflowError, ZeroDivisionError):
             return np.float64(-np.inf)
 
     def log_likelihood(
         self,
         birth_rate: Optional[float] = None,
         death_rate: Optional[float] = None,
+        log_scale_params: bool = False,
+        ages: Optional[NDArray[np.float64]] = None,
+        observation_time: Optional[float] = None,
     ) -> np.float64:
         """
         Calculate log-likelihood for observed manuscript data using birth-death process.
 
         This implements the proper birth-death process likelihood with:
-        1. Probability of n individuals at time T: P_n(t)
+        1. Probability of n individuals at time T: P_n(T)
         2. Age density for each manuscript: f(t)
-        3. Total log-likelihood as sum of log densities
-
-        Uses self.ages for manuscript ages and infers counts (assumes 1 per manuscript).
+        3. Total log-likelihood = log(P_n(T)) + Σlog(f(t_i))
 
         Args:
-            birth_rate: Birth rate (λ). If None, uses self.birth_rate
-            death_rate: Death rate (μ). If None, uses self.death_rate
+            birth_rate: Birth rate (λ > 0) or log(λ) if log_scale_params=True.
+                       If None, uses self.birth_rate
+            death_rate: Death rate (μ > 0) or log(μ) if log_scale_params=True.
+                       If None, uses self.death_rate
+            log_scale_params: If True, birth_rate and death_rate are in log scale
+            ages: Array of manuscript ages. If None, uses calculated ages from creation_times
+            observation_time: Observation time T. If None, uses self.final_time
 
         Returns:
             Log-likelihood value
         """
-        # Use provided parameters or fall back to self attributes
-        lambda_param = birth_rate if birth_rate is not None else float(self.birth_rate)
-        mu_param = death_rate if death_rate is not None else float(self.death_rate)
-
-        if lambda_param <= 0 or mu_param < 0:
-            return np.float64(-np.inf)
-
-        # Use self.ages and infer counts (1 per manuscript)
-        ages = self.ages
-        if len(ages) == 0:
-            return np.float64(-np.inf)
-
-        counts = np.ones_like(ages, dtype=np.float64)
-
-        # Handle the case where λ ≈ μ (critical case) - use small offset
-        if np.abs(lambda_param - mu_param) < 1e-10:
-            # Add small perturbation to avoid singularity
-            if lambda_param >= mu_param:
-                mu_param = lambda_param - 1e-10
+        try:
+            if (birth_rate is None) or (death_rate is None):
+                if log_scale_params:
+                    raise ValueError(
+                        "Cannot use log_scale_params=True when birth_rate and death_rate are not provided."
+                    )
+                log_scale_params = False
+            # Use provided parameters or fall back to self attributes
+            if birth_rate is not None:
+                lambda_input = birth_rate
             else:
-                lambda_param = mu_param + 1e-10
+                if self.birth_rate is None:
+                    raise ValueError("birth_rate not provided and not fitted")
+                lambda_input = float(self.birth_rate)
 
-        # Current time T (maximum age observed, representing present time)
-        T = np.float64(np.max(ages))
+            if death_rate is not None:
+                mu_input = death_rate
+            else:
+                if self.death_rate is None:
+                    raise ValueError("death_rate not provided and not fitted")
+                mu_input = float(self.death_rate)
 
-        # Total number of observed manuscripts
-        n_total: int = int(np.sum(counts))
-
-        if n_total == 0:
-            return np.float64(-np.inf)
-
-        # 1. Calculate P_n(T) - probability of n individuals at time T
-
-        log_P_n_T = self._calculate_population_probability(
-            lambda_param, mu_param, T, n_total
-        )
-        if not np.isfinite(log_P_n_T):
-            return np.float64(-np.inf)
-
-        # 2. Calculate age density for each manuscript
-        # f(t) = λe^(-λt) * (μe^((λ-μ)t) - μ) / (λe^((λ-μ)T) - μ)
-
-        # For each age t, calculate the log density
-        log_densities = np.zeros_like(ages, dtype=np.float64)
-
-        for i, age_t in enumerate(ages):
-            if counts[i] == 0:
-                continue
-
-            # Use helper function to calculate log age density
-            log_density = self._calculate_age_density(lambda_param, mu_param, age_t, T)
-
-            if not np.isfinite(log_density):
+            if not (np.isfinite(lambda_input) and np.isfinite(mu_input)):
                 return np.float64(-np.inf)
 
-            # Add log density weighted by count
-            log_densities[i] = counts[i] * log_density
+            if not log_scale_params:
+                # Parameters are in original scale, validate directly
+                if lambda_input <= 0 or mu_input <= 0:
+                    return np.float64(-np.inf)
 
-        # 3. Total log-likelihood = log(P_n(T)) + sum of log densities
-        total_log_likelihood = log_P_n_T + np.sum(log_densities)
+            # Validate ages data
+            if ages is None:
+                ages = self.get_manuscript_ages()
 
-        # Final numerical check
-        if not np.isfinite(total_log_likelihood):
+            if len(ages) == 0:
+                return np.float64(-np.inf)
+
+            # Check for negative ages (should not happen with proper data)
+            if np.any(ages < 0):
+                return np.float64(-np.inf)
+
+            # Current time T (observation time)
+            if observation_time is not None:
+                T = observation_time
+            else:
+                T = self.final_time
+
+            # Additional validation: T should be positive
+            if T is None or T <= 0:
+                return np.float64(-np.inf)
+
+            # Total number of observed manuscripts
+            n_total: int = int(len(ages))
+
+            if n_total == 0:
+                return np.float64(-np.inf)
+
+            # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
+            log_P_n_T = self._calculate_population_probability(
+                lambda_input,
+                mu_input,
+                T,
+                n_total,
+                log_scale_params=log_scale_params,
+            )
+
+            # Check if population probability calculation succeeded
+            if not np.isfinite(log_P_n_T):
+                return np.float64(-np.inf)
+
+            # 2. Calculate age density for each manuscript
+            # The helper function now includes comprehensive numerical checks
+            log_densities = np.zeros_like(ages, dtype=np.float64)
+
+            for i, age_t in enumerate(ages):
+                # Validate individual age vs. total time
+                if age_t > T:
+                    return np.float64(-np.inf)
+
+                # Calculate log age density using improved helper function
+                # Pass log_scale_params to helper function
+                log_density = self._calculate_age_density(
+                    lambda_input,
+                    mu_input,
+                    age_t,
+                    T,
+                    log_scale_params=log_scale_params,
+                )
+
+                # Check if age density calculation succeeded
+                if not np.isfinite(log_density):
+                    return np.float64(-np.inf)
+
+                # Add log density weighted by count
+                log_densities[i] = log_density
+
+            # 3. Total log-likelihood = log(P_n(T)) + sum of log densities
+            log_density_sum = np.sum(log_densities)
+
+            if not np.isfinite(log_density_sum):
+                return np.float64(-np.inf)
+
+            total_log_likelihood = log_P_n_T + log_density_sum
+
+            # Final numerical validation
+            if not np.isfinite(total_log_likelihood):
+                return np.float64(-np.inf)
+
+            return np.float64(total_log_likelihood)
+
+        except (
+            ValueError,
+            FloatingPointError,
+            OverflowError,
+            ZeroDivisionError,
+            IndexError,
+        ):
             return np.float64(-np.inf)
-
-        return np.float64(total_log_likelihood)
 
     def _log_likelihood_external(
         self,
@@ -384,6 +526,8 @@ class BirthDeathProcess:
         death_rate: float,
         ages: NDArray[np.float64],
         counts: NDArray[np.float64],
+        log_scale_params: bool = False,
+        total_time: Optional[float] = None,
     ) -> np.float64:
         """
         Calculate log-likelihood for external data (used in fitting).
@@ -392,96 +536,201 @@ class BirthDeathProcess:
         parameters and data arrays, used during optimization.
 
         Args:
-            birth_rate: Birth rate (λ)
-            death_rate: Death rate (μ)
-            ages: Array of manuscript ages
-            counts: Array of manuscript counts for each age
+            birth_rate: Birth rate (λ > 0) or log(λ) if log_scale_params=True
+            death_rate: Death rate (μ > 0) or log(μ) if log_scale_params=True
+            ages: Array of manuscript ages (all >= 0)
+            counts: Array of manuscript counts for each age (all >= 0)
+            log_scale_params: If True, birth_rate and death_rate are in log scale
+            total_time: Total observation time T. If None, uses max(ages)
 
         Returns:
             Log-likelihood value
         """
-        lambda_param, mu_param = float(birth_rate), float(death_rate)
+        try:
+            # Use provided parameters
+            lambda_input = birth_rate
+            mu_input = death_rate
 
-        if lambda_param <= 0 or mu_param < 0:
-            return np.float64(-np.inf)
-
-        # Handle the case where λ ≈ μ (critical case) - use small offset
-        if np.abs(lambda_param - mu_param) < 1e-10:
-            # Add small perturbation to avoid singularity
-            if lambda_param >= mu_param:
-                mu_param = lambda_param - 1e-10
-            else:
-                lambda_param = mu_param + 1e-10
-
-        # Current time T (maximum age observed, representing present time)
-        T = np.float64(np.max(ages))
-
-        # Total number of observed manuscripts
-        n_total: int = int(np.sum(counts))
-        assert isinstance(n_total, int)  # Type hint for mypy
-
-        if n_total == 0:
-            return np.float64(-np.inf)
-
-        # Calculate P_n(T) using helper method
-        log_P_n_T = self._calculate_population_probability(
-            lambda_param, mu_param, T, n_total
-        )
-        if not np.isfinite(log_P_n_T):
-            return np.float64(-np.inf)
-
-        # 2. Calculate age density for each manuscript
-        # For each age t, calculate the log density
-        log_densities = np.zeros_like(ages, dtype=np.float64)
-
-        for i, age_t in enumerate(ages):
-            if counts[i] == 0:
-                continue
-
-            # Use helper function to calculate log age density
-            log_density = self._calculate_age_density(lambda_param, mu_param, age_t, T)
-
-            if not np.isfinite(log_density):
+            if not (np.isfinite(lambda_input) and np.isfinite(mu_input)):
                 return np.float64(-np.inf)
 
-            # Add log density weighted by count
-            log_densities[i] = counts[i] * log_density
+            if not log_scale_params:
+                # Parameters are in original scale, validate directly
+                if lambda_input <= 0 or mu_input <= 0:
+                    return np.float64(-np.inf)
 
-        # 3. Total log-likelihood = log(P_n(T)) + sum of log densities
-        total_log_likelihood = log_P_n_T + np.sum(log_densities)
+            # Enhanced data validation
+            if len(ages) == 0 or len(counts) == 0:
+                return np.float64(-np.inf)
 
-        # Final numerical check
-        if not np.isfinite(total_log_likelihood):
+            if len(ages) != len(counts):
+                return np.float64(-np.inf)
+
+            # Check for negative ages or counts
+            if np.any(ages < 0) or np.any(counts < 0):
+                return np.float64(-np.inf)
+
+            # Current time T (total observation time)
+            if total_time is not None:
+                time_T = np.float64(total_time)
+            else:
+                # Fallback: use maximum age observed as approximation for T
+                time_T = np.float64(np.max(ages))
+
+            # Additional validation: T should be positive
+            if time_T <= 0:
+                return np.float64(-np.inf)
+
+            # Total number of observed manuscripts
+            n_total: int = int(np.sum(counts))
+            assert isinstance(n_total, int)  # Type hint for mypy
+
+            if n_total == 0:
+                return np.float64(-np.inf)
+
+            # Calculate P_n(T) using improved helper method
+            # Pass log_scale_params to helper function
+            log_P_n_T = self._calculate_population_probability(
+                lambda_input,
+                mu_input,
+                time_T,
+                n_total,
+                log_scale_params=log_scale_params,
+            )
+
+            # Check if population probability calculation succeeded
+            if not np.isfinite(log_P_n_T):
+                return np.float64(-np.inf)
+
+            # Calculate age density for each manuscript
+            # The helper now includes comprehensive numerical checks
+            log_densities = np.zeros_like(ages, dtype=np.float64)
+
+            for i, age_t in enumerate(ages):
+                # Skip zero-count entries
+                if counts[i] == 0:
+                    continue
+
+                # Validate individual age vs. total time
+                if age_t > time_T:
+                    return np.float64(-np.inf)
+
+                # Calculate log age density using improved helper function
+                # Pass log_scale_params to helper function
+                log_density = self._calculate_age_density(
+                    lambda_input,
+                    mu_input,
+                    age_t,
+                    time_T,
+                    log_scale_params=log_scale_params,
+                )
+
+                # Check if age density calculation succeeded
+                if not np.isfinite(log_density):
+                    return np.float64(-np.inf)
+
+                # Add log density weighted by count
+                log_densities[i] = counts[i] * log_density
+
+            # Total log-likelihood = log(P_n(T)) + sum of log densities
+            log_density_sum = np.sum(log_densities)
+
+            # Check intermediate sum is finite
+            if not np.isfinite(log_density_sum):
+                return np.float64(-np.inf)
+
+            total_log_likelihood = log_P_n_T + log_density_sum
+
+            # Final numerical validation
+            if not np.isfinite(total_log_likelihood):
+                return np.float64(-np.inf)
+
+            return np.float64(total_log_likelihood)
+
+        except (
+            ValueError,
+            FloatingPointError,
+            OverflowError,
+            ZeroDivisionError,
+            IndexError,
+        ):
             return np.float64(-np.inf)
 
-        return np.float64(total_log_likelihood)
-
-    def negative_log_likelihood(self, params: NDArray[np.float64]) -> float:
+    def negative_log_likelihood(self, log_params: NDArray[np.float64]) -> float:
         """
-        Negative log-likelihood for optimization (minimization).
+        Calculate negative log-likelihood for optimization (public method for testing).
+
+        This method is used internally by fit() methods but is also made public to enable
+        comprehensive testing of the optimization objective function. Users should typically
+        use log_likelihood() for direct likelihood calculations.
 
         Uses the proper birth-death process likelihood with:
         1. P_n(T) probability of n individuals at time T
         2. Age density f(t) for each observed manuscript
 
-        Uses the internal ages from self.ages and infers counts (1 for each manuscript).
+        Gets ages from self.get_manuscript_ages() and infers counts (1 for each manuscript).
+        Optimization is performed over log-scale parameters for better numerical stability.
 
         Args:
-            params: Parameters [birth_rate (λ), death_rate (μ)]
+            log_params: Log-scale parameters [log(birth_rate), log(death_rate)]
 
         Returns:
             Negative log-likelihood value (float for scipy optimization)
         """
-        if len(self.ages) == 0:
+        ages = self.get_manuscript_ages()
+        if len(ages) == 0:
             return float(np.inf)  # No data available
 
-        # Extract parameters
-        birth_rate, death_rate = params
+        # Extract log-scale parameters
+        log_birth_rate, log_death_rate = log_params
 
         result = -self.log_likelihood(
-            birth_rate=float(birth_rate), death_rate=float(death_rate)
+            birth_rate=float(np.exp(log_birth_rate)),
+            death_rate=float(np.exp(log_death_rate)),
+            log_scale_params=False,
+            ages=ages,
+            observation_time=self.final_time,
         )
         return float(result)  # Convert to Python float for scipy
+
+    def get_crude_parameter_estimates(
+        self, ages: NDArray[np.float64], update_instance: bool = False
+    ) -> Tuple[float, float]:
+        """
+        Get crude initial parameter estimates based on manuscript age data.
+
+        Uses simple heuristics to estimate birth and death rates:
+        - Death rate inversely related to max survival age
+        - Birth rate related to total observed manuscripts
+
+        Args:
+            ages: Array of manuscript ages
+            update_instance: If True, updates self.birth_rate and self.death_rate
+                           with the estimates (converted from log scale)
+
+        Returns:
+            Tuple of (estimated_birth_rate, estimated_death_rate) in log scale
+        """
+        if len(ages) == 0:
+            raise ValueError("Cannot estimate parameters from empty age data")
+
+        mean_age = float(ages.mean())
+        n_manuscripts = len(ages)
+        T = self.final_time
+
+        # Simple heuristic: death rate inversely related to max survival age
+        # birth rate related to total observed manuscripts
+        est_birth_rate = 1.0 / mean_age
+        est_death_rate = np.max([est_birth_rate - np.log(n_manuscripts) / T, 1e-8])
+
+        # Optionally update instance parameters
+        if update_instance:
+            self.birth_rate = np.float64(est_birth_rate)
+            self.death_rate = np.float64(est_death_rate)
+            # Note: Don't set fitted=True since these are just crude estimates
+
+        # Convert to log scale for optimization
+        return (np.log(est_birth_rate), np.log(est_death_rate))
 
     def fit_from_self_data(
         self,
@@ -506,40 +755,35 @@ class BirthDeathProcess:
         """
         Fit birth-death process parameters using internal ages data.
 
-        Uses self.ages and self.creation_times to fit the model parameters.
+        Uses self.creation_times and self.final_time to calculate ages and fit the model parameters.
+        Optimization is performed over log-scale parameters for better numerical stability.
 
         Args:
             method: Optimization method for scipy.optimize.minimize
-            initial_params: Initial parameter values (birth_rate, death_rate)
+            initial_params: Initial parameter values (birth_rate, death_rate) in original scale
 
         Returns:
             Dictionary with fit results including parameters and statistics
         """
-        if len(self.ages) == 0:
+        ages = self.get_manuscript_ages()
+        if len(ages) == 0:
             raise ValueError(
                 "No ages data available. Set creation_times and final_time first."
             )
 
         # Set initial parameters with better estimates based on data
         if initial_params is None:
-            # Estimate initial parameters from data characteristics
-            max_age = float(self.ages.max())
-            n_manuscripts = len(self.ages)
+            initial_params = self.get_crude_parameter_estimates(ages)
+        else:
+            # Convert provided initial parameters to log scale
+            initial_params = (np.log(initial_params[0]), np.log(initial_params[1]))
 
-            # Simple heuristic: death rate inversely related to max survival age
-            # birth rate related to total observed manuscripts
-            est_death_rate = 1.0 / max_age if max_age > 0 else 0.001
-            est_birth_rate = (
-                max(0.001, n_manuscripts / (max_age * 100)) if max_age > 0 else 0.01
-            )
-
-            initial_params = (est_birth_rate, est_death_rate)
-
-        # Parameter bounds: birth_rate > 0, death_rate >= 0
-        # Add reasonable upper bounds to prevent extreme values
+        # Parameter bounds in log space: log(birth_rate), log(death_rate)
+        # birth_rate: 1e-6 to 10.0 -> log bounds: log(1e-6) to log(10.0)
+        # death_rate: 1e-8 to 1.0 -> log bounds: log(1e-8) to log(1.0)
         bounds: List[Tuple[Optional[float], Optional[float]]] = [
-            (1e-6, 10.0),  # birth_rate: small positive to reasonable maximum
-            (1e-8, 1.0),  # death_rate: very small to 1 (100% death rate)
+            (np.log(1e-6), np.log(10.0)),  # log(birth_rate) bounds
+            (np.log(1e-8), np.log(1.0)),  # log(death_rate) bounds
         ]
 
         # Optimize with multiple strategies for robustness
@@ -586,29 +830,27 @@ class BirthDeathProcess:
             result = best_result
 
             if result.success:
-                self.birth_rate, self.death_rate = result.x
+                # Convert log-scale parameters back to original scale
+                log_birth_rate, log_death_rate = result.x
+                self.birth_rate = np.float64(np.exp(log_birth_rate))
+                self.death_rate = np.float64(np.exp(log_death_rate))
                 self.fitted = True
 
                 # Calculate additional statistics using internal data
                 log_like = (
                     self.log_likelihood()
                 )  # Use current self.birth_rate and self.death_rate
-                n_params = len(result.x)
-                n_data = len(self.ages)
-                aic = 2 * n_params - 2 * log_like
-                bic = n_params * np.log(n_data) - 2 * log_like
+                n_data = len(ages)  # Use the ages we calculated at the beginning
 
                 self.fit_results = {
                     "success": True,
                     "birth_rate": self.birth_rate,
                     "death_rate": self.death_rate,
                     "log_likelihood": log_like,
-                    "aic": aic,
-                    "bic": bic,
                     "n_data_points": n_data,
                     "optimization_result": result,
-                    "ages_used": self.ages,
-                    "counts_used": np.ones_like(self.ages, dtype=np.float64),
+                    "ages_used": ages,
+                    "counts_used": np.ones_like(ages, dtype=np.float64),
                 }
 
             else:
@@ -630,7 +872,6 @@ class BirthDeathProcess:
         self,
         manuscript_data: Optional[pd.DataFrame] = None,
         age_column: str = "age",
-        count_column: Optional[str] = None,
         method: Literal[
             "Nelder-Mead",
             "Powell",
@@ -652,12 +893,13 @@ class BirthDeathProcess:
         """
         Fit birth-death process parameters to manuscript data.
 
+        Optimization is performed over log-scale parameters for better numerical stability.
+
         Args:
             manuscript_data: DataFrame with manuscript information (if None, uses internal ages)
             age_column: Column name containing manuscript ages
-            count_column: Column name for counts (if None, assumes one manuscript per row)
             method: Optimization method for scipy.optimize.minimize
-            initial_params: Initial parameter values (birth_rate, death_rate)
+            initial_params: Initial parameter values (birth_rate, death_rate) in original scale
 
         Returns:
             Dictionary with fit results including parameters and statistics
@@ -667,32 +909,31 @@ class BirthDeathProcess:
             return self.fit_from_self_data(method=method, initial_params=initial_params)
 
         # Prepare data from provided DataFrame
-        if count_column is None:
-            # Check if we have creation_times and final_time available
-            if len(self.ages) > 0:
-                # Use the stored process ages directly
-                ages_array = self.ages
-                # Create age bins
-                age_bins = np.arange(
-                    0, float(ages_array.max()) + 50, 50, dtype=np.float64
-                )  # 50-year bins
-                counts, bin_edges = np.histogram(ages_array, bins=age_bins)
-                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-            else:
-                # Assume one manuscript per row, bin by age
-                ages = manuscript_data[age_column].values
-                # Convert to numpy array to ensure proper typing
-                ages_array = np.asarray(ages, dtype=np.float64)
-                age_bins = np.arange(
-                    0, float(ages_array.max()) + 50, 50, dtype=np.float64
-                )  # 50-year bins
-                counts, bin_edges = np.histogram(ages_array, bins=age_bins)
-                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        # Check if we have creation_times and final_time available
+        ages_array = self.get_manuscript_ages()
+        if len(ages_array) > 0:
+            # Use the calculated process ages directly
+            # Create age bins
+            age_bins = np.arange(
+                0, float(ages_array.max()) + 50, 50, dtype=np.float64
+            )  # 50-year bins
+            counts, bin_edges = np.histogram(ages_array, bins=age_bins)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
         else:
-            # Use provided counts
-            bin_centers = manuscript_data[age_column].values
-            counts_values = manuscript_data[count_column].values
-            counts = np.asarray(counts_values, dtype=np.float64)
+            # Assume one manuscript per row, bin by age
+            ages = manuscript_data[age_column].values
+            # Convert to numpy array to ensure proper typing
+            ages_array = np.asarray(ages, dtype=np.float64)
+
+            # Check if external data is empty
+            if len(ages_array) == 0:
+                raise ValueError("No valid data points for fitting")
+
+            age_bins = np.arange(
+                0, float(ages_array.max()) + 50, 50, dtype=np.float64
+            )  # 50-year bins
+            counts, bin_edges = np.histogram(ages_array, bins=age_bins)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
         # Remove empty bins - convert to numpy arrays for type safety
         counts_array = np.asarray(counts, dtype=np.float64)
@@ -704,40 +945,40 @@ class BirthDeathProcess:
         if len(ages_fit) == 0:
             raise ValueError("No valid data points for fitting")
 
+        # Set final_time if not already set, ensuring it's larger than max age
+        if self.final_time is None:
+            max_age = float(ages_fit.max())
+            self.final_time = max_age + 100.0  # Add buffer beyond maximum observed age
+
         # Set initial parameters with better estimates based on data
         if initial_params is None:
-            # Estimate initial parameters from data characteristics
-            max_age = float(ages_fit.max())
-            total_manuscripts = float(counts_fit.sum())
+            initial_params = self.get_crude_parameter_estimates(ages_fit)
+        else:
+            # Convert provided initial parameters to log scale
+            initial_params = (np.log(initial_params[0]), np.log(initial_params[1]))
 
-            # Simple heuristic: death rate inversely related to max survival age
-            # birth rate related to total observed manuscripts
-            est_death_rate = 1.0 / max_age if max_age > 0 else 0.001
-            est_birth_rate = (
-                max(0.001, total_manuscripts / (max_age * 100)) if max_age > 0 else 0.01
-            )
-
-            initial_params = (est_birth_rate, est_death_rate)
-
-        # Parameter bounds: birth_rate > 0, death_rate >= 0
-        # Add reasonable upper bounds to prevent extreme values
+        # Parameter bounds in log space: log(birth_rate), log(death_rate)
+        # birth_rate: 1e-6 to 10.0 -> log bounds: log(1e-6) to log(10.0)
+        # death_rate: 1e-8 to 1.0 -> log bounds: log(1e-8) to log(1.0)
         bounds: List[Tuple[Optional[float], Optional[float]]] = [
-            (1e-6, 10.0),  # birth_rate: small positive to reasonable maximum
-            (1e-8, 1.0),  # death_rate: very small to 1 (100% death rate)
+            (np.log(1e-6), np.log(10.0)),  # log(birth_rate) bounds
+            (np.log(1e-8), np.log(1.0)),  # log(death_rate) bounds
         ]
 
         # Create objective function for external data fitting
         def objective_func(params: NDArray[np.float64]) -> float:
-            # Store original ages for restoration
-            original_ages = self.ages.copy() if hasattr(self, "ages") else None
-            try:
-                # Temporarily set ages for external data
-                self.ages = ages_fit
-                return self.negative_log_likelihood(params)
-            finally:
-                # Restore original ages
-                if original_ages is not None:
-                    self.ages = original_ages
+            # Extract log-scale parameters
+            log_birth_rate, log_death_rate = params
+
+            # Calculate negative log-likelihood with provided data
+            result = -self.log_likelihood(
+                birth_rate=float(np.exp(log_birth_rate)),
+                death_rate=float(np.exp(log_death_rate)),
+                log_scale_params=False,
+                ages=ages_fit,
+                observation_time=self.final_time,
+            )
+            return float(result)
 
         # Optimize with multiple strategies for robustness
         optimization_methods = [method, "Nelder-Mead", "Powell"]
@@ -783,26 +1024,25 @@ class BirthDeathProcess:
             result = best_result
 
             if result.success:
-                self.birth_rate, self.death_rate = result.x
+                # Convert log-scale parameters back to original scale
+                log_birth_rate, log_death_rate = result.x
+                self.birth_rate = np.float64(np.exp(log_birth_rate))
+                self.death_rate = np.float64(np.exp(log_death_rate))
                 self.fitted = True
 
                 # Calculate additional statistics using fitted parameters
-                birth_rate, death_rate = result.x
+                birth_rate = float(self.birth_rate)
+                death_rate = float(self.death_rate)
                 log_like = self._log_likelihood_external(
-                    float(birth_rate), float(death_rate), ages_fit, counts_fit
+                    birth_rate, death_rate, ages_fit, counts_fit
                 )
-                n_params = len(result.x)
                 n_data = len(ages_fit)
-                aic = 2 * n_params - 2 * log_like
-                bic = n_params * np.log(n_data) - 2 * log_like
 
                 self.fit_results = {
                     "success": True,
                     "birth_rate": self.birth_rate,
                     "death_rate": self.death_rate,
                     "log_likelihood": log_like,
-                    "aic": aic,
-                    "bic": bic,
                     "n_data_points": n_data,
                     "optimization_result": result,
                     "ages_used": ages_fit,
@@ -837,6 +1077,9 @@ class BirthDeathProcess:
         if not self.fitted:
             warnings.warn("Model has not been fitted. Using current parameter values.")
 
+        if self.birth_rate is None or self.death_rate is None:
+            raise ValueError("Cannot predict without fitted birth_rate and death_rate")
+
         return self.birth_rate * np.exp(-self.death_rate * ages)
 
     def simulate(
@@ -858,13 +1101,15 @@ class BirthDeathProcess:
         Returns:
             DataFrame with simulated manuscript data including creation times and ages
         """
+        if self.birth_rate is None or self.death_rate is None:
+            raise ValueError("Cannot simulate without fitted birth_rate and death_rate")
+
         if random_seed is not None:
             np.random.seed(random_seed)
 
         # Reset the process
         self.creation_times = []
         self.final_time = max_time
-        self._update_ages()
 
         # Simulate birth-death process
         current_time = 0.0
@@ -926,8 +1171,7 @@ class BirthDeathProcess:
                             manuscript["survived"] = False
                             break
 
-        # Update ages after simulation is complete
-        self._update_ages()
+        # Calculate ages for surviving manuscripts (ages are now calculated on-demand)
 
         # Calculate ages for surviving manuscripts
         surviving_data: List[Dict[str, Any]] = []
@@ -978,114 +1222,6 @@ class BirthDeathProcess:
 
         df = pd.DataFrame(all_data)
         return df
-
-
-def prepare_manuscript_data(
-    df: pd.DataFrame, current_year: int = 1500, date_column: str = "midYear"
-) -> pd.DataFrame:
-    """
-    Prepare manuscript data for birth-death process analysis.
-
-    Args:
-        df: DataFrame with manuscript data
-        current_year: Current year for age calculation (default 1500 for medieval manuscript analysis)
-        date_column: Column containing manuscript dates
-
-    Returns:
-        DataFrame with age calculations and binned data, filtered to manuscripts before current_year
-    """
-    # Filter manuscripts to only include those with dates before current_year
-    manuscript_data = df.copy()
-    manuscript_data = manuscript_data[manuscript_data[date_column] < current_year]
-
-    # Calculate ages (manuscripts created before current_year will have positive ages)
-    manuscript_data["age"] = current_year - manuscript_data[date_column]
-
-    # Remove manuscripts with negative ages (future dates) - should be minimal after filtering
-    manuscript_data = manuscript_data[manuscript_data["age"] >= 0]
-
-    # Add century and period groupings for analysis
-    manuscript_data["century"] = np.floor(manuscript_data[date_column] / 100) + 1
-
-    # Define historical periods
-    def get_period(year: float) -> str:
-        if year < 500:
-            return "Early Christian"
-        elif year < 1000:
-            return "Early Medieval"
-        elif year < 1500:
-            return "Late Medieval"
-        else:
-            return "Post-Medieval"
-
-    manuscript_data["period"] = manuscript_data[date_column].apply(get_period)
-
-    return manuscript_data
-
-
-def compare_models(
-    models: List[BirthDeathProcess], manuscript_data: pd.DataFrame, **fit_params: Any
-) -> pd.DataFrame:
-    """
-    Compare multiple birth-death process models.
-
-    Args:
-        models: List of BirthDeathProcess instances to compare
-        manuscript_data: Manuscript data for fitting
-        **fit_params: Additional parameters for fitting
-
-    Returns:
-        DataFrame comparing model performance
-    """
-    results = []
-
-    for i, model in enumerate(models):
-        try:
-            fit_result = model.fit(manuscript_data, **fit_params)
-
-            if fit_result["success"]:
-                results.append(
-                    {
-                        "model_id": i,
-                        "birth_rate": fit_result["birth_rate"],
-                        "death_rate": fit_result["death_rate"],
-                        "log_likelihood": fit_result["log_likelihood"],
-                        "aic": fit_result["aic"],
-                        "bic": fit_result["bic"],
-                        "n_params": 2,
-                        "success": True,
-                    }
-                )
-            else:
-                results.append(
-                    {
-                        "model_id": i,
-                        "birth_rate": np.nan,
-                        "death_rate": np.nan,
-                        "log_likelihood": np.nan,
-                        "aic": np.nan,
-                        "bic": np.nan,
-                        "n_params": 2,
-                        "success": False,
-                    }
-                )
-
-        except Exception as e:
-            results.append(
-                {
-                    "model_id": i,
-                    "birth_rate": np.nan,
-                    "death_rate": np.nan,
-                    "log_likelihood": np.nan,
-                    "aic": np.nan,
-                    "bic": np.nan,
-                    "n_params": 2,
-                    "success": False,
-                    "error": str(e),
-                }
-            )
-
-    return pd.DataFrame(results)
 
 
 def plot_fit_results(
@@ -1214,26 +1350,29 @@ def example_analysis() -> None:
     )
     print("  Analysis cutoff: 1500 CE")
 
-    # Fit model
-    model = BirthDeathProcess(birth_rate=1.0, death_rate=0.01)
+    # Fit model (no initial data, will fit from the synthetic_data)
+    model = BirthDeathProcess([], 1500.0)
 
-    fit_results = model.fit(synthetic_data, age_column="age", count_column="count")
+    fit_results = model.fit(synthetic_data, age_column="age")
 
     if fit_results["success"]:
         print("\nFit Results:")
         print(f"  Estimated birth rate (λ): {model.birth_rate:.6f}")
         print(f"  Estimated death rate (μ): {model.death_rate:.6f}")
         print(f"  Log-likelihood: {fit_results['log_likelihood']:.2f}")
-        print(f"  AIC: {fit_results['aic']:.2f}")
-        print(f"  BIC: {fit_results['bic']:.2f}")
 
         # Calculate parameter errors
-        birth_error = abs(model.birth_rate - true_birth_rate) / true_birth_rate * 100
-        death_error = abs(model.death_rate - true_death_rate) / true_death_rate * 100
+        if model.birth_rate is not None and model.death_rate is not None:
+            birth_error = (
+                abs(model.birth_rate - true_birth_rate) / true_birth_rate * 100
+            )
+            death_error = (
+                abs(model.death_rate - true_death_rate) / true_death_rate * 100
+            )
 
-        print("\nParameter Estimation Errors:")
-        print(f"  Birth rate error: {birth_error:.2f}%")
-        print(f"  Death rate error: {death_error:.2f}%")
+            print("\nParameter Estimation Errors:")
+            print(f"  Birth rate error: {birth_error:.2f}%")
+            print(f"  Death rate error: {death_error:.2f}%")
 
     else:
         print(f"\nFit failed: {fit_results.get('message', 'Unknown error')}")

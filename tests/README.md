@@ -7,7 +7,8 @@ This directory contains comprehensive test suites for the `inf_bp_texts.inferenc
 ### Core Test Files
 
 - **`test_birth_death_process.py`** - Tests for basic `BirthDeathProcess` class functionality
-  - Initialization and parameter setting
+  - Initialization with required `creation_times` and `final_time` parameters
+  - Optional `birth_rate` and `death_rate` parameter handling
   - Manuscript addition and age calculation
   - Process summaries and basic methods
   - Type consistency and attribute management
@@ -31,8 +32,6 @@ This directory contains comprehensive test suites for the `inf_bp_texts.inferenc
   - Parameter effects on simulation outcomes
 
 - **`test_utils.py`** - Tests for utility functions and edge cases
-  - Data preparation (`prepare_manuscript_data()`)
-  - Model comparison (`compare_models()`)
   - Prediction methods
   - Edge cases and error handling
 
@@ -85,8 +84,10 @@ poetry run python -m pytest tests/ -n auto
 The test suite covers:
 
 ### ✅ Core Functionality
-- Class initialization and basic methods
+- Class initialization with required parameters (`creation_times`, `final_time`)
+- Optional parameter handling (`birth_rate`, `death_rate`, `start_time`)
 - Manuscript addition and age calculation
+- Automatic filtering of manuscripts after `final_time`
 - Process state management
 - Parameter validation
 

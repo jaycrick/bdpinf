@@ -16,7 +16,7 @@ class TestPopulationProbability:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.model = BirthDeathProcess()
+        self.model = BirthDeathProcess([100.0, 200.0, 300.0], 1000.0)
 
     def test_input_validation(self):
         """Test that invalid inputs return -inf."""
@@ -287,7 +287,7 @@ class TestPopulationProbabilityIntegration:
 
     def test_integration_with_log_likelihood(self):
         """Test that population probability works correctly in log-likelihood calculation."""
-        model = BirthDeathProcess()
+        model = BirthDeathProcess([100.0, 200.0, 300.0], 1000.0)
 
         # Set up a simple manuscript scenario
         creation_times = [1000.0, 1200.0, 1400.0]  # Three manuscripts
@@ -302,7 +302,7 @@ class TestPopulationProbabilityIntegration:
 
     def test_population_probability_in_context(self):
         """Test population probability calculation in realistic manuscript context."""
-        model = BirthDeathProcess()
+        model = BirthDeathProcess([100.0, 200.0, 300.0], 1000.0)
 
         # Realistic medieval manuscript parameters
         lambda_param = 0.01  # 1 manuscript per 100 years

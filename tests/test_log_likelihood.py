@@ -12,7 +12,7 @@ class TestLogLikelihood:
 
     def test_log_likelihood_empty_ages(self):
         """Test log-likelihood with no ages returns -inf."""
-        process = BirthDeathProcess()
+        process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.01)
 
         result = process.log_likelihood()
         assert result == -np.inf
@@ -82,22 +82,32 @@ class TestLogLikelihood:
             creation_times=[100.0, 200.0, 300.0], final_time=1000.0
         )
 
-        params = np.array([0.01, 0.005], dtype=np.float64)
-        nll = process.negative_log_likelihood(params)
+        # Use log-scale parameters as expected by negative_log_likelihood
+        birth_rate, death_rate = 0.01, 0.005
+        log_params = np.array(
+            [np.log(birth_rate), np.log(death_rate)], dtype=np.float64
+        )
+        nll = process.negative_log_likelihood(log_params)
 
         # Should be positive (negative of negative log-likelihood)
         assert nll > 0
         assert np.isfinite(nll)
 
-        # Should equal negative of log_likelihood
-        ll = process.log_likelihood(birth_rate=0.01, death_rate=0.005)
+        # Should equal negative of log_likelihood with log_scale_params=True
+        ll = process.log_likelihood(
+            birth_rate=np.log(birth_rate),
+            death_rate=np.log(death_rate),
+            log_scale_params=True,
+        )
         assert np.isclose(nll, -ll)
 
     def test_negative_log_likelihood_empty_ages(self):
         """Test negative log-likelihood with no ages."""
-        process = BirthDeathProcess()
+        process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.01)
 
-        params = np.array([0.01, 0.005], dtype=np.float64)
+        # Use log-scale parameters as expected by negative_log_likelihood
+        birth_rate, death_rate = 0.01, 0.005
+        params = np.array([np.log(birth_rate), np.log(death_rate)], dtype=np.float64)
         result = process.negative_log_likelihood(params)
 
         assert result == np.inf
@@ -118,30 +128,26 @@ class TestLogLikelihood:
         assert np.isfinite(result)
 
     def test_external_log_likelihood_helper(self):
-        """Test the external log-likelihood helper method."""
-        process = BirthDeathProcess()
+        """Test the external log-likelihood helper method via public interface."""
+        ages_data = [100.0, 200.0, 300.0]
+        process = BirthDeathProcess(ages_data, 500.0)
 
-        ages = np.array([100.0, 200.0, 300.0], dtype=np.float64)
-        counts = np.array([1.0, 1.0, 1.0], dtype=np.float64)
-
-        result = process._log_likelihood_external(0.01, 0.005, ages, counts)
+        # Test log likelihood calculation with explicit parameters
+        result = process.log_likelihood(birth_rate=0.01, death_rate=0.005)
 
         assert np.isfinite(result)
         assert result < 0
 
     def test_external_log_likelihood_invalid_params(self):
         """Test external log-likelihood with invalid parameters."""
-        process = BirthDeathProcess()
+        creation_times = [100.0, 200.0, 300.0]
+        process = BirthDeathProcess(creation_times, 500.0)
 
-        ages = np.array([100.0, 200.0], dtype=np.float64)
-        counts = np.array([1.0, 1.0], dtype=np.float64)
-
-        # Invalid birth rate
-        result = process._log_likelihood_external(-0.01, 0.005, ages, counts)
+        # Test with invalid parameters using public interface
+        result = process.log_likelihood(birth_rate=-0.01, death_rate=0.005)
         assert result == -np.inf
 
-        # Invalid death rate
-        result = process._log_likelihood_external(0.01, -0.005, ages, counts)
+        result = process.log_likelihood(birth_rate=0.01, death_rate=-0.005)
         assert result == -np.inf
 
     def test_log_likelihood_numerical_stability(self):
