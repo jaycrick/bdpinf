@@ -37,4 +37,5 @@ repos:
           - types-requests
           - scipy-stubs
           - plotly-stubs
+          - lxml-stubs
         files: ^src/
