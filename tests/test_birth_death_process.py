@@ -5,7 +5,7 @@ Test suite for BirthDeathProcess class initialization and basic functionality.
 import numpy as np
 from numpy.testing import assert_array_equal
 
-from inf_bp_texts.inference import BirthDeathProcess
+from inf_bp_texts.models import BirthDeathProcess
 
 
 class TestBirthDeathProcessInit:

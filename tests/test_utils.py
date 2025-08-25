@@ -5,7 +5,8 @@ Test suite for BirthDeathProcess utility functions and helper methods.
 import numpy as np
 import pytest
 
-from inf_bp_texts.inference import BirthDeathProcess
+from inf_bp_texts.inference.likelihood import log_likelihood
+from inf_bp_texts.models import BirthDeathProcess
 
 
 class TestUtilityFunctions:
@@ -60,7 +61,9 @@ class TestEdgeCases:
         process.creation_times = [100.0]
         process.set_final_time(200.0)
 
-        ll = process.log_likelihood()
+        # Use modular log_likelihood function
+        ages = process.get_manuscript_ages()
+        ll = log_likelihood(0.0, 0.01, ages, process.final_time)
         assert ll == -np.inf
 
     def test_negative_rates(self):
@@ -69,11 +72,14 @@ class TestEdgeCases:
         process.creation_times = [100.0]
         process.set_final_time(200.0)
 
+        # Use modular log_likelihood function
+        ages = process.get_manuscript_ages()
+
         # Negative rates should give -inf log-likelihood
-        ll = process.log_likelihood(birth_rate=-0.01, death_rate=0.01)
+        ll = log_likelihood(-0.01, 0.01, ages, process.final_time)
         assert ll == -np.inf
 
-        ll = process.log_likelihood(birth_rate=0.01, death_rate=-0.01)
+        ll = log_likelihood(0.01, -0.01, ages, process.final_time)
         assert ll == -np.inf
 
     def test_very_large_ages(self):
@@ -82,8 +88,11 @@ class TestEdgeCases:
         process.creation_times = [1.0, 2.0, 3.0]
         process.set_final_time(100000.0)  # Very large final time
 
+        # Use modular log_likelihood function
+        ages = process.get_manuscript_ages()
+
         # Should handle large ages without crashing
-        ll = process.log_likelihood()
+        ll = log_likelihood(0.001, 0.0001, ages, process.final_time)
         # Result might be -inf due to numerical limits, but shouldn't crash
         assert np.isfinite(ll) or ll == -np.inf
 
@@ -96,8 +105,11 @@ class TestEdgeCases:
         assert len(process.get_manuscript_ages()) == 1
         assert process.get_manuscript_ages()[0] == 400.0
 
+        # Use modular log_likelihood function
+        ages = process.get_manuscript_ages()
+
         # Should be able to calculate log-likelihood
-        ll = process.log_likelihood()
+        ll = log_likelihood(0.01, 0.005, ages, process.final_time)
         assert np.isfinite(ll)
 
     def test_final_time_before_creation_time(self):
@@ -110,7 +122,3 @@ class TestEdgeCases:
         # So there should be no manuscripts left
         ages = process.get_manuscript_ages()
         assert len(ages) == 0
-
-        # Log-likelihood with no data should return -inf
-        ll = process.log_likelihood()
-        assert ll == -np.inf

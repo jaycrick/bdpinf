@@ -1,5 +1,5 @@
 """
-Test cases for the _calculate_population_probability function.
+Test cases for the calculate_log_population_probability function.
 
 These tests verify the correctness of the birth-death process population
 probability calculation based on the Arley & Borchsenius formula.
@@ -8,7 +8,11 @@ probability calculation based on the Arley & Borchsenius formula.
 import numpy as np
 import pytest
 
-from src.inf_bp_texts.inference import BirthDeathProcess
+from src.inf_bp_texts.inference.likelihood import log_likelihood
+from src.inf_bp_texts.models import (
+    BirthDeathProcess,
+    calculate_log_population_probability,
+)
 
 
 class TestPopulationProbability:
@@ -21,19 +25,19 @@ class TestPopulationProbability:
     def test_input_validation(self):
         """Test that invalid inputs return -inf."""
         # Negative birth rate
-        result = self.model._calculate_population_probability(-0.1, 0.05, 100.0, 10)
+        result = calculate_log_population_probability(-0.1, 0.05, 100.0, 10)
         assert result == -np.inf
 
         # Zero birth rate
-        result = self.model._calculate_population_probability(0.0, 0.05, 100.0, 10)
+        result = calculate_log_population_probability(0.0, 0.05, 100.0, 10)
         assert result == -np.inf
 
         # Negative death rate
-        result = self.model._calculate_population_probability(0.1, -0.05, 100.0, 10)
+        result = calculate_log_population_probability(0.1, -0.05, 100.0, 10)
         assert result == -np.inf
 
         # Zero death rate
-        result = self.model._calculate_population_probability(0.1, 0.0, 100.0, 10)
+        result = calculate_log_population_probability(0.1, 0.0, 100.0, 10)
         assert result == -np.inf
 
     def test_finite_results(self):
@@ -47,7 +51,7 @@ class TestPopulationProbability:
         ]
 
         for lambda_param, mu_param, time, n in test_cases:
-            result = self.model._calculate_population_probability(
+            result = calculate_log_population_probability(
                 lambda_param, mu_param, time, n
             )
             assert np.isfinite(result), (
@@ -62,9 +66,7 @@ class TestPopulationProbability:
         time = 100.0
         n = 10
 
-        result = self.model._calculate_population_probability(
-            lambda_param, mu_param, time, n
-        )
+        result = calculate_log_population_probability(lambda_param, mu_param, time, n)
 
         # Should not return -inf due to the perturbation handling
         assert np.isfinite(result), (
@@ -77,7 +79,7 @@ class TestPopulationProbability:
 
         results = []
         for n in [1, 5, 10, 20, 50]:
-            result = self.model._calculate_population_probability(
+            result = calculate_log_population_probability(
                 lambda_param, mu_param, time, n
             )
             results.append((n, result))
@@ -99,7 +101,7 @@ class TestPopulationProbability:
         results = []
         # Use shorter times to avoid β_t = 1 boundary issues
         for time in [50, 100, 200, 500]:  # Removed 1000 which causes β_t = 1
-            result = self.model._calculate_population_probability(
+            result = calculate_log_population_probability(
                 lambda_param, mu_param, time, n
             )
             results.append((time, result))
@@ -121,7 +123,7 @@ class TestPopulationProbability:
         ]
 
         for lambda_param, mu_param, time, n in test_cases:
-            result = self.model._calculate_population_probability(
+            result = calculate_log_population_probability(
                 lambda_param, mu_param, time, n
             )
             # If the function returns -inf, it means α_t or β_t went out of bounds
@@ -147,7 +149,7 @@ class TestPopulationProbability:
         )
 
         # Function result
-        function_result = self.model._calculate_population_probability(
+        function_result = calculate_log_population_probability(
             lambda_param, mu_param, time, n
         )
 
@@ -159,18 +161,18 @@ class TestPopulationProbability:
     def test_extreme_parameters(self):
         """Test behavior with extreme but valid parameters."""
         # Very small rates
-        result = self.model._calculate_population_probability(1e-6, 1e-7, 1000.0, 5)
+        result = calculate_log_population_probability(1e-6, 1e-7, 1000.0, 5)
         assert np.isfinite(result), "Should handle very small rates"
 
         # Large time
-        result = self.model._calculate_population_probability(0.1, 0.05, 10000.0, 5)
+        result = calculate_log_population_probability(0.1, 0.05, 10000.0, 5)
         # This might return -inf due to numerical overflow, which is acceptable
         assert result == -np.inf or np.isfinite(result), (
             "Large time should either overflow or be finite"
         )
 
         # Large population
-        result = self.model._calculate_population_probability(0.1, 0.05, 100.0, 1000)
+        result = calculate_log_population_probability(0.1, 0.05, 100.0, 1000)
         assert result == -np.inf or np.isfinite(result), (
             "Large n should either be very small or finite"
         )
@@ -180,9 +182,7 @@ class TestPopulationProbability:
         # When n=1, the (n-1)*log(β_t) term becomes 0
         lambda_param, mu_param, time = 0.1, 0.05, 100.0
 
-        result = self.model._calculate_population_probability(
-            lambda_param, mu_param, time, 1
-        )
+        result = calculate_log_population_probability(lambda_param, mu_param, time, 1)
 
         assert np.isfinite(result), "n=1 case should produce finite result"
 
@@ -213,9 +213,7 @@ class TestPopulationProbability:
     )
     def test_parametrized_valid_cases(self, lambda_param, mu_param, time, n):
         """Test multiple valid parameter combinations."""
-        result = self.model._calculate_population_probability(
-            lambda_param, mu_param, time, n
-        )
+        result = calculate_log_population_probability(lambda_param, mu_param, time, n)
 
         assert np.isfinite(result), (
             f"Expected finite result for λ={lambda_param}, μ={mu_param}, "
@@ -232,9 +230,7 @@ class TestPopulationProbability:
         time = 10.0  # Moderate time
         n = 5
 
-        result = self.model._calculate_population_probability(
-            lambda_param, mu_param, time, n
-        )
+        result = calculate_log_population_probability(lambda_param, mu_param, time, n)
 
         # Should either be finite or -inf (due to overflow), but not NaN
         assert result == -np.inf or np.isfinite(result), (
@@ -253,9 +249,7 @@ class TestPopulationProbability:
         time = 1.0  # Small time to avoid other numerical issues
         n = 2
 
-        result = self.model._calculate_population_probability(
-            lambda_param, mu_param, time, n
-        )
+        result = calculate_log_population_probability(lambda_param, mu_param, time, n)
 
         # This case might legitimately return -inf due to boundary conditions
         assert result == -np.inf or np.isfinite(result), (
@@ -274,7 +268,7 @@ class TestPopulationProbability:
         ]
 
         for lambda_param, mu_param, time, n, description in boundary_cases:
-            result = self.model._calculate_population_probability(
+            result = calculate_log_population_probability(
                 lambda_param, mu_param, time, n
             )
             assert result == -np.inf, (
@@ -294,25 +288,24 @@ class TestPopulationProbabilityIntegration:
         model.creation_times = creation_times
         model.set_final_time(1500.0)
 
-        # Test that log-likelihood calculation doesn't fail
-        log_likelihood = model.log_likelihood(birth_rate=0.1, death_rate=0.05)
+        # Test that log-likelihood calculation doesn't fail using modular function
+        ages = model.get_manuscript_ages()
+        log_likelihood_value = log_likelihood(
+            birth_rate=0.1, death_rate=0.05, ages=ages, observation_time=1500.0
+        )
 
         # Should be finite or -inf, but not NaN
-        assert not np.isnan(log_likelihood), "Log-likelihood should not be NaN"
+        assert not np.isnan(log_likelihood_value), "Log-likelihood should not be NaN"
 
     def test_population_probability_in_context(self):
         """Test population probability calculation in realistic manuscript context."""
-        model = BirthDeathProcess([100.0, 200.0, 300.0], 1000.0)
-
         # Realistic medieval manuscript parameters
         lambda_param = 0.01  # 1 manuscript per 100 years
         mu_param = 0.001  # 0.1% death rate per year
         time = 1000.0  # 1000 years of observation
         n = 50  # 50 surviving manuscripts
 
-        result = model._calculate_population_probability(
-            lambda_param, mu_param, time, n
-        )
+        result = calculate_log_population_probability(lambda_param, mu_param, time, n)
 
         assert np.isfinite(result), (
             "Realistic manuscript parameters should give finite result"
