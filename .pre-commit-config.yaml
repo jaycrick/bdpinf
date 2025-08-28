@@ -38,4 +38,5 @@ repos:
           - scipy-stubs
           - plotly-stubs
           - lxml-stubs
+          - pydantic
         files: ^src/

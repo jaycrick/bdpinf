@@ -33,3 +33,13 @@ def download_file(url: str, local_path: str, overwrite: bool = False) -> None:
         urllib.request.urlretrieve(url, local_path)
     except Exception as e:
         raise Exception(f"Error downloading {url}: {e}")
+
+
+def safe_int(value: str | None) -> int | None:
+    try:
+        if value is not None:
+            return int(value)
+        else:
+            return None
+    except (TypeError, ValueError):
+        return None
