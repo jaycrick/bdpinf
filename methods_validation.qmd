@@ -1,0 +1,307 @@
+---
+title: "NTVMR Manuscript Analysis"
+subtitle: "Complete Data Quality Assessment and Biblical Manuscript Collection Analysis"
+author: "JC"
+date: today
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 10
+    fig-height: 6
+execute:
+  warning: false
+  message: false
+---
+
+```{python}
+# | label: simulate-processes
+
+import pprint
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objs as go
+from scipy.stats import gaussian_kde
+
+from inf_bp_texts.inference import fit_birth_death_process
+from inf_bp_texts.simulation import simulate_birth_death_process
+
+# Parameters for simulation
+num_sims = 100
+birth_rate = 0.005
+death_rate = birth_rate - 0.004
+time_span = 1500
+seed = 42
+
+simulated_processes = []
+for i in range(num_sims):
+    sim = simulate_birth_death_process(
+        birth_rate=birth_rate,
+        death_rate=death_rate,
+        max_time=time_span,
+        random_seed=seed + i,  # ensure different random streams
+    )
+    simulated_processes.append(sim)
+
+print(simulated_processes[0].head())
+print(simulated_processes[1].head())
+print(simulated_processes[2].head())
+print(simulated_processes[3].head())
+print(simulated_processes[4].head())
+print(simulated_processes[0].shape)
+
+pprint.pp(simulated_processes[0]["age"].values[0:10])
+pprint.pp(simulated_processes[1]["age"].values[0:10])
+pprint.pp(simulated_processes[2]["age"].values[0:10])
+pprint.pp(simulated_processes[3]["age"].values[0:10])
+
+
+for sim in simulated_processes:
+    print(sim.head())
+    print(sim["age"].values)
+    break
+```
+
+Derivative of the log-likehoods
+
+\begin{equation}
+    \frac{dlP_n}{d\lambda} = \frac{\mu  \left(\mu -\mu  n+\lambda  (n-\mu  t+1)+\lambda ^2 t\right)+e^{t (\lambda -\mu )} (n (\lambda -\mu ) (\lambda  t (\lambda -\mu )-\mu )-\mu  (3 \lambda +\mu ))+\lambda  e^{2 t (\lambda -\mu )} (2 \mu +\lambda  t (\mu -\lambda ))}{\lambda  (\lambda -\mu ) \left(e^{t (\lambda -\mu )}-1\right) \left(\lambda  e^{t (\lambda -\mu )}-\mu \right)}
+\end{equation}
+
+\begin{equation}
+    \frac{dlP_n}{d\mu} = \frac{\lambda ^2 t e^{t (\lambda -\mu )} \left(e^{t (\lambda -\mu )}-n\right)-\lambda  \left(-(2 \mu  n t+n+3) e^{t (\lambda -\mu )}+n+(\mu  t+2) e^{2 t (\lambda -\mu )}+\mu  t+1\right)-\mu  \left((\mu  n t+n-1) e^{t (\lambda -\mu )}-n-\mu  t+1\right)}{(\lambda -\mu ) \left(e^{t (\lambda -\mu )}-1\right) \left(\lambda  e^{t (\lambda -\mu )}-\mu \right)}
+\end{equation}
+
+Derivation of the derivative of the ages
+
+\begin{equation}
+    \frac{dlP(age)}{d\lambda} = \frac{(\lambda  t-1) e^{\mu  t+T (\lambda -\mu )}-(\lambda  t+\lambda  T-1) e^{\mu  t+2 T (\lambda -\mu )}-\mu  T e^{\lambda  t}+2 \mu  T e^{\lambda  t+T (\lambda -\mu )}}{\left(e^{T (\lambda -\mu )}-1\right) \left(\lambda  e^{\mu  t+T (\lambda -\mu )}-\mu  e^{\lambda  t}\right)}
+\end{equation}
+
+\begin{equation}
+    \frac{dlP(age)}{d\mu} = \frac{\lambda  T e^{\mu  t+2 T (\lambda -\mu )}+e^{\lambda  t} (\mu  (-t)+\mu  T+1)+(\mu  t-2 \mu  T-1) e^{\lambda  t+T (\lambda -\mu )}}{\left(e^{T (\lambda -\mu )}-1\right) \left(\lambda  e^{\mu  t+T (\lambda -\mu )}-\mu  e^{\lambda  t}\right)}
+\end{equation}
+
+```{python}
+# | eval: true
+# | label: fit-models
+
+fitted_models = []
+for sim in simulated_processes:
+    sim = sim[sim["age"].notnull()]
+    if len(sim) > 0:
+        ages = sim["age"].values
+        observation_time = time_span
+        # If you want to use counts, you could add: counts = sim.get("count", None)
+        model = fit_birth_death_process(
+            ages=ages,
+            observation_time=observation_time,
+            counts=None,  # or provide counts if available
+            method="L-BFGS-B",
+            initial_params=None,
+        )
+        fitted_models.append(model)
+    else:
+        fitted_models.append(None)
+```
+
+```{python}
+# | label: summary-statistics
+
+# Collect birth and death rates from fitted models
+birth_rates = [m["birth_rate"] for m in fitted_models if m is not None]
+death_rates = [m["death_rate"] for m in fitted_models if m is not None]
+
+summary_stats = {
+    "Parameter": ["Birth Rate", "Death Rate"],
+    "Mean": [np.mean(birth_rates), np.mean(death_rates)],
+    "Median": [np.median(birth_rates), np.median(death_rates)],
+    "Std": [np.std(birth_rates), np.std(death_rates)],
+    "Min": [np.min(birth_rates), np.min(death_rates)],
+    "Max": [np.max(birth_rates), np.max(death_rates)],
+    "25%": [np.percentile(birth_rates, 25), np.percentile(death_rates, 25)],
+    "75%": [np.percentile(birth_rates, 75), np.percentile(death_rates, 75)],
+}
+
+stats_df = pd.DataFrame(summary_stats)
+print(stats_df)
+```
+
+```{python}
+# | label: plot-bd-inference
+
+if len(birth_rates) > 1:
+    birth_kde = gaussian_kde(birth_rates)
+    x_birth = np.linspace(
+        min(birth_rates), min([max(birth_rates), 10 * birth_rate]), 100
+    )
+    fig_birth = go.Figure()
+    fig_birth.add_trace(
+        go.Scatter(
+            x=x_birth, y=birth_kde(x_birth), mode="lines", name="Birth Rate Density"
+        )
+    )
+    # Add vertical line for true birth_rate
+    fig_birth.add_trace(
+        go.Scatter(
+            x=[birth_rate, birth_rate],
+            y=[0, max(birth_kde(x_birth))],
+            mode="lines",
+            name="True Birth Rate",
+            line=dict(color="red", dash="dash"),
+        )
+    )
+    fig_birth.update_layout(
+        title="Density of Fitted Birth Rates",
+        xaxis_title="Birth Rate",
+        yaxis_title="Density",
+    )
+    fig_birth.show()
+else:
+    print("Not enough fitted models to plot birth rate density.")
+
+if len(death_rates) > 1:
+    death_kde = gaussian_kde(death_rates)
+    x_death = np.linspace(
+        min(death_rates), min([max(death_rates), 10 * death_rate]), 100
+    )
+    fig_death = go.Figure()
+    fig_death.add_trace(
+        go.Scatter(
+            x=x_death, y=death_kde(x_death), mode="lines", name="Death Rate Density"
+        )
+    )
+    # Add vertical line for true death_rate
+    fig_death.add_trace(
+        go.Scatter(
+            x=[death_rate, death_rate],
+            y=[0, max(death_kde(x_death))],
+            mode="lines",
+            name="True Death Rate",
+            line=dict(color="red", dash="dash"),
+        )
+    )
+    fig_death.update_layout(
+        title="Density of Fitted Death Rates",
+        xaxis_title="Death Rate",
+        yaxis_title="Density",
+    )
+    fig_death.show()
+else:
+    print("Not enough fitted models to plot death rate density.")
+```
+
+```{python}
+# | label: joint-density-plot
+
+if len(birth_rates) > 1 and len(death_rates) > 1:
+    xy = np.vstack([birth_rates, death_rates])
+    kde = gaussian_kde(xy)
+    x_grid = np.linspace(min(birth_rates), 10 * birth_rate, 100)
+    y_grid = np.linspace(min(death_rates), 10 * death_rate, 100)
+    X, Y = np.meshgrid(x_grid, y_grid)
+    positions = np.vstack([X.ravel(), Y.ravel()])
+    Z = kde(positions).reshape(X.shape)
+
+    fig_joint = go.Figure(
+        data=go.Contour(
+            x=x_grid,
+            y=y_grid,
+            z=Z,
+            colorscale="Viridis",
+            contours=dict(showlabels=True),
+            colorbar=dict(title="Density"),
+        )
+    )
+    fig_joint.add_trace(
+        go.Scatter(
+            x=[birth_rate],
+            y=[death_rate],
+            mode="markers",
+            marker=dict(color="red", size=12, symbol="diamond"),
+            name="True Value",
+        )
+    )
+    fig_joint.update_layout(
+        title="2D Density of Fitted Birth and Death Rates",
+        xaxis_title="Birth Rate",
+        yaxis_title="Death Rate",
+        showlegend=True,
+    )
+    fig_joint.show()
+else:
+    print("Not enough fitted models for joint density plot.")
+```
+
+```{python}
+# | label: box-plots
+import plotly.graph_objs as go
+
+# Prepare data for box plot
+box_data = [
+    birth_rates,
+    death_rates,
+]
+
+labels = ["Fitted Birth Rates", "Fitted Death Rates"]
+true_values = [birth_rate, death_rate]
+means = [np.mean(birth_rates), np.mean(death_rates)]
+medians = [np.median(birth_rates), np.median(death_rates)]
+
+fig_box = go.Figure()
+
+for i, data in enumerate(box_data):
+    fig_box.add_trace(
+        go.Box(
+            y=data,
+            name=labels[i],
+            boxmean=True,
+            boxpoints="outliers",
+            marker_color="lightblue",
+        )
+    )
+    # Add true value
+    fig_box.add_trace(
+        go.Scatter(
+            x=[labels[i]],
+            y=[true_values[i]],
+            mode="markers",
+            marker=dict(color="red", size=12, symbol="diamond"),
+            name=f"True {labels[i].split()[1]}",
+            showlegend=(i == 0),
+        )
+    )
+    # Add sample mean
+    fig_box.add_trace(
+        go.Scatter(
+            x=[labels[i]],
+            y=[means[i]],
+            mode="markers",
+            marker=dict(color="green", size=10, symbol="circle"),
+            name=f"Mean {labels[i].split()[1]}",
+            showlegend=(i == 0),
+        )
+    )
+    # Add sample median
+    fig_box.add_trace(
+        go.Scatter(
+            x=[labels[i]],
+            y=[medians[i]],
+            mode="markers",
+            marker=dict(color="orange", size=10, symbol="square"),
+            name=f"Median {labels[i].split()[1]}",
+            showlegend=(i == 0),
+        )
+    )
+
+fig_box.update_layout(
+    title="Box Plot of Fitted Birth and Death Rates with True, Mean, and Median Values",
+    yaxis_title="Rate",
+    xaxis_title="Parameter",
+    showlegend=True,
+)
+fig_box.show()
+```

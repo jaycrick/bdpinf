@@ -8,7 +8,12 @@ and test realistic end-to-end workflows.
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.inference import BirthDeathProcess
+from inf_bp_texts.inference.fitting import fit_birth_death_process, fit_from_dataframe
+from inf_bp_texts.inference.likelihood import log_likelihood
+from inf_bp_texts.models.mathematical_functions import (
+    calculate_log_population_probability,
+)
+from inf_bp_texts.simulation import simulate_birth_death_process
 
 
 class TestIntegration:
@@ -19,35 +24,24 @@ class TestIntegration:
         # Step 1: Create a process with known parameters for simulation
         true_birth_rate = 0.05
         true_death_rate = 0.01
-        true_process = BirthDeathProcess(
-            [], 200.0, birth_rate=true_birth_rate, death_rate=true_death_rate
+        # Step 1: Simulate data using modular function
+        simulated_df = simulate_birth_death_process(
+            birth_rate=true_birth_rate,
+            death_rate=true_death_rate,
+            max_time=200.0,
+            random_seed=42,
         )
 
-        # Step 2: Simulate data
-        simulated_df = true_process.simulate(max_time=200.0, random_seed=42)
-
-        # Step 3: Create new process and fit to simulated data
-        fit_process = BirthDeathProcess([], 200.0)  # Empty initial data for fitting
-
-        # Convert simulation to fitting format if needed
         if len(simulated_df) > 0:
             surviving_data = simulated_df[simulated_df["survived"]]
             if len(surviving_data) > 0:
                 fit_df = pd.DataFrame({"age": surviving_data["age"].values})
-
-                result = fit_process.fit(fit_df)
-
+                result = fit_from_dataframe(fit_df, observation_time=200.0)
                 if result["success"]:
-                    # Fitted parameters should be reasonably close to true parameters
-                    # (allowing for sampling variation)
                     fitted_birth = result["birth_rate"]
                     fitted_death = result["death_rate"]
-
-                    # Check that parameters are in reasonable range
                     assert fitted_birth > 0
                     assert fitted_death >= 0
-
-                    # Parameters should be positive and finite
                     assert np.isfinite(fitted_birth)
                     assert np.isfinite(fitted_death)
 
@@ -66,38 +60,34 @@ class TestIntegration:
             700.0,
             800.0,
         ]
-        process = BirthDeathProcess(
-            creation_times, 1000.0, birth_rate=0.02, death_rate=0.005
-        )
-
-        # Test adding more manuscripts
-        process.add_manuscript(850.0)
-        process.add_manuscript(900.0)
-
-        # Verify state
-        assert len(process.creation_times) == 12  # 10 + 2 added
-        ages = process.get_manuscript_ages()
+        # Use modular functions for lifecycle workflow
+        creation_times_extended = creation_times + [850.0, 900.0]
+        assert len(creation_times_extended) == 12
+        ages = [1000.0 - ct for ct in creation_times_extended]
         assert len(ages) == 12
         assert all(age > 0 for age in ages)
-
-        # Get summary
-        summary = process.get_process_summary()
+        summary = {
+            "n_manuscripts": len(creation_times_extended),
+            "min_age": min(ages),
+            "max_age": max(ages),
+        }
         assert summary["n_manuscripts"] == 12
-        assert summary["min_age"] == 100  # 1000 - 900 (newest manuscript)
-        assert summary["max_age"] == 900  # 1000 - 100 (oldest manuscript)
-
-        # Fit parameters (should work even when model is already initialized with parameters)
-        result = process.fit_from_self_data()
-        # Note: fit may or may not succeed depending on optimization convergence
-        # The main point is that it doesn't crash
+        assert summary["min_age"] == 100
+        assert summary["max_age"] == 900
+        fit_df = pd.DataFrame({"age": ages})
+        result = fit_from_dataframe(fit_df, observation_time=1000.0)
         assert isinstance(result, dict)
         assert "success" in result
-
-        # Predict manuscript counts
         test_ages = np.array([100, 200, 300, 400, 500])
-        predictions = process.predict(test_ages)
+        predictions = [
+            calculate_log_population_probability(
+                result["birth_rate"], result["death_rate"], age, 1000.0
+            )
+            for age in test_ages
+        ]
         assert len(predictions) == 5
-        assert all(pred > 0 for pred in predictions)
+        assert all(np.isfinite(pred) for pred in predictions)
+        assert all(pred <= 0 for pred in predictions)
 
     def test_external_data_processing_workflow(self):
         """Test workflow for processing external manuscript data."""
@@ -127,18 +117,16 @@ class TestIntegration:
         assert len(prepared_df) == 10
 
         # Fit model
-        process = BirthDeathProcess(
-            [], 2000.0
-        )  # Empty creation_times, will use external data
-        result = process.fit(prepared_df)
 
+        result = fit_from_dataframe(prepared_df, observation_time=2000.0)
         assert result["success"]
-        assert process.fitted
-
-        # Use fitted model for predictions
         age_range = np.linspace(100, 1000, 10)
-        predictions = process.predict(age_range)
-
+        predictions = [
+            calculate_log_population_probability(
+                result["birth_rate"], result["death_rate"], age, 2000.0
+            )
+            for age in age_range
+        ]
         assert len(predictions) == 10
         assert all(np.isfinite(pred) for pred in predictions)
 
@@ -154,16 +142,15 @@ class TestIntegration:
         # Create models with more reasonable initial parameters
         max_age = float(ages.max())
         final_time = max_age + 50.0  # Smaller buffer
-        models = [
-            BirthDeathProcess([], final_time, birth_rate=0.01, death_rate=0.005),
-            BirthDeathProcess([], final_time, birth_rate=0.02, death_rate=0.001),
-        ]
+        from inf_bp_texts.inference.fitting import fit_from_dataframe
 
-        # Fit each model and collect results manually
+        initial_params_list = [(0.01, 0.005), (0.02, 0.001)]
         results = []
-        for i, model in enumerate(models):
+        for i, initial_params in enumerate(initial_params_list):
             try:
-                fit_result = model.fit(df)
+                fit_result = fit_from_dataframe(
+                    df, observation_time=final_time, initial_params=initial_params
+                )
                 results.append(
                     {
                         "model_id": i,
@@ -197,32 +184,29 @@ class TestIntegration:
 
     def test_parameter_sensitivity_analysis(self):
         """Test how parameter changes affect results."""
-        base_process = BirthDeathProcess(
-            birth_rate=0.02,
-            death_rate=0.005,
-            creation_times=[100.0, 200.0, 300.0, 400.0, 500.0],
-            final_time=1000.0,
+        creation_times = [100.0, 200.0, 300.0, 400.0, 500.0]
+        final_time = 1000.0
+        ages = np.array([final_time - ct for ct in creation_times], dtype=np.float64)
+        base_ll = log_likelihood(
+            birth_rate=0.02, death_rate=0.005, ages=ages, observation_time=final_time
         )
-
-        base_ll = base_process.log_likelihood()
-
-        # Test birth rate sensitivity
-        higher_birth_ll = base_process.log_likelihood(birth_rate=0.04, death_rate=0.005)
-        lower_birth_ll = base_process.log_likelihood(birth_rate=0.01, death_rate=0.005)
-
-        # All should be finite
+        higher_birth_ll = log_likelihood(
+            birth_rate=0.04, death_rate=0.005, ages=ages, observation_time=final_time
+        )
+        lower_birth_ll = log_likelihood(
+            birth_rate=0.01, death_rate=0.005, ages=ages, observation_time=final_time
+        )
         assert np.isfinite(base_ll)
         assert np.isfinite(higher_birth_ll)
         assert np.isfinite(lower_birth_ll)
-
-        # Test death rate sensitivity
-        higher_death_ll = base_process.log_likelihood(birth_rate=0.02, death_rate=0.01)
-        lower_death_ll = base_process.log_likelihood(birth_rate=0.02, death_rate=0.002)
-
+        higher_death_ll = log_likelihood(
+            birth_rate=0.02, death_rate=0.01, ages=ages, observation_time=final_time
+        )
+        lower_death_ll = log_likelihood(
+            birth_rate=0.02, death_rate=0.002, ages=ages, observation_time=final_time
+        )
         assert np.isfinite(higher_death_ll)
         assert np.isfinite(lower_death_ll)
-
-        # Collect all likelihood values
         likelihoods = [
             base_ll,
             higher_birth_ll,
@@ -230,124 +214,116 @@ class TestIntegration:
             higher_death_ll,
             lower_death_ll,
         ]
-
-        # All should be different (showing sensitivity)
         unique_values = len(set(likelihoods))
         assert unique_values == 5  # All different
 
     def test_data_quality_robustness(self):
         """Test robustness to different data quality scenarios."""
         # Scenario 1: Very few data points
-        sparse_process = BirthDeathProcess(
-            creation_times=[500.0, 600.0], final_time=1000.0
-        )
-
-        sparse_result = sparse_process.fit_from_self_data()
-        # Should handle sparse data gracefully
+        sparse_ages = np.array([1000.0 - t for t in [500.0, 600.0]], dtype=np.float64)
+        sparse_result = fit_birth_death_process(sparse_ages, observation_time=1000.0)
         assert isinstance(sparse_result, dict)
         assert "success" in sparse_result
 
         # Scenario 2: Many data points
-        dense_times = list(range(100, 900, 50))  # Many manuscripts
-        dense_process = BirthDeathProcess(
-            creation_times=[float(t) for t in dense_times], final_time=1000.0
+        dense_times = list(range(100, 900, 50))
+        dense_ages = np.array(
+            [1000.0 - float(t) for t in dense_times], dtype=np.float64
         )
-
-        dense_result = dense_process.fit_from_self_data()
+        dense_result = fit_birth_death_process(dense_ages, observation_time=1000.0)
         assert isinstance(dense_result, dict)
         assert "success" in dense_result
 
         # Scenario 3: Irregular spacing
         irregular_times = [10.0, 50.0, 51.0, 52.0, 200.0, 800.0, 900.0, 950.0]
-        irregular_process = BirthDeathProcess(
-            creation_times=irregular_times, final_time=1000.0
+        irregular_ages = np.array(
+            [1000.0 - t for t in irregular_times], dtype=np.float64
         )
-
-        irregular_result = irregular_process.fit_from_self_data()
+        irregular_result = fit_birth_death_process(
+            irregular_ages, observation_time=1000.0
+        )
         assert isinstance(irregular_result, dict)
         assert "success" in irregular_result
 
     def test_numerical_edge_cases(self):
         """Test numerical edge cases that might cause problems."""
         # Very small parameters
-        small_param_process = BirthDeathProcess(
+        final_time_small = 1000.0
+        creation_times_small = [100.0, 200.0, 300.0]
+        ages_small = np.array(
+            [final_time_small - ct for ct in creation_times_small], dtype=np.float64
+        )
+        small_ll = log_likelihood(
             birth_rate=1e-6,
             death_rate=1e-7,
-            creation_times=[100.0, 200.0, 300.0],
-            final_time=1000.0,
+            ages=ages_small,
+            observation_time=final_time_small,
         )
-
-        small_ll = small_param_process.log_likelihood()
         assert np.isfinite(small_ll) or small_ll == -np.inf
 
-        # Parameters very close to each other (critical case)
-        critical_process = BirthDeathProcess(
-            creation_times=[100.0, 200.0, 300.0], final_time=1000.0
+        creation_times_critical = [100.0, 200.0, 300.0]
+        final_time_critical = 1000.0
+        ages_critical = np.array(
+            [final_time_critical - ct for ct in creation_times_critical],
+            dtype=np.float64,
         )
-
         birth_rate = 0.01
-        death_rate = 0.01 + 1e-12  # Very close
-
-        critical_ll = critical_process.log_likelihood(
-            birth_rate=birth_rate, death_rate=death_rate
+        death_rate = 0.01 + 1e-12
+        critical_ll = log_likelihood(
+            birth_rate=birth_rate,
+            death_rate=death_rate,
+            ages=ages_critical,
+            observation_time=final_time_critical,
         )
         assert np.isfinite(critical_ll) or critical_ll == -np.inf
 
-        # Very large ages
-        large_age_process = BirthDeathProcess(
+        creation_times_large = [1.0, 2.0, 3.0]
+        final_time_large = 50000.0
+        ages_large = np.array(
+            [final_time_large - ct for ct in creation_times_large], dtype=np.float64
+        )
+        large_ll = log_likelihood(
             birth_rate=0.001,
             death_rate=0.0001,
-            creation_times=[1.0, 2.0, 3.0],
-            final_time=50000.0,
+            ages=ages_large,
+            observation_time=final_time_large,
         )
-
-        large_ll = large_age_process.log_likelihood()
         assert np.isfinite(large_ll) or large_ll == -np.inf
 
     def test_state_consistency_throughout_workflow(self):
         """Test that object state remains consistent throughout operations."""
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.02, death_rate=0.005)
-
-        # Initial state
-        assert process.fitted  # Now fitted since parameters were provided
-        assert len(process.get_manuscript_ages()) == 0
-
-        # Add manuscripts
-        process.add_manuscript(100.0)
-        process.add_manuscript(200.0)
-        process.set_final_time(500.0)
-
-        # State after adding manuscripts
-        assert len(process.creation_times) == 2
-        ages = process.get_manuscript_ages()
+        creation_times = []
+        final_time = 1000.0
+        birth_rate = 0.02
+        death_rate = 0.005
+        ages = np.array([final_time - ct for ct in creation_times], dtype=np.float64)
+        assert len(ages) == 0
+        creation_times.extend([100.0, 200.0])
+        final_time = 500.0
+        ages = np.array([final_time - ct for ct in creation_times], dtype=np.float64)
+        assert len(creation_times) == 2
         assert len(ages) == 2
         np.testing.assert_array_equal(ages, [400.0, 300.0])
-
-        # Fit model
-        result = process.fit_from_self_data()
-
+        result = fit_birth_death_process(ages, observation_time=final_time)
         if result["success"]:
-            # State after fitting
-            assert process.fitted
-            assert process.fit_results is not None
-            assert process.fit_results == result
-
-            # Original data should be preserved
-            assert len(process.creation_times) == 2
-            ages = process.get_manuscript_ages()
+            assert result["success"]
+            assert len(creation_times) == 2
+            ages = np.array(
+                [final_time - ct for ct in creation_times], dtype=np.float64
+            )
             assert len(ages) == 2
             np.testing.assert_array_equal(ages, [400.0, 300.0])
-
-        # Simulate new data (should reset state)
-        process.simulate(max_time=300.0, random_seed=42)
-
-        # State after simulation
-        assert process.final_time == 300.0
-        ages = process.get_manuscript_ages()
-        assert len(ages) == len(process.creation_times)
-        if len(process.creation_times) > 0:
-            # All creation times should be <= final_time
-            assert process.final_time is not None
-            assert all(ct <= process.final_time for ct in process.creation_times)
-            # All ages should be >= 0
+        simulated_df = simulate_birth_death_process(
+            birth_rate, death_rate, max_time=300.0, random_seed=42
+        )
+        final_time = 300.0
+        creation_times = list(simulated_df["creation_time"].values)
+        ages = np.array([final_time - ct for ct in creation_times], dtype=np.float64)
+        assert final_time == 300.0
+        assert len(ages) == len(creation_times)
+        if len(creation_times) > 0:
+            assert final_time is not None
+            assert all(ct <= final_time for ct in creation_times)
+            assert all(age >= 0 for age in ages)
+            assert all(ct <= final_time for ct in creation_times)
             assert all(age >= 0 for age in ages)
