@@ -12,7 +12,9 @@ from numpy.typing import NDArray
 
 from ..models.mathematical_functions import (
     calculate_age_density,
+    calculate_age_density_derivatives,
     calculate_log_population_probability,
+    calculate_log_population_probability_derivatives,
 )
 
 
@@ -142,6 +144,82 @@ def log_likelihood(
         return np.float64(-np.inf)
 
 
+def log_likelihood_gradient(
+    log_params: NDArray[np.float64],
+    ages: NDArray[np.float64],
+    observation_time: float,
+    counts: Optional[NDArray[np.float64]] = None,
+) -> NDArray[np.float64]:
+    """
+    Calculate gradient of log-likelihood w.r.t. log-scale parameters.
+
+    Args:
+        log_params: Log-scale parameters [log(birth_rate), log(death_rate)]
+        ages: Array of manuscript ages
+        observation_time: Observation time T
+        counts: Array of manuscript counts for each age (defaults to 1 for each)
+
+    Returns:
+        Gradient array [dL/dlog(birth_rate), dL/dlog(death_rate)]
+    """
+    if len(log_params) != 2:
+        return np.array([0.0, 0.0], dtype=np.float64)
+
+    log_birth_rate, log_death_rate = log_params
+
+    # Input validation
+    if not (np.isfinite(log_birth_rate) and np.isfinite(log_death_rate)):
+        raise ValueError("log_params must be finite numbers")
+
+    # Check for negative ages
+    if np.any(ages < 0):
+        return np.array([0.0, 0.0], dtype=np.float64)
+
+    # Set default counts if not provided
+    if counts is None:
+        counts = np.ones_like(ages, dtype=np.float64)
+    elif len(counts) != len(ages):
+        raise ValueError("counts and ages must have the same length")
+
+    # Additional validation: observation_time should be positive
+    if observation_time <= 0:
+        raise ValueError("observation_time must be positive")
+
+    # Total number of observed manuscripts
+    n_total: int = int(np.sum(counts))
+
+    # Gradient components
+    grad_log_P_n_T = calculate_log_population_probability_derivatives(
+        log_birth_rate,
+        log_death_rate,
+        observation_time,
+        n_total,
+        log_scale_params=True,
+    )
+
+    if n_total == 0 or len(ages) == 0:
+        return grad_log_P_n_T
+
+    grad_log_densities = np.zeros(2, dtype=np.float64)
+
+    for i, age_t in enumerate(ages):
+        # Skip zero-count entries
+        if counts[i] == 0:
+            continue
+
+        # Calculate derivatives of log age density
+        grad_density = calculate_age_density_derivatives(
+            log_birth_rate,
+            log_death_rate,
+            age_t,
+            observation_time,
+            log_scale_params=True,
+        )
+        grad_log_densities += counts[i] * grad_density
+
+    return grad_log_P_n_T + grad_log_densities
+
+
 def negative_log_likelihood(
     log_params: NDArray[np.float64],
     ages: NDArray[np.float64],
@@ -168,16 +246,14 @@ def negative_log_likelihood(
 
     # Extract log-scale parameters and convert to original scale
     log_birth_rate, log_death_rate = log_params
-    birth_rate = float(np.exp(log_birth_rate))
-    death_rate = float(np.exp(log_death_rate))
 
     result = -log_likelihood(
-        birth_rate=birth_rate,
-        death_rate=death_rate,
+        birth_rate=log_birth_rate,
+        death_rate=log_death_rate,
         ages=ages,
         observation_time=observation_time,
         counts=counts,
-        log_scale_params=False,
+        log_scale_params=True,
     )
 
     return float(result)

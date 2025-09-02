@@ -38,10 +38,7 @@ import pandas as pd
 from numpy.typing import NDArray
 from scipy import optimize
 
-from .likelihood import (
-    log_likelihood,
-    negative_log_likelihood,
-)
+from .likelihood import log_likelihood, log_likelihood_gradient, negative_log_likelihood
 
 
 def get_crude_parameter_estimates(
@@ -130,16 +127,24 @@ def fit_birth_death_process(
         initial_params = (np.log(initial_params[0]), np.log(initial_params[1]))
 
     # Parameter bounds in log space: log(birth_rate), log(death_rate)
-    # birth_rate: 1e-6 to 10.0 -> log bounds: log(1e-6) to log(10.0)
-    # death_rate: 1e-8 to 1.0 -> log bounds: log(1e-8) to log(1.0)
+    # birth_rate: 1e-8 to 100.0 -> log bounds: log(1e-8) to log(100.0)
+    # death_rate: 1e-8 to 100.0 -> log bounds: log(1e-8) to log(100.0)
     bounds: List[Tuple[Optional[float], Optional[float]]] = [
-        (np.log(1e-6), np.log(10.0)),  # log(birth_rate) bounds
-        (np.log(1e-8), np.log(1.0)),  # log(death_rate) bounds
+        (np.log(1e-8), np.log(100.0)),  # log(birth_rate) bounds
+        (np.log(1e-8), np.log(100.0)),  # log(death_rate) bounds
     ]
 
     # Create objective function wrapper
     def objective_func(params: NDArray[np.float64]) -> float:
         return negative_log_likelihood(
+            log_params=params,
+            ages=ages_fit,
+            observation_time=observation_time,
+            counts=counts_fit,
+        )
+
+    def gradient_func(params: NDArray[np.float64]) -> NDArray[np.float64]:
+        return log_likelihood_gradient(
             log_params=params,
             ages=ages_fit,
             observation_time=observation_time,
@@ -159,6 +164,7 @@ def fit_birth_death_process(
             result: Any = optimize.minimize(
                 objective_func,
                 x0,
+                jac=gradient_func,
                 method=opt_method,  # type: ignore
                 bounds=bounds,
                 options={"maxiter": 1000, "ftol": 1e-9},

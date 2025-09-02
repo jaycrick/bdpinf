@@ -69,35 +69,44 @@ def simulate_birth_death_process(
     if birth_rate <= 0 or death_rate <= 0:
         raise ValueError("Birth rate and death rate must be positive")
 
-    if random_seed is not None:
-        np.random.seed(random_seed)
+    # Create random number generator
+    rng = np.random.default_rng(random_seed)
 
     # Initialize tracking variables
-    creation_times: List[float] = []
     current_time = 0.0
-    manuscripts_alive: List[Tuple[float, int]] = []  # (creation_time, manuscript_id)
-    all_manuscripts: List[Dict[str, Any]] = []  # Record of all manuscripts
+    manuscripts_alive: List[Tuple[float, int]] = [
+        (0.0, 0)
+    ]  # (creation_time, manuscript_id)
+    all_manuscripts: List[Dict[str, Any]] = [
+        {
+            "manuscript_id": 0,
+            "creation_time": 0.0,
+            "death_time": None,
+            "survived": True,
+        }
+    ]  # Record of all manuscripts
     manuscript_id = 0
+    birth_death_rate = birth_rate + death_rate
 
     while current_time < max_time:
         # Current population size
         n_alive = len(manuscripts_alive)
 
         # Total rate = birth_rate + death_rate * n_alive
-        total_rate = birth_rate + death_rate * n_alive
+        total_rate = birth_death_rate * n_alive
 
         if total_rate <= 0:
             break
 
         # Time to next event
-        dt = np.random.exponential(1.0 / total_rate)
+        dt = rng.exponential(1.0 / total_rate)
         current_time += dt
 
         if current_time >= max_time:
             break
 
         # Determine if event is birth or death
-        if np.random.random() < birth_rate / total_rate:
+        if rng.random() < birth_rate / birth_death_rate:
             # Birth event
             manuscripts_alive.append((current_time, manuscript_id))
             all_manuscripts.append(
@@ -108,19 +117,13 @@ def simulate_birth_death_process(
                     "survived": True,
                 }
             )
-            creation_times.append(current_time)
             manuscript_id += 1
         else:
             # Death event (if any manuscripts alive)
             if manuscripts_alive:
                 # Choose a random manuscript to die
-                death_idx = np.random.randint(len(manuscripts_alive))
+                death_idx = rng.integers(len(manuscripts_alive))
                 creation_time, dead_id = manuscripts_alive.pop(death_idx)
-
-                # Remove the creation time from creation_times
-                # since this manuscript no longer survives
-                if creation_time in creation_times:
-                    creation_times.remove(creation_time)
 
                 # Update the record
                 for manuscript in all_manuscripts:
@@ -159,6 +162,7 @@ def simulate_birth_death_process(
                         "death_time": death_time,
                         "lifespan": lifespan,
                         "survived": False,
+                        "age": None,
                     }
                 )
 
@@ -223,8 +227,8 @@ def generate_synthetic_dataset(
     Returns:
         DataFrame with synthetic manuscript data
     """
-    if random_seed is not None:
-        np.random.seed(random_seed)
+    # Create random number generator
+    rng = np.random.default_rng(random_seed)
 
     start_year, end_year = observation_years
 
@@ -244,7 +248,7 @@ def generate_synthetic_dataset(
 
     # Add Poisson noise to simulate realistic observation uncertainty
     if noise_level > 0:
-        noisy_counts = np.random.poisson(true_counts * (1 + noise_level))
+        noisy_counts = rng.poisson(true_counts * (1 + noise_level))
         # Ensure we have at least some manuscripts
         noisy_counts = np.maximum(noisy_counts, 1)
     else:
@@ -278,8 +282,8 @@ def simulate_multiple_scenarios(
     Returns:
         Dictionary mapping scenario names to simulation results
     """
-    if random_seed is not None:
-        np.random.seed(random_seed)
+    # Create random number generator
+    rng = np.random.default_rng(random_seed)
 
     results = {}
 
@@ -289,7 +293,10 @@ def simulate_multiple_scenarios(
 
         for sim_idx in range(n_simulations):
             # Use different seed for each simulation if provided
-            sim_seed = random_seed + sim_idx if random_seed is not None else None
+            sim_seed = None
+            if random_seed is not None:
+                # Generate a sequence of seeds from the main generator
+                sim_seed = int(rng.integers(0, 2**31))
 
             sim_data = simulate_birth_death_process(
                 birth_rate=birth_rate,

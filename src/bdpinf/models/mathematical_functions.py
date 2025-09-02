@@ -57,19 +57,17 @@ def calculate_log_population_probability(
         if log_scale_params:
             log_lambda = lambda_param
             log_mu = mu_param
-            # Convert log parameters back to original scale
             lambda_val = np.exp(lambda_param)
             mu_val = np.exp(mu_param)
         else:
             # Validate positive parameters
             if lambda_param <= 0 or mu_param <= 0:
                 return np.float64(-np.inf)
-            lambda_val = lambda_param
-            mu_val = mu_param
             log_lambda = np.log(lambda_param)
             log_mu = np.log(mu_param)
+            lambda_val = lambda_param
+            mu_val = mu_param
 
-        # Check for numerical stability in log space
         if abs(log_lambda - log_mu) < 1e-12:
             # Limiting case: λ ≈ μ
             rate_time_product = lambda_val * time
@@ -80,14 +78,9 @@ def calculate_log_population_probability(
             # General case: λ ≠ μ
             lambda_minus_mu = lambda_val - mu_val
             exponent = lambda_minus_mu * time
-
             exp_term = np.exp(exponent)
-
-            # Check for numerical issues
             if not np.isfinite(exp_term):
                 return np.float64(-np.inf)
-
-            # Calculate α_t = μ(e^((λ-μ)T) - 1) / (λe^((λ-μ)T) - μ)
             denominator = lambda_val * exp_term - mu_val
             alpha_t = mu_val * (exp_term - 1) / denominator
 
@@ -122,6 +115,104 @@ def calculate_log_population_probability(
 
     except (ValueError, FloatingPointError, OverflowError, ZeroDivisionError):
         return np.float64(-np.inf)
+
+
+def calculate_log_population_probability_derivatives(
+    lambda_param: float,
+    mu_param: float,
+    time: float,
+    n: int,
+    log_scale_params: bool = False,
+) -> NDArray[np.float64]:
+    """
+    Calculate derivatives of log age density f(t) w.r.t. λ and μ.
+
+    Args:
+        lambda_param: Birth rate (λ) > 0
+        mu_param: Death rate (μ) > 0
+        age_t: Age of the manuscript
+        T: Total observation time >= age_t
+        log_scale_params: If True, parameters are in log scale
+
+    Returns:
+        Tuple of derivatives (df/dλ, df/dμ)
+    """
+
+    # Handle parameter scaling
+    if log_scale_params:
+        log_lambda = lambda_param
+        log_mu = mu_param
+        # Convert log parameters back to original scale
+        lambda_val = np.exp(lambda_param)
+        mu_val = np.exp(mu_param)
+    else:
+        lambda_val = lambda_param
+        mu_val = mu_param
+        log_lambda = np.log(lambda_param)
+        log_mu = np.log(mu_param)
+
+    if abs(log_lambda - log_mu) < 1e-12:
+        # Limiting case: λ ≈ μ
+
+        numerator = n - 1 - 2 * time * lambda_val
+        denominator = lambda_val * (1 + time * lambda_val)
+        df_dlambda = numerator / denominator
+        return np.array([df_dlambda, df_dlambda], dtype=np.float64)
+
+    # General case: λ ≠ μ
+    lambda_numerator_1 = mu_val * (
+        mu_val
+        - mu_val * n
+        + lambda_val * (n - mu_val * time + 1)
+        + lambda_val**2 * time
+    )
+    lambda_numerator_2 = np.exp(time * (lambda_val - mu_val)) * (
+        n * (lambda_val - mu_val) * (lambda_val * time * (lambda_val - mu_val) - mu_val)
+        - mu_val * (3 * lambda_val + mu_val)
+    )
+    lambda_numerator_3 = (
+        lambda_val
+        * np.exp(2 * time * (lambda_val - mu_val))
+        * (2 * mu_val + lambda_val * time * (mu_val - lambda_val))
+    )
+    lambda_numerator = lambda_numerator_1 + lambda_numerator_2 + lambda_numerator_3
+    lambda_denominator = (
+        lambda_val
+        * (lambda_val - mu_val)
+        * (np.exp(time * (lambda_val - mu_val)) - 1)
+        * (lambda_val * np.exp(time * (lambda_val - mu_val)) - mu_val)
+    )
+
+    mu_numerator_1 = (
+        lambda_val**2
+        * time
+        * np.exp(time * (lambda_val - mu_val))
+        * (np.exp(time * (lambda_val - mu_val)) - n)
+    )
+    mu_numerator_2 = -lambda_val * (
+        -(2 * mu_val * n * time + n + 3) * np.exp(time * (lambda_val - mu_val))
+        + n
+        + (mu_val * time + 2) * np.exp(2 * time * (lambda_val - mu_val))
+        + mu_val * time
+        + 1
+    )
+    mu_numerator_3 = -mu_val * (
+        (mu_val * n * time + n - 1) * np.exp(time * (lambda_val - mu_val))
+        - n
+        - mu_val * time
+        + 1
+    )
+    mu_numerator = mu_numerator_1 + mu_numerator_2 + mu_numerator_3
+    mu_denominator = (
+        (lambda_val - mu_val)
+        * (np.exp(time * (lambda_val - mu_val)) - 1)
+        * (lambda_val * np.exp(time * (lambda_val - mu_val)) - mu_val)
+    )
+
+    df_dlambda = lambda_numerator / lambda_denominator
+    df_dmu = mu_numerator / mu_denominator
+
+    return np.array([df_dlambda, df_dmu], dtype=np.float64)
 
 
 def calculate_age_density(
@@ -223,6 +314,86 @@ def calculate_age_density(
 
     except (ValueError, FloatingPointError, OverflowError, ZeroDivisionError):
         return np.float64(-np.inf)
+
+
+def calculate_age_density_derivatives(
+    lambda_param: float,
+    mu_param: float,
+    age_t: float,
+    T: float,
+    log_scale_params: bool = False,
+) -> NDArray[np.float64]:
+    """
+    Calculate derivatives of log age density f(t) w.r.t. λ and μ.
+
+    Args:
+        lambda_param: Birth rate (λ) > 0
+        mu_param: Death rate (μ) > 0
+        age_t: Age of the manuscript
+        T: Total observation time >= age_t
+        log_scale_params: If True, parameters are in log scale
+
+    Returns:
+        Tuple of derivatives (df/dλ, df/dμ)
+    """
+
+    # Handle parameter scaling
+    if log_scale_params:
+        log_lambda = lambda_param
+        log_mu = mu_param
+        # Convert log parameters back to original scale
+        lambda_val = np.exp(lambda_param)
+        mu_val = np.exp(mu_param)
+    else:
+        lambda_val = lambda_param
+        mu_val = mu_param
+        log_lambda = np.log(lambda_param)
+        log_mu = np.log(mu_param)
+
+    # Check for numerical stability in parameter space
+    if abs(log_lambda - log_mu) < 1e-12:
+        # Limiting case: λ ≈ μ
+        numerator = T + age_t**2 * lambda_val - age_t * (2 + lambda_val * T)
+        denominator = 1 - age_t * lambda_val + lambda_val * T
+        df_dlambda = numerator / denominator
+        return np.array([df_dlambda, df_dlambda], dtype=np.float64)
+
+    else:
+        # General case: λ ≠ μ
+        lambda_numerator_1 = (lambda_val * age_t - 1) * np.exp(
+            mu_param * age_t + T * (lambda_val - mu_val)
+        )
+        lambda_numerator_2 = -(lambda_val * age_t + lambda_val * T - 1) * np.exp(
+            mu_param * age_t + 2 * T * (lambda_val - mu_val)
+        )
+        lambda_numerator_3 = -mu_val * T * np.exp(lambda_val * age_t)
+        lambda_numerator_4 = (
+            2 * mu_val * T * np.exp(lambda_param * age_t + T * (lambda_val - mu_val))
+        )
+        lambda_numerator = (
+            lambda_numerator_1
+            + lambda_numerator_2
+            + lambda_numerator_3
+            + lambda_numerator_4
+        )
+        lambda_denominator = (np.exp(T * (lambda_val - mu_val)) - 1) * (
+            lambda_val * np.exp(mu_val * age_t + T * (lambda_val - mu_val))
+            - mu_val * np.exp(lambda_val * age_t)
+        )
+        mu_numerator_1 = (
+            lambda_val * T * np.exp(mu_param * age_t + 2 * T * (lambda_val - mu_val))
+        )
+        mu_numerator_2 = np.exp(lambda_val * age_t) * (-mu_val * age_t + mu_val * T + 1)
+        mu_numerator_3 = (mu_val * age_t - 2 * mu_val * T - 1) * np.exp(
+            lambda_param * age_t + T * (lambda_val - mu_val)
+        )
+        mu_numerator = mu_numerator_1 + mu_numerator_2 + mu_numerator_3
+        mu_denominator = lambda_denominator
+
+    df_dlambda = lambda_numerator / lambda_denominator
+    df_dmu = mu_numerator / mu_denominator
+
+    return np.array([df_dlambda, df_dmu], dtype=np.float64)
 
 
 def predict_manuscript_survival(
