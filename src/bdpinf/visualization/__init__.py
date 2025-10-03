@@ -10,6 +10,7 @@ from .plotting import (
     plot_fit_results,
     plot_parameter_comparison,
     plot_simulation_results,
+    save_figure,
 )
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "plot_simulation_results",
     "plot_parameter_comparison",
     "plot_bootstrap_confidence_intervals",
+    "save_figure",
 ]

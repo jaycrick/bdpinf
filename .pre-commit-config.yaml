@@ -4,11 +4,13 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        exclude_types: [html]
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
+        exclude_types: [html]
       - id: debug-statements
 
   # Ruff linting
