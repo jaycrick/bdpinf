@@ -1,6 +1,5 @@
 ---
-title: "NTVMR Manuscript Analysis"
-subtitle: "Complete Data Quality Assessment and Biblical Manuscript Collection Analysis"
+title: "Validate Inference on Birth-and-Death Process with Ages"
 author: "JC"
 date: today
 format:
@@ -11,6 +10,7 @@ format:
     code-fold: true
     fig-width: 10
     fig-height: 6
+    embed-resources: true
 execute:
   warning: false
   message: false
@@ -20,6 +20,8 @@ execute:
 # | label: simulate-processes
 
 import pprint
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -28,13 +30,42 @@ from scipy.stats import gaussian_kde
 
 from inf_bp_texts.inference import fit_birth_death_process
 from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.visualization import save_figure
+
+# Configure professional font family for all plots
+FONT_FAMILY = "Times New Roman, Times, serif"
+FONT_SIZE = 12
+TITLE_FONT_SIZE = 14
+
+# Global font configuration for plotly
+font_config = dict(
+    family=FONT_FAMILY,
+    size=FONT_SIZE,
+    color="black"
+)
+
+title_font_config = dict(
+    family=FONT_FAMILY,
+    size=TITLE_FONT_SIZE,
+    color="black"
+)
+
+# Create directory for saving figures
+figures_dir = Path("figures")
+figures_dir.mkdir(exist_ok=True)
 
 # Parameters for simulation
-num_sims = 100
+num_sims = 1000
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500
 seed = 42
+
+print(f"🎲 Generate {num_sims} birth-death process simulations...")
+print(f"   Birth rate: {birth_rate}")
+print(f"   Death rate: {death_rate}")
+print(f"   Time span: {time_span} years")
+print("=" * 60)
 
 simulated_processes = []
 for i in range(num_sims):
@@ -46,23 +77,14 @@ for i in range(num_sims):
     )
     simulated_processes.append(sim)
 
-print(simulated_processes[0].head())
-print(simulated_processes[1].head())
-print(simulated_processes[2].head())
-print(simulated_processes[3].head())
-print(simulated_processes[4].head())
-print(simulated_processes[0].shape)
-
-pprint.pp(simulated_processes[0]["age"].values[0:10])
-pprint.pp(simulated_processes[1]["age"].values[0:10])
-pprint.pp(simulated_processes[2]["age"].values[0:10])
-pprint.pp(simulated_processes[3]["age"].values[0:10])
-
-
-for sim in simulated_processes:
-    print(sim.head())
-    print(sim["age"].values)
-    break
+# Show some sample results
+print(f"\n📋 Sample simulation results:")
+for i in range(min(5, len(simulated_processes))):
+    sim = simulated_processes[i]
+    print(
+        f"   Simulation {i + 1}: {len(sim)} manuscripts, "
+        f"age range: {sim['age'].min():.0f}-{sim['age'].max():.0f} years"
+    )
 ```
 
 Derivative of the log-likehoods
@@ -89,34 +111,66 @@ Derivation of the derivative of the ages
 # | eval: true
 # | label: fit-models
 
+print(f"🔬 Fit birth-death models to {len(simulated_processes)} simulated processes...")
+print("=" * 60)
+
 fitted_models = []
-for sim in simulated_processes:
+successful_fits = 0
+failed_fits = 0
+
+for i, sim in enumerate(simulated_processes):
     sim = sim[sim["age"].notnull()]
     if len(sim) > 0:
-        ages = sim["age"].values
-        observation_time = time_span
-        # If you want to use counts, you could add: counts = sim.get("count", None)
-        model = fit_birth_death_process(
-            ages=ages,
-            observation_time=observation_time,
-            counts=None,  # or provide counts if available
-            method="L-BFGS-B",
-            initial_params=None,
-        )
-        fitted_models.append(model)
+        try:
+            ages = sim["age"].values
+            observation_time = time_span
+            # If you want to use counts, you could add: counts = sim.get("count", None)
+            model = fit_birth_death_process(
+                ages=ages,
+                observation_time=observation_time,
+                counts=None,  # or provide counts if available
+                method="L-BFGS-B",
+                initial_params=None,
+            )
+            fitted_models.append(model)
+            if model is not None and model.get("success", False):
+                successful_fits += 1
+            else:
+                failed_fits += 1
+        except Exception as e:
+            print(f"⚠️  Model {i + 1} failed: {str(e)[:50]}...")
+            fitted_models.append(None)
+            failed_fits += 1
     else:
         fitted_models.append(None)
+        failed_fits += 1
+
+print(f"   Total models: {len(simulated_processes)}")
+print(f"   Successful fits: {successful_fits}")
+print(f"   Failed fits: {failed_fits}")
+print(f"   Success rate: {(successful_fits / len(simulated_processes) * 100):.1f}%")
 ```
 
 ```{python}
 # | label: summary-statistics
 
+print("📊 Compute summary statistics...")
+
 # Collect birth and death rates from fitted models
-birth_rates = [m["birth_rate"] for m in fitted_models if m is not None]
-death_rates = [m["death_rate"] for m in fitted_models if m is not None]
+birth_rates = [
+    m["birth_rate"] for m in fitted_models if m is not None and m.get("success", False)
+]
+death_rates = [
+    m["death_rate"] for m in fitted_models if m is not None and m.get("success", False)
+]
+
+print(
+    f"   Successfully extracted {len(birth_rates)} birth rates and {len(death_rates)} death rates"
+)
 
 summary_stats = {
     "Parameter": ["Birth Rate", "Death Rate"],
+    "True Value": [birth_rate, death_rate],
     "Mean": [np.mean(birth_rates), np.mean(death_rates)],
     "Median": [np.median(birth_rates), np.median(death_rates)],
     "Std": [np.std(birth_rates), np.std(death_rates)],
@@ -127,11 +181,15 @@ summary_stats = {
 }
 
 stats_df = pd.DataFrame(summary_stats)
-print(stats_df)
+print("\n📈 Parameter Estimation Summary:")
+print("=" * 60)
+print(stats_df.to_string(index=False, float_format="%.6f"))
 ```
 
 ```{python}
 # | label: plot-bd-inference
+
+print("📈 Generate parameter estimation density plots...")
 
 if len(birth_rates) > 1:
     birth_kde = gaussian_kde(birth_rates)
@@ -158,10 +216,15 @@ if len(birth_rates) > 1:
         title="Density of Fitted Birth Rates",
         xaxis_title="Birth Rate",
         yaxis_title="Density",
+        font=font_config,
+        title_font=title_font_config
     )
     fig_birth.show()
+
+    # Save the figure
+    save_figure(fig_birth, "mv_birth_rate_density", width=550, height=300)
 else:
-    print("Not enough fitted models to plot birth rate density.")
+    print("   ⚠️  Not enough fitted models to plot birth rate density.")
 
 if len(death_rates) > 1:
     death_kde = gaussian_kde(death_rates)
@@ -188,14 +251,21 @@ if len(death_rates) > 1:
         title="Density of Fitted Death Rates",
         xaxis_title="Death Rate",
         yaxis_title="Density",
+        font=font_config,
+        title_font=title_font_config
     )
     fig_death.show()
+
+    # Save the figure
+    save_figure(fig_death, "mv_death_rate_density", width=550, height=300)
 else:
-    print("Not enough fitted models to plot death rate density.")
+    print("   ⚠️  Not enough fitted models to plot death rate density.")
 ```
 
 ```{python}
 # | label: joint-density-plot
+
+print("\n🎯 Create 2D joint density plot...")
 
 if len(birth_rates) > 1 and len(death_rates) > 1:
     xy = np.vstack([birth_rates, death_rates])
@@ -205,7 +275,6 @@ if len(birth_rates) > 1 and len(death_rates) > 1:
     X, Y = np.meshgrid(x_grid, y_grid)
     positions = np.vstack([X.ravel(), Y.ravel()])
     Z = kde(positions).reshape(X.shape)
-
     fig_joint = go.Figure(
         data=go.Contour(
             x=x_grid,
@@ -230,14 +299,20 @@ if len(birth_rates) > 1 and len(death_rates) > 1:
         xaxis_title="Birth Rate",
         yaxis_title="Death Rate",
         showlegend=True,
+        font=font_config,
+        title_font=title_font_config
     )
     fig_joint.show()
+
+    # Save the figure
+    save_figure(fig_joint, "mv_joint_density_rates", width=550, height=400)
 else:
-    print("Not enough fitted models for joint density plot.")
+    print("   ⚠️  Not enough fitted models for joint density plot.")
 ```
 
 ```{python}
 # | label: box-plots
+
 import plotly.graph_objs as go
 
 # Prepare data for box plot
@@ -302,6 +377,25 @@ fig_box.update_layout(
     yaxis_title="Rate",
     xaxis_title="Parameter",
     showlegend=True,
+    font=font_config,
+    title_font=title_font_config
 )
 fig_box.show()
+
+# Save the figure
+save_figure(fig_box, "mv_parameter_boxplots", width=550, height=350)
 ```
+
+*Analysis completed:*
+
+```{python}
+# | label: completion-timestamp
+
+from datetime import datetime
+
+print(f"📅 Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+```
+
+TODO
+
+Map out all the extensions.

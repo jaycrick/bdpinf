@@ -29,6 +29,7 @@ Examples:
     >>> fig.show()
 """
 
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -36,6 +37,47 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from ..models.birth_death_process import BirthDeathProcess
+
+
+def save_figure(
+    fig: Any,
+    filename: str,
+    width: int = 550,
+    height: int = 450,
+    output_dir: str = "figures",
+) -> Optional[Path]:
+    """
+    Save plotly figure as PDF with A4-friendly dimensions.
+
+    Args:
+        fig: Plotly figure object
+        filename: Output filename (without extension)
+        width: Figure width in pixels (default: 800)
+        height: Figure height in pixels (default: 600)
+        output_dir: Directory to save figures (default: "figures")
+
+    Returns:
+        Path to saved file if successful, None if failed
+    """
+    try:
+        # Create output directory if it doesn't exist
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+
+        # Update figure size for better A4 compatibility
+        fig.update_layout(
+            width=width,
+            height=height,
+            font=dict(size=11),  # Ensure readable font size
+            margin=dict(l=50, r=50, t=60, b=50),  # Consistent margins
+        )
+
+        file_path = output_path / f"{filename}.pdf"
+        fig.write_image(str(file_path))
+        return file_path
+    except Exception as e:
+        print(f"⚠️ Failed to save {filename}.pdf: {e}")
+        return None
 
 
 def plot_fit_results(

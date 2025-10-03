@@ -2,7 +2,7 @@ manuscripts/
 
 # Quarto
 *_files/
-*.html
+# *.html
 *.pdf
 .quarto/
 

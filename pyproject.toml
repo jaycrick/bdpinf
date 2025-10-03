@@ -6,6 +6,9 @@ authors = ["JC <jcacademicresearch@gmail.com>"]
 readme = "README.rst"
 packages = [{include = "inf_bp_texts", from = "src"}]
 
+[tool.poetry.scripts]
+inf-bp-texts = "inf_bp_texts.cli:main"
+
 [tool.poetry.dependencies]
 python = "^3.13"
 requests = "^2.32.4"
@@ -17,6 +20,7 @@ plotly = "^6.2.0"
 scipy = "^1.16.1"
 lxml = "^6.0.0"
 pydantic = "^2.11.7"
+kaleido = "^1.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
