@@ -38,17 +38,9 @@ FONT_SIZE = 12
 TITLE_FONT_SIZE = 14
 
 # Global font configuration for plotly
-font_config = dict(
-    family=FONT_FAMILY,
-    size=FONT_SIZE,
-    color="black"
-)
+font_config = dict(family=FONT_FAMILY, size=FONT_SIZE, color="black")
 
-title_font_config = dict(
-    family=FONT_FAMILY,
-    size=TITLE_FONT_SIZE,
-    color="black"
-)
+title_font_config = dict(family=FONT_FAMILY, size=TITLE_FONT_SIZE, color="black")
 
 # Create directory for saving figures
 figures_dir = Path("figures")
@@ -270,8 +262,8 @@ print("\n🎯 Create 2D joint density plot...")
 if len(birth_rates) > 1 and len(death_rates) > 1:
     xy = np.vstack([birth_rates, death_rates])
     kde = gaussian_kde(xy)
-    x_grid = np.linspace(min(birth_rates), 10 * birth_rate, 100)
-    y_grid = np.linspace(min(death_rates), 10 * death_rate, 100)
+    x_grid = np.linspace(min(birth_rates), 2 * birth_rate, 100)
+    y_grid = np.linspace(min(death_rates), 3 * death_rate, 100)
     X, Y = np.meshgrid(x_grid, y_grid)
     positions = np.vstack([X.ravel(), Y.ravel()])
     Z = kde(positions).reshape(X.shape)
@@ -290,7 +282,7 @@ if len(birth_rates) > 1 and len(death_rates) > 1:
             x=[birth_rate],
             y=[death_rate],
             mode="markers",
-            marker=dict(color="red", size=12, symbol="diamond"),
+            marker=dict(color="red", size=8, symbol="circle"),
             name="True Value",
         )
     )
@@ -300,7 +292,7 @@ if len(birth_rates) > 1 and len(death_rates) > 1:
         yaxis_title="Death Rate",
         showlegend=True,
         font=font_config,
-        title_font=title_font_config
+        title_font=title_font_config,
     )
     fig_joint.show()
 
@@ -321,7 +313,7 @@ box_data = [
     death_rates,
 ]
 
-labels = ["Fitted Birth Rates", "Fitted Death Rates"]
+labels = ["MLE Birth Rates", "MLE Death Rates"]
 true_values = [birth_rate, death_rate]
 means = [np.mean(birth_rates), np.mean(death_rates)]
 medians = [np.median(birth_rates), np.median(death_rates)]
@@ -344,8 +336,8 @@ for i, data in enumerate(box_data):
             x=[labels[i]],
             y=[true_values[i]],
             mode="markers",
-            marker=dict(color="red", size=12, symbol="diamond"),
-            name=f"True {labels[i].split()[1]}",
+            marker=dict(color="red", size=8, symbol="circle"),
+            name="True",
             showlegend=(i == 0),
         )
     )
@@ -356,7 +348,7 @@ for i, data in enumerate(box_data):
             y=[means[i]],
             mode="markers",
             marker=dict(color="green", size=10, symbol="circle"),
-            name=f"Mean {labels[i].split()[1]}",
+            name="Mean",
             showlegend=(i == 0),
         )
     )
@@ -367,18 +359,18 @@ for i, data in enumerate(box_data):
             y=[medians[i]],
             mode="markers",
             marker=dict(color="orange", size=10, symbol="square"),
-            name=f"Median {labels[i].split()[1]}",
+            name="Median",
             showlegend=(i == 0),
         )
     )
 
 fig_box.update_layout(
-    title="Box Plot of Fitted Birth and Death Rates with True, Mean, and Median Values",
+    title="Box Plot of Fitted Birth and Death Rates",
     yaxis_title="Rate",
     xaxis_title="Parameter",
     showlegend=True,
     font=font_config,
-    title_font=title_font_config
+    title_font=title_font_config,
 )
 fig_box.show()
 
