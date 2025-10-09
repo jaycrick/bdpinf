@@ -32,15 +32,25 @@ from inf_bp_texts.inference import fit_birth_death_process
 from inf_bp_texts.simulation import simulate_birth_death_process
 from inf_bp_texts.visualization import save_figure
 
-# Configure professional font family for all plots
-FONT_FAMILY = "Times New Roman, Times, serif"
-FONT_SIZE = 12
-TITLE_FONT_SIZE = 14
+# Import professional styling configuration from central plotting module
+from inf_bp_texts.visualization.plotting import (
+    apply_professional_styling,
+    font_config,
+    title_font_config,
+    plot_bgcolor,
+    paper_bgcolor,
+    gridcolor,
+    my_blue,
+    my_cyan,
+    my_green,
+    my_yellow,
+    my_red,
+    my_violet,
+    my_gray,
+    ptolqual,
+)
 
-# Global font configuration for plotly
-font_config = dict(family=FONT_FAMILY, size=FONT_SIZE, color="black")
-
-title_font_config = dict(family=FONT_FAMILY, size=TITLE_FONT_SIZE, color="black")
+color_palette = ptolqual
 
 # Create directory for saving figures
 figures_dir = Path("figures")
@@ -191,7 +201,11 @@ if len(birth_rates) > 1:
     fig_birth = go.Figure()
     fig_birth.add_trace(
         go.Scatter(
-            x=x_birth, y=birth_kde(x_birth), mode="lines", name="Birth Rate Density"
+            x=x_birth,
+            y=birth_kde(x_birth),
+            mode="lines",
+            name="Birth Rate Density",
+            line=dict(color=ptolqual[0]),
         )
     )
     # Add vertical line for true birth_rate
@@ -201,15 +215,11 @@ if len(birth_rates) > 1:
             y=[0, max(birth_kde(x_birth))],
             mode="lines",
             name="True Birth Rate",
-            line=dict(color="red", dash="dash"),
+            line=dict(color=ptolqual[1], dash="dash"),
         )
     )
-    fig_birth.update_layout(
-        title="Density of Fitted Birth Rates",
-        xaxis_title="Birth Rate",
-        yaxis_title="Density",
-        font=font_config,
-        title_font=title_font_config
+    fig_birth = apply_professional_styling(
+        fig_birth, "Density of Fitted Birth Rates", "Birth Rate", "Density"
     )
     fig_birth.show()
 
@@ -226,7 +236,11 @@ if len(death_rates) > 1:
     fig_death = go.Figure()
     fig_death.add_trace(
         go.Scatter(
-            x=x_death, y=death_kde(x_death), mode="lines", name="Death Rate Density"
+            x=x_death,
+            y=death_kde(x_death),
+            mode="lines",
+            name="Death Rate Density",
+            line=dict(color=ptolqual[0]),
         )
     )
     # Add vertical line for true death_rate
@@ -236,15 +250,11 @@ if len(death_rates) > 1:
             y=[0, max(death_kde(x_death))],
             mode="lines",
             name="True Death Rate",
-            line=dict(color="red", dash="dash"),
+            line=dict(color=ptolqual[1], dash="dash"),
         )
     )
-    fig_death.update_layout(
-        title="Density of Fitted Death Rates",
-        xaxis_title="Death Rate",
-        yaxis_title="Density",
-        font=font_config,
-        title_font=title_font_config
+    fig_death = apply_professional_styling(
+        fig_death, "Density of Fitted Death Rates", "Death Rate", "Density"
     )
     fig_death.show()
 
@@ -282,18 +292,17 @@ if len(birth_rates) > 1 and len(death_rates) > 1:
             x=[birth_rate],
             y=[death_rate],
             mode="markers",
-            marker=dict(color="red", size=8, symbol="circle"),
+            marker=dict(color=ptolqual[1], size=8, symbol="circle"),
             name="True Value",
         )
     )
-    fig_joint.update_layout(
-        title="2D Density of Fitted Birth and Death Rates",
-        xaxis_title="Birth Rate",
-        yaxis_title="Death Rate",
-        showlegend=True,
-        font=font_config,
-        title_font=title_font_config,
+    fig_joint = apply_professional_styling(
+        fig_joint,
+        "2D Density of Fitted Birth and Death Rates",
+        "Birth Rate",
+        "Death Rate",
     )
+    fig_joint.update_layout(showlegend=True)
     fig_joint.show()
 
     # Save the figure
@@ -327,7 +336,7 @@ for i, data in enumerate(box_data):
             name=labels[i],
             boxmean=True,
             boxpoints="outliers",
-            marker_color="lightblue",
+            marker_color=ptolqual[0],
         )
     )
     # Add true value
@@ -336,7 +345,7 @@ for i, data in enumerate(box_data):
             x=[labels[i]],
             y=[true_values[i]],
             mode="markers",
-            marker=dict(color="red", size=8, symbol="circle"),
+            marker=dict(color=ptolqual[1], size=8, symbol="circle"),
             name="True",
             showlegend=(i == 0),
         )
@@ -347,7 +356,7 @@ for i, data in enumerate(box_data):
             x=[labels[i]],
             y=[means[i]],
             mode="markers",
-            marker=dict(color="green", size=10, symbol="circle"),
+            marker=dict(color=ptolqual[2], size=10, symbol="circle"),
             name="Mean",
             showlegend=(i == 0),
         )
@@ -358,20 +367,17 @@ for i, data in enumerate(box_data):
             x=[labels[i]],
             y=[medians[i]],
             mode="markers",
-            marker=dict(color="orange", size=10, symbol="square"),
+            marker=dict(color=ptolqual[3], size=10, symbol="square"),
             name="Median",
             showlegend=(i == 0),
         )
     )
 
-fig_box.update_layout(
-    title="Box Plot of Fitted Birth and Death Rates",
-    yaxis_title="Rate",
-    xaxis_title="Parameter",
-    showlegend=True,
-    font=font_config,
-    title_font=title_font_config,
+fig_box = apply_professional_styling(
+    fig_box, "Box Plot of Fitted Birth and Death Rates", "Parameter", "Rate"
 )
+# Override showlegend for box plot
+fig_box.update_layout(showlegend=True)
 fig_box.show()
 
 # Save the figure

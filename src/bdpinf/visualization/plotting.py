@@ -38,6 +38,82 @@ from numpy.typing import NDArray
 
 from ..models.birth_death_process import BirthDeathProcess
 
+# Professional plotting style configuration
+# Configure professional font family for all plots
+FONT_FAMILY = "Latin Modern Roman, Times New Roman, Times, serif"
+FONT_SIZE = 11
+TITLE_FONT_SIZE = 13
+
+# Global font configuration for plotly
+font_config = dict(family=FONT_FAMILY, size=FONT_SIZE, color="black")
+title_font_config = dict(family=FONT_FAMILY, size=TITLE_FONT_SIZE, color="black")
+
+# Professional plot styling with high luminance, low saturation background
+# Using OKLCH values: L > 95, C < 2 (very bright, desaturated grey)
+plot_bgcolor = "#FAFAFA"  # Very light grey, high luminance, low saturation
+paper_bgcolor = "#FAFAFA"  # Same as plot background for consistency
+gridcolor = "#D0D0D0"  # Medium grey for grid lines (darker than background)
+
+# Custom color palette for plots
+my_blue = "#4477AA"
+my_red = "#EE6677"
+my_green = "#228833"
+my_yellow = "#CCBB44"
+my_cyan = "#66CCEE"
+my_violet = "#AA3377"
+my_gray = "#BBBBBB"
+
+ptolqual = [
+    "#4477AA",  # Blue
+    "#EE6677",  # Red
+    "#228833",  # Green
+    "#CCBB44",  # Yellow
+    "#66CCEE",  # Cyan
+    "#AA3377",  # Violet
+    "#BBBBBB",  # Gray
+]
+
+# Global layout configuration
+layout_config = dict(
+    plot_bgcolor=plot_bgcolor,
+    paper_bgcolor=paper_bgcolor,
+    font=font_config,
+    title_font=title_font_config,
+    xaxis=dict(gridcolor=gridcolor, gridwidth=0.5, showgrid=True, zeroline=False),
+    yaxis=dict(gridcolor=gridcolor, gridwidth=0.5, showgrid=True, zeroline=False),
+)
+
+
+def apply_professional_styling(
+    fig: Any, title: str, xaxis_title: str, yaxis_title: str, height: int = 400
+) -> Any:
+    """
+    Apply consistent professional styling to all figures.
+
+    Args:
+        fig: Plotly figure object
+        title: Title for the figure
+        xaxis_title: X-axis label
+        yaxis_title: Y-axis label
+        height: Figure height in pixels (default: 400)
+
+    Returns:
+        Updated figure object with professional styling applied
+    """
+    fig.update_layout(
+        title=title,
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        height=height,
+        plot_bgcolor=plot_bgcolor,
+        paper_bgcolor=paper_bgcolor,
+        font=font_config,
+        title_font=title_font_config,
+        xaxis=dict(gridcolor=gridcolor, gridwidth=0.5, showgrid=True, zeroline=False),
+        yaxis=dict(gridcolor=gridcolor, gridwidth=0.5, showgrid=True, zeroline=False),
+    )
+    return fig
+
 
 def save_figure(
     fig: Any,
