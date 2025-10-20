@@ -40,7 +40,7 @@ from ..models.birth_death_process import BirthDeathProcess
 
 # Professional plotting style configuration
 # Configure professional font family for all plots
-FONT_FAMILY = "Latin Modern Roman, Times New Roman, Times, serif"
+FONT_FAMILY = "Libertinus Serif, Latin Modern Roman, Times New Roman, Times, serif"
 FONT_SIZE = 11
 TITLE_FONT_SIZE = 13
 
@@ -79,8 +79,21 @@ layout_config = dict(
     paper_bgcolor=paper_bgcolor,
     font=font_config,
     title_font=title_font_config,
-    xaxis=dict(gridcolor=gridcolor, gridwidth=0.5, showgrid=True, zeroline=False),
-    yaxis=dict(gridcolor=gridcolor, gridwidth=0.5, showgrid=True, zeroline=False),
+    xaxis=dict(
+        gridcolor=gridcolor,
+        gridwidth=0.5,
+        showgrid=False,
+        zeroline=False,
+        automargin=True,
+    ),
+    yaxis=dict(
+        gridcolor=gridcolor,
+        gridwidth=0.5,
+        showgrid=False,
+        zeroline=False,
+        automargin=True,
+    ),
+    margin=dict(l=0, r=0, t=1, b=1, autoexpand=True),
 )
 
 
@@ -109,8 +122,120 @@ def apply_professional_styling(
         paper_bgcolor=paper_bgcolor,
         font=font_config,
         title_font=title_font_config,
-        xaxis=dict(gridcolor=gridcolor, gridwidth=0.5, showgrid=True, zeroline=False),
-        yaxis=dict(gridcolor=gridcolor, gridwidth=0.5, showgrid=True, zeroline=False),
+        xaxis=dict(
+            gridcolor=gridcolor,
+            gridwidth=0.5,
+            showgrid=True,
+            zeroline=False,
+            automargin=True,
+        ),
+        yaxis=dict(
+            gridcolor=gridcolor,
+            gridwidth=0.5,
+            showgrid=True,
+            zeroline=False,
+            automargin=True,
+        ),
+        # Tufte-like in-plot legend defaults (small, muted, inside plotting area)
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=0.98,
+            xanchor="left",
+            x=0.02,
+            bgcolor="rgba(250,250,250,0.6)",
+            bordercolor="rgba(0,0,0,0.08)",
+            borderwidth=0.5,
+            font=dict(size=9, color="black"),
+            traceorder="normal",
+        ),
+        margin=dict(l=50, r=15, t=15 if title else 8, b=40, pad=4),
+        autosize=False,
+    )
+    return fig
+
+
+def apply_tufte_legend(
+    fig: Any,
+    position: str = "top right",
+    bgcolor: str = "rgba(250,250,250,0.6)",
+    bordercolor: str = "rgba(0,0,0,0.08)",
+    font_size: int = 9,
+    showlegend: bool = True,
+) -> Any:
+    """
+    Apply a small, Tufte-style internal legend to a Plotly figure.
+
+    position: one of ('top right', 'top left', 'bottom right', 'bottom left')
+    """
+    pos_map = {
+        "top right": dict(x=0.98, y=0.98, xanchor="right", yanchor="top"),
+        "top left": dict(x=0.02, y=0.98, xanchor="left", yanchor="top"),
+        "bottom right": dict(x=0.98, y=0.02, xanchor="right", yanchor="bottom"),
+        "bottom left": dict(x=0.02, y=0.02, xanchor="left", yanchor="bottom"),
+    }
+
+    p = pos_map.get(position, pos_map["top right"])
+
+    fig.update_layout(
+        showlegend=showlegend,
+        legend=dict(
+            orientation="v",
+            y=p["y"],
+            x=p["x"],
+            yanchor=p["yanchor"],
+            xanchor=p["xanchor"],
+            bgcolor=bgcolor,
+            bordercolor=bordercolor,
+            borderwidth=0.5,
+            font=dict(size=font_size, color="black"),
+        ),
+    )
+
+    return fig
+
+
+def apply_tufte_axes(
+    fig: Any,
+    axis_color: str = "#BBBBBB",
+    tick_color: str = "#777777",
+    tick_len: int = 3,
+    tick_width: int = 1,
+    axis_line_width: int = 1,
+) -> Any:
+    """
+    Apply Tufte-style minimalist axes to all subplots in a Plotly figure.
+
+    - Removes gridlines and zero lines
+    - Uses thin, subtle axis lines
+    - Small outward ticks with muted color
+    - Keeps automargins enabled
+    """
+    fig.update_xaxes(
+        showgrid=False,
+        zeroline=False,
+        showline=True,
+        linecolor=axis_color,
+        linewidth=axis_line_width,
+        ticks="outside",
+        ticklen=tick_len,
+        tickwidth=tick_width,
+        tickcolor=tick_color,
+        automargin=True,
+        mirror=False,
+    )
+    fig.update_yaxes(
+        showgrid=False,
+        zeroline=False,
+        showline=True,
+        linecolor=axis_color,
+        linewidth=axis_line_width,
+        ticks="outside",
+        ticklen=tick_len,
+        tickwidth=tick_width,
+        tickcolor=tick_color,
+        automargin=True,
+        mirror=False,
     )
     return fig
 
@@ -140,13 +265,32 @@ def save_figure(
         output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True)
 
-        # Update figure size for better A4 compatibility
+        # Calculate appropriate margins based on figure size
+        # Smaller figures need tighter margins; larger figures can have more space
+        if width < 250 or height < 200:
+            # Very small figures: minimal margins but enough for axis labels
+            margin_dict = dict(l=30, r=8, t=8, b=35, pad=2)
+        elif width < 350 or height < 300:
+            # Small figures: compact margins
+            margin_dict = dict(l=40, r=10, t=10, b=40, pad=3)
+        else:
+            # Standard figures: comfortable margins
+            margin_dict = dict(l=50, r=15, t=15, b=45, pad=4)
+
+        # Update figure size and margins for consistent export
         fig.update_layout(
             width=width,
             height=height,
             font=dict(size=11),  # Ensure readable font size
-            margin=dict(l=50, r=50, t=60, b=50),  # Consistent margins
+            margin=margin_dict,
+            autosize=False,
         )
+        # Ensure axes don't expand beyond plotting area
+        fig.update_xaxes(automargin=True, fixedrange=False)
+        fig.update_yaxes(automargin=True, fixedrange=False)
+
+        # Set transparent backgrounds for clean PDF export
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
 
         file_path = output_path / f"{filename}.pdf"
         fig.write_image(str(file_path))
