@@ -5,6 +5,7 @@ date: today
 format:
   html:
     theme: cosmo
+    backgroundcolor: "#fff1e5"
     toc: true
     toc-depth: 3
     code-fold: true
@@ -376,6 +377,33 @@ labels = ["MLE Birth Rates", "MLE Death Rates"]
 true_values = [birth_rate, death_rate]
 means = [np.mean(birth_rates), np.mean(death_rates)]
 medians = [np.median(birth_rates), np.median(death_rates)]
+
+# Create summary table
+mse_birth = np.mean((np.array(birth_rates) - birth_rate) ** 2)
+mse_death = np.mean((np.array(death_rates) - death_rate) ** 2)
+
+box_summary = pd.DataFrame({
+    "Parameter": ["Birth Rate (λ)", "Death Rate (μ)"],
+    "True Value": true_values,
+    "Mean": means,
+    "Median": medians,
+    "Std Dev": [np.std(birth_rates), np.std(death_rates)],
+    "Q1 (25%)": [np.percentile(birth_rates, 25), np.percentile(death_rates, 25)],
+    "Q3 (75%)": [np.percentile(birth_rates, 75), np.percentile(death_rates, 75)],
+    "Min": [np.min(birth_rates), np.min(death_rates)],
+    "Max": [np.max(birth_rates), np.max(death_rates)],
+    "Bias": [np.mean(birth_rates) - birth_rate, np.mean(death_rates) - death_rate],
+    "Rel. Bias (%)": [
+        (np.mean(birth_rates) - birth_rate) / birth_rate * 100,
+        (np.mean(death_rates) - death_rate) / death_rate * 100
+    ],
+    "MSE": [mse_birth, mse_death],
+    "RMSE": [np.sqrt(mse_birth), np.sqrt(mse_death)]
+})
+
+print("\n📊 Parameter Estimation Box Plot Summary:")
+print("=" * 80)
+print(box_summary.to_string(index=False, float_format="%.6f"))
 
 fig_box = go.Figure()
 

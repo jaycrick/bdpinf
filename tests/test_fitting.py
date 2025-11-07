@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from inf_bp_texts.inference.fitting import fit_birth_death_process, fit_from_dataframe
+from inf_bp_texts.inference.fitting import fit_birth_death_processes, fit_from_dataframe
 from inf_bp_texts.models import BirthDeathProcess
 
 
@@ -19,7 +19,7 @@ class TestFitting:
         ages = np.array([100.0, 200.0, 300.0, 500.0, 700.0], dtype=np.float64)
         observation_time = 1000.0
 
-        result = fit_birth_death_process(ages, observation_time)
+        result = fit_birth_death_processes([ages], observation_time)
 
         # Should return valid result structure
         assert isinstance(result, dict)
@@ -38,7 +38,7 @@ class TestFitting:
         observation_time = 1000.0
 
         with pytest.raises(ValueError, match="No valid data points for fitting"):
-            fit_birth_death_process(ages, observation_time)
+            fit_birth_death_processes([ages], observation_time)
 
     def test_fit_birth_death_process_custom_initial_params(self):
         """Test fitting with custom initial parameters."""
@@ -46,8 +46,8 @@ class TestFitting:
         observation_time = 1000.0
         initial_params = (0.01, 0.002)
 
-        result = fit_birth_death_process(
-            ages, observation_time, initial_params=initial_params
+        result = fit_birth_death_processes(
+            [ages], observation_time, initial_params=initial_params
         )
 
         # Should succeed regardless of initial parameters
@@ -110,7 +110,7 @@ class TestFitting:
         observation_time = 1000.0
 
         for method in methods:
-            result = fit_birth_death_process(ages, observation_time, method=method)
+            result = fit_birth_death_processes([ages], observation_time, method=method)
             # Method might not always succeed, but should return a result
             assert isinstance(result, dict)
             assert "success" in result
@@ -120,7 +120,7 @@ class TestFitting:
         ages = np.array([100.0, 200.0, 300.0, 400.0, 500.0], dtype=np.float64)
         observation_time = 1000.0
 
-        result = fit_birth_death_process(ages, observation_time)
+        result = fit_birth_death_processes([ages], observation_time)
 
         if result["success"]:
             # Successful fit should have all expected keys
@@ -153,7 +153,7 @@ class TestFitting:
 
         # Get ages and fit
         ages = process.get_manuscript_ages()
-        result = fit_birth_death_process(ages, process.final_time)
+        result = fit_birth_death_processes([ages], process.final_time)
 
         if result["success"]:
             # Update process with fitted parameters

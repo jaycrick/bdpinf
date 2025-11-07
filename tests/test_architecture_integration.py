@@ -9,11 +9,8 @@ import pandas as pd
 import pytest
 
 from inf_bp_texts.config import DEFAULT_MODEL, DEFAULT_OPTIMIZATION
-from inf_bp_texts.exceptions import (
-    ValidationError,
-    validate_positive_number,
-)
-from inf_bp_texts.inference.fitting import fit_from_dataframe
+from inf_bp_texts.exceptions import ValidationError, validate_positive_number
+from inf_bp_texts.inference import fit_from_dataframe
 from inf_bp_texts.models.birth_death_process import BirthDeathProcess
 from inf_bp_texts.simulation.simulator import generate_synthetic_dataset
 
@@ -157,7 +154,7 @@ class TestModularImportStructure:
         # Test modular imports
         from inf_bp_texts.config import DEFAULT_OPTIMIZATION
         from inf_bp_texts.exceptions import ValidationError
-        from inf_bp_texts.inference.fitting import fit_birth_death_process
+        from inf_bp_texts.inference.fitting import fit_birth_death_processes
         from inf_bp_texts.models.birth_death_process import (
             BirthDeathProcess as ModelBDP,
         )
@@ -165,7 +162,7 @@ class TestModularImportStructure:
 
         # Ensure they're all accessible
         assert ModelBDP is not None
-        assert fit_birth_death_process is not None
+        assert fit_birth_death_processes is not None
         assert simulate_birth_death_process is not None
         assert DEFAULT_OPTIMIZATION is not None
         assert ValidationError is not None

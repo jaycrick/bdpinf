@@ -8,10 +8,10 @@ and test realistic end-to-end workflows.
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.inference.fitting import fit_birth_death_process, fit_from_dataframe
+from inf_bp_texts.inference.fitting import fit_birth_death_processes, fit_from_dataframe
 from inf_bp_texts.inference.likelihood import log_likelihood
 from inf_bp_texts.models.mathematical_functions import (
-    calculate_log_population_probability,
+    calculate_population_log_likelihood,
 )
 from inf_bp_texts.simulation import simulate_birth_death_process
 
@@ -80,7 +80,7 @@ class TestIntegration:
         assert "success" in result
         test_ages = np.array([100, 200, 300, 400, 500])
         predictions = [
-            calculate_log_population_probability(
+            calculate_population_log_likelihood(
                 result["birth_rate"], result["death_rate"], age, 1000.0
             )
             for age in test_ages
@@ -122,7 +122,7 @@ class TestIntegration:
         assert result["success"]
         age_range = np.linspace(100, 1000, 10)
         predictions = [
-            calculate_log_population_probability(
+            calculate_population_log_likelihood(
                 result["birth_rate"], result["death_rate"], age, 2000.0
             )
             for age in age_range
@@ -221,7 +221,9 @@ class TestIntegration:
         """Test robustness to different data quality scenarios."""
         # Scenario 1: Very few data points
         sparse_ages = np.array([1000.0 - t for t in [500.0, 600.0]], dtype=np.float64)
-        sparse_result = fit_birth_death_process(sparse_ages, observation_time=1000.0)
+        sparse_result = fit_birth_death_processes(
+            [sparse_ages], observation_time=1000.0
+        )
         assert isinstance(sparse_result, dict)
         assert "success" in sparse_result
 
@@ -230,7 +232,7 @@ class TestIntegration:
         dense_ages = np.array(
             [1000.0 - float(t) for t in dense_times], dtype=np.float64
         )
-        dense_result = fit_birth_death_process(dense_ages, observation_time=1000.0)
+        dense_result = fit_birth_death_processes([dense_ages], observation_time=1000.0)
         assert isinstance(dense_result, dict)
         assert "success" in dense_result
 
@@ -239,8 +241,8 @@ class TestIntegration:
         irregular_ages = np.array(
             [1000.0 - t for t in irregular_times], dtype=np.float64
         )
-        irregular_result = fit_birth_death_process(
-            irregular_ages, observation_time=1000.0
+        irregular_result = fit_birth_death_processes(
+            [irregular_ages], observation_time=1000.0
         )
         assert isinstance(irregular_result, dict)
         assert "success" in irregular_result
@@ -304,7 +306,7 @@ class TestIntegration:
         assert len(creation_times) == 2
         assert len(ages) == 2
         np.testing.assert_array_equal(ages, [400.0, 300.0])
-        result = fit_birth_death_process(ages, observation_time=final_time)
+        result = fit_birth_death_processes(ages, observation_time=final_time)
         if result["success"]:
             assert result["success"]
             assert len(creation_times) == 2

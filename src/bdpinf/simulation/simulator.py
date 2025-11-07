@@ -55,7 +55,7 @@ def simulate_birth_death_process(
 
     This creates a proper birth-death process simulation where manuscripts
     are born at rate λ and die at rate μ. The simulation runs until max_time
-    and records both creation times and survival status.
+    and records both creation times and survival status. If the
 
     Args:
         birth_rate: Birth rate (λ) for manuscript creation
@@ -80,6 +80,7 @@ def simulate_birth_death_process(
     all_manuscripts: List[Dict[str, Any]] = [
         {
             "manuscript_id": 0,
+            "parent_id": None,
             "creation_time": 0.0,
             "death_time": None,
             "survived": True,
@@ -87,14 +88,10 @@ def simulate_birth_death_process(
     ]  # Record of all manuscripts
     manuscript_id = 0
     birth_death_rate = birth_rate + death_rate
+    n_alive = len(manuscripts_alive)
+    total_rate = n_alive * birth_death_rate
 
     while current_time < max_time:
-        # Current population size
-        n_alive = len(manuscripts_alive)
-
-        # Total rate = birth_rate + death_rate * n_alive
-        total_rate = birth_death_rate * n_alive
-
         if total_rate <= 0:
             break
 
@@ -108,29 +105,40 @@ def simulate_birth_death_process(
         # Determine if event is birth or death
         if rng.random() < birth_rate / birth_death_rate:
             # Birth event
-            manuscripts_alive.append((current_time, manuscript_id))
+            new_entry = (current_time, manuscript_id)
+            # Insert at a random position other than the first.
+            if len(manuscripts_alive) == 1:
+                manuscripts_alive.append(new_entry)
+                parent_id = manuscripts_alive[0][1]
+            else:
+                insert_idx = int(rng.integers(1, len(manuscripts_alive) + 1))
+                manuscripts_alive.insert(insert_idx, new_entry)
+                parent_id = manuscripts_alive[insert_idx - 1][1]
+
             all_manuscripts.append(
                 {
                     "manuscript_id": manuscript_id,
+                    "parent_id": parent_id,
                     "creation_time": current_time,
                     "death_time": None,
                     "survived": True,
                 }
             )
             manuscript_id += 1
+            total_rate += birth_death_rate
         else:
-            # Death event (if any manuscripts alive)
-            if manuscripts_alive:
-                # Choose a random manuscript to die
-                death_idx = rng.integers(len(manuscripts_alive))
-                creation_time, dead_id = manuscripts_alive.pop(death_idx)
+            # Death event
+            death_idx = rng.integers(len(manuscripts_alive))
+            creation_time, dead_id = manuscripts_alive.pop(death_idx)
 
-                # Update the record
-                for manuscript in all_manuscripts:
-                    if manuscript["manuscript_id"] == dead_id:
-                        manuscript["death_time"] = current_time
-                        manuscript["survived"] = False
-                        break
+            # Update the record
+            for manuscript in all_manuscripts:
+                if manuscript["manuscript_id"] == dead_id:
+                    manuscript["death_time"] = current_time
+                    manuscript["survived"] = False
+                    break
+
+            total_rate += birth_death_rate
 
     # Process surviving manuscripts
     surviving_data: List[Dict[str, Any]] = []
@@ -285,18 +293,14 @@ def simulate_multiple_scenarios(
     # Create random number generator
     rng = np.random.default_rng(random_seed)
 
-    results = {}
+    results: Dict[str, pd.DataFrame] = {}
 
     for i, (birth_rate, death_rate) in enumerate(parameter_sets):
         scenario_name = f"scenario_{i + 1}_b{birth_rate:.3f}_d{death_rate:.3f}"
         scenario_data: List[pd.DataFrame] = []
 
         for sim_idx in range(n_simulations):
-            # Use different seed for each simulation if provided
-            sim_seed = None
-            if random_seed is not None:
-                # Generate a sequence of seeds from the main generator
-                sim_seed = int(rng.integers(0, 2**31))
+            sim_seed = int(rng.integers(low=0, high=2**31))
 
             sim_data = simulate_birth_death_process(
                 birth_rate=birth_rate,
@@ -337,7 +341,7 @@ def calculate_simulation_statistics(
     if len(surviving_manuscripts) == 0:
         return {"error": "No surviving manuscripts in simulation"}
 
-    stats = {
+    stats: Dict[str, Any] = {
         "total_manuscripts_created": len(simulation_df),
         "manuscripts_survived": len(surviving_manuscripts),
         "survival_rate": len(surviving_manuscripts) / len(simulation_df),

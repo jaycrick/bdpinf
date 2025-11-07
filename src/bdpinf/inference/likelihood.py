@@ -5,16 +5,14 @@ This module contains functions for calculating log-likelihood values for
 birth-death process models, used in parameter fitting and model evaluation.
 """
 
-from typing import Optional
-
 import numpy as np
 from numpy.typing import NDArray
 
 from ..models.mathematical_functions import (
-    calculate_age_density,
-    calculate_age_density_derivatives,
-    calculate_log_population_probability,
-    calculate_log_population_probability_derivatives,
+    calculate_age_log_likelihood,
+    calculate_age_log_likelihood_derivatives,
+    calculate_population_log_likelihood,
+    calculate_population_log_likelihood_derivatives,
 )
 
 
@@ -23,7 +21,7 @@ def log_likelihood(
     death_rate: float,
     ages: NDArray[np.float64],
     observation_time: float,
-    counts: Optional[NDArray[np.float64]] = None,
+    is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> np.float64:
     """
@@ -39,6 +37,7 @@ def log_likelihood(
         death_rate: Death rate (μ > 0) or log(μ) if log_scale_params=True
         ages: Array of manuscript ages
         observation_time: Observation time T
+        is_ordered: If True, the first age is treated as having a unique distribution
         counts: Array of manuscript counts for each age (defaults to 1 for each)
         log_scale_params: If True, birth_rate and death_rate are in log scale
 
@@ -59,21 +58,15 @@ def log_likelihood(
         if np.any(ages < 0):
             return np.float64(-np.inf)
 
-        # Set default counts if not provided
-        if counts is None:
-            counts = np.ones_like(ages, dtype=np.float64)
-        elif len(counts) != len(ages):
-            raise ValueError("counts and ages must have the same length")
-
         # Additional validation: observation_time should be positive
         if observation_time <= 0:
             return np.float64(-np.inf)
 
         # Total number of observed manuscripts
-        n_total: int = int(np.sum(counts))
+        n_total: int = len(ages)
 
         # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
-        log_P_n_T = calculate_log_population_probability(
+        log_P_n_T = calculate_population_log_likelihood(
             birth_rate,
             death_rate,
             observation_time,
@@ -96,29 +89,35 @@ def log_likelihood(
         log_densities = np.zeros_like(ages, dtype=np.float64)
 
         for i, age_t in enumerate(ages):
-            # Skip zero-count entries
-            if counts[i] == 0:
-                continue
-
             # Validate individual age vs. total time
             if age_t > observation_time:
                 return np.float64(-np.inf)
-
-            # Calculate log age density
-            log_density = calculate_age_density(
-                birth_rate,
-                death_rate,
-                age_t,
-                observation_time,
-                log_scale_params=log_scale_params,
-            )
+            if is_ordered and i == 0:
+                # Calculate log age density
+                log_density = calculate_age_log_likelihood(
+                    birth_rate,
+                    death_rate,
+                    age_t,
+                    observation_time,
+                    log_scale_params=log_scale_params,
+                    is_spine=True,
+                )
+            else:
+                log_density = calculate_age_log_likelihood(
+                    birth_rate,
+                    death_rate,
+                    age_t,
+                    observation_time,
+                    log_scale_params=log_scale_params,
+                    is_spine=False,
+                )
 
             # Check if age density calculation succeeded
             if not np.isfinite(log_density):
                 return np.float64(-np.inf)
 
             # Add log density weighted by count
-            log_densities[i] = counts[i] * log_density
+            log_densities[i] = log_density
 
         # 3. Total log-likelihood = log(P_n(T)) + sum of log densities
         log_density_sum = np.sum(log_densities)
@@ -145,87 +144,89 @@ def log_likelihood(
 
 
 def log_likelihood_gradient(
-    log_params: NDArray[np.float64],
+    params: NDArray[np.float64],
     ages: NDArray[np.float64],
     observation_time: float,
-    counts: Optional[NDArray[np.float64]] = None,
+    is_ordered: bool = False,
+    log_scale_params: bool = False,
 ) -> NDArray[np.float64]:
     """
     Calculate gradient of log-likelihood w.r.t. log-scale parameters.
 
     Args:
-        log_params: Log-scale parameters [log(birth_rate), log(death_rate)]
+        params: parameters [birth_rate, death_rate] (possibly log-scale)
         ages: Array of manuscript ages
         observation_time: Observation time T
-        counts: Array of manuscript counts for each age (defaults to 1 for each)
 
     Returns:
         Gradient array [dL/dlog(birth_rate), dL/dlog(death_rate)]
     """
-    if len(log_params) != 2:
+    if len(params) != 2:
         return np.array([0.0, 0.0], dtype=np.float64)
 
-    log_birth_rate, log_death_rate = log_params
+    birth_rate, death_rate = params
 
     # Input validation
-    if not (np.isfinite(log_birth_rate) and np.isfinite(log_death_rate)):
-        raise ValueError("log_params must be finite numbers")
+    if not (np.isfinite(birth_rate) and np.isfinite(death_rate)):
+        raise ValueError("params must be finite numbers")
 
     # Check for negative ages
     if np.any(ages < 0):
         return np.array([0.0, 0.0], dtype=np.float64)
-
-    # Set default counts if not provided
-    if counts is None:
-        counts = np.ones_like(ages, dtype=np.float64)
-    elif len(counts) != len(ages):
-        raise ValueError("counts and ages must have the same length")
 
     # Additional validation: observation_time should be positive
     if observation_time <= 0:
         raise ValueError("observation_time must be positive")
 
     # Total number of observed manuscripts
-    n_total: int = int(np.sum(counts))
+    n_total: int = len(ages)
 
     # Gradient components
-    grad_log_P_n_T = calculate_log_population_probability_derivatives(
-        log_birth_rate,
-        log_death_rate,
+    grad_log_P_n_T = calculate_population_log_likelihood_derivatives(
+        birth_rate,
+        death_rate,
         observation_time,
         n_total,
-        log_scale_params=True,
+        log_scale_params=log_scale_params,
     )
 
-    if n_total == 0 or len(ages) == 0:
+    if n_total == 0:
         return grad_log_P_n_T
 
     grad_log_densities = np.zeros(2, dtype=np.float64)
 
     for i, age_t in enumerate(ages):
-        # Skip zero-count entries
-        if counts[i] == 0:
-            continue
-
         # Calculate derivatives of log age density
-        grad_density = calculate_age_density_derivatives(
-            log_birth_rate,
-            log_death_rate,
-            age_t,
-            observation_time,
-            log_scale_params=True,
-        )
-        grad_log_densities += counts[i] * grad_density
+        if is_ordered and i == 0:
+            grad_density = calculate_age_log_likelihood_derivatives(
+                birth_rate,
+                death_rate,
+                age_t,
+                observation_time,
+                log_scale_params=log_scale_params,
+                is_spine=True,
+            )
+        else:
+            grad_density = calculate_age_log_likelihood_derivatives(
+                birth_rate,
+                death_rate,
+                age_t,
+                observation_time,
+                log_scale_params=log_scale_params,
+                is_spine=False,
+            )
+        grad_log_densities += grad_density
 
     return grad_log_P_n_T + grad_log_densities
 
 
 def negative_log_likelihood(
-    log_params: NDArray[np.float64],
+    params: NDArray[np.float64],
     ages: NDArray[np.float64],
     observation_time: float,
-    counts: Optional[NDArray[np.float64]] = None,
-) -> float:
+    is_ordered: bool = False,
+    log_scale_params: bool = False,
+) -> np.float64:
     """
     Calculate negative log-likelihood for optimization.
 
@@ -241,19 +242,19 @@ def negative_log_likelihood(
     Returns:
         Negative log-likelihood value (float for scipy optimization)
     """
-    if len(log_params) != 2:
-        return float(np.inf)
+    if len(params) != 2:
+        return np.float64(np.inf)
 
     # Extract log-scale parameters and convert to original scale
-    log_birth_rate, log_death_rate = log_params
+    birth_rate, death_rate = params
 
     result = -log_likelihood(
-        birth_rate=log_birth_rate,
-        death_rate=log_death_rate,
+        birth_rate=birth_rate,
+        death_rate=death_rate,
         ages=ages,
         observation_time=observation_time,
-        counts=counts,
-        log_scale_params=True,
+        is_ordered=is_ordered,
+        log_scale_params=log_scale_params,
     )
 
-    return float(result)
+    return result
