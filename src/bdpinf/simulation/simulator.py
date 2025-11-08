@@ -83,11 +83,12 @@ def simulate_birth_death_process(
             "parent_id": None,
             "creation_time": 0.0,
             "death_time": None,
-            "survived": True,
+            "is_spine": False,
         }
     ]  # Record of all manuscripts
-    manuscript_id = 0
+    new_manuscript_id = 1
     birth_death_rate = birth_rate + death_rate
+    prop_birth = birth_rate / birth_death_rate
     n_alive = len(manuscripts_alive)
     total_rate = n_alive * birth_death_rate
 
@@ -103,9 +104,9 @@ def simulate_birth_death_process(
             break
 
         # Determine if event is birth or death
-        if rng.random() < birth_rate / birth_death_rate:
+        if rng.random() < prop_birth:
             # Birth event
-            new_entry = (current_time, manuscript_id)
+            new_entry = (current_time, new_manuscript_id)
             # Insert at a random position other than the first.
             if len(manuscripts_alive) == 1:
                 manuscripts_alive.append(new_entry)
@@ -117,73 +118,37 @@ def simulate_birth_death_process(
 
             all_manuscripts.append(
                 {
-                    "manuscript_id": manuscript_id,
+                    "manuscript_id": new_manuscript_id,
                     "parent_id": parent_id,
                     "creation_time": current_time,
                     "death_time": None,
-                    "survived": True,
+                    "is_spine": False,
                 }
             )
-            manuscript_id += 1
+            new_manuscript_id += 1
             total_rate += birth_death_rate
         else:
             # Death event
-            death_idx = rng.integers(len(manuscripts_alive))
+            death_idx = rng.integers(0, len(manuscripts_alive))
             creation_time, dead_id = manuscripts_alive.pop(death_idx)
 
             # Update the record
             for manuscript in all_manuscripts:
                 if manuscript["manuscript_id"] == dead_id:
                     manuscript["death_time"] = current_time
-                    manuscript["survived"] = False
                     break
 
-            total_rate += birth_death_rate
+            total_rate -= birth_death_rate
 
     # Process surviving manuscripts
-    surviving_data: List[Dict[str, Any]] = []
-    for manuscript in all_manuscripts:
-        if manuscript["survived"]:
-            creation_time = manuscript["creation_time"]
-            age = max_time - creation_time
-            surviving_data.append(
-                {
-                    "manuscript_id": manuscript["manuscript_id"],
-                    "creation_time": creation_time,
-                    "age": age,
-                    "survived": True,
-                }
-            )
+    spine_id = manuscripts_alive[0][1] if manuscripts_alive else None
+    if spine_id is not None:
+        for manuscript in all_manuscripts:
+            if manuscript["manuscript_id"] == spine_id:
+                manuscript["is_spine"] = True
+                break
 
-    # Process dead manuscripts
-    dead_data: List[Dict[str, Any]] = []
-    for manuscript in all_manuscripts:
-        if not manuscript["survived"]:
-            death_time = manuscript["death_time"]
-            creation_time = manuscript["creation_time"]
-            if death_time is not None and creation_time is not None:
-                lifespan = death_time - creation_time
-                dead_data.append(
-                    {
-                        "manuscript_id": manuscript["manuscript_id"],
-                        "creation_time": creation_time,
-                        "death_time": death_time,
-                        "lifespan": lifespan,
-                        "survived": False,
-                        "age": None,
-                    }
-                )
-
-    # Combine data
-    all_data = surviving_data + dead_data
-
-    if not all_data:
-        # Return empty DataFrame with correct structure
-        return pd.DataFrame(
-            columns=["manuscript_id", "creation_time", "age", "survived"]
-        )
-
-    return pd.DataFrame(all_data)
+    return pd.DataFrame(all_manuscripts)
 
 
 def predict_manuscript_counts(

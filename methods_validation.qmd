@@ -21,7 +21,7 @@ execute:
 ---
 
 ```{python}
-# | label: simulate-processes
+# | label: load-packages
 
 import pprint
 import sys
@@ -32,7 +32,7 @@ import pandas as pd
 import plotly.graph_objs as go
 from scipy.stats import gaussian_kde
 
-from inf_bp_texts.inference import fit_birth_death_process
+from inf_bp_texts.inference import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_birth_death_process
 from inf_bp_texts.visualization import save_figure
 
@@ -60,9 +60,12 @@ color_palette = ptolqual
 # Create directory for saving figures
 figures_dir = Path("figures")
 figures_dir.mkdir(exist_ok=True)
+```
 
-# Parameters for simulation
-num_sims = 1000
+```{python}
+# | label: simulate-processes
+
+num_sims = 300
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500
@@ -83,35 +86,66 @@ for i in range(num_sims):
         random_seed=seed + i,  # ensure different random streams
     )
     simulated_processes.append(sim)
-
-# Show some sample results
-print(f"\n📋 Sample simulation results:")
-for i in range(min(5, len(simulated_processes))):
-    sim = simulated_processes[i]
-    print(
-        f"   Simulation {i + 1}: {len(sim)} manuscripts, "
-        f"age range: {sim['age'].min():.0f}-{sim['age'].max():.0f} years"
-    )
 ```
 
-## Derivative of the log-likehoods
+```{python}
+# | label: sample-results
+
+print("Sample simulation data\n")
+print(simulated_processes[0].head(5))
+print(simulated_processes[0].tail(5))
+```
+
+```{python}
+# | label: get-ages
+
+list_of_ages = []
+sim = simulated_processes[0]
+sim = sim[sim["death_time"].isna()]
+sim = sim.sort_values("is_spine", ascending=False)
+print(sim.head(5))
+print(sim.tail(5))
+ages = time_span - sim["creation_time"].values
+print(ages)
+print(type(ages))
+
+
+for sim in simulated_processes:
+    is_alive_man = sim["death_time"].isna()
+    alive_mans = sim[is_alive_man]
+    alive_mans = alive_mans.sort_values("is_spine", ascending=False)
+    ages = time_span - alive_mans["creation_time"].values
+    list_of_ages.append((ages))
+```
+
+## Derivative of the log-likelihoods
 
 We derive
-\begin{gather}
-    \frac{dlP_n}{d\lambda} = \frac{\mu  \left(\mu -\mu  n+\lambda  (n-\mu  t+1)+\lambda ^2 t\right)+e^{t (\lambda -\mu )} (n (\lambda -\mu ) (\lambda  t (\lambda -\mu )-\mu )-\mu  (3 \lambda +\mu ))+\lambda  e^{2 t (\lambda -\mu )} (2 \mu +\lambda  t (\mu -\lambda ))}{\lambda  (\lambda -\mu ) \left(e^{t (\lambda -\mu )}-1\right) \left(\lambda  e^{t (\lambda -\mu )}-\mu \right)}\\
+$$
+    \frac{dlP_n}{d\lambda} = \frac{\mu  \left(\mu -\mu  n+\lambda  (n-\mu  t+1)+\lambda ^2 t\right)+e^{t (\lambda -\mu )} (n (\lambda -\mu ) (\lambda  t (\lambda -\mu )-\mu )-\mu  (3 \lambda +\mu ))+\lambda  e^{2 t (\lambda -\mu )} (2 \mu +\lambda  t (\mu -\lambda ))}{\lambda  (\lambda -\mu ) \left(e^{t (\lambda -\mu )}-1\right) \left(\lambda  e^{t (\lambda -\mu )}-\mu \right)}
+$$
+
+$$
     \frac{dlP_n}{d\mu} = \frac{\lambda ^2 t e^{t (\lambda -\mu )} \left(e^{t (\lambda -\mu )}-n\right)-\lambda  \left(-(2 \mu  n t+n+3) e^{t (\lambda -\mu )}+n+(\mu  t+2) e^{2 t (\lambda -\mu )}+\mu  t+1\right)-\mu  \left((\mu  n t+n-1) e^{t (\lambda -\mu )}-n-\mu  t+1\right)}{(\lambda -\mu ) \left(e^{t (\lambda -\mu )}-1\right) \left(\lambda  e^{t (\lambda -\mu )}-\mu \right)}
-\end{gather}
+$$
 
 Derivation of the derivative of the ages
-
-\begin{gather}
-    \frac{dlP(age)}{d\lambda} = \frac{(\lambda  t-1) e^{\mu  t+T (\lambda -\mu )}-(\lambda  t+\lambda  T-1) e^{\mu  t+2 T (\lambda -\mu )}-\mu  T e^{\lambda  t}+2 \mu  T e^{\lambda  t+T (\lambda -\mu )}}{\left(e^{T (\lambda -\mu )}-1\right) \left(\lambda  e^{\mu  t+T (\lambda -\mu )}-\mu  e^{\lambda  t}\right)}\\
+$$
+    \frac{dlP(age)}{d\lambda}
+    = \frac{
+            (\lambda  t-1) e^{\mu  t+T (\lambda -\mu )}
+            - (\lambda  t+\lambda  T-1) e^{\mu  t+2 T (\lambda -\mu )}
+            - \mu  T e^{\lambda  t}
+            + 2 \mu  T e^{\lambda  t+T (\lambda -\mu )}
+        }{
+            \left(e^{T (\lambda -\mu )}-1\right) \left(\lambda  e^{\mu  t+T (\lambda -\mu )}-\mu  e^{\lambda  t}\right)
+        } \\
     \frac{dlP(age)}{d\mu} = \frac{\lambda  T e^{\mu  t+2 T (\lambda -\mu )}+e^{\lambda  t} (\mu  (-t)+\mu  T+1)+(\mu  t-2 \mu  T-1) e^{\lambda  t+T (\lambda -\mu )}}{\left(e^{T (\lambda -\mu )}-1\right) \left(\lambda  e^{\mu  t+T (\lambda -\mu )}-\mu  e^{\lambda  t}\right)}
-\end{gather}
+$$
 
 ```{python}
 # | eval: true
-# | label: fit-models
+# | label: fit-individual-models
 
 print(f"🔬 Fit birth-death models to {len(simulated_processes)} simulated processes...")
 print("=" * 60)
@@ -120,29 +154,25 @@ fitted_models = []
 successful_fits = 0
 failed_fits = 0
 
-for i, sim in enumerate(simulated_processes):
-    sim = sim[sim["age"].notnull()]
-    if len(sim) > 0:
-        try:
-            ages = sim["age"].values
-            observation_time = time_span
-            # If you want to use counts, you could add: counts = sim.get("count", None)
-            model = fit_birth_death_process(
-                ages=ages,
-                observation_time=observation_time,
-                counts=None,  # or provide counts if available
-                method="L-BFGS-B",
-                initial_params=None,
-            )
-            fitted_models.append(model)
-            if model is not None and model.get("success", False):
-                successful_fits += 1
-            else:
-                failed_fits += 1
-        except Exception as e:
-            print(f"⚠️  Model {i + 1} failed: {str(e)[:50]}...")
-            fitted_models.append(None)
+for i, ages in enumerate(list_of_ages):
+    if len(ages) > 0:
+        # try:
+        model = fit_birth_death_processes(
+            list_of_ages=[ages],
+            observation_time=time_span,
+            is_ordered=True,
+            method="L-BFGS-B",
+            initial_params=None,
+        )
+        fitted_models.append(model)
+        if model is not None and model.get("success", False):
+            successful_fits += 1
+        else:
             failed_fits += 1
+        # except Exception as e:
+        #     print(f"⚠️  Model {i + 1} failed: {str(e)[:50]}...")
+        #     fitted_models.append(None)
+        #     failed_fits += 1
     else:
         fitted_models.append(None)
         failed_fits += 1
@@ -469,6 +499,44 @@ fig_box.show()
 save_figure(fig_box, "mv_parameter_boxplots", width=397, height=250)
 ```
 
+```{python}
+# | label: use-multiple-processes
+
+best_estimate = fit_birth_death_processes(
+    list_of_ages=list_of_ages,
+    observation_time=time_span,
+    is_ordered=True,
+)
+
+print(best_estimate)
+```
+
+```{python}
+# | label: cumulative mult-proc
+# | eval: false
+cumulative_estimates = []
+has_age = False
+
+for i in [0, 1, int(num_sims / 8), int(num_sims / 4), int(num_sims / 2), int(num_sims)]:
+    if not has_age:
+        if len(list_of_ages[i]) > 1:
+            has_age = True
+    if has_age:
+        model = fit_birth_death_processes(
+            list_of_ages=list_of_ages[0 : (i + 1)],
+            observation_time=time_span,
+            is_ordered=True,
+            initial_params=cumulative_estimates[-1] if (not i==0) None else,
+        )
+        cumulative_estimates.append(model.x)
+    else:
+        cumulative_estimates.append(None)
+
+print(cumulative_estimates)
+```
+
+
+
 *Analysis completed:*
 
 ```{python}
@@ -478,7 +546,3 @@ from datetime import datetime
 
 print(f"📅 Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 ```
-
-TODO
-
-Map out all the extensions.
