@@ -92,7 +92,7 @@ def fit_birth_death_processes(
         ages: Array of manuscript ages
         observation_time: Total observation time
         method: Optimization method for scipy.optimize.minimize
-        initial_params: Initial parameter values (birth_rate, death_rate) in original scale
+        initial_params: Initial parameter values (birth_rate, death_rate)
 
     Returns:
         Dictionary with fit results including parameters and statistics
@@ -113,6 +113,8 @@ def fit_birth_death_processes(
     # Set initial parameters with better estimates based on data
     if initial_params is None:
         initial_params = get_crude_parameter_estimates(non_empty_age, observation_time)
+    # Convert initial parameters to log scale
+    log_initial_params = np.log(initial_params)
 
     # Parameter bounds in log space: log(birth_rate), log(death_rate)
     # birth_rate: 1e-8 to 100.0 -> log bounds: log(1e-8) to log(100.0)
@@ -123,7 +125,9 @@ def fit_birth_death_processes(
     ]
 
     # Create objective function wrapper
-    def objective_func(params: NDArray[np.float64]) -> np.float64:
+    def objective_func(log_params: NDArray[np.float64]) -> np.float64:
+        # Convert log-scale parameters back to original scale
+        params = np.exp(log_params)
         nll = np.float64(0)
         for ages in list_of_ages:
             nll += negative_log_likelihood(
@@ -135,15 +139,20 @@ def fit_birth_death_processes(
             )
         return nll
 
-    def gradient_func(params: NDArray[np.float64]) -> NDArray[np.float64]:
+    def gradient_func(log_params: NDArray[np.float64]) -> NDArray[np.float64]:
+        # Convert log-scale parameters back to original scale
+        params = np.exp(log_params)
         nll_grad = np.zeros(2, dtype=np.float64)
         for ages in list_of_ages:
-            nll_grad -= log_likelihood_gradient(
-                params=params,
-                ages=ages,
-                observation_time=observation_time,
-                is_ordered=is_ordered,
-                log_scale_params=False,
+            nll_grad -= np.multiply(
+                params,
+                log_likelihood_gradient(
+                    params=params,
+                    ages=ages,
+                    observation_time=observation_time,
+                    is_ordered=is_ordered,
+                    log_scale_params=False,
+                ),
             )
         return nll_grad
 
@@ -155,7 +164,7 @@ def fit_birth_death_processes(
     for opt_method in optimization_methods:
         try:
             # Ensure parameters are numpy arrays for scipy compatibility
-            x0 = np.array(initial_params, dtype=np.float64)
+            x0 = np.array(log_initial_params, dtype=np.float64)
 
             result: Any = optimize.minimize(
                 objective_func,
@@ -193,7 +202,9 @@ def fit_birth_death_processes(
 
         if result.success:
             # Convert log-scale parameters back to original scale
-            birth_rate, death_rate = result.x
+            log_birth_rate, log_death_rate = result.x
+            birth_rate = np.exp(log_birth_rate)
+            death_rate = np.exp(log_death_rate)
 
             return {
                 "success": True,
