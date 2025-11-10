@@ -1,58 +1,80 @@
 [tool.poetry]
-name = "inf-bp-texts"
-version = "0.1.0"
-description = "A Python platform for performing inference and analysis on various datasets downloaded from APIs"
 authors = ["JC <jcacademicresearch@gmail.com>"]
+description = "A Python platform for performing inference and analysis on various datasets downloaded from APIs"
+name = "inf-bp-texts"
+packages = [{from = "src", include = "inf_bp_texts"}]
 readme = "README.rst"
-packages = [{include = "inf_bp_texts", from = "src"}]
+version = "0.1.0"
 
 [tool.poetry.scripts]
 inf-bp-texts = "inf_bp_texts.cli:main"
 
 [tool.poetry.dependencies]
-python = "^3.13"
-requests = "^2.32.4"
-pandas = "^2.3.1"
-numpy = "^2.0.0"
-scikit-learn = "^1.5.0"
+joblib = "^1.5.2"
 jupyter = "^1.0.0"
-plotly = "^6.2.0"
-scipy = "^1.16.1"
-lxml = "^6.0.0"
-pydantic = "^2.11.7"
 kaleido = "^1.1.0"
+lxml = "^6.0.0"
+numpy = "^2.0.0"
+pandas = "^2.3.1"
+plotly = "^6.2.0"
+pydantic = "^2.11.7"
+python = ">=3.13,<3.14"
+requests = "^2.32.4"
+scikit-learn = "^1.5.0"
+scipy = "^1.16.1"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.0.0"
-mypy = "^1.17.1"
-ruff = "^0.12.7"
 isort = "^6.0.1"
+joblib-stubs = "^1.5.2.0.20250831"
+lxml-stubs = "^0.5.1"
+mypy = "^1.17.1"
+plotly-stubs = "^0.0.6"
 pre-commit = "^4.2.0"
-scipy-stubs = "^1.16.1.0"
+pydantic = "^2.12.4"
+pytest = "^8.0.0"
 quarto = "^0.1.0"
+ruff = "^0.12.7"
+scipy-stubs = "^1.16.1.0"
+toml-sort = "^0.24.3"
+types-requests = "^2.32.4.20250913"
 
 [tool.black]
+include = '\.pyi?$'
 line-length = 88
 target-version = ['py313']
-include = '\.pyi?$'
 
 [tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
 known_first_party = ["inf_bp_texts"]
+line_length = 88
+multi_line_output = 3
+profile = "black"
 
 [tool.mypy]
-strict = true
 pretty = true
 show_error_codes = true
+strict = true
+
+[tool.tomlsort]
+all = true
+ignore_case = true
+in_place = true
+no_block_comments = true
+no_comments = true
+no_footer_comments = true
+no_header_comments = true
+no_inline_comments = true
+no_sort_tables = true
+sort_first = ["key1", "key2"]
+sort_inline_arrays = true
+sort_inline_tables = true
+sort_table_keys = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
 python_classes = ["Test*"]
+python_files = ["test_*.py"]
 python_functions = ["test_*"]
+testpaths = ["tests"]
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=2.0.0,<3.0.0"]

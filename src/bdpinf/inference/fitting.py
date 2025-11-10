@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from numpy.typing import NDArray
 from scipy import optimize
 
@@ -82,6 +83,7 @@ def fit_birth_death_processes(
     is_ordered: bool = False,
     method: str = "L-BFGS-B",
     initial_params: Optional[Tuple[float, float]] = None,
+    parallel: bool = False,
 ) -> Dict[str, Any]:
     """
     Fit birth-death process parameters to manuscript data.
@@ -128,32 +130,75 @@ def fit_birth_death_processes(
     def objective_func(log_params: NDArray[np.float64]) -> np.float64:
         # Convert log-scale parameters back to original scale
         params = np.exp(log_params)
-        nll = np.float64(0)
-        for ages in list_of_ages:
-            nll += negative_log_likelihood(
-                params=params,
-                ages=ages,
-                observation_time=observation_time,
-                is_ordered=is_ordered,
-                log_scale_params=False,
-            )
-        return nll
 
-    def gradient_func(log_params: NDArray[np.float64]) -> NDArray[np.float64]:
-        # Convert log-scale parameters back to original scale
-        params = np.exp(log_params)
-        nll_grad = np.zeros(2, dtype=np.float64)
-        for ages in list_of_ages:
-            nll_grad -= np.multiply(
-                params,
-                log_likelihood_gradient(
+        # Parallelize for multiple age arrays
+        if len(list_of_ages) > 10 and parallel:
+            nll_values = Parallel(n_jobs=-1, prefer="threads")(
+                delayed(negative_log_likelihood)(
                     params=params,
                     ages=ages,
                     observation_time=observation_time,
                     is_ordered=is_ordered,
                     log_scale_params=False,
-                ),
+                    parallel=False,
+                )
+                for ages in list_of_ages
             )
+            nll = np.float64(sum(nll_values))
+        else:
+            # Single age array - no parallelization needed
+            nll = np.float64(0)
+            for ages in list_of_ages:
+                nll += negative_log_likelihood(
+                    params=params,
+                    ages=ages,
+                    observation_time=observation_time,
+                    is_ordered=is_ordered,
+                    log_scale_params=False,
+                    parallel=True,
+                )
+        return nll
+
+    def gradient_func(log_params: NDArray[np.float64]) -> NDArray[np.float64]:
+        # Convert log-scale parameters back to original scale
+        params = np.exp(log_params)
+
+        # Parallelize for multiple age arrays
+        if len(list_of_ages) > 10 and parallel:
+            grad_values = Parallel(n_jobs=-1, prefer="threads")(
+                delayed(
+                    lambda ages: np.multiply(
+                        params,
+                        log_likelihood_gradient(
+                            params=params,
+                            ages=ages,
+                            observation_time=observation_time,
+                            is_ordered=is_ordered,
+                            log_scale_params=False,
+                            parallel=False,
+                        ),
+                    )
+                )(ages)
+                for ages in list_of_ages
+            )
+            # Ensure we get an array, not a scalar
+            grad_sum = np.sum(grad_values, axis=0, dtype=np.float64)
+            nll_grad = -np.asarray(grad_sum, dtype=np.float64).reshape(2)
+        else:
+            # less arrays - no parallelization needed
+            nll_grad = np.zeros(2, dtype=np.float64)
+            for ages in list_of_ages:
+                nll_grad -= np.multiply(
+                    params,
+                    log_likelihood_gradient(
+                        params=params,
+                        ages=ages,
+                        observation_time=observation_time,
+                        is_ordered=is_ordered,
+                        log_scale_params=False,
+                        parallel=parallel,
+                    ),
+                )
         return nll_grad
 
     # Optimize with multiple strategies for robustness

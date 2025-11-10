@@ -6,6 +6,7 @@ birth-death process models, used in parameter fitting and model evaluation.
 """
 
 import numpy as np
+from joblib import Parallel, delayed
 from numpy.typing import NDArray
 
 from ..models.mathematical_functions import (
@@ -16,6 +17,65 @@ from ..models.mathematical_functions import (
 )
 
 
+def _calculate_single_age_density(
+    i: int,
+    age_t: float,
+    birth_rate: float,
+    death_rate: float,
+    observation_time: float,
+    is_ordered: bool,
+    log_scale_params: bool,
+) -> tuple[int, np.float64]:
+    """
+    Helper function to calculate log density for a single age.
+
+    Returns tuple of (index, log_density) for parallel processing.
+    """
+    if age_t > observation_time:
+        return (i, np.float64(-np.inf))
+
+    is_spine = is_ordered and (i == 0)
+
+    log_density = calculate_age_log_likelihood(
+        birth_rate,
+        death_rate,
+        age_t,
+        observation_time,
+        log_scale_params=log_scale_params,
+        is_spine=is_spine,
+    )
+
+    return (i, log_density)
+
+
+def _calculate_single_gradient(
+    i: int,
+    age_t: float,
+    birth_rate: float,
+    death_rate: float,
+    observation_time: float,
+    is_ordered: bool,
+    log_scale_params: bool,
+) -> tuple[int, NDArray[np.float64]]:
+    """
+    Helper function to calculate gradient for a single age.
+
+    Returns tuple of (index, gradient) for parallel processing.
+    """
+    is_spine = is_ordered and (i == 0)
+
+    grad_density = calculate_age_log_likelihood_derivatives(
+        birth_rate,
+        death_rate,
+        age_t,
+        observation_time,
+        log_scale_params=log_scale_params,
+        is_spine=is_spine,
+    )
+
+    return (i, grad_density)
+
+
 def log_likelihood(
     birth_rate: float,
     death_rate: float,
@@ -23,6 +83,7 @@ def log_likelihood(
     observation_time: float,
     is_ordered: bool = False,
     log_scale_params: bool = False,
+    parallel: bool = False,
 ) -> np.float64:
     """
     Calculate log-likelihood for observed manuscript data using birth-death process.
@@ -86,38 +147,62 @@ def log_likelihood(
             return np.float64(-np.inf)
 
         # 2. Calculate age density for each manuscript
-        log_densities = np.zeros_like(ages, dtype=np.float64)
-
-        for i, age_t in enumerate(ages):
-            # Validate individual age vs. total time
-            if age_t > observation_time:
-                return np.float64(-np.inf)
-            if is_ordered and i == 0:
-                # Calculate log age density
-                log_density = calculate_age_log_likelihood(
+        # Use parallel processing for large datasets (>100 ages)
+        if len(ages) > 100 and parallel:
+            # Parallel computation
+            results = Parallel(n_jobs=-1, prefer="threads")(
+                delayed(_calculate_single_age_density)(
+                    i,
+                    age_t,
                     birth_rate,
                     death_rate,
-                    age_t,
                     observation_time,
-                    log_scale_params=log_scale_params,
-                    is_spine=True,
+                    is_ordered,
+                    log_scale_params,
                 )
-            else:
-                log_density = calculate_age_log_likelihood(
-                    birth_rate,
-                    death_rate,
-                    age_t,
-                    observation_time,
-                    log_scale_params=log_scale_params,
-                    is_spine=False,
-                )
+                for i, age_t in enumerate(ages)
+            )
 
-            # Check if age density calculation succeeded
-            if not np.isfinite(log_density):
-                return np.float64(-np.inf)
+            # Extract log densities in correct order
+            log_densities = np.zeros_like(ages, dtype=np.float64)
+            for i, log_density in results:
+                if not np.isfinite(log_density):
+                    return np.float64(-np.inf)
+                log_densities[i] = log_density
+        else:
+            # Sequential computation for small datasets
+            log_densities = np.zeros_like(ages, dtype=np.float64)
 
-            # Add log density weighted by count
-            log_densities[i] = log_density
+            for i, age_t in enumerate(ages):
+                # Validate individual age vs. total time
+                if age_t > observation_time:
+                    return np.float64(-np.inf)
+                if is_ordered and i == 0:
+                    # Calculate log age density
+                    log_density = calculate_age_log_likelihood(
+                        birth_rate,
+                        death_rate,
+                        age_t,
+                        observation_time,
+                        log_scale_params=log_scale_params,
+                        is_spine=True,
+                    )
+                else:
+                    log_density = calculate_age_log_likelihood(
+                        birth_rate,
+                        death_rate,
+                        age_t,
+                        observation_time,
+                        log_scale_params=log_scale_params,
+                        is_spine=False,
+                    )
+
+                # Check if age density calculation succeeded
+                if not np.isfinite(log_density):
+                    return np.float64(-np.inf)
+
+                # Add log density weighted by count
+                log_densities[i] = log_density
 
         # 3. Total log-likelihood = log(P_n(T)) + sum of log densities
         log_density_sum = np.sum(log_densities)
@@ -149,6 +234,7 @@ def log_likelihood_gradient(
     observation_time: float,
     is_ordered: bool = False,
     log_scale_params: bool = False,
+    parallel: bool = False,
 ) -> NDArray[np.float64]:
     """
     Calculate gradient of log-likelihood w.r.t. log-scale parameters.
@@ -193,29 +279,51 @@ def log_likelihood_gradient(
     if n_total == 0:
         return grad_log_P_n_T
 
-    grad_log_densities = np.zeros(2, dtype=np.float64)
+    # Use parallel processing for large datasets (>100 ages)
+    if len(ages) > 100 and parallel:
+        # Parallel computation
+        results = Parallel(n_jobs=-1, prefer="threads")(
+            delayed(_calculate_single_gradient)(
+                i,
+                age_t,
+                birth_rate,
+                death_rate,
+                observation_time,
+                is_ordered,
+                log_scale_params,
+            )
+            for i, age_t in enumerate(ages)
+        )
 
-    for i, age_t in enumerate(ages):
-        # Calculate derivatives of log age density
-        if is_ordered and i == 0:
-            grad_density = calculate_age_log_likelihood_derivatives(
-                birth_rate,
-                death_rate,
-                age_t,
-                observation_time,
-                log_scale_params=log_scale_params,
-                is_spine=True,
-            )
-        else:
-            grad_density = calculate_age_log_likelihood_derivatives(
-                birth_rate,
-                death_rate,
-                age_t,
-                observation_time,
-                log_scale_params=log_scale_params,
-                is_spine=False,
-            )
-        grad_log_densities += grad_density
+        # Sum gradients
+        grad_log_densities = np.zeros(2, dtype=np.float64)
+        for i, grad_density in results:
+            grad_log_densities += grad_density
+    else:
+        # Sequential computation for small datasets
+        grad_log_densities = np.zeros(2, dtype=np.float64)
+
+        for i, age_t in enumerate(ages):
+            # Calculate derivatives of log age density
+            if is_ordered and i == 0:
+                grad_density = calculate_age_log_likelihood_derivatives(
+                    birth_rate,
+                    death_rate,
+                    age_t,
+                    observation_time,
+                    log_scale_params=log_scale_params,
+                    is_spine=True,
+                )
+            else:
+                grad_density = calculate_age_log_likelihood_derivatives(
+                    birth_rate,
+                    death_rate,
+                    age_t,
+                    observation_time,
+                    log_scale_params=log_scale_params,
+                    is_spine=False,
+                )
+            grad_log_densities += grad_density
 
     return grad_log_P_n_T + grad_log_densities
 
@@ -226,6 +334,7 @@ def negative_log_likelihood(
     observation_time: float,
     is_ordered: bool = False,
     log_scale_params: bool = False,
+    parallel: bool = False,
 ) -> np.float64:
     """
     Calculate negative log-likelihood for optimization.
@@ -255,6 +364,7 @@ def negative_log_likelihood(
         observation_time=observation_time,
         is_ordered=is_ordered,
         log_scale_params=log_scale_params,
+        parallel=parallel,
     )
 
     return result

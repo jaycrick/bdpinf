@@ -65,7 +65,9 @@ figures_dir.mkdir(exist_ok=True)
 ```{python}
 # | label: simulate-processes
 
-num_sims = 200
+from joblib import Parallel, delayed
+
+num_sims = 1000
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500
@@ -77,15 +79,18 @@ print(f"   Death rate: {death_rate}")
 print(f"   Time span: {time_span} years")
 print("=" * 60)
 
-simulated_processes = []
-for i in range(num_sims):
-    sim = simulate_birth_death_process(
+# Run simulations in parallel using all available CPU cores
+simulated_processes = Parallel(n_jobs=-1)(
+    delayed(simulate_birth_death_process)(
         birth_rate=birth_rate,
         death_rate=death_rate,
         max_time=time_span,
-        random_seed=seed + i,  # ensure different random streams
+        random_seed=seed + i,
     )
-    simulated_processes.append(sim)
+    for i in range(num_sims)
+)
+
+print(f"\n✅ Completed {len(simulated_processes)} simulations")
 ```
 
 ```{python}
@@ -150,32 +155,36 @@ $$
 print(f"🔬 Fit birth-death models to {len(simulated_processes)} simulated processes...")
 print("=" * 60)
 
-fitted_models = []
-successful_fits = 0
-failed_fits = 0
 
-for i, ages in enumerate(list_of_ages):
-    if len(ages) > 0:
-        # try:
+# Define a function to fit a single model
+def fit_single_model(ages, time_span):
+    """Fit a single birth-death model to given ages."""
+    if len(ages) == 0:
+        return None
+    try:
         model = fit_birth_death_processes(
             list_of_ages=[ages],
             observation_time=time_span,
             is_ordered=True,
             method="L-BFGS-B",
             initial_params=None,
+            parallel=False,
         )
-        fitted_models.append(model)
-        if model is not None and model.get("success", False):
-            successful_fits += 1
-        else:
-            failed_fits += 1
-        # except Exception as e:
-        #     print(f"⚠️  Model {i + 1} failed: {str(e)[:50]}...")
-        #     fitted_models.append(None)
-        #     failed_fits += 1
-    else:
-        fitted_models.append(None)
-        failed_fits += 1
+        return model
+    except Exception as e:
+        return None
+
+
+# Fit models in parallel
+fitted_models = Parallel(n_jobs=-1)(
+    delayed(fit_single_model)(ages, time_span) for ages in list_of_ages
+)
+
+# Count successes and failures
+successful_fits = sum(
+    1 for m in fitted_models if m is not None and m.get("success", False)
+)
+failed_fits = len(fitted_models) - successful_fits
 
 print(f"   Total models: {len(simulated_processes)}")
 print(f"   Successful fits: {successful_fits}")
@@ -506,6 +515,7 @@ best_estimate = fit_birth_death_processes(
     list_of_ages=list_of_ages,
     observation_time=time_span,
     is_ordered=True,
+    parallel=True,
 )
 
 print(best_estimate)
@@ -527,6 +537,7 @@ for i in [0, 1, int(num_sims / 8), int(num_sims / 4), int(num_sims / 2), int(num
             observation_time=time_span,
             is_ordered=True,
             initial_params=cumulative_estimates[-1] if (not i==0) None else,
+            parallel=True,
         )
         cumulative_estimates.append(model.x)
     else:

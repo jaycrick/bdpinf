@@ -36,10 +36,19 @@ repos:
       - id: mypy
         args: [--strict]
         additional_dependencies:
-          - pandas-stubs
+          - pydantic
           - types-requests
+          - joblib-stubs
+          - pandas-stubs
           - scipy-stubs
           - plotly-stubs
           - lxml-stubs
-          - pydantic
         files: ^src/
+
+  # toml-sort
+  - repo: https://github.com/pappasam/toml-sort
+    rev: v0.24.3
+    hooks:
+      - id: toml-sort
+        args: [--no-sort-tables, --sort-inline-arrays, --sort-inline-tables]
+        files: '\.toml$'
