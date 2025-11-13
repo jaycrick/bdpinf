@@ -1,7 +1,7 @@
 """
-Mathematical functions for birth-death process calculations.
+Mathematical functions for birth-and-death process calculations.
 
-This module contains pure mathematical functions for calculating birth-death
+This module contains pure mathematical functions for calculating birth-and-death
 process probabilities and densities. These functions are isolated from the
 main BirthDeathProcess class for better testability and modularity.
 """
@@ -12,47 +12,67 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-def calculate_population_log_likelihood(
+def calculate_populations_log_likelihood(
     lambda_param: float,
     mu_param: float,
     time: float,
-    n: int,
+    ns: NDArray[np.integer] | int,
     log_scale_params: bool = False,
 ) -> np.float64:
     """
-    Calculate P_n(T) - probability of n individuals at time T.
-
-    Based on birth-death process theory from:
-    Arley, Niels, and Vibeke Borchsenius.
-    "On the Theory of Infinite Systems of Differential Equations
-    and Their Application to the Theory of Stochastic Processes
-    and the Perturbation Theory of Quantum Mechanics."
-    Acta Mathematica 76, nos. 3–4 (1945): 261–322.
-    https://doi.org/10.1007/BF02551579.
-
-    Formula:
-    log P_0(T) = log(α_t)
-    log P_n(T) = log(1 - α_t) + log(1 - β_t) + (n-1) * log(β_t)
-    where:
-    - α_t = μ(e^((λ-μ)T) - 1) / (λe^((λ-μ)T) - μ)
-    - β_t = (λ/μ) * α_t
-
-    Args:
-        lambda_param: Birth rate (λ) > 0
-        mu_param: Death rate (μ) > 0
-        time: Time T (float) >= 0
-        n: Number of individuals (integer) >= 1
-        log_scale_params: If True, parameters are in log scale
-
-    Returns:
-        Log probability of n individuals at time T
+    Calculate the log-probability (log-likelihood) of observing given population counts
+    under a linear birth-and-death process at a single time point.
+    This function computes log P_n(T) for each count n in `ns` using closed-form
+    expressions for the birth-and-death process probabilities. The computed log-probabilities
+    are summed and returned as a single np.float64 value. Invalid or numerically
+    unstable inputs return -inf (np.float64(-np.inf)).
+    Parameters
+    ----------
+    lambda_param : float
+        Birth rate λ. If `log_scale_params` is True, this is interpreted as log(λ).
+    mu_param : float
+        Death rate μ. If `log_scale_params` is True, this is interpreted as log(μ).
+    time : float
+        Time T at which the distribution is evaluated. Must be ≥ 0.
+    ns : numpy.ndarray[int] or int
+        Non-negative integer or array of non-negative integers representing the
+        population counts n for which to evaluate the log-probabilities.
+    log_scale_params : bool, optional
+        If True, `lambda_param` and `mu_param` are treated as natural logarithms
+        of the rates and are exponentiated internally. Default is False.
+    Returns
+    -------
+    numpy.float64
+        Sum of log P_n(T) across the provided `ns`. If any input or intermediate
+        computation is invalid (e.g., negative time, negative counts, non-positive
+        rates when not in log-space, α_t or β_t not in (0,1), overflow, division by zero,
+        or other numerical issues), returns np.float64(-np.inf).
+    Behavior and formulas
+    ---------------------
+    Let α_t and β_t denote auxiliary probabilities defined by the birth-and-death process:
+        α_t = μ (e^{(λ-μ) T} - 1) / (λ e^{(λ-μ) T} - μ)
+        β_t = (λ / μ) * α_t
+    The log-probabilities used are:
+        log P_n(T) = log(1 - α_t) + log(1 - β_t) + (n - 1) * log(β_t)   for n ≥ 1
+    The implementation handles the limiting case λ ≈ μ by using the limiting form
+    α_t = β_t = (λ T) / (1 + λ T) to avoid catastrophic cancellation.
+    Edge cases
+    ----------
+    - Negative time or negative counts produce -inf.
+    - When `log_scale_params` is False, non-positive λ or μ produce -inf.
+    - If α_t or β_t are not strictly between 0 and 1, the function returns -inf.
+    - The function accepts scalar or array-like `ns`; intermediate computations
+      preserve array shape, but the returned value is the scalar sum of log-probabilities.
+    Examples
+    --------
+    # Scalar n
+    >>> calculate_population_log_likelihood(0.5, 0.3, 10.0, 2)
+    # Vectorized ns
+    >>> calculate_population_log_likelihood(0.5, 0.3, 10.0, np.array([0, 1, 2]))
     """
     try:
         # Input validation
-        if n < 0:
-            return np.float64(-np.inf)
-
-        if time < 0:
+        if np.any(ns < 0) or time < 0:
             return np.float64(-np.inf)
 
         # Handle parameter scaling
@@ -76,8 +96,8 @@ def calculate_population_log_likelihood(
             alpha_t = beta_t = rate_time_product / (1 + rate_time_product)
         else:
             # General case: λ ≠ μ
-            lambda_minus_mu = lambda_val - mu_val
-            exponent = lambda_minus_mu * time
+            growth_rate = lambda_val - mu_val
+            exponent = growth_rate * time
             exp_term = np.exp(exponent)
             if not np.isfinite(exp_term):
                 return np.float64(-np.inf)
@@ -91,51 +111,94 @@ def calculate_population_log_likelihood(
         if not ((0 < alpha_t < 1) and (0 < beta_t < 1)):
             return np.float64(-np.inf)
 
-        if n == 0:
-            return np.float64(np.log(alpha_t))
+        # Initialize log probability array
+        log_probability = np.zeros_like(ns, dtype=np.float64)
 
-        # Calculate final log probability
-        log_term1 = np.log(1 - alpha_t)
-        log_term2 = np.log(1 - beta_t)
-        log_term3 = (n - 1) * np.log(beta_t)
+        # Handle n == 0 case
+        zero_mask = ns == 0
+        if np.any(zero_mask):
+            log_probability[zero_mask] = np.log(alpha_t)
 
-        # Check all terms are finite
-        if not (
-            np.isfinite(log_term1) and np.isfinite(log_term2) and np.isfinite(log_term3)
-        ):
-            return np.float64(-np.inf)
+        # Handle n > 0 case
+        nonzero_mask = not zero_mask
+        if np.any(nonzero_mask):
+            log_term1 = np.log(1 - alpha_t)
+            log_term2 = np.log(1 - beta_t)
+            log_term3 = (ns - 1) * np.log(beta_t)
 
-        log_probability = log_term1 + log_term2 + log_term3
+            # Check all terms are finite
+            if not (
+                np.isfinite(log_term1)
+                and np.isfinite(log_term2)
+                and np.all(np.isfinite(log_term3))
+            ):
+                return np.float64(-np.inf)
+
+            log_probability[nonzero_mask] = log_term1 + log_term2 + log_term3
 
         # Final numerical check
-        if not np.isfinite(log_probability):
+        if not np.all(np.isfinite(log_probability)):
             return np.float64(-np.inf)
 
-        return np.float64(log_probability)
+        return np.float64(np.sum(log_probability))
 
     except (ValueError, FloatingPointError, OverflowError, ZeroDivisionError):
         return np.float64(-np.inf)
 
 
-def calculate_population_log_likelihood_derivatives(
+def calculate_populations_log_likelihood_derivatives(
     lambda_param: float,
     mu_param: float,
     time: float,
-    n: int,
+    ns: int,
     log_scale_params: bool = False,
 ) -> NDArray[np.float64]:
     """
-    Calculate derivatives of log age density f(t) w.r.t. λ and μ.
+    Calculate derivatives of the log age-density f(t) with respect to the birth rate (λ)
+    and death rate (μ).
+    Parameters
+    ----------
+    lambda_param : float
+        Birth rate λ > 0. If `log_scale_params` is True, this argument is interpreted as
+        log(λ).
+    mu_param : float
+        Death rate μ > 0. If `log_scale_params` is True, this argument is interpreted as
+        log(μ).
+    time : float
+        Age t at which the density is evaluated (t >= 0).
+    ns : int or array_like of int
+        Observed lineage counts (n). The function is vectorized over `ns`. Entries equal
+        to 0 are treated with the n=0 formula; entries > 0 use the n>0 formula.
+    log_scale_params : bool, optional
+        If True, `lambda_param` and `mu_param` are provided in log-scale and will be
+        exponentiated internally to obtain λ and μ. Default is False.
+    Returns
+    -------
+    numpy.ndarray
+        A 2-by-... ndarray of dtype np.float64 where the first row contains ∂ log f(t)/∂λ
+        and the second row contains ∂ log f(t)/∂μ. The trailing shape matches that of `ns`
+        (scalar input yields shape (2,), array input yields shape (2, n_elements)).
+    Behavior and numerical notes
+    ----------------------------
+    - The function assumes positive rates (λ > 0 and μ > 0). If `log_scale_params` is False,
+      passing non-positive values will raise errors when taking logarithms or produce
+      invalid results.
+    - To avoid catastrophic cancellation when λ and μ are nearly equal, the implementation
+      detects the limiting case by comparing log(λ) and log(μ) with a tolerance of 1e-12
+      and substitutes the analytic limit formulas for that case.
+    - The computation is vectorized across `ns`: boolean masks are used to select and apply
+      the appropriate closed-form expressions for n = 0 and n > 0.
+    - Large `time` and/or large differences between λ and μ can produce very large
+      exponentials; care should be taken to avoid overflow/underflow in such regimes.
+    Examples
+    --------
+    Scalar n:
+    >>> calculate_populations_log_likelihood_derivatives(0.2, 0.1, time=5.0, ns=0)
+    array([d_lambda_scalar, d_mu_scalar])
 
-    Args:
-        lambda_param: Birth rate (λ) > 0
-        mu_param: Death rate (μ) > 0
-        age_t: Age of the manuscript
-        T: Total observation time >= age_t
-        log_scale_params: If True, parameters are in log scale
-
-    Returns:
-        Tuple of derivatives (df/dλ, df/dμ)
+    Vectorized n:
+    >>> calculate_populations_log_likelihood_derivatives(0.2, 0.1, time=5.0, ns=np.array([0,1,2]))
+    array([sum_d_lambda, sum_d_mu])
     """
 
     # Handle parameter scaling
@@ -151,117 +214,150 @@ def calculate_population_log_likelihood_derivatives(
         log_lambda = np.log(lambda_param)
         log_mu = np.log(mu_param)
 
+    d_lambda = np.zeros_like(ns, dtype=np.float64)
+    d_mu = np.zeros_like(ns, dtype=np.float64)
+
+    zero_mask = ns == 0
+    non_zero_mask = not zero_mask
+
     if abs(log_lambda - log_mu) < 1e-12:
         # Limiting case: λ ≈ μ
 
-        if n == 0:
-            df_dlambda = 1 / (lambda_val + lambda_val**2 * time)
-        else:
-            numerator = n - 1 - 2 * time * lambda_val
+        if np.any(zero_mask):
+            d_lambda[zero_mask] = 1 / (lambda_val + lambda_val**2 * time)
+        if np.any(non_zero_mask):
+            numerator = ns - 1 - 2 * time * lambda_val
             denominator = lambda_val * (1 + time * lambda_val)
-            df_dlambda = numerator / denominator
+            d_lambda[non_zero_mask] = numerator / denominator
 
-        return np.array([df_dlambda, df_dlambda], dtype=np.float64)
+        return np.array([np.sum(d_lambda), np.sum(d_lambda)], dtype=np.float64)
 
     # General case: λ ≠ μ
-
-    if n == 0:
-        lambda_numerator = np.exp(time * (lambda_val - mu_val)) * (
-            np.exp(time * (lambda_val - mu_val)) - lambda_val * time + mu_val * time - 1
+    growth_rate = lambda_val - mu_val
+    if np.any(zero_mask):
+        lambda_numerator = np.exp(time * (growth_rate)) * (
+            np.exp(time * (growth_rate)) - lambda_val * time + mu_val * time - 1
         )
-        lambda_denominator = (np.exp(time * (lambda_val - mu_val)) - 1) * (
-            lambda_val * np.exp(time * (lambda_val - mu_val)) - mu_val
+        lambda_denominator = (np.exp(time * (growth_rate)) - 1) * (
+            lambda_val * np.exp(time * (growth_rate)) - mu_val
         )
-        mu_numerator = np.exp(time * (lambda_val - mu_val)) * (
-            lambda_val * (np.exp(time * (lambda_val - mu_val)) - mu_val * time - 1)
+        mu_numerator = np.exp(time * (growth_rate)) * (
+            lambda_val * (np.exp(time * (growth_rate)) - mu_val * time - 1)
             + time * mu_val**2
         )
         mu_denominator = (
             mu_val
-            * (np.exp(time * (lambda_val - mu_val)) - 1)
-            * (lambda_val * np.exp(time * (lambda_val - mu_val)) - mu_val)
+            * (np.exp(time * (growth_rate)) - 1)
+            * (lambda_val * np.exp(time * (growth_rate)) - mu_val)
         )
-    else:
+        d_lambda[zero_mask] = lambda_numerator / lambda_denominator
+        d_mu[zero_mask] = mu_numerator / mu_denominator
+    if np.any(non_zero_mask):
         lambda_numerator_1 = mu_val * (
             mu_val
-            - mu_val * n
-            + lambda_val * (n - mu_val * time + 1)
+            - mu_val * ns
+            + lambda_val * (ns - mu_val * time + 1)
             + lambda_val**2 * time
         )
-        lambda_numerator_2 = np.exp(time * (lambda_val - mu_val)) * (
-            n
-            * (lambda_val - mu_val)
-            * (lambda_val * time * (lambda_val - mu_val) - mu_val)
+        lambda_numerator_2 = np.exp(time * (growth_rate)) * (
+            ns * (growth_rate) * (lambda_val * time * (growth_rate) - mu_val)
             - mu_val * (3 * lambda_val + mu_val)
         )
         lambda_numerator_3 = (
             lambda_val
-            * np.exp(2 * time * (lambda_val - mu_val))
+            * np.exp(2 * time * (growth_rate))
             * (2 * mu_val + lambda_val * time * (mu_val - lambda_val))
         )
         lambda_numerator = lambda_numerator_1 + lambda_numerator_2 + lambda_numerator_3
         lambda_denominator = (
             lambda_val
-            * (lambda_val - mu_val)
-            * (np.exp(time * (lambda_val - mu_val)) - 1)
-            * (lambda_val * np.exp(time * (lambda_val - mu_val)) - mu_val)
+            * (growth_rate)
+            * (np.exp(time * (growth_rate)) - 1)
+            * (lambda_val * np.exp(time * (growth_rate)) - mu_val)
         )
 
         mu_numerator_1 = (
             lambda_val**2
             * time
-            * np.exp(time * (lambda_val - mu_val))
-            * (np.exp(time * (lambda_val - mu_val)) - n)
+            * np.exp(time * (growth_rate))
+            * (np.exp(time * (growth_rate)) - ns)
         )
         mu_numerator_2 = -lambda_val * (
-            -(2 * mu_val * n * time + n + 3) * np.exp(time * (lambda_val - mu_val))
-            + n
-            + (mu_val * time + 2) * np.exp(2 * time * (lambda_val - mu_val))
+            -(2 * mu_val * ns * time + ns + 3) * np.exp(time * (growth_rate))
+            + ns
+            + (mu_val * time + 2) * np.exp(2 * time * (growth_rate))
             + mu_val * time
             + 1
         )
         mu_numerator_3 = -mu_val * (
-            (mu_val * n * time + n - 1) * np.exp(time * (lambda_val - mu_val))
-            - n
+            (mu_val * ns * time + ns - 1) * np.exp(time * (growth_rate))
+            - ns
             - mu_val * time
             + 1
         )
         mu_numerator = mu_numerator_1 + mu_numerator_2 + mu_numerator_3
         mu_denominator = (
-            (lambda_val - mu_val)
-            * (np.exp(time * (lambda_val - mu_val)) - 1)
-            * (lambda_val * np.exp(time * (lambda_val - mu_val)) - mu_val)
+            (growth_rate)
+            * (np.exp(time * (growth_rate)) - 1)
+            * (lambda_val * np.exp(time * (growth_rate)) - mu_val)
         )
+        d_lambda[non_zero_mask] = lambda_numerator / lambda_denominator
+        d_mu[non_zero_mask] = mu_numerator / mu_denominator
 
-    df_dlambda = lambda_numerator / lambda_denominator
-    df_dmu = mu_numerator / mu_denominator
-
-    return np.array([df_dlambda, df_dmu], dtype=np.float64)
+    return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
 
-def calculate_spine_age_log_likelihood(
+def calculate_spine_ages_log_likelihood(
     lambda_param: float,
     mu_param: float,
-    age_t: float,
+    ages_t: NDArray[np.float64] | float,
     T: float,
     log_scale_params: bool = False,
 ) -> np.float64:
     """
-    Calculate log age density f(t) for the special case of the spine individual.
-    Mixture of continuous and discrete components.
-
-    Args:
-        lambda_param: Birth rate (λ) > 0
-        mu_param: Death rate (μ) > 0
-        age_t: Age of the manuscript
-        T: Total observation time >= age_t
-        log_scale_params: If True, parameters are in log scale
-    Returns:
-        Log age density f(t)
+    Calculate the log-likelihood of manuscript ages for the special-case "spine"
+    individual under a birth-and-death process with birth rate λ and death rate μ.
+    This function supports scalar or array-like ages and returns the sum of log-likelihoods
+    across all provided ages (i.e. the joint log-likelihood for independent age observations).
+    The age distribution for the spine is a mixture of a continuous density on (0, T) and a
+    point mass at t = T. The implementation handles the general case λ != μ and the limiting
+    case λ = μ. Parameters may be supplied either on the
+    original scale or as log-parameters controlled by `log_scale_params`.
+    Parameters
+    ----------
+    lambda_param : float
+        Birth rate (λ). If `log_scale_params` is True this is log(λ).
+    mu_param : float
+        Death rate (μ). If `log_scale_params` is True this is log(μ).
+    ages_t : NDArray[np.float64] | float
+        Age or array of ages of manuscripts (each t must satisfy 0 <= t <= T).
+    T : float
+        Total observation time (must satisfy T >= max(ages_t)).
+    log_scale_params : bool, optional
+        If True, `lambda_param` and `mu_param` are interpreted as log(λ) and log(μ)
+        and are exponentiated inside the function. Default is False.
+    Returns
+    -------
+    np.float64
+        The sum of the log age densities for all entries of `ages_t` (a scalar).
+        On invalid inputs or numerical issues the function returns -inf.
+    Notes
+    -----
+    - Input validation: the function returns -inf if any age is negative or greater than T,
+      or if λ or μ are non-positive when provided on the original scale.
+    - Boundary behavior: ages exactly equal to T are treated as the discrete mass at T;
+      ages strictly less than T use the continuous density component.
+    - Limiting case: when λ is numerically very close to μ the function uses the analytic
+      limit form to avoid catastrophic cancellation.
+    - Numerical robustness: the implementation checks signs of intermediate expressions and
+      finiteness of results; if any intermediate quantity is invalid (non-finite or a sign
+      mismatch that would lead to a non-real log) the function returns -inf.
+    - The returned value is a scalar np.float64 equal to the summed log-density across
+      the provided ages (suitable for use inside likelihood computations or MCMC).
     """
     try:
         # Input validation
-        if (age_t < 0) or (T < age_t):
+        if np.any(ages_t < 0) or np.any(ages_t > T):
             return np.float64(-np.inf)
 
         # Handle parameter scaling
@@ -280,45 +376,53 @@ def calculate_spine_age_log_likelihood(
             log_lambda = np.log(lambda_param)
             log_mu = np.log(mu_param)
 
+        at_boundary = ages_t == T
+        not_at_boundary = not at_boundary
+
         if abs(log_lambda - log_mu) < 1e-12:
             # Limiting case: λ ≈ μ
-            if age_t == T:
-                log_density = np.log(1 + lambda_val * T) - lambda_val * T
-            else:
-                log_density = (
-                    2 * np.log(lambda_val) + np.log(age_t) - lambda_val * age_t
-                )
-            return np.float64(log_density)
+            boundary_val = np.log(1 + lambda_val * T) - lambda_val * T
+            log_density = np.where(
+                at_boundary,
+                boundary_val,
+                2 * np.log(lambda_val) + np.log(ages_t) - lambda_val * ages_t,
+            )
+            return np.float64(np.sum(log_density))
 
         # General case: λ ≠ μ
-        if age_t == T:
-            numerator = lambda_val * np.exp(-mu_val * T) - mu_val * np.exp(
+
+        # Initialize arrays for numerator and denominator
+        log_numerator = np.zeros_like(ages_t, dtype=np.float64)
+        denominator = lambda_val - mu_val
+        sign_denominator = np.sign(denominator)
+        log_denominator = np.log(np.abs(denominator))
+
+        if np.any(at_boundary):
+            numerator_boundary = lambda_val * np.exp(-mu_val * T) - mu_val * np.exp(
                 -lambda_val * T
             )
-            denominator = lambda_val - mu_val
 
-            if not np.sign(numerator) == np.sign(denominator):
+            if not np.all(np.sign(numerator_boundary) == sign_denominator):
                 return np.float64(-np.inf)
 
-            log_numerator = np.log(np.abs(numerator))
-            log_denominator = np.log(np.abs(denominator))
-        else:
+            log_numerator[at_boundary] = np.log(np.abs(numerator_boundary))
+
+        if np.any(not_at_boundary):
             numerator_1 = np.exp(-mu_val * T) - np.exp(-lambda_val * T)
-            denominator = lambda_val - mu_val
 
-            if not np.sign(numerator_1) == np.sign(denominator):
+            if not np.all(np.sign(numerator_1) == sign_denominator):
                 return np.float64(-np.inf)
-            log_numerator = (
+
+            log_numerator[not_at_boundary] = (
                 np.log(lambda_val) + np.log(mu_val) + np.log(np.abs(numerator_1))
             )
-            log_denominator = np.log(np.abs(denominator))
 
         # Check for numerical validity
-        if not (np.isfinite(log_numerator) and np.isfinite(log_denominator)):
+        if not (np.all(np.isfinite(log_numerator)) and np.isfinite(log_denominator)):
             return np.float64(-np.inf)
 
-        # Calculate final log density
-        log_density = log_numerator - log_denominator
+        # Calculate final log density (sum across all ages)
+        log_density = np.sum(log_numerator - log_denominator)
 
         # Final numerical check
         if not np.isfinite(log_density):
@@ -330,47 +434,76 @@ def calculate_spine_age_log_likelihood(
         return np.float64(-np.inf)
 
 
-def calculate_non_spine_age_log_likelihood(
+def calculate_non_spine_ages_log_likelihood(
     lambda_param: float,
     mu_param: float,
-    age_t: float,
+    ages_t: NDArray[np.float64] | float,
     T: float,
     log_scale_params: bool = False,
 ) -> np.float64:
     """
-    Calculate log-likelihood of observing a manuscript with age t in a birth-death process.
+    Calculate the log-likelihood (log density) of observing one or more manuscript ages
+    under a birth-and-death process conditional on survival at observation time T.
 
-    For non-spine individuals (manuscripts descended from the initial individual),
-    the age density represents the probability density of observing a manuscript
-    of age t conditional on survival to the observation time T.
+    The age density for a non-spine individual is
+        f(t) = [λ e^{-λ t} - μ e^{-(λ-μ) T} e^{-μ t}] / [1 - e^{-(λ-μ) T}],
+    for λ != μ, and in the limiting case λ == μ it reduces to
+        f(t) = [1 + λ (T - t)] / T * e^{-λ t}.
 
-    The age density is:
-        f(t) = [λe^(-λt) - μe^(-(λ-μ)T)e^(-μt)] / [1 - e^(-(λ-μ)T)]
+    This function returns the sum of log f(t) across the elements of ages_t (i.e. a
+    log-likelihood for independent observations). It is implemented to accept either
+    scalar or array-like ages_t and is numerically stabilized around the λ ≈ μ case.
 
-    When λ ≈ μ (limiting case), the density simplifies to:
-        f(t) = [1 + λ(T-t)] / T * e^(-λt)
+    Parameters
+    ----------
+    lambda_param : float
+        Birth rate (λ > 0). If log_scale_params is True this argument is interpreted
+        as log(λ).
+    mu_param : float
+        Death rate (μ > 0). If log_scale_params is True this argument is interpreted
+        as log(μ).
+    ages_t : float or numpy.ndarray of float
+        Age(s) of manuscript(s) t (t >= 0). If an array is provided the returned
+        value is the sum of log-densities over its elements.
+    T : float
+        Observation time (time from process start to present). Must satisfy T >= t
+        for each provided t.
+    log_scale_params : bool, optional
+        If True, lambda_param and mu_param are provided on the log scale and are
+        exponentiated inside the function. Default is False.
 
-    All calculations are performed in log space for numerical stability.
+    Returns
+    -------
+    numpy.float64
+        The summed log-likelihood (log density) across ages_t. If any input is invalid
+        (e.g. negative ages, T < t, non-positive rates when not using log-scale,
+        or numerical issues such as non-finite intermediate values), the function
+        returns -inf as a numpy.float64.
 
-    Args:
-        lambda_param: Birth rate (λ > 0), or log(λ) if log_scale_params=True
-        mu_param: Death rate (μ > 0), or log(μ) if log_scale_params=True
-        age_t: Age of the manuscript (t ≥ 0)
-        T: Total observation time from process start to present (T ≥ t)
-        log_scale_params: If True, lambda_param and mu_param are log-transformed
+    Notes
+    -----
+    - The function is vectorized over ages_t and will broadcast computations
+      accordingly.
+    - A numerically stable branch is used when λ and μ are nearly equal to avoid
+      cancellation errors (uses the analytic λ = μ limit).
+    - Numerical exceptions (OverflowError, FloatingPointError, etc.) are caught
+      and produce -inf to indicate an invalid/degenerate likelihood.
 
-    Returns:
-        Log-likelihood value log(f(t)), or -inf if parameters are invalid
+    Examples
+    --------
+    >>> # scalar inputs
+    >>> calculate_non_spine_ages_log_likelihood(1.0, 0.5, 2.0, 5.0)
+    -2.03...
 
-    Raises:
-        Returns -inf for: negative ages, T < t, non-positive rates, or numerical overflow
+    >>> # log-scale parameters and multiple ages
+    >>> calculate_non_spine_ages_log_likelihood(np.log(1.0), np.log(0.5),
+    ...                                         np.array([1.0, 2.0]), 5.0,
+    ...                                         log_scale_params=True)
+    -3.01...
     """
     try:
         # Input validation
-        if age_t < 0:
-            return np.float64(-np.inf)
-
-        if T < age_t:
+        if np.any(ages_t < 0) or np.any(ages_t > T):
             return np.float64(-np.inf)
 
         # Handle parameter scaling
@@ -393,7 +526,7 @@ def calculate_non_spine_age_log_likelihood(
         if abs(log_lambda - log_mu) < 1e-12:
             # Limiting case: λ ≈ μ
 
-            log_numerator = -lambda_val * age_t + np.log(1 + lambda_val * (T - age_t))
+            log_numerator = -lambda_val * ages_t + np.log(1 + lambda_val * (T - ages_t))
             log_denominator = np.log(T)
 
             # Check for numerical validity
@@ -402,28 +535,28 @@ def calculate_non_spine_age_log_likelihood(
 
         else:
             # General case: λ ≠ μ
-            lambda_minus_mu = lambda_val - mu_val
-            rate_diff_time = lambda_minus_mu * T
+            growth_rate = lambda_val - mu_val
+            growth_rate_T = growth_rate * T
 
             # Calculate numerator terms
-            numerator_term1 = lambda_val * np.exp(-lambda_val * age_t)
-            numerator_term2 = mu_val * np.exp(-rate_diff_time) * np.exp(-mu_val * age_t)
+            numerator_term1 = lambda_val * np.exp(-lambda_val * ages_t)
+            numerator_term2 = mu_val * np.exp(-growth_rate_T) * np.exp(-mu_val * ages_t)
 
             numerator = numerator_term1 - numerator_term2
-            denominator = 1 - np.exp(-rate_diff_time)
+            denominator = 1 - np.exp(-growth_rate_T)
 
-            if not np.sign(numerator) == np.sign(denominator):
+            if not np.any(np.sign(numerator) == np.sign(denominator)):
                 return np.float64(-np.inf)
 
             log_numerator = np.log(abs(numerator))
             log_denominator = np.log(abs(denominator))
 
             # Check for numerical validity
-            if not (np.isfinite(log_numerator) and np.isfinite(log_denominator)):
+            if not (np.isfinite(log_numerator).all() and np.isfinite(log_denominator)):
                 return np.float64(-np.inf)
 
         # Calculate final log density
-        log_density = log_numerator - log_denominator
+        log_density = np.sum(log_numerator - log_denominator)
 
         # Final numerical check
         if not np.isfinite(log_density):
@@ -435,62 +568,138 @@ def calculate_non_spine_age_log_likelihood(
         return np.float64(-np.inf)
 
 
-def calculate_age_log_likelihood(
+def calculate_ages_log_likelihood(
     lambda_param: float,
     mu_param: float,
-    age_t: float,
+    ages_t: float,
     T: float,
     log_scale_params: bool = False,
-    is_spine: bool = False,
+    are_spines: bool = False,
 ) -> np.float64:
     """
-    Calculate log age density f(t) for a manuscript of given age.
+     Compute the log-density (log-likelihood) of manuscript ages under a birth-and-death model.
 
-    The age density function is:
-    f(t) = (λe^(-λt) - μe^(-(λ-μ)T)*e^(-μt)) / (1 - e^(-(λ-μ)T))
+    The age density for a manuscript of age t observed within a total time window T is
+    given by:
+        f(t) = (λ e^{-λ t} - μ e^{-(λ-μ)T} e^{-μ t}) / (1 - e^{-(λ-μ)T})
 
-    This is calculated in log space for numerical stability:
-    log f(t) = log(λe^(-λt) - μe^(-(λ-μ)T)*e^(-μt)) - log(1 - e^(-(λ-μ)T))
+    For numerical stability the computation is performed in log-space:
+        log f(t) = log(λ e^{-λ t} - μ e^{-(λ-μ)T} e^{-μ t}) - log(1 - e^{-(λ-μ)T})
 
-    Args:
-        lambda_param: Birth rate (λ) > 0
-        mu_param: Death rate (μ) > 0
-        age_t: Age of the manuscript
-        T: Total observation time >= age_t
-        log_scale_params: If True, parameters are in log scale
+    This function delegates to a spine-aware implementation when are_spines is True.
 
-    Returns:
-        Log age density f(t)
+        lambda_param (float):
+            Birth rate λ. Expected to be positive. If log_scale_params is True,
+            this is interpreted as log(λ).
+        mu_param (float):
+            Death rate μ. Expected to be positive. If log_scale_params is True,
+            this is interpreted as log(μ).
+        ages_t (float or array-like):
+            Age(s) t of manuscript(s). Each t should satisfy 0 <= t <= T.
+        T (float):
+            Total observation time. Must satisfy T >= max(ages_t) and be non-negative.
+        log_scale_params (bool, optional):
+            If True, lambda_param and mu_param are provided on the log scale and will
+            be exponentiated before use. Default: False.
+        are_spines (bool, optional):
+            If True, computation is routed to calculate_spine_ages_log_likelihood;
+            otherwise it uses the non-spine implementation. Default: False.
+
+        numpy.float64 or numpy.ndarray
+            The log-density log f(t) for the provided age(s). If ages_t is scalar,
+            a scalar numpy.float64 is returned; if array-like, an array of log-densities
+            of corresponding shape is returned.
+
+    Raises:
+        ValueError:
+            If lambda_param or mu_param (after optional exponentiation) are non-positive,
+            or if T is negative, or if any age in ages_t is outside [0, T].
+            (Implementations may also raise errors for invalid numeric inputs such as NaN.)
+
+    Notes:
+        - The implementation is careful to compute the numerator in log-space to
+          avoid catastrophic cancellation when the two exponential terms are similar.
+        - For extremely small or large rate differences (λ - μ) the normalization
+          term 1 - exp(-(λ-μ)T) may underflow; callers may wish to check parameter
+          regimes or use higher-precision numerics if necessary.
+        - This function is intended for use in likelihood calculations and can be
+          vectorized over ages_t when supported by the delegated implementation.
     """
-    if is_spine:
-        return calculate_spine_age_log_likelihood(
-            lambda_param, mu_param, age_t, T, log_scale_params
+    if are_spines:
+        return calculate_spine_ages_log_likelihood(
+            lambda_param, mu_param, ages_t, T, log_scale_params
         )
     else:
-        return calculate_non_spine_age_log_likelihood(
-            lambda_param, mu_param, age_t, T, log_scale_params
+        return calculate_non_spine_ages_log_likelihood(
+            lambda_param, mu_param, ages_t, T, log_scale_params
         )
 
 
-def calculate_non_spine_age_log_likelihood_derivatives(
+def calculate_non_spine_ages_log_likelihood_derivatives(
     lambda_param: float,
     mu_param: float,
-    age_t: float,
+    ages_t: float,
     T: float,
     log_scale_params: bool = False,
 ) -> NDArray[np.float64]:
     """
-    Calculate derivatives of log age density f(t) w.r.t. λ and μ.
+    Calculate derivatives of the log age-density f(t) with respect to the birth rate (λ)
+    and death rate (μ) for non-spine (observed) manuscript ages.
 
-    Args:
-        lambda_param: Birth rate (λ) > 0
-        mu_param: Death rate (μ) > 0
-        age_t: Age of the manuscript
-        T: Total observation time >= age_t
-        log_scale_params: If True, parameters are in log scale
+    This function computes d/dλ log f(t) and d/dμ log f(t) for one or more observed ages
+    under an exponential birth-death process observed up to time T. The implementation
+    handles two regimes for numerical stability: the general case λ ≠ μ and a limiting
+    case used when λ ≈ μ (checked in log-space). When multiple ages are provided,
+    derivatives are computed for each age and then summed to produce scalar derivatives
+    for the whole dataset.
 
-    Returns:
-        Tuple of derivatives (df/dλ, df/dμ)
+    Parameters
+    ----------
+    lambda_param : float
+        Birth rate parameter. If log_scale_params is False, this is λ > 0. If
+        log_scale_params is True, this is log(λ).
+    mu_param : float
+        Death rate parameter. If log_scale_params is False, this is μ > 0. If
+        log_scale_params is True, this is log(μ).
+    ages_t : float or array-like
+        Age(s) of the manuscript(s). Can be a scalar or a 1-D array of ages. Each
+        entry should satisfy 0 <= age <= T.
+    T : float
+        Total observation time (a scalar). Must be greater than or equal to each
+        entry in ages_t.
+    log_scale_params : bool, optional
+        If True, lambda_param and mu_param are interpreted as log(λ) and log(μ)
+        respectively and are exponentiated internally. Default is False.
+
+    Returns
+    -------
+    numpy.ndarray (dtype=np.float64)
+        1-D array of length 2: [d_logf_d_lambda, d_logf_d_mu]. Each component is a
+        scalar obtained by summing the per-age derivatives across the provided
+        ages_t. The returned dtype is np.float64.
+
+    Notes
+    -----
+    - The function expects strictly positive rates (λ > 0 and μ > 0) either directly
+      or after exponentiating log-scale inputs.
+    - For numerical stability when λ ≈ μ the function uses a limiting analytic
+      expression evaluated when |log(λ) - log(μ)| < 1e-12.
+    - No explicit input validation is enforced inside the function; supplying
+      invalid values (e.g., negative rates or T < ages) may produce invalid results
+      or runtime warnings/errors from numpy operations.
+    - The derivative values correspond to derivatives of the log of the age density,
+      not the raw density.
+
+    Examples
+    --------
+    # Single age, parameters on natural scale
+    d_vals = calculate_non_spine_ages_log_likelihood_derivatives(0.5, 0.3, 2.0, 5.0)
+
+    # Multiple ages, parameters given in log-scale
+    log_lambda = np.log(0.5); log_mu = np.log(0.3)
+    d_vals = calculate_non_spine_ages_log_likelihood_derivatives(
+        log_lambda, log_mu, np.array([1.0, 2.5]), 5.0, log_scale_params=True
+    )
     """
 
     # Handle parameter scaling
@@ -509,67 +718,102 @@ def calculate_non_spine_age_log_likelihood_derivatives(
     # Check for numerical stability in parameter space
     if abs(log_lambda - log_mu) < 1e-12:
         # Limiting case: λ ≈ μ
-        numerator = T + age_t**2 * lambda_val - age_t * (2 + lambda_val * T)
-        denominator = 1 - age_t * lambda_val + lambda_val * T
-        df_dlambda = numerator / denominator
-        return np.array([df_dlambda, df_dlambda], dtype=np.float64)
-
+        numerator = T + ages_t**2 * lambda_val - ages_t * (2 + lambda_val * T)
+        denominator = 1 - ages_t * lambda_val + lambda_val * T
+        d_mu = d_lambda = numerator / denominator
     else:
         # General case: λ ≠ μ
-        lambda_numerator_1 = (lambda_val * age_t - 1) * np.exp(
-            mu_val * age_t + T * (lambda_val - mu_val)
-        )
-        lambda_numerator_2 = -(lambda_val * age_t + lambda_val * T - 1) * np.exp(
-            mu_val * age_t + 2 * T * (lambda_val - mu_val)
-        )
-        lambda_numerator_3 = -mu_val * T * np.exp(lambda_val * age_t)
-        lambda_numerator_4 = (
-            2 * mu_val * T * np.exp(lambda_val * age_t + T * (lambda_val - mu_val))
-        )
+        # Pre-compute common exponentials and products to avoid redundant calculations
+        lambda_ages_t = lambda_val * ages_t
+        mu_ages_t = mu_val * ages_t
+        growth_rate = lambda_val - mu_val
+        T_growth_rate = T * growth_rate
+
+        # Cache exponentials - these are expensive operations
+        exp_lambda_t = np.exp(lambda_ages_t)
+        exp_mu_t = np.exp(mu_ages_t)
+        exp_T_growth = np.exp(T_growth_rate)
+        exp_2T_growth = exp_T_growth * exp_T_growth  # Faster than np.exp(2*...)
+
+        # Pre-compute combined exponentials
+        exp_mu_t_T_growth = exp_mu_t * exp_T_growth
+        exp_mu_t_2T_growth = exp_mu_t * exp_2T_growth
+        lambda_numerator_1 = (lambda_ages_t - 1) * exp_mu_t_T_growth
+        lambda_numerator_2 = -(lambda_ages_t + lambda_val * T - 1) * exp_mu_t_2T_growth
+        lambda_numerator_3 = -mu_val * T * exp_lambda_t
+        lambda_numerator_4 = 2 * mu_val * T * exp_lambda_t * exp_T_growth
         lambda_numerator = (
             lambda_numerator_1
             + lambda_numerator_2
             + lambda_numerator_3
             + lambda_numerator_4
         )
-        lambda_denominator = (np.exp(T * (lambda_val - mu_val)) - 1) * (
-            lambda_val * np.exp(mu_val * age_t + T * (lambda_val - mu_val))
-            - mu_val * np.exp(lambda_val * age_t)
+        denominator = (np.exp(T_growth_rate) - 1) * (
+            lambda_val * exp_mu_t_T_growth - mu_val * exp_lambda_t
         )
-        mu_numerator_1 = (
-            lambda_val * T * np.exp(mu_val * age_t + 2 * T * (lambda_val - mu_val))
-        )
-        mu_numerator_2 = np.exp(lambda_val * age_t) * (-mu_val * age_t + mu_val * T + 1)
-        mu_numerator_3 = (mu_val * age_t - 2 * mu_val * T - 1) * np.exp(
-            lambda_val * age_t + T * (lambda_val - mu_val)
+        mu_numerator_1 = lambda_val * T * exp_mu_t_2T_growth
+        mu_numerator_2 = exp_lambda_t * (-mu_ages_t + mu_val * T + 1)
+        mu_numerator_3 = (mu_ages_t - 2 * mu_val * T - 1) * np.exp(
+            lambda_ages_t + T_growth_rate
         )
         mu_numerator = mu_numerator_1 + mu_numerator_2 + mu_numerator_3
-        mu_denominator = lambda_denominator
 
-    df_dlambda = lambda_numerator / lambda_denominator
-    df_dmu = mu_numerator / mu_denominator
+        d_lambda = lambda_numerator / denominator
+        d_mu = mu_numerator / denominator
 
-    return np.array([df_dlambda, df_dmu], dtype=np.float64)
+    return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
 
-def calculate_spine_age_log_likelihood_derivatives(
+def calculate_spine_ages_log_likelihood_derivatives(
     lambda_param: float,
     mu_param: float,
-    age_t: float,
+    ages_t: float,
     T: float,
     log_scale_params: bool = False,
 ) -> NDArray[np.float64]:
     """
-    Calculate derivatives of log age density f(t) w.r.t. λ and μ for spine individual.
+    Calculate derivatives of the log age-density f(t) for a "spine" individual
+    with respect to the birth rate (λ)
+    and death rate (μ).
 
-    Args:
-        lambda_param: Birth rate (λ) > 0
-        mu_param: Death rate (μ) > 0
-        age_t: Age of the manuscript
-        T: Total observation time >= age_t
-        log_scale_params: If True, parameters are in log scale
-    Returns:
-        Tuple of derivatives (df/dλ, df/dμ)
+    Parameters
+    ----------
+    lambda_param : float
+        Birth rate λ (> 0) if log_scale_params is False; otherwise log(λ) when
+        log_scale_params is True.
+    mu_param : float
+        Death rate μ (> 0) if log_scale_params is False; otherwise log(μ) when
+        log_scale_params is True.
+    ages_t : float or array_like
+        Age or array of ages a of the manuscript observation. Values equal to T
+        are treated as boundary/censored observations.
+    T : float
+        Total observation time (T >= ages_t is expected).
+    log_scale_params : bool, optional
+        If True, lambda_param and mu_param are provided in log-space. They are
+        exponentiated internally for evaluation. Returned derivatives correspond to
+        partial derivatives with respect to the original (unlogged) parameters λ and μ.
+
+    Returns
+    -------
+    numpy.ndarray
+        1-D array of shape (2,) and dtype np.float64:
+        [ sum_i ∂ log f(a_i) / ∂λ,  sum_i ∂ log f(a_i) / ∂μ ],
+        i.e. the partial derivatives summed across all provided ages_t entries.
+
+    Notes
+    -----
+    - The function is vectorized over ages_t. Entries with ages_t == T use a boundary
+      closed-form expression; entries with ages_t < T use the interior expression.
+    - A numerically stable limiting formula is used when λ ≈ μ; the equality test is
+      performed in log-space with a tolerance of 1e-12.
+    - The implementation does not raise argument errors: passing non-positive λ or μ
+      when log_scale_params is False (or inconsistent T/ages_t) may produce NaNs
+      or warnings due to log/exp operations. Callers should validate input ranges
+      if required.
+    - Returned values are sums over the provided ages; if per-age derivatives
+      are desired, inspect or modify the implementation to return elementwise arrays
+      instead of sums.
     """
     # Handle parameter scaling
     if log_scale_params:
@@ -584,83 +828,145 @@ def calculate_spine_age_log_likelihood_derivatives(
         log_lambda = np.log(lambda_param)
         log_mu = np.log(mu_param)
 
-    pass
+    at_boundary = ages_t == T
+    not_at_boundary = not at_boundary
+    d_lambda = np.zeros_like(ages_t, dtype=np.float64)
+    d_mu = np.zeros_like(ages_t, dtype=np.float64)
 
     # Check for numerical stability in parameter space
     if abs(log_lambda - log_mu) < 1e-12:
         # Limiting case: λ ≈ μ
-        if age_t == T:
-            # -((T^2 λ)/(1 + T λ))
-            df_dlambda = -(lambda_val * T**2) / (1 + lambda_val * T)
-        else:
-            df_dlambda = 2 / lambda_val - age_t
-        return np.array([df_dlambda, df_dlambda], dtype=np.float64)
-
+        if np.any(at_boundary):
+            # d/dλ = -(λ T^2)/(λ T + 1)
+            d_mu[at_boundary] = d_lambda[at_boundary] = -(lambda_val * T**2) / (
+                lambda_val * T + 1
+            )
+        if np.any(not_at_boundary):
+            # d/dλ = 2/λ - a
+            d_mu[not_at_boundary] = d_lambda[not_at_boundary] = 2 / lambda_val - ages_t
     else:
         # General case: λ ≠ μ
-        if age_t == T:
-            # -(e^(λ T) (λ T + 1))/(μ e^(μ T) - λ e^(λ T)) - (λ T - μ T + 1)/(λ - μ)
-            lambda_1 = (
-                -np.exp(lambda_val * T)
-                * (lambda_val * T + 1)
-                / (mu_val * np.exp(mu_val * T) - lambda_val * np.exp(lambda_val * T))
+        if np.any(at_boundary):
+            # d/dλ = (μ (e^(μ T) (T (λ - μ) + 1) - e^(λ T)))/((λ - μ) (λ e^(λ T) - μ e^(μ T)))
+            lambda_numerator = mu_val * (
+                np.exp(mu_val * T) * (T * (lambda_val - mu_val) + 1)
+                - np.exp(lambda_val * T)
             )
-            lambda_2 = -(lambda_val * T - mu_val * T + 1) / (lambda_val - mu_val)
-            df_dlambda = lambda_1 + lambda_2
-            # -(λ (e^(λ T) (T (λ - μ) - 1) + e^(μ T)))/((λ - μ) (λ e^(λ T) - μ e^(μ T)))
+            denominator = (lambda_val - mu_val) * (
+                lambda_val * np.exp(lambda_val * T) - mu_val * np.exp(mu_val * T)
+            )
+            d_lambda[at_boundary] = lambda_numerator / denominator
+            # d/dμ = -(λ (e^(λ T) (T (λ - μ) - 1) + e^(μ T)))/((λ - μ) (λ e^(λ T) - μ e^(μ T)))
             mu_numerator = -lambda_val * (
                 np.exp(lambda_val * T) * (T * (lambda_val - mu_val) - 1)
                 + np.exp(mu_val * T)
             )
-            mu_denominator = (lambda_val - mu_val) * (
-                lambda_val * np.exp(lambda_val * T) - mu_val * np.exp(mu_val * T)
+            d_mu[at_boundary] = mu_numerator / denominator
+        if np.any(not_at_boundary):
+            # d/dλ = (e^(μ a) (μ + λ a (λ - μ)) - μ e^(λ a))/(λ (λ - μ) (e^(λ a) - e^(μ a)))
+            lambda_numerator = np.exp(mu_val * ages_t) * (
+                mu_val + lambda_val * ages_t * (lambda_val - mu_val)
+            ) - mu_val * np.exp(lambda_val * ages_t)
+            lambda_denominator = (
+                lambda_val
+                * (lambda_val - mu_val)
+                * (np.exp(lambda_val * ages_t) - np.exp(mu_val * ages_t))
             )
-            df_dmu = mu_numerator / mu_denominator
-        else:
-            # 1/(μ - λ) + 1/λ + (T e^(μ T))/(e^(λ T) - e^(μ T))
-            lambda_1 = 1 / (mu_val - lambda_val) + 1 / lambda_val
-            lambda_2 = (T * np.exp(mu_val * T)) / (
-                np.exp(lambda_val * T) - np.exp(mu_val * T)
+            d_lambda[not_at_boundary] = lambda_numerator / lambda_denominator
+            # d/dμ = (e^(λ a) (λ - λ μ a + μ^2 a) - λ e^(μ a))/(μ (λ - μ) (e^(λ a) - e^(μ a)))
+            mu_numerator = np.exp(lambda_val * ages_t) * (
+                lambda_val - lambda_val * mu_val * ages_t + mu_val**2 * ages_t
+            ) - lambda_val * np.exp(mu_val * ages_t)
+            mu_denominator = (
+                mu_val
+                * (lambda_val - mu_val)
+                * (np.exp(lambda_val * ages_t) - np.exp(mu_val * ages_t))
             )
-            df_dlambda = lambda_1 + lambda_2
-            # λ/(μ (λ - μ)) + (T e^(λ T))/(e^(μ T) - e^(λ T))
-            mu_1 = lambda_val / (mu_val * (lambda_val - mu_val))
-            mu_2 = (T * np.exp(lambda_val * T)) / (
-                np.exp(mu_val * T) - np.exp(lambda_val * T)
-            )
-            df_dmu = mu_1 + mu_2
+            d_mu[not_at_boundary] = mu_numerator / mu_denominator
 
-    return np.array([df_dlambda, df_dmu], dtype=np.float64)
+    return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
 
-def calculate_age_log_likelihood_derivatives(
+def calculate_ages_log_likelihood_derivatives(
     lambda_param: float,
     mu_param: float,
-    age_t: float,
+    ages_t: float,
     T: float,
     log_scale_params: bool = False,
-    is_spine: bool = False,
+    are_spines: bool = False,
 ) -> NDArray[np.float64]:
     """
-    Calculate derivatives of log age density f(t) w.r.t. λ and μ.
+    Compute the partial derivatives of the log age-density f(t) with respect to
+    the birth rate (λ) and death rate (μ).
 
-    Args:
-        lambda_param: Birth rate (λ) > 0
-        mu_param: Death rate (μ) > 0
-        age_t: Age of the manuscript
-        T: Total observation time >= age_t
-        log_scale_params: If True, parameters are in log scale
-        is_spine: If True, calculate for spine individual
-    Returns:
-        Tuple of derivatives (df/dλ, df/dμ)
+    This function handles both "spine" and "non-spine" individuals by delegating to
+    the appropriate implementation and supports interpreting the rate parameters
+    in log-scale.
+
+    Parameters
+    ----------
+    lambda_param : float
+        Birth rate (λ). If `log_scale_params` is True, this is interpreted as
+        log(λ). Must be finite; when interpreted as λ, must be strictly positive.
+    mu_param : float
+        Death rate (μ). If `log_scale_params` is True, this is interpreted as
+        log(μ). Must be finite; when interpreted as μ, must be strictly positive.
+    ages_t : float or array-like
+        Age(s) t at which to evaluate the derivatives. Each age must satisfy
+        0 <= t <= T. Can be a scalar or a 1-D array; the return shape will match.
+    T : float
+        Total observation time. Must satisfy T >= max(ages_t) and be finite.
+    log_scale_params : bool, optional
+        If True, `lambda_param` and `mu_param` are provided as their natural
+        logarithms. The returned derivatives are those of the log-likelihood with
+        respect to the parameters as provided (i.e., with chain-rule applied when
+        parameters are given in log-scale). Default is False.
+    are_spines : bool, optional
+        If True, compute derivatives for a spine individual; otherwise compute for
+        a non-spine individual. Default is False.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of derivatives of the log age-density with respect to the two
+        parameters, in the order (d/dλ, d/dμ). If `ages_t` is a scalar the array
+        has shape (2,); if `ages_t` is an array of length n the array has shape
+        (2, n). The dtype is float64.
+
+    Raises
+    ------
+    ValueError
+        If any input is invalid, e.g. T < max(ages_t), non-finite parameter values,
+        or (when not in log-scale) non-positive rates.
+
+    Notes
+    -----
+    - This function returns derivatives of the log of the age density f(t), not
+      derivatives of f(t) itself.
+    - Implementation delegates to specialized routines for spine vs non-spine
+      individuals; behavior and formulae may differ between these cases.
+    - When `log_scale_params` is True, derivatives are computed using the chain
+      rule so that they correspond to derivatives with respect to the supplied
+      log-parameters.
+
+    Examples
+    --------
+    # Scalar ages
+    >>> calculate_ages_log_likelihood_derivatives(1.0, 0.5, 2.0, 3.0)
+    array([..., ...])
+
+    # Vectorized ages
+    >>> calculate_ages_log_likelihood_derivatives(1.0, 0.5, [0.5, 1.5, 2.5], 3.0)
+    array([[..., ..., ...],
+           [..., ..., ...]])
     """
-    if is_spine:
-        return calculate_spine_age_log_likelihood_derivatives(
-            lambda_param, mu_param, age_t, T, log_scale_params
+    if are_spines:
+        return calculate_spine_ages_log_likelihood_derivatives(
+            lambda_param, mu_param, ages_t, T, log_scale_params
         )
     else:
-        return calculate_non_spine_age_log_likelihood_derivatives(
-            lambda_param, mu_param, age_t, T, log_scale_params
+        return calculate_non_spine_ages_log_likelihood_derivatives(
+            lambda_param, mu_param, ages_t, T, log_scale_params
         )
 
 

@@ -155,7 +155,7 @@ def fit_birth_death_processes(
                     observation_time=observation_time,
                     is_ordered=is_ordered,
                     log_scale_params=False,
-                    parallel=True,
+                    parallel=parallel,
                 )
         return nll
 
@@ -221,11 +221,10 @@ def fit_birth_death_processes(
             )
 
             if result.success:
-                # Check if this is the best result so far
-                likelihood = -result.fun
-                if likelihood > best_likelihood:
-                    best_result = result
-                    best_likelihood = likelihood
+                # First successful optimization - use it and stop trying others
+                best_result = result
+                best_likelihood = -result.fun
+                break
 
             elif best_result is None:
                 # Keep even failed results if we have nothing better
@@ -235,10 +234,7 @@ def fit_birth_death_processes(
             # Continue trying other methods
             if best_result is None:
                 # Store the error for the first method only
-                return {
-                    "success": False,
-                    "error": f"All optimization methods failed. First error: {str(e)}",
-                }
+                first_error = str(e)
             continue
 
     # Process the best result found
@@ -269,7 +265,7 @@ def fit_birth_death_processes(
         # No optimization succeeded
         return {
             "success": False,
-            "error": "All optimization methods failed",
+            "error": f"All optimization methods failed. First error: {first_error if 'first_error' in locals() else 'Unknown error'}",
         }
 
 

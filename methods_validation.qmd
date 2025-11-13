@@ -201,6 +201,20 @@ print(f"   Success rate: {(successful_fits / len(simulated_processes) * 100):.1f
 ```
 
 ```{python}
+# | eval: true
+# | label: profile-single-fit
+%%prun -s cumulative -q -l 30 -T prof-single-fit
+
+
+print("🔍 Profiling a single model fit...")
+result = fit_single_model(list_of_ages[0], time_span)
+for ages in list_of_ages[0:min(len(list_of_ages), 50)]:
+    fit_single_model(ages, time_span)
+
+print(f"Result: {result}")
+```
+
+```{python}
 # | label: summary-statistics
 
 print("📊 Compute summary statistics...")
@@ -519,18 +533,20 @@ save_figure(fig_box, "mv_parameter_boxplots", width=397, height=250)
 ```{python}
 # | label: use-multiple-processes
 
+%%prun -s cumulative -q -l 30 -T prof-use-multiple-processes
+
 best_estimate = fit_birth_death_processes(
     list_of_ages=list_of_ages,
     observation_time=time_span,
     is_ordered=True,
-    parallel=True,
+    parallel=False,
 )
 
 print(best_estimate)
 ```
 
 ```{python}
-# | label: cumulative mult-proc
+# | label: cumulative-mult-proc
 # | eval: false
 cumulative_estimates = []
 has_age = False

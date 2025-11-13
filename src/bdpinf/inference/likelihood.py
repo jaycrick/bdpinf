@@ -10,10 +10,10 @@ from joblib import Parallel, delayed
 from numpy.typing import NDArray
 
 from ..models.mathematical_functions import (
-    calculate_age_log_likelihood,
-    calculate_age_log_likelihood_derivatives,
-    calculate_population_log_likelihood,
-    calculate_population_log_likelihood_derivatives,
+    calculate_ages_log_likelihood,
+    calculate_ages_log_likelihood_derivatives,
+    calculate_populations_log_likelihood,
+    calculate_populations_log_likelihood_derivatives,
 )
 
 
@@ -34,18 +34,18 @@ def _calculate_single_age_density(
     if age_t > observation_time:
         return (i, np.float64(-np.inf))
 
-    is_spine = is_ordered and (i == 0)
+    are_spines = is_ordered and (i == 0)
 
-    log_density = calculate_age_log_likelihood(
+    log_density = calculate_ages_log_likelihood(
         birth_rate,
         death_rate,
         age_t,
         observation_time,
         log_scale_params=log_scale_params,
-        is_spine=is_spine,
+        are_spines=are_spines,
     )
 
-    return (i, log_density)
+    return (i, np.float64(log_density))
 
 
 def _calculate_single_gradient(
@@ -62,15 +62,15 @@ def _calculate_single_gradient(
 
     Returns tuple of (index, gradient) for parallel processing.
     """
-    is_spine = is_ordered and (i == 0)
+    are_spines = is_ordered and (i == 0)
 
-    grad_density = calculate_age_log_likelihood_derivatives(
+    grad_density = calculate_ages_log_likelihood_derivatives(
         birth_rate,
         death_rate,
         age_t,
         observation_time,
         log_scale_params=log_scale_params,
-        is_spine=is_spine,
+        are_spines=are_spines,
     )
 
     return (i, grad_density)
@@ -127,7 +127,7 @@ def log_likelihood(
         n_total: int = len(ages)
 
         # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
-        log_P_n_T = calculate_population_log_likelihood(
+        log_P_n_T = calculate_populations_log_likelihood(
             birth_rate,
             death_rate,
             observation_time,
@@ -179,22 +179,22 @@ def log_likelihood(
                     return np.float64(-np.inf)
                 if is_ordered and i == 0:
                     # Calculate log age density
-                    log_density = calculate_age_log_likelihood(
+                    log_density = calculate_ages_log_likelihood(
                         birth_rate,
                         death_rate,
                         age_t,
                         observation_time,
                         log_scale_params=log_scale_params,
-                        is_spine=True,
+                        are_spines=True,
                     )
                 else:
-                    log_density = calculate_age_log_likelihood(
+                    log_density = calculate_ages_log_likelihood(
                         birth_rate,
                         death_rate,
                         age_t,
                         observation_time,
                         log_scale_params=log_scale_params,
-                        is_spine=False,
+                        are_spines=False,
                     )
 
                 # Check if age density calculation succeeded
@@ -268,7 +268,7 @@ def log_likelihood_gradient(
     n_total: int = len(ages)
 
     # Gradient components
-    grad_log_P_n_T = calculate_population_log_likelihood_derivatives(
+    grad_log_P_n_T = calculate_populations_log_likelihood_derivatives(
         birth_rate,
         death_rate,
         observation_time,
@@ -306,22 +306,22 @@ def log_likelihood_gradient(
         for i, age_t in enumerate(ages):
             # Calculate derivatives of log age density
             if is_ordered and i == 0:
-                grad_density = calculate_age_log_likelihood_derivatives(
+                grad_density = calculate_ages_log_likelihood_derivatives(
                     birth_rate,
                     death_rate,
                     age_t,
                     observation_time,
                     log_scale_params=log_scale_params,
-                    is_spine=True,
+                    are_spines=True,
                 )
             else:
-                grad_density = calculate_age_log_likelihood_derivatives(
+                grad_density = calculate_ages_log_likelihood_derivatives(
                     birth_rate,
                     death_rate,
                     age_t,
                     observation_time,
                     log_scale_params=log_scale_params,
-                    is_spine=False,
+                    are_spines=False,
                 )
             grad_log_densities += grad_density
 
