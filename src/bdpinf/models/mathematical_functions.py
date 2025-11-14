@@ -43,10 +43,10 @@ def calculate_populations_log_likelihood(
     Returns
     -------
     numpy.float64
-        Sum of log P_n(T) across the provided `ns`. If any input or intermediate
-        computation is invalid (e.g., negative time, negative counts, non-positive
-        rates when not in log-space, α_t or β_t not in (0,1), overflow, division by zero,
-        or other numerical issues), returns np.float64(-np.inf).
+        Sum of log P_n(T) across the provided `ns`. Returns np.float64(-np.inf) for
+        numerically invalid inputs (negative time, negative counts, non-positive rates
+        when not in log-space, or α_t/β_t not in (0,1)). Programming errors (type errors,
+        indexing errors) will raise exceptions.
     Behavior and formulas
     ---------------------
     Let α_t and β_t denote auxiliary probabilities defined by the birth-and-death process:
@@ -61,8 +61,10 @@ def calculate_populations_log_likelihood(
     - Negative time or negative counts produce -inf.
     - When `log_scale_params` is False, non-positive λ or μ produce -inf.
     - If α_t or β_t are not strictly between 0 and 1, the function returns -inf.
+    - Non-finite intermediate values (overflow/underflow) produce -inf.
     - The function accepts scalar or array-like `ns`; intermediate computations
       preserve array shape, but the returned value is the scalar sum of log-probabilities.
+    - Type errors, shape mismatches, and other programming errors raise exceptions.
     Examples
     --------
     # Scalar n
@@ -70,80 +72,76 @@ def calculate_populations_log_likelihood(
     # Vectorized ns
     >>> calculate_population_log_likelihood(0.5, 0.3, 10.0, np.array([0, 1, 2]))
     """
-    try:
-        # Input validation
-        if np.any(ns < 0) or time < 0:
-            return np.float64(-np.inf)
-
-        # Handle parameter scaling
-        if log_scale_params:
-            log_lambda = lambda_param
-            log_mu = mu_param
-            lambda_val = np.exp(lambda_param)
-            mu_val = np.exp(mu_param)
-        else:
-            # Validate positive parameters
-            if lambda_param <= 0 or mu_param <= 0:
-                return np.float64(-np.inf)
-            log_lambda = np.log(lambda_param)
-            log_mu = np.log(mu_param)
-            lambda_val = lambda_param
-            mu_val = mu_param
-
-        if abs(log_lambda - log_mu) < 1e-12:
-            # Limiting case: λ ≈ μ
-            rate_time_product = lambda_val * time
-            alpha_t = beta_t = rate_time_product / (1 + rate_time_product)
-        else:
-            # General case: λ ≠ μ
-            growth_rate = lambda_val - mu_val
-            exponent = growth_rate * time
-            exp_term = np.exp(exponent)
-            if not np.isfinite(exp_term):
-                return np.float64(-np.inf)
-            denominator = lambda_val * exp_term - mu_val
-            alpha_t = mu_val * (exp_term - 1) / denominator
-
-            # Calculate β_t = (λ/μ) * α_t
-            beta_t = (lambda_val / mu_val) * alpha_t
-
-        # Validate α_t and β_t are in valid range (0, 1)
-        if not ((0 < alpha_t < 1) and (0 < beta_t < 1)):
-            return np.float64(-np.inf)
-
-        # Initialize log probability array
-        log_probability = np.zeros_like(ns, dtype=np.float64)
-
-        # Handle n == 0 case
-        zero_mask = ns == 0
-        if np.any(zero_mask):
-            log_probability[zero_mask] = np.log(alpha_t)
-
-        # Handle n > 0 case
-        nonzero_mask = not zero_mask
-        if np.any(nonzero_mask):
-            log_term1 = np.log(1 - alpha_t)
-            log_term2 = np.log(1 - beta_t)
-            log_term3 = (ns - 1) * np.log(beta_t)
-
-            # Check all terms are finite
-            if not (
-                np.isfinite(log_term1)
-                and np.isfinite(log_term2)
-                and np.all(np.isfinite(log_term3))
-            ):
-                return np.float64(-np.inf)
-
-            log_probability[nonzero_mask] = log_term1 + log_term2 + log_term3
-
-        # Final numerical check
-        if not np.all(np.isfinite(log_probability)):
-            return np.float64(-np.inf)
-
-        return np.float64(np.sum(log_probability))
-
-    except (ValueError, FloatingPointError, OverflowError, ZeroDivisionError):
+    # Input validation
+    if np.any(ns < 0) or time < 0:
         return np.float64(-np.inf)
+
+    # Handle parameter scaling
+    if log_scale_params:
+        log_lambda = lambda_param
+        log_mu = mu_param
+        lambda_val = np.exp(lambda_param)
+        mu_val = np.exp(mu_param)
+    else:
+        # Validate positive parameters
+        if lambda_param <= 0 or mu_param <= 0:
+            return np.float64(-np.inf)
+        log_lambda = np.log(lambda_param)
+        log_mu = np.log(mu_param)
+        lambda_val = lambda_param
+        mu_val = mu_param
+
+    if abs(log_lambda - log_mu) < 1e-12:
+        # Limiting case: λ ≈ μ
+        rate_time_product = lambda_val * time
+        alpha_t = beta_t = rate_time_product / (1 + rate_time_product)
+    else:
+        # General case: λ ≠ μ
+        growth_rate = lambda_val - mu_val
+        exponent = growth_rate * time
+        exp_term = np.exp(exponent)
+        if not np.isfinite(exp_term):
+            return np.float64(-np.inf)
+        denominator = lambda_val * exp_term - mu_val
+        alpha_t = mu_val * (exp_term - 1) / denominator
+
+        # Calculate β_t = (λ/μ) * α_t
+        beta_t = (lambda_val / mu_val) * alpha_t
+
+    # Validate α_t and β_t are in valid range (0, 1)
+    if not ((0 < alpha_t < 1) and (0 < beta_t < 1)):
+        return np.float64(-np.inf)
+
+    # Initialize log probability array
+    log_probability = np.zeros_like(ns, dtype=np.float64)
+
+    # Handle n == 0 case
+    zero_mask = ns == 0
+    if np.any(zero_mask):
+        log_probability[zero_mask] = np.log(alpha_t)
+
+    # Handle n > 0 case
+    nonzero_mask = np.invert(zero_mask)
+    if np.any(nonzero_mask):
+        log_term1 = np.log(1 - alpha_t)
+        log_term2 = np.log(1 - beta_t)
+        log_term3 = (ns - 1) * np.log(beta_t)
+
+        # Check all terms are finite
+        if not (
+            np.isfinite(log_term1)
+            and np.isfinite(log_term2)
+            and np.all(np.isfinite(log_term3))
+        ):
+            return np.float64(-np.inf)
+
+        log_probability[nonzero_mask] = log_term1 + log_term2 + log_term3[nonzero_mask]
+
+    # Final numerical check
+    if not np.all(np.isfinite(log_probability)):
+        return np.float64(-np.inf)
+
+    return np.float64(np.sum(log_probability))
 
 
 def calculate_populations_log_likelihood_derivatives(
@@ -218,7 +216,7 @@ def calculate_populations_log_likelihood_derivatives(
     d_mu = np.zeros_like(ns, dtype=np.float64)
 
     zero_mask = ns == 0
-    non_zero_mask = not zero_mask
+    non_zero_mask = np.invert(zero_mask)
 
     if abs(log_lambda - log_mu) < 1e-12:
         # Limiting case: λ ≈ μ
@@ -301,8 +299,8 @@ def calculate_populations_log_likelihood_derivatives(
             * (np.exp(time * (growth_rate)) - 1)
             * (lambda_val * np.exp(time * (growth_rate)) - mu_val)
         )
-        d_lambda[non_zero_mask] = lambda_numerator / lambda_denominator
-        d_mu[non_zero_mask] = mu_numerator / mu_denominator
+        d_lambda[non_zero_mask] = lambda_numerator[non_zero_mask] / lambda_denominator
+        d_mu[non_zero_mask] = mu_numerator[non_zero_mask] / mu_denominator
 
     return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
@@ -340,7 +338,8 @@ def calculate_spine_ages_log_likelihood(
     -------
     np.float64
         The sum of the log age densities for all entries of `ages_t` (a scalar).
-        On invalid inputs or numerical issues the function returns -inf.
+        Returns -inf for numerically invalid inputs (negative ages, ages > T, non-positive
+        rates, or non-finite intermediate values). Programming errors raise exceptions.
     Notes
     -----
     - Input validation: the function returns -inf if any age is negative or greater than T,
@@ -352,86 +351,84 @@ def calculate_spine_ages_log_likelihood(
     - Numerical robustness: the implementation checks signs of intermediate expressions and
       finiteness of results; if any intermediate quantity is invalid (non-finite or a sign
       mismatch that would lead to a non-real log) the function returns -inf.
+    - Programming errors (type mismatches, array indexing errors) will raise exceptions
+      rather than returning -inf.
     - The returned value is a scalar np.float64 equal to the summed log-density across
       the provided ages (suitable for use inside likelihood computations or MCMC).
     """
-    try:
-        # Input validation
-        if np.any(ages_t < 0) or np.any(ages_t > T):
-            return np.float64(-np.inf)
-
-        # Handle parameter scaling
-        if log_scale_params:
-            log_lambda = lambda_param
-            log_mu = mu_param
-            # Convert log parameters back to original scale
-            lambda_val = np.exp(lambda_param)
-            mu_val = np.exp(mu_param)
-        else:
-            # Validate positive parameters
-            if lambda_param <= 0 or mu_param <= 0:
-                return np.float64(-np.inf)
-            lambda_val = lambda_param
-            mu_val = mu_param
-            log_lambda = np.log(lambda_param)
-            log_mu = np.log(mu_param)
-
-        at_boundary = ages_t == T
-        not_at_boundary = not at_boundary
-
-        if abs(log_lambda - log_mu) < 1e-12:
-            # Limiting case: λ ≈ μ
-            boundary_val = np.log(1 + lambda_val * T) - lambda_val * T
-            log_density = np.where(
-                at_boundary,
-                boundary_val,
-                2 * np.log(lambda_val) + np.log(ages_t) - lambda_val * ages_t,
-            )
-            return np.float64(np.sum(log_density))
-
-        # General case: λ ≠ μ
-
-        # Initialize arrays for numerator and denominator
-        log_numerator = np.zeros_like(ages_t, dtype=np.float64)
-        denominator = lambda_val - mu_val
-        sign_denominator = np.sign(denominator)
-        log_denominator = np.log(np.abs(denominator))
-
-        if np.any(at_boundary):
-            numerator_boundary = lambda_val * np.exp(-mu_val * T) - mu_val * np.exp(
-                -lambda_val * T
-            )
-
-            if not np.all(np.sign(numerator_boundary) == sign_denominator):
-                return np.float64(-np.inf)
-
-            log_numerator[at_boundary] = np.log(np.abs(numerator_boundary))
-
-        if np.any(not_at_boundary):
-            numerator_1 = np.exp(-mu_val * T) - np.exp(-lambda_val * T)
-
-            if not np.all(np.sign(numerator_1) == sign_denominator):
-                return np.float64(-np.inf)
-
-            log_numerator[not_at_boundary] = (
-                np.log(lambda_val) + np.log(mu_val) + np.log(np.abs(numerator_1))
-            )
-
-        # Check for numerical validity
-        if not (np.all(np.isfinite(log_numerator)) and np.isfinite(log_denominator)):
-            return np.float64(-np.inf)
-
-        # Calculate final log density (sum across all ages)
-        log_density = np.sum(log_numerator - log_denominator)
-
-        # Final numerical check
-        if not np.isfinite(log_density):
-            return np.float64(-np.inf)
-
-        return np.float64(log_density)
-
-    except (ValueError, FloatingPointError, OverflowError, ZeroDivisionError):
+    # Input validation
+    if np.any(ages_t < 0) or np.any(ages_t > T):
         return np.float64(-np.inf)
+
+    # Handle parameter scaling
+    if log_scale_params:
+        log_lambda = lambda_param
+        log_mu = mu_param
+        # Convert log parameters back to original scale
+        lambda_val = np.exp(lambda_param)
+        mu_val = np.exp(mu_param)
+    else:
+        # Validate positive parameters
+        if lambda_param <= 0 or mu_param <= 0:
+            return np.float64(-np.inf)
+        lambda_val = lambda_param
+        mu_val = mu_param
+        log_lambda = np.log(lambda_param)
+        log_mu = np.log(mu_param)
+
+    at_boundary = ages_t == T
+    not_at_boundary = np.invert(at_boundary)
+
+    if abs(log_lambda - log_mu) < 1e-12:
+        # Limiting case: λ ≈ μ
+        boundary_val = np.log(1 + lambda_val * T) - lambda_val * T
+        log_density = np.where(
+            at_boundary,
+            boundary_val,
+            2 * np.log(lambda_val) + np.log(ages_t) - lambda_val * ages_t,
+        )
+        return np.float64(np.sum(log_density))
+
+    # General case: λ ≠ μ
+
+    # Initialize arrays for numerator and denominator
+    log_numerator = np.zeros_like(ages_t, dtype=np.float64)
+    denominator = lambda_val - mu_val
+    sign_denominator = np.sign(denominator)
+    log_denominator = np.log(np.abs(denominator))
+
+    if np.any(at_boundary):
+        numerator_boundary = lambda_val * np.exp(-mu_val * T) - mu_val * np.exp(
+            -lambda_val * T
+        )
+
+        if not np.all(np.sign(numerator_boundary) == sign_denominator):
+            return np.float64(-np.inf)
+
+        log_numerator[at_boundary] = np.log(np.abs(numerator_boundary))
+
+    if np.any(not_at_boundary):
+        numerator_1 = np.exp(-mu_val * T) - np.exp(-lambda_val * T)
+
+        if not np.all(np.sign(numerator_1) == sign_denominator):
+            return np.float64(-np.inf)
+
+        log_numerator[not_at_boundary] = (
+            np.log(lambda_val) + np.log(mu_val) + np.log(np.abs(numerator_1))
+        )
+
+    # Check for numerical validity
+    if not (np.all(np.isfinite(log_numerator)) and np.isfinite(log_denominator)):
+        return np.float64(-np.inf)
+
+    # Calculate final log density (sum across all ages)
+    log_density = np.sum(log_numerator - log_denominator)
+
+    # Final numerical check
+    if not np.isfinite(log_density):
+        return np.float64(-np.inf)
+
+    return np.float64(log_density)
 
 
 def calculate_non_spine_ages_log_likelihood(
@@ -475,10 +472,10 @@ def calculate_non_spine_ages_log_likelihood(
     Returns
     -------
     numpy.float64
-        The summed log-likelihood (log density) across ages_t. If any input is invalid
-        (e.g. negative ages, T < t, non-positive rates when not using log-scale,
-        or numerical issues such as non-finite intermediate values), the function
-        returns -inf as a numpy.float64.
+        The summed log-likelihood (log density) across ages_t. Returns -inf for
+        numerically invalid inputs (negative ages, T < t, non-positive rates when not
+        using log-scale, or non-finite intermediate values). Programming errors (type
+        errors, shape mismatches) raise exceptions.
 
     Notes
     -----
@@ -486,8 +483,8 @@ def calculate_non_spine_ages_log_likelihood(
       accordingly.
     - A numerically stable branch is used when λ and μ are nearly equal to avoid
       cancellation errors (uses the analytic λ = μ limit).
-    - Numerical exceptions (OverflowError, FloatingPointError, etc.) are caught
-      and produce -inf to indicate an invalid/degenerate likelihood.
+    - Numerical issues (non-finite values, invalid domains) return -inf.
+    - Programming errors raise exceptions for easier debugging.
 
     Examples
     --------
@@ -501,71 +498,67 @@ def calculate_non_spine_ages_log_likelihood(
     ...                                         log_scale_params=True)
     -3.01...
     """
-    try:
-        # Input validation
-        if np.any(ages_t < 0) or np.any(ages_t > T):
-            return np.float64(-np.inf)
-
-        # Handle parameter scaling
-        if log_scale_params:
-            log_lambda = lambda_param
-            log_mu = mu_param
-            # Convert log parameters back to original scale
-            lambda_val = np.exp(lambda_param)
-            mu_val = np.exp(mu_param)
-        else:
-            # Validate positive parameters
-            if lambda_param <= 0 or mu_param <= 0:
-                return np.float64(-np.inf)
-            lambda_val = lambda_param
-            mu_val = mu_param
-            log_lambda = np.log(lambda_param)
-            log_mu = np.log(mu_param)
-
-        # Check for numerical stability in parameter space
-        if abs(log_lambda - log_mu) < 1e-12:
-            # Limiting case: λ ≈ μ
-
-            log_numerator = -lambda_val * ages_t + np.log(1 + lambda_val * (T - ages_t))
-            log_denominator = np.log(T)
-
-            # Check for numerical validity
-            if not (np.isfinite(log_numerator) and np.isfinite(log_denominator)):
-                return np.float64(-np.inf)
-
-        else:
-            # General case: λ ≠ μ
-            growth_rate = lambda_val - mu_val
-            growth_rate_T = growth_rate * T
-
-            # Calculate numerator terms
-            numerator_term1 = lambda_val * np.exp(-lambda_val * ages_t)
-            numerator_term2 = mu_val * np.exp(-growth_rate_T) * np.exp(-mu_val * ages_t)
-
-            numerator = numerator_term1 - numerator_term2
-            denominator = 1 - np.exp(-growth_rate_T)
-
-            if not np.any(np.sign(numerator) == np.sign(denominator)):
-                return np.float64(-np.inf)
-
-            log_numerator = np.log(abs(numerator))
-            log_denominator = np.log(abs(denominator))
-
-            # Check for numerical validity
-            if not (np.isfinite(log_numerator).all() and np.isfinite(log_denominator)):
-                return np.float64(-np.inf)
-
-        # Calculate final log density
-        log_density = np.sum(log_numerator - log_denominator)
-
-        # Final numerical check
-        if not np.isfinite(log_density):
-            return np.float64(-np.inf)
-
-        return np.float64(log_density)
-
-    except (ValueError, FloatingPointError, OverflowError, ZeroDivisionError):
+    # Input validation
+    if np.any(ages_t < 0) or np.any(ages_t > T):
         return np.float64(-np.inf)
+
+    # Handle parameter scaling
+    if log_scale_params:
+        log_lambda = lambda_param
+        log_mu = mu_param
+        # Convert log parameters back to original scale
+        lambda_val = np.exp(lambda_param)
+        mu_val = np.exp(mu_param)
+    else:
+        # Validate positive parameters
+        if lambda_param <= 0 or mu_param <= 0:
+            return np.float64(-np.inf)
+        lambda_val = lambda_param
+        mu_val = mu_param
+        log_lambda = np.log(lambda_param)
+        log_mu = np.log(mu_param)
+
+    # Check for numerical stability in parameter space
+    if abs(log_lambda - log_mu) < 1e-12:
+        # Limiting case: λ ≈ μ
+
+        log_numerator = -lambda_val * ages_t + np.log(1 + lambda_val * (T - ages_t))
+        log_denominator = np.log(T)
+
+        # Check for numerical validity
+        if not (np.isfinite(log_numerator) and np.isfinite(log_denominator)):
+            return np.float64(-np.inf)
+
+    else:
+        # General case: λ ≠ μ
+        growth_rate = lambda_val - mu_val
+        growth_rate_T = growth_rate * T
+
+        # Calculate numerator terms
+        numerator_term1 = lambda_val * np.exp(-lambda_val * ages_t)
+        numerator_term2 = mu_val * np.exp(-growth_rate_T) * np.exp(-mu_val * ages_t)
+
+        numerator = numerator_term1 - numerator_term2
+        denominator = 1 - np.exp(-growth_rate_T)
+
+        if not np.any(np.sign(numerator) == np.sign(denominator)):
+            return np.float64(-np.inf)
+
+        log_numerator = np.log(abs(numerator))
+        log_denominator = np.log(abs(denominator))
+
+        # Check for numerical validity
+        if not (np.isfinite(log_numerator).all() and np.isfinite(log_denominator)):
+            return np.float64(-np.inf)
+
+    # Calculate final log density
+    log_density = np.sum(log_numerator - log_denominator)
+
+    # Final numerical check
+    if not np.isfinite(log_density):
+        return np.float64(-np.inf)
+
+    return np.float64(log_density)
 
 
 def calculate_ages_log_likelihood(
@@ -610,11 +603,13 @@ def calculate_ages_log_likelihood(
             a scalar numpy.float64 is returned; if array-like, an array of log-densities
             of corresponding shape is returned.
 
+    Returns -inf (not an exception):
+        - Non-positive rates (when not using log_scale_params)
+        - Negative T or ages outside [0, T]
+        - Non-finite intermediate values
+
     Raises:
-        ValueError:
-            If lambda_param or mu_param (after optional exponentiation) are non-positive,
-            or if T is negative, or if any age in ages_t is outside [0, T].
-            (Implementations may also raise errors for invalid numeric inputs such as NaN.)
+        - Type errors, shape mismatches, and other programming errors will raise exceptions
 
     Notes:
         - The implementation is careful to compute the numerator in log-space to
@@ -684,9 +679,8 @@ def calculate_non_spine_ages_log_likelihood_derivatives(
       or after exponentiating log-scale inputs.
     - For numerical stability when λ ≈ μ the function uses a limiting analytic
       expression evaluated when |log(λ) - log(μ)| < 1e-12.
-    - No explicit input validation is enforced inside the function; supplying
-      invalid values (e.g., negative rates or T < ages) may produce invalid results
-      or runtime warnings/errors from numpy operations.
+    - Invalid parameter values may produce NaN or inf results; callers should validate
+      inputs if needed.
     - The derivative values correspond to derivatives of the log of the age density,
       not the raw density.
 
@@ -807,10 +801,8 @@ def calculate_spine_ages_log_likelihood_derivatives(
       closed-form expression; entries with ages_t < T use the interior expression.
     - A numerically stable limiting formula is used when λ ≈ μ; the equality test is
       performed in log-space with a tolerance of 1e-12.
-    - The implementation does not raise argument errors: passing non-positive λ or μ
-      when log_scale_params is False (or inconsistent T/ages_t) may produce NaNs
-      or warnings due to log/exp operations. Callers should validate input ranges
-      if required.
+    - Invalid inputs (non-positive rates, inconsistent T/ages_t) may produce NaN or inf;
+      callers should validate inputs if needed.
     - Returned values are sums over the provided ages; if per-age derivatives
       are desired, inspect or modify the implementation to return elementwise arrays
       instead of sums.
@@ -829,7 +821,7 @@ def calculate_spine_ages_log_likelihood_derivatives(
         log_mu = np.log(mu_param)
 
     at_boundary = ages_t == T
-    not_at_boundary = not at_boundary
+    not_at_boundary = np.invert(at_boundary)
     d_lambda = np.zeros_like(ages_t, dtype=np.float64)
     d_mu = np.zeros_like(ages_t, dtype=np.float64)
 
@@ -872,7 +864,9 @@ def calculate_spine_ages_log_likelihood_derivatives(
                 * (lambda_val - mu_val)
                 * (np.exp(lambda_val * ages_t) - np.exp(mu_val * ages_t))
             )
-            d_lambda[not_at_boundary] = lambda_numerator / lambda_denominator
+            d_lambda[not_at_boundary] = (
+                lambda_numerator[not_at_boundary] / lambda_denominator[not_at_boundary]
+            )
             # d/dμ = (e^(λ a) (λ - λ μ a + μ^2 a) - λ e^(μ a))/(μ (λ - μ) (e^(λ a) - e^(μ a)))
             mu_numerator = np.exp(lambda_val * ages_t) * (
                 lambda_val - lambda_val * mu_val * ages_t + mu_val**2 * ages_t
@@ -882,7 +876,9 @@ def calculate_spine_ages_log_likelihood_derivatives(
                 * (lambda_val - mu_val)
                 * (np.exp(lambda_val * ages_t) - np.exp(mu_val * ages_t))
             )
-            d_mu[not_at_boundary] = mu_numerator / mu_denominator
+            d_mu[not_at_boundary] = (
+                mu_numerator[not_at_boundary] / mu_denominator[not_at_boundary]
+            )
 
     return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
@@ -933,11 +929,11 @@ def calculate_ages_log_likelihood_derivatives(
         has shape (2,); if `ages_t` is an array of length n the array has shape
         (2, n). The dtype is float64.
 
-    Raises
-    ------
-    ValueError
-        If any input is invalid, e.g. T < max(ages_t), non-finite parameter values,
-        or (when not in log-scale) non-positive rates.
+    Notes on error handling
+    -----------------------
+    This function delegates to spine or non-spine implementations which return -inf
+    for numerical issues but raise exceptions for programming errors (type mismatches,
+    array shape errors, etc.).
 
     Notes
     -----

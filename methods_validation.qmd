@@ -67,7 +67,7 @@ figures_dir.mkdir(exist_ok=True)
 # | label: simulate-processes
 
 
-num_sims = 500
+num_sims = 1000
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500
