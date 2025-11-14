@@ -35,7 +35,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from joblib import Parallel, delayed
 from numpy.typing import NDArray
 from scipy import optimize
 
@@ -60,11 +59,11 @@ def get_crude_parameter_estimates(
     Returns:
         Tuple of (estimated_birth_rate, estimated_death_rate)
     """
-    if len(ages) == 0:
+    n_manuscripts = len(ages)
+    if n_manuscripts == 0:
         raise ValueError("Cannot estimate parameters from empty age data")
 
     mean_age = float(ages.mean())
-    n_manuscripts = len(ages)
 
     # Simple heuristic: death rate inversely related to max survival age
     # birth rate related to total observed manuscripts
@@ -82,8 +81,9 @@ def fit_birth_death_processes(
     observation_time: float,
     is_ordered: bool = False,
     method: str = "L-BFGS-B",
-    initial_params: Optional[Tuple[float, float]] = None,
-    parallel: bool = False,
+    initial_params: Tuple[float, float] | None = None,
+    spine_ages: NDArray[np.float64] | None = None,
+    ns: NDArray[np.int64] | None = None,
 ) -> Dict[str, Any]:
     """
     Fit birth-death process parameters to manuscript data.
@@ -126,80 +126,69 @@ def fit_birth_death_processes(
         (np.log(1e-8), np.log(100.0)),  # log(death_rate) bounds
     ]
 
+    if ns is not None:
+        if sum(ns) != len(list_of_ages):
+            raise ValueError("Length of ns must match length of list_of_ages")
+    else:
+        ns = np.array(
+            [len(ages) + int(spine_ages is not None) for ages in list_of_ages],
+            dtype=np.int64,
+        )
+
+    if is_ordered and (spine_ages is None):
+        spine_list: List[float] = []
+        remaining: List[NDArray[np.float64]] = []
+        for arr in list_of_ages:
+            if arr.size == 0:
+                continue
+            # collect first element as spine
+            spine_list.append(float(arr[0]))
+            # keep the rest for the main ages list
+            if arr.size > 1:
+                remaining.append(arr[1:])
+
+        spine_ages = np.array(spine_list, dtype=np.float64)
+
+        # If no remaining non-spine ages, ensure we have an empty array instead of failing on concatenate
+        if remaining:
+            non_spine_ages = np.atleast_1d(np.concatenate(remaining))
+        else:
+            non_spine_ages = np.array([], dtype=np.float64)
+    else:
+        # For unordered data, combine all non-empty age arrays into one array
+        non_spine_ages = np.concatenate([arr for arr in list_of_ages if arr.size > 0])
+
     # Create objective function wrapper
     def objective_func(log_params: NDArray[np.float64]) -> np.float64:
         # Convert log-scale parameters back to original scale
         params = np.exp(log_params)
-
-        # Parallelize for multiple age arrays
-        if len(list_of_ages) > 10 and parallel:
-            nll_values = Parallel(n_jobs=-1, prefer="threads")(
-                delayed(negative_log_likelihood)(
-                    params=params,
-                    ages=ages,
-                    observation_time=observation_time,
-                    is_ordered=is_ordered,
-                    log_scale_params=False,
-                    parallel=False,
-                )
-                for ages in list_of_ages
-            )
-            nll = np.float64(sum(nll_values))
-        else:
-            # Single age array - no parallelization needed
-            nll = np.float64(0)
-            for ages in list_of_ages:
-                nll += negative_log_likelihood(
-                    params=params,
-                    ages=ages,
-                    observation_time=observation_time,
-                    is_ordered=is_ordered,
-                    log_scale_params=False,
-                    parallel=parallel,
-                )
+        # Single age array - no parallelization needed
+        nll = negative_log_likelihood(
+            params=params,
+            ages=non_spine_ages,
+            observation_time=observation_time,
+            spine_ages=spine_ages,
+            ns=ns,
+            is_ordered=False,
+            log_scale_params=False,
+        )
         return nll
 
     def gradient_func(log_params: NDArray[np.float64]) -> NDArray[np.float64]:
         # Convert log-scale parameters back to original scale
         params = np.exp(log_params)
-
-        # Parallelize for multiple age arrays
-        if len(list_of_ages) > 10 and parallel:
-            grad_values = Parallel(n_jobs=-1, prefer="threads")(
-                delayed(
-                    lambda ages: np.multiply(
-                        params,
-                        log_likelihood_gradient(
-                            params=params,
-                            ages=ages,
-                            observation_time=observation_time,
-                            is_ordered=is_ordered,
-                            log_scale_params=False,
-                            parallel=False,
-                        ),
-                    )
-                )(ages)
-                for ages in list_of_ages
-            )
-            # Ensure we get an array, not a scalar
-            grad_sum = np.sum(grad_values, axis=0, dtype=np.float64)
-            nll_grad = -np.asarray(grad_sum, dtype=np.float64).reshape(2)
-        else:
-            # less arrays - no parallelization needed
-            nll_grad = np.zeros(2, dtype=np.float64)
-            for ages in list_of_ages:
-                nll_grad -= np.multiply(
-                    params,
-                    log_likelihood_gradient(
-                        params=params,
-                        ages=ages,
-                        observation_time=observation_time,
-                        is_ordered=is_ordered,
-                        log_scale_params=False,
-                        parallel=parallel,
-                    ),
-                )
-        return nll_grad
+        nll_grad = np.multiply(
+            params,
+            -log_likelihood_gradient(
+                params=params,
+                ages=non_spine_ages,
+                observation_time=observation_time,
+                spine_ages=spine_ages,
+                is_ordered=is_ordered,
+                log_scale_params=False,
+            ),
+        )
+        return np.array(nll_grad)
 
     # Optimize with multiple strategies for robustness
     optimization_methods = [method, "Nelder-Mead", "Powell"]
@@ -275,7 +264,7 @@ def fit_from_dataframe(
     observation_time: float,
     is_ordered: bool = False,
     method: str = "L-BFGS-B",
-    initial_params: Optional[Tuple[float, float]] = None,
+    initial_params: Tuple[float, float] | None = None,
 ) -> Dict[str, Any]:
     """
     Fit birth-death process parameters from a pandas DataFrame.

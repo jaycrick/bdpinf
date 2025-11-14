@@ -150,7 +150,7 @@ def calculate_populations_log_likelihood_derivatives(
     lambda_param: float,
     mu_param: float,
     time: float,
-    ns: int,
+    ns: NDArray[np.int64] | int,
     log_scale_params: bool = False,
 ) -> NDArray[np.float64]:
     """
@@ -571,7 +571,7 @@ def calculate_non_spine_ages_log_likelihood(
 def calculate_ages_log_likelihood(
     lambda_param: float,
     mu_param: float,
-    ages_t: float,
+    ages_t: NDArray[np.float64] | float,
     T: float,
     log_scale_params: bool = False,
     are_spines: bool = False,
@@ -638,7 +638,7 @@ def calculate_ages_log_likelihood(
 def calculate_non_spine_ages_log_likelihood_derivatives(
     lambda_param: float,
     mu_param: float,
-    ages_t: float,
+    ages_t: NDArray[np.float64] | float,
     T: float,
     log_scale_params: bool = False,
 ) -> NDArray[np.float64]:
@@ -767,7 +767,7 @@ def calculate_non_spine_ages_log_likelihood_derivatives(
 def calculate_spine_ages_log_likelihood_derivatives(
     lambda_param: float,
     mu_param: float,
-    ages_t: float,
+    ages_t: NDArray[np.float64] | float,
     T: float,
     log_scale_params: bool = False,
 ) -> NDArray[np.float64]:
@@ -890,7 +890,7 @@ def calculate_spine_ages_log_likelihood_derivatives(
 def calculate_ages_log_likelihood_derivatives(
     lambda_param: float,
     mu_param: float,
-    ages_t: float,
+    ages_t: NDArray[np.float64] | float,
     T: float,
     log_scale_params: bool = False,
     are_spines: bool = False,
@@ -973,7 +973,7 @@ def calculate_ages_log_likelihood_derivatives(
 def predict_manuscript_survival(
     birth_rate: float,
     death_rate: float,
-    ages: Union[float, NDArray[np.float64]],
+    ages: NDArray[np.float64] | float,
 ) -> Union[float, NDArray[np.float64]]:
     """
     Predict expected manuscript survival probability for given ages.

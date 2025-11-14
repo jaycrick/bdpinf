@@ -35,6 +35,7 @@ from scipy.stats import gaussian_kde
 from inf_bp_texts.inference import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_birth_death_process
 from inf_bp_texts.visualization import save_figure
+from joblib import Parallel, delayed
 
 # Import professional styling configuration from central plotting module
 from inf_bp_texts.visualization.plotting import (
@@ -65,7 +66,6 @@ figures_dir.mkdir(exist_ok=True)
 ```{python}
 # | label: simulate-processes
 
-from joblib import Parallel, delayed
 
 num_sims = 500
 birth_rate = 0.005
@@ -73,7 +73,7 @@ death_rate = birth_rate - 0.004
 time_span = 1500
 seed = 42
 
-print(f"🎲 Generate {num_sims} birth-death process simulations...")
+print(f"🎲 Generate {num_sims} birth-and-death process simulations...")
 print(f"   Birth rate: {birth_rate}")
 print(f"   Death rate: {death_rate}")
 print(f"   Time span: {time_span} years")
@@ -156,17 +156,21 @@ $$
     \frac{dlP(age)}{d\mu} = \frac{\lambda  T e^{\mu  t+2 T (\lambda -\mu )}+e^{\lambda  t} (\mu  (-t)+\mu  T+1)+(\mu  t-2 \mu  T-1) e^{\lambda  t+T (\lambda -\mu )}}{\left(e^{T (\lambda -\mu )}-1\right) \left(\lambda  e^{\mu  t+T (\lambda -\mu )}-\mu  e^{\lambda  t}\right)}
 $$
 
+## Fit all models using ages
+
 ```{python}
 # | eval: true
 # | label: fit-individual-models
 
-print(f"🔬 Fit birth-death models to {len(simulated_processes)} simulated processes...")
+print(
+    f"🔬 Fit birth-and-death models to {len(simulated_processes)} simulated processes..."
+)
 print("=" * 60)
 
 
 # Define a function to fit a single model
 def fit_single_model(ages, time_span):
-    """Fit a single birth-death model to given ages."""
+    """Fit a single birth-and-death model to given ages."""
     if len(ages) == 0:
         return None
     try:
@@ -176,7 +180,6 @@ def fit_single_model(ages, time_span):
             is_ordered=True,
             method="L-BFGS-B",
             initial_params=None,
-            parallel=False,
         )
         return model
     except Exception as e:
@@ -539,7 +542,6 @@ best_estimate = fit_birth_death_processes(
     list_of_ages=list_of_ages,
     observation_time=time_span,
     is_ordered=True,
-    parallel=False,
 )
 
 print(best_estimate)
@@ -560,10 +562,19 @@ for i in [0, 1, int(num_sims / 8), int(num_sims / 4), int(num_sims / 2), int(num
             list_of_ages=list_of_ages[0 : (i + 1)],
             observation_time=time_span,
             is_ordered=True,
-            initial_params=cumulative_estimates[-1] if (not i==0) None else,
-            parallel=True,
+            initial_params=cumulative_estimates[-1] if (i != 0) else None,
         )
-        cumulative_estimates.append(model.x)
+        # model may be None, a dict, or an OptimizeResult-like object with attribute `x`.
+        if model is None:
+            cumulative_estimates.append(None)
+        else:
+            if hasattr(model, "x"):
+                cumulative_estimates.append(model.x)
+            elif isinstance(model, dict) and "x" in model:
+                cumulative_estimates.append(model["x"])
+            else:
+                # Fallback: store the whole model object/dict
+                cumulative_estimates.append(model)
     else:
         cumulative_estimates.append(None)
 

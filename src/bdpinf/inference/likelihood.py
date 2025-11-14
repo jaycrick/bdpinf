@@ -6,7 +6,6 @@ birth-death process models, used in parameter fitting and model evaluation.
 """
 
 import numpy as np
-from joblib import Parallel, delayed
 from numpy.typing import NDArray
 
 from ..models.mathematical_functions import (
@@ -17,95 +16,88 @@ from ..models.mathematical_functions import (
 )
 
 
-def _calculate_single_age_density(
-    i: int,
-    age_t: float,
-    birth_rate: float,
-    death_rate: float,
-    observation_time: float,
-    is_ordered: bool,
-    log_scale_params: bool,
-) -> tuple[int, np.float64]:
-    """
-    Helper function to calculate log density for a single age.
-
-    Returns tuple of (index, log_density) for parallel processing.
-    """
-    if age_t > observation_time:
-        return (i, np.float64(-np.inf))
-
-    are_spines = is_ordered and (i == 0)
-
-    log_density = calculate_ages_log_likelihood(
-        birth_rate,
-        death_rate,
-        age_t,
-        observation_time,
-        log_scale_params=log_scale_params,
-        are_spines=are_spines,
-    )
-
-    return (i, np.float64(log_density))
-
-
-def _calculate_single_gradient(
-    i: int,
-    age_t: float,
-    birth_rate: float,
-    death_rate: float,
-    observation_time: float,
-    is_ordered: bool,
-    log_scale_params: bool,
-) -> tuple[int, NDArray[np.float64]]:
-    """
-    Helper function to calculate gradient for a single age.
-
-    Returns tuple of (index, gradient) for parallel processing.
-    """
-    are_spines = is_ordered and (i == 0)
-
-    grad_density = calculate_ages_log_likelihood_derivatives(
-        birth_rate,
-        death_rate,
-        age_t,
-        observation_time,
-        log_scale_params=log_scale_params,
-        are_spines=are_spines,
-    )
-
-    return (i, grad_density)
-
-
 def log_likelihood(
     birth_rate: float,
     death_rate: float,
-    ages: NDArray[np.float64],
+    ages: NDArray[np.float64] | float,
     observation_time: float,
+    spine_ages: NDArray[np.float64] | None = None,
+    ns: NDArray[np.int64] | None = None,
     is_ordered: bool = False,
     log_scale_params: bool = False,
-    parallel: bool = False,
 ) -> np.float64:
     """
-    Calculate log-likelihood for observed manuscript data using birth-death process.
+    Compute the log-likelihood of observed manuscript ages under a birth–death process.
 
-    This implements the proper birth-death process likelihood with:
-    1. Probability of n individuals at time T: P_n(T)
-    2. Age density for each manuscript: f(t)
-    3. Total log-likelihood = log(P_n(T)) + Σlog(f(t_i))
+    This function evaluates the joint log-likelihood for a dataset of observed manuscript ages
+    given a birth (λ) and death (μ) rate under a birth–death model. The likelihood is computed
+    as the sum of two contributions:
 
-    Args:
-        birth_rate: Birth rate (λ > 0) or log(λ) if log_scale_params=True
-        death_rate: Death rate (μ > 0) or log(μ) if log_scale_params=True
-        ages: Array of manuscript ages
-        observation_time: Observation time T
-        is_ordered: If True, the first age is treated as having a unique distribution
-        counts: Array of manuscript counts for each age (defaults to 1 for each)
-        log_scale_params: If True, birth_rate and death_rate are in log scale
+        1. The log-probability of observing the total population configuration at observation
+             time T (log P_n(T)).
+        2. The sum of log age-densities for the observed manuscripts (Σ log f(t_i)), with an
+             option to treat one or more observations as "spines" (special conditional ages).
 
-    Returns:
-        Log-likelihood value
+    Behavior and notes
+    - If log_scale_params is True, birth_rate and death_rate are interpreted as log(λ) and
+        log(μ); otherwise they are interpreted on the original (positive) scale.
+    - If ns is None, the function assumes each provided age corresponds to one individual
+        (i.e., a count of 1 per age) and constructs ns accordingly.
+    - If is_ordered is True, the first provided age is treated as a spine (unique conditional
+        distribution) and the remaining ages are treated as ordinary observations. is_ordered
+        and spine_ages cannot both be provided.
+    - If spine_ages is provided, those ages are treated as spines; ordinary ages are treated
+        as non-spine observations.
+    - The function validates input ranges: rates must be finite (and positive if not in log
+        scale), observation_time must be > 0, and all ages/spine_ages must lie in [0, T].
+    - On invalid inputs, numerical problems, or internal errors the function returns -inf.
+
+        birth_rate (float):
+            Birth rate parameter λ > 0, or log(λ) if log_scale_params is True.
+        death_rate (float):
+            Death rate parameter μ > 0, or log(μ) if log_scale_params is True.
+        ages (ndarray[np.float64] | float):
+            Observed ages of manuscripts. A scalar is treated as a single-element array.
+            All ages must satisfy 0 <= age <= observation_time.
+        observation_time (float):
+            Observation time T (> 0) at which the population/ages are observed.
+        spine_ages (ndarray[np.float64] | None, optional):
+            Ages to be treated as spines (special conditional observations). If provided,
+            these ages must also satisfy 0 <= age <= observation_time. Mutually exclusive
+            with is_ordered=True.
+        ns (ndarray[np.int64] | None, optional):
+            Counts per population/class that sum to the total number of ages. If None,
+            a single population with one count per provided age is assumed.
+        is_ordered (bool, optional):
+            If True, the first element of ages is treated as a spine and the rest as
+            ordinary observations. Cannot be used together with spine_ages.
+        log_scale_params (bool, optional):
+            If True, treat birth_rate and death_rate as log-scale parameters.
+
+        np.float64:
+            The computed total log-likelihood (log P_n(T) + Σ log f(t_i)). If inputs are
+            invalid, a numerical problem occurs, or an internal calculation fails, returns
+            -inf (as np.float64).
+
+    Raises:
+        ValueError:
+            If both is_ordered=True and spine_ages is provided, or if the sum of ns does
+            not equal the number of provided ages. Other input validation issues are
+            handled by returning -inf rather than raising in normal operation.
+
+    See also:
+        calculate_populations_log_likelihood, calculate_ages_log_likelihood
     """
     try:
+        # Normalize ages and spine_ages to numpy arrays so len() and vectorized ops are valid
+        ages = np.atleast_1d(np.array(ages, dtype=np.float64))
+        if spine_ages is not None:
+            spine_ages = np.atleast_1d(np.array(spine_ages, dtype=np.float64))
+
+        if is_ordered and (spine_ages is not None):
+            raise ValueError(
+                "Cannot have both is_ordered=True and spine_ages provided."
+            )
         # Input validation
         if not (np.isfinite(birth_rate) and np.isfinite(death_rate)):
             return np.float64(-np.inf)
@@ -115,102 +107,81 @@ def log_likelihood(
             if birth_rate <= 0 or death_rate <= 0:
                 return np.float64(-np.inf)
 
-        # Check for negative ages
-        if np.any(ages < 0):
-            return np.float64(-np.inf)
-
-        # Additional validation: observation_time should be positive
+        # Check age range
         if observation_time <= 0:
             return np.float64(-np.inf)
 
+        if np.any(ages < 0) or np.any(ages > observation_time):
+            return np.float64(-np.inf)
+
+        if spine_ages is not None and (
+            np.any(spine_ages < 0) or np.any(spine_ages > observation_time)
+        ):
+            return np.float64(-np.inf)
+
         # Total number of observed manuscripts
-        n_total: int = len(ages)
+        if ns is None:
+            total_pop_size = len(np.atleast_1d(ages))
+            ns = np.array([total_pop_size], dtype=np.int64)
+        else:
+            total_pop_size = sum(ns)
+
+        if not total_pop_size == (
+            len(np.atleast_1d(ages)) + len(np.atleast_1d(spine_ages))
+            if spine_ages is not None
+            else 0
+        ):
+            raise ValueError(
+                "Sum of the populations must equal the number of ages provided."
+            )
 
         # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
         log_P_n_T = calculate_populations_log_likelihood(
             birth_rate,
             death_rate,
             observation_time,
-            n_total,
+            ns,
             log_scale_params=log_scale_params,
         )
 
         # Check if population probability calculation succeeded
         if not np.isfinite(log_P_n_T):
             return np.float64(-np.inf)
-
-        if n_total == 0:
+        if total_pop_size == 0:
             return np.float64(log_P_n_T)
 
-        # If no ages provided, return just the population probability
-        if len(ages) == 0:
-            return np.float64(-np.inf)
+        ages_log_lik = 0.0
 
-        # 2. Calculate age density for each manuscript
-        # Use parallel processing for large datasets (>100 ages)
-        if len(ages) > 100 and parallel:
-            # Parallel computation
-            results = Parallel(n_jobs=-1, prefer="threads")(
-                delayed(_calculate_single_age_density)(
-                    i,
-                    age_t,
-                    birth_rate,
-                    death_rate,
-                    observation_time,
-                    is_ordered,
-                    log_scale_params,
-                )
-                for i, age_t in enumerate(ages)
+        if is_ordered or (spine_ages is not None):
+            if is_ordered:
+                ages = np.array(ages, dtype=np.float64)
+                spine_ages = np.array([ages[0]], dtype=np.float64)
+                ages = ages[1:]
+            # Calculate log age density
+            assert spine_ages is not None
+            ages_log_lik += calculate_ages_log_likelihood(
+                birth_rate,
+                death_rate,
+                ages_t=spine_ages,
+                T=observation_time,
+                log_scale_params=log_scale_params,
+                are_spines=True,
+            )
+        if len(ages) > 0:
+            ages_log_lik += calculate_ages_log_likelihood(
+                birth_rate,
+                death_rate,
+                ages,
+                observation_time,
+                log_scale_params=log_scale_params,
+                are_spines=False,
             )
 
-            # Extract log densities in correct order
-            log_densities = np.zeros_like(ages, dtype=np.float64)
-            for i, log_density in results:
-                if not np.isfinite(log_density):
-                    return np.float64(-np.inf)
-                log_densities[i] = log_density
-        else:
-            # Sequential computation for small datasets
-            log_densities = np.zeros_like(ages, dtype=np.float64)
-
-            for i, age_t in enumerate(ages):
-                # Validate individual age vs. total time
-                if age_t > observation_time:
-                    return np.float64(-np.inf)
-                if is_ordered and i == 0:
-                    # Calculate log age density
-                    log_density = calculate_ages_log_likelihood(
-                        birth_rate,
-                        death_rate,
-                        age_t,
-                        observation_time,
-                        log_scale_params=log_scale_params,
-                        are_spines=True,
-                    )
-                else:
-                    log_density = calculate_ages_log_likelihood(
-                        birth_rate,
-                        death_rate,
-                        age_t,
-                        observation_time,
-                        log_scale_params=log_scale_params,
-                        are_spines=False,
-                    )
-
-                # Check if age density calculation succeeded
-                if not np.isfinite(log_density):
-                    return np.float64(-np.inf)
-
-                # Add log density weighted by count
-                log_densities[i] = log_density
-
-        # 3. Total log-likelihood = log(P_n(T)) + sum of log densities
-        log_density_sum = np.sum(log_densities)
-
-        if not np.isfinite(log_density_sum):
+        # Check if age density calculation succeeded
+        if not np.isfinite(ages_log_lik):
             return np.float64(-np.inf)
 
-        total_log_likelihood = log_P_n_T + log_density_sum
+        total_log_likelihood = log_P_n_T + ages_log_lik
 
         # Final numerical validation
         if not np.isfinite(total_log_likelihood):
@@ -230,126 +201,226 @@ def log_likelihood(
 
 def log_likelihood_gradient(
     params: NDArray[np.float64],
-    ages: NDArray[np.float64],
+    ages: NDArray[np.float64] | float,
     observation_time: float,
+    spine_ages: NDArray[np.float64] | float | None = None,
+    ns: NDArray[np.int64] | None = None,
     is_ordered: bool = False,
     log_scale_params: bool = False,
-    parallel: bool = False,
 ) -> NDArray[np.float64]:
     """
-    Calculate gradient of log-likelihood w.r.t. log-scale parameters.
+    Compute the gradient of the model log-likelihood with respect to the birth and
+    death parameters.
 
-    Args:
-        params: parameters [birth_rate, death_rate] (possibly log-scale)
-        ages: Array of manuscript ages
-        observation_time: Observation time T
+    This function validates inputs and then combines two contributions to the
+    gradient:
+        1. The derivative of the log-probability of the observed population sizes
+             (P(n | T)) with respect to the parameters.
+        2. The derivative of the log-density of the observed ages (and optional
+             spine ages) with respect to the parameters.
+
+    The contribution from ages can be computed in a sequential/ordered fashion:
+    if `is_ordered` is True the first age in `ages` is treated as a spine age;
+    alternatively a separate `spine_ages` array may be supplied.
+
+        params (NDArray[np.float64]):
+            Length-2 array containing the birth and death parameters in the order
+            [birth_rate, death_rate]. If `log_scale_params` is True these are the
+            log-parameters (log(birth), log(death)); otherwise they are in the
+            natural scale.
+        ages (NDArray[np.float64] | float):
+            Observed manuscript ages (can be a scalar or a 1-D array). All ages
+            must lie in [0, observation_time].
+        observation_time (float):
+            Positive scalar giving the observation time T. Ages must be in
+            the interval [0, T].
+        spine_ages (NDArray[np.float64] | float | None, optional):
+            Optional ages that are treated as spine observations. Cannot be
+            provided if `is_ordered` is True. If provided, must lie in [0, T].
+        ns (NDArray[np.int64] | None, optional):
+            Optional array of population counts per grouping. If omitted the total
+            population is assumed to be len(np.atleast_1d(ages)). When provided, the sum(ns) must
+            equal len(np.atleast_1d(ages)).
+        is_ordered (bool, optional):
+            If True, the input `ages` array is interpreted as ordered and the first
+            entry is used as a spine age; `spine_ages` must then be None.
+        log_scale_params (bool, optional):
+            If True, `params` are interpreted as log-scale parameters and the
+            returned gradient is with respect to those log-parameters. If False,
+            `params` are on the original scale and derivatives are computed
+            accordingly.
 
     Returns:
-        Gradient array [dL/dlog(birth_rate), dL/dlog(death_rate)]
+        NDArray[np.float64]:
+            A length-2 numpy array of dtype float64 giving the gradient of the
+            log-likelihood with respect to the birth and death parameters in the
+            same ordering as `params`. If `log_scale_params` is True the gradient
+            is with respect to the log-parameters.
+
+    Raises:
+        ValueError:
+            - if `params` does not have length 2,
+            - if any parameter is not finite,
+            - if `is_ordered` is True and `spine_ages` is also provided,
+            - if `observation_time` is not positive,
+            - if any value in `ages` or `spine_ages` lies outside [0, observation_time],
+            - if `ns` is provided and sum(ns) != len(np.atleast_1d(ages)).
+        Note:
+            When `log_scale_params` is False and either `birth_rate` <= 0 or
+            `death_rate` <= 0 the function returns np.array([np.nan, np.nan])
+            (rather than raising) to indicate an invalid original-scale input.
+
+    Example:
+        >>> # params as log-parameters
+        >>> grad = log_likelihood_gradient(
+                np.log([1.2, 0.3]), ages=[0.1, 0.4], observation_time=1.0, log_scale_params=True
+            )
     """
     if len(params) != 2:
-        return np.array([0.0, 0.0], dtype=np.float64)
+        raise ValueError("params must have length 2")
+    if is_ordered and (spine_ages is not None):
+        raise ValueError("Cannot have both is_ordered=True and spine_ages provided.")
 
     birth_rate, death_rate = params
-
     # Input validation
     if not (np.isfinite(birth_rate) and np.isfinite(death_rate)):
-        raise ValueError("params must be finite numbers")
+        raise ValueError("Parameters must be finite.")
 
-    # Check for negative ages
-    if np.any(ages < 0):
-        return np.array([0.0, 0.0], dtype=np.float64)
+    if not log_scale_params:
+        # Parameters are in original scale, validate directly
+        if birth_rate <= 0 or death_rate <= 0:
+            return np.array([np.nan, np.nan], dtype=np.float64)
 
-    # Additional validation: observation_time should be positive
+    # Check age range
     if observation_time <= 0:
-        raise ValueError("observation_time must be positive")
+        raise ValueError("Observation time must be positive.")
+
+    # Normalize ages and spine_ages to numpy arrays so len() and vectorized ops are valid
+    ages = np.atleast_1d(np.array(ages, dtype=np.float64))
+    if spine_ages is not None:
+        spine_ages = np.atleast_1d(np.array(spine_ages, dtype=np.float64))
+
+    if np.any(ages < 0) or np.any(ages > observation_time):
+        raise ValueError("Ages must be in the range [0, observation_time].")
+
+    if spine_ages is not None and (
+        np.any(spine_ages < 0) or np.any(spine_ages > observation_time)
+    ):
+        raise ValueError("Spine ages must be in the range [0, observation_time].")
 
     # Total number of observed manuscripts
-    n_total: int = len(ages)
+    if ns is None:
+        total_pop_size = len(np.atleast_1d(ages))
+        ns = np.array([total_pop_size], dtype=np.int64)
+    else:
+        total_pop_size = sum(ns)
+
+    if not total_pop_size == len(np.atleast_1d(ages)) + (
+        len(np.atleast_1d(spine_ages)) if spine_ages is not None else 0
+    ):
+        raise ValueError(
+            "Sum of the populations must equal the number of ages provided."
+        )
 
     # Gradient components
     grad_log_P_n_T = calculate_populations_log_likelihood_derivatives(
         birth_rate,
         death_rate,
         observation_time,
-        n_total,
+        ns,
         log_scale_params=log_scale_params,
     )
 
-    if n_total == 0:
+    if total_pop_size == 0:
         return grad_log_P_n_T
 
-    # Use parallel processing for large datasets (>100 ages)
-    if len(ages) > 100 and parallel:
-        # Parallel computation
-        results = Parallel(n_jobs=-1, prefer="threads")(
-            delayed(_calculate_single_gradient)(
-                i,
-                age_t,
-                birth_rate,
-                death_rate,
-                observation_time,
-                is_ordered,
-                log_scale_params,
-            )
-            for i, age_t in enumerate(ages)
+    # Sequential computation for small datasets
+    grad_ages = np.zeros(2, dtype=np.float64)
+    if is_ordered or (spine_ages is not None):
+        if is_ordered:
+            ages = np.array(ages, dtype=np.float64)
+            spine_ages = np.array([ages[0]], dtype=np.float64)
+            ages = ages[1:]
+        assert spine_ages is not None
+        grad_ages += calculate_ages_log_likelihood_derivatives(
+            birth_rate,
+            death_rate,
+            spine_ages,
+            observation_time,
+            log_scale_params=log_scale_params,
+            are_spines=True,
         )
 
-        # Sum gradients
-        grad_log_densities = np.zeros(2, dtype=np.float64)
-        for i, grad_density in results:
-            grad_log_densities += grad_density
-    else:
-        # Sequential computation for small datasets
-        grad_log_densities = np.zeros(2, dtype=np.float64)
+    if len(np.atleast_1d(ages)) > 0:
+        grad_ages += calculate_ages_log_likelihood_derivatives(
+            birth_rate,
+            death_rate,
+            ages,
+            observation_time,
+            log_scale_params=log_scale_params,
+            are_spines=False,
+        )
 
-        for i, age_t in enumerate(ages):
-            # Calculate derivatives of log age density
-            if is_ordered and i == 0:
-                grad_density = calculate_ages_log_likelihood_derivatives(
-                    birth_rate,
-                    death_rate,
-                    age_t,
-                    observation_time,
-                    log_scale_params=log_scale_params,
-                    are_spines=True,
-                )
-            else:
-                grad_density = calculate_ages_log_likelihood_derivatives(
-                    birth_rate,
-                    death_rate,
-                    age_t,
-                    observation_time,
-                    log_scale_params=log_scale_params,
-                    are_spines=False,
-                )
-            grad_log_densities += grad_density
-
-    return grad_log_P_n_T + grad_log_densities
+    return grad_log_P_n_T + grad_ages
 
 
 def negative_log_likelihood(
     params: NDArray[np.float64],
-    ages: NDArray[np.float64],
+    ages: NDArray[np.float64] | float,
     observation_time: float,
+    spine_ages: NDArray[np.float64] | None = None,
+    ns: NDArray[np.int64] | None = None,
     is_ordered: bool = False,
     log_scale_params: bool = False,
-    parallel: bool = False,
 ) -> np.float64:
     """
-    Calculate negative log-likelihood for optimization.
+    Compute the negative log-likelihood for use with numerical optimizers.
 
-    This method is designed for use with scipy.optimize functions. It takes
-    log-scale parameters for better numerical stability during optimization.
+    This function is a thin wrapper around log_likelihood that negates its
+    value so it can be minimized by optimizers such as scipy.optimize.
+    It expects a two-element parameter vector representing the model's
+    birth and death rates (or their logarithms, see log_scale_params).
 
-    Args:
-        log_params: Log-scale parameters [log(birth_rate), log(death_rate)]
-        ages: Array of manuscript ages
-        observation_time: Observation time T
-        counts: Array of manuscript counts for each age (defaults to 1 for each)
+    Parameters
+    ----------
+    params : numpy.ndarray[np.float64]
+        Parameter vector of length 2 containing [birth_rate, death_rate].
+        If `log_scale_params` is True then these are the logarithms of the
+        original parameters; otherwise they are interpreted on their natural scale.
+        If `params` has length != 2 the function returns np.inf.
+    ages : numpy.ndarray[np.float64] | float
+        Ages of observed manuscripts (or a single age). May be a 1-D array
+        of observation ages used by the likelihood computation.
+    observation_time : float
+        The observation time T (end of the observation window) used by the model.
+    spine_ages : numpy.ndarray[np.float64] | None, optional
+        Optional spine ages required by some likelihood formulations. If not
+        provided, a default or simplified likelihood is computed (depending on
+        the underlying log_likelihood implementation).
+    ns : numpy.ndarray[np.int64] | None, optional
+        Optional counts/weights associated with each age. If omitted, each
+        observation is treated as a single count.
+    is_ordered : bool, default False
+        If True, interpret `ages` (and `ns` when provided) as ordered-event data
+        and use the ordered-data likelihood branch in the underlying function.
+    log_scale_params : bool, default False
+        If True, indicates that `params` are provided in log-space and the
+        underlying log_likelihood should convert them back to the original scale
+        before evaluating the likelihood.
 
-    Returns:
-        Negative log-likelihood value (float for scipy optimization)
+    Returns
+    -------
+    numpy.float64
+        The negative log-likelihood (i.e. -log_likelihood). This is returned
+        as a numpy.float64 scalar suitable for use with scipy optimizers.
+        If `params` does not have length 2, returns numpy.inf.
+
+    Notes
+    -----
+    - This wrapper does not validate parameter bounds beyond checking length;
+      any additional constraints (e.g. non-negativity) should be enforced by the
+      optimizer or by inspecting the returned value.
+    - Designed to be cheap to call repeatedly by optimization routines.
     """
     if len(params) != 2:
         return np.float64(np.inf)
@@ -362,9 +433,10 @@ def negative_log_likelihood(
         death_rate=death_rate,
         ages=ages,
         observation_time=observation_time,
+        spine_ages=spine_ages,
+        ns=ns,
         is_ordered=is_ordered,
         log_scale_params=log_scale_params,
-        parallel=parallel,
     )
 
     return result
