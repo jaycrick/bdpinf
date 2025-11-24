@@ -1271,6 +1271,12 @@ fig_success.show()
 save_figure(fig_success, "mv_sensitivity_success_rate", width=397, height=250)
 ```
 
+The age distribution for a BD process with one epoch when there is a no more birth:
+
+$$
+\frac{\left(\lambda  e^{(\lambda -\mu ) (T-l)}-\mu \right) e^{\lambda  l-l \mu +\lambda  M-\mu  M-\lambda  T} \left(\mu  e^{\mu  (l+M)+\lambda  T}-\lambda  e^{\lambda  l+\lambda  M+\mu  T}\right)}{\left(\lambda  e^{M (\lambda -\mu )}-\mu \right) \left(\lambda  e^{\lambda  (l+M)}-\lambda  e^{\mu  (l+M)+T (\lambda -\mu )}+\lambda  e^{l \mu +\lambda  T}-\mu  e^{l \mu +\lambda  T}\right)}
+$$
+
 *Analysis completed:*
 
 ```{python}
