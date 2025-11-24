@@ -20,6 +20,8 @@ execute:
   message: false
 ---
 
+# Setup
+
 ```{python}
 # | label: load-packages
 
@@ -63,6 +65,8 @@ figures_dir = Path("figures")
 figures_dir.mkdir(exist_ok=True)
 ```
 
+## Simulate Manuscript Transmission
+
 ```{python}
 # | label: simulate-processes
 
@@ -93,13 +97,7 @@ simulated_processes = Parallel(n_jobs=-1)(
 print(f"\n✅ Completed {len(simulated_processes)} simulations")
 ```
 
-```{python}
-# | label: sample-results
-
-print("Sample simulation data\n")
-print(simulated_processes[0].head(5))
-print(simulated_processes[0].tail(5))
-```
+### Sort Simulations
 
 ```{python}
 # | label: get-ages
@@ -108,14 +106,6 @@ list_of_ages = []
 num_of_deaths = np.empty(num_sims)
 num_of_births = np.empty(num_sims)
 cumulative_lifetimes = np.empty(num_sims)
-sim = simulated_processes[0]
-sim = sim[sim["death_time"].isna()]
-sim = sim.sort_values("is_spine", ascending=False)
-print(sim.head(5))
-print(sim.tail(5))
-ages = time_span - sim["creation_time"].values
-print(ages)
-print(type(ages))
 
 
 for i, sim in enumerate(simulated_processes):
@@ -131,40 +121,26 @@ for i, sim in enumerate(simulated_processes):
     ).sum()
 ```
 
-## Derivative of the log-likelihoods
+### Print Example Simulation
 
-We derive
-$$
-    \frac{dlP_n}{d\lambda} = \frac{\mu  \left(\mu -\mu  n+\lambda  (n-\mu  t+1)+\lambda ^2 t\right)+e^{t (\lambda -\mu )} (n (\lambda -\mu ) (\lambda  t (\lambda -\mu )-\mu )-\mu  (3 \lambda +\mu ))+\lambda  e^{2 t (\lambda -\mu )} (2 \mu +\lambda  t (\mu -\lambda ))}{\lambda  (\lambda -\mu ) \left(e^{t (\lambda -\mu )}-1\right) \left(\lambda  e^{t (\lambda -\mu )}-\mu \right)}
-$$
+```{python}
+# | label: print-example-simulation
 
-$$
-    \frac{dlP_n}{d\mu} = \frac{\lambda ^2 t e^{t (\lambda -\mu )} \left(e^{t (\lambda -\mu )}-n\right)-\lambda  \left(-(2 \mu  n t+n+3) e^{t (\lambda -\mu )}+n+(\mu  t+2) e^{2 t (\lambda -\mu )}+\mu  t+1\right)-\mu  \left((\mu  n t+n-1) e^{t (\lambda -\mu )}-n-\mu  t+1\right)}{(\lambda -\mu ) \left(e^{t (\lambda -\mu )}-1\right) \left(\lambda  e^{t (\lambda -\mu )}-\mu \right)}
-$$
+print("First simulation:\n")
+print(simulated_processes[0].head(5))
+print(simulated_processes[0].tail(5))
+print("Sample ages\n")
+print(list_of_ages[0][0:10])
 
-Derivation of the derivative of the ages
-$$
-    \frac{dlP(age)}{d\lambda}
-    = \frac{
-            (\lambda  t-1) e^{\mu  t+T (\lambda -\mu )}
-            - (\lambda  t+\lambda  T-1) e^{\mu  t+2 T (\lambda -\mu )}
-            - \mu  T e^{\lambda  t}
-            + 2 \mu  T e^{\lambda  t+T (\lambda -\mu )}
-        }{
-            \left(e^{T (\lambda -\mu )}-1\right) \left(\lambda  e^{\mu  t+T (\lambda -\mu )}-\mu  e^{\lambda  t}\right)
-        } \\
-    \frac{dlP(age)}{d\mu} = \frac{\lambda  T e^{\mu  t+2 T (\lambda -\mu )}+e^{\lambda  t} (\mu  (-t)+\mu  T+1)+(\mu  t-2 \mu  T-1) e^{\lambda  t+T (\lambda -\mu )}}{\left(e^{T (\lambda -\mu )}-1\right) \left(\lambda  e^{\mu  t+T (\lambda -\mu )}-\mu  e^{\lambda  t}\right)}
-$$
+```
 
-## Fit all models using ages
+# Model Inference
+
+## Fit All Models Using Ages
 
 ```{python}
 # | eval: true
 # | label: fit-individual-models
-
-print(
-    f"🔬 Fit birth-and-death models to {len(simulated_processes)} simulated processes..."
-)
 print("=" * 60)
 
 
@@ -203,6 +179,8 @@ print(f"   Failed fits: {failed_fits}")
 print(f"   Success rate: {(successful_fits / len(simulated_processes) * 100):.1f}%")
 ```
 
+### Profile Single Fit
+
 ```{python}
 # | eval: true
 # | label: profile-single-fit
@@ -216,6 +194,8 @@ for ages in list_of_ages[0:min(len(list_of_ages), 50)]:
 
 print(f"Result: {result}")
 ```
+
+## Summary Statistics
 
 ```{python}
 # | label: summary-statistics
@@ -252,10 +232,10 @@ print("=" * 60)
 print(stats_df.to_string(index=False, float_format="%.6f"))
 ```
 
+## Plots for Age-Based Inference
+
 ```{python}
 # | label: plot-bd-inference
-
-print("📈 Generate parameter estimation density plots...")
 
 if len(birth_rates) > 1:
     birth_kde = gaussian_kde(birth_rates)
@@ -920,6 +900,376 @@ print(f"Full death rate MLE is {sum(num_of_deaths) / sum(cumulative_lifetimes)}"
 
 
 
+
+# Parameter Sensitivity Analysis
+
+Compare inference performance across different death rate values while keeping birth rate, time span, and number of simulations constant.
+
+```{python}
+# | label: parameter-sensitivity-setup
+
+print("=" * 60)
+print("🔬 PARAMETER SENSITIVITY ANALYSIS")
+print("=" * 60)
+
+# Define parameter configurations
+base_birth_rate = 0.005
+base_time_span = 1500
+base_num_sims = 1000
+death_rate_values = [0.001, 0.0025, 0.005]
+
+parameter_configs = [
+    {"birth_rate": base_birth_rate, "death_rate": dr, "time_span": base_time_span, "num_sims": base_num_sims}
+    for dr in death_rate_values
+]
+
+print(f"\n📊 Testing {len(parameter_configs)} parameter configurations:")
+for i, config in enumerate(parameter_configs, 1):
+    print(f"   Config {i}: λ={config['birth_rate']}, μ={config['death_rate']}, T={config['time_span']}, n={config['num_sims']}")
+print("=" * 60)
+```
+
+## Run Simulations for Each Configuration
+
+```{python}
+# | label: sensitivity-simulations
+
+all_results = []
+
+for config_idx, config in enumerate(parameter_configs):
+    print(f"\n{'=' * 60}")
+    print(f"🎲 Configuration {config_idx + 1}/{len(parameter_configs)}")
+    print(f"   Birth rate (λ): {config['birth_rate']}")
+    print(f"   Death rate (μ): {config['death_rate']}")
+    print(f"   Time span (T): {config['time_span']}")
+    print(f"   Simulations (n): {config['num_sims']}")
+    print(f"{'=' * 60}")
+
+    # Run simulations
+    simulated_processes_config = Parallel(n_jobs=-1)(
+        delayed(simulate_birth_death_process)(
+            birth_rate=config['birth_rate'],
+            death_rate=config['death_rate'],
+            max_time=config['time_span'],
+            random_seed=seed + i + config_idx * 10000,
+        )
+        for i in range(config['num_sims'])
+    )
+
+    # Extract ages
+    list_of_ages_config = []
+    for sim in simulated_processes_config:
+        is_alive_man = sim["death_time"].isna()
+        alive_mans = sim[is_alive_man]
+        alive_mans = alive_mans.sort_values("is_spine", ascending=False)
+        ages = config['time_span'] - alive_mans["creation_time"].values
+        list_of_ages_config.append(ages)
+
+    # Fit models
+    fitted_models_config = Parallel(n_jobs=-1)(
+        delayed(fit_single_model)(ages, config['time_span'])
+        for ages in list_of_ages_config
+    )
+
+    # Collect results
+    successful_fits = [m for m in fitted_models_config if m is not None and m.get("success", False)]
+    birth_rates_config = [m["birth_rate"] for m in successful_fits]
+    death_rates_config = [m["death_rate"] for m in successful_fits]
+
+    # Calculate statistics
+    if len(birth_rates_config) > 0:
+        birth_mean = np.mean(birth_rates_config)
+        birth_std = np.std(birth_rates_config)
+        birth_bias = birth_mean - config['birth_rate']
+        birth_rel_bias = birth_bias / config['birth_rate'] * 100
+        birth_mse = np.mean((np.array(birth_rates_config) - config['birth_rate']) ** 2)
+        birth_rmse = np.sqrt(birth_mse)
+    else:
+        birth_mean = birth_std = birth_bias = birth_rel_bias = birth_mse = birth_rmse = np.nan
+
+    if len(death_rates_config) > 0:
+        death_mean = np.mean(death_rates_config)
+        death_std = np.std(death_rates_config)
+        death_bias = death_mean - config['death_rate']
+        death_rel_bias = death_bias / config['death_rate'] * 100
+        death_mse = np.mean((np.array(death_rates_config) - config['death_rate']) ** 2)
+        death_rmse = np.sqrt(death_mse)
+    else:
+        death_mean = death_std = death_bias = death_rel_bias = death_mse = death_rmse = np.nan
+
+    result = {
+        'config_idx': config_idx + 1,
+        'birth_rate_true': config['birth_rate'],
+        'death_rate_true': config['death_rate'],
+        'time_span': config['time_span'],
+        'num_sims': config['num_sims'],
+        'num_successful': len(successful_fits),
+        'success_rate': len(successful_fits) / config['num_sims'] * 100,
+        'birth_rates': birth_rates_config,
+        'death_rates': death_rates_config,
+        'birth_mean': birth_mean,
+        'birth_std': birth_std,
+        'birth_bias': birth_bias,
+        'birth_rel_bias': birth_rel_bias,
+        'birth_rmse': birth_rmse,
+        'death_mean': death_mean,
+        'death_std': death_std,
+        'death_bias': death_bias,
+        'death_rel_bias': death_rel_bias,
+        'death_rmse': death_rmse,
+    }
+
+    all_results.append(result)
+
+    print(f"   ✅ Successful fits: {len(successful_fits)}/{config['num_sims']} ({result['success_rate']:.1f}%)")
+    print(f"   λ̂: {birth_mean:.6f} ± {birth_std:.6f} (true: {config['birth_rate']:.6f})")
+    print(f"   μ̂: {death_mean:.6f} ± {death_std:.6f} (true: {config['death_rate']:.6f})")
+```
+
+## Comparison Summary Table
+
+```{python}
+# | label: sensitivity-summary-table
+
+comparison_df = pd.DataFrame([
+    {
+        'Config': r['config_idx'],
+        'λ (true)': r['birth_rate_true'],
+        'μ (true)': r['death_rate_true'],
+        'Success Rate (%)': r['success_rate'],
+        'λ̂ (mean)': r['birth_mean'],
+        'λ̂ (std)': r['birth_std'],
+        'λ Bias': r['birth_bias'],
+        'λ Rel. Bias (%)': r['birth_rel_bias'],
+        'λ RMSE': r['birth_rmse'],
+        'μ̂ (mean)': r['death_mean'],
+        'μ̂ (std)': r['death_std'],
+        'μ Bias': r['death_bias'],
+        'μ Rel. Bias (%)': r['death_rel_bias'],
+        'μ RMSE': r['death_rmse'],
+    }
+    for r in all_results
+])
+
+print("\n📊 PARAMETER SENSITIVITY COMPARISON")
+print("=" * 80)
+print(comparison_df.to_string(index=False, float_format="%.6f"))
+```
+
+## Comparative Density Plots
+
+```{python}
+# | label: sensitivity-birth-rate-comparison
+
+fig_birth_comp = go.Figure()
+
+for i, result in enumerate(all_results):
+    if len(result['birth_rates']) > 1:
+        kde = gaussian_kde(result['birth_rates'])
+        x_vals = np.linspace(
+            min(result['birth_rates']),
+            min([max(result['birth_rates']), 2 * result['birth_rate_true']]),
+            100
+        )
+        fig_birth_comp.add_trace(
+            go.Scatter(
+                x=x_vals,
+                y=kde(x_vals),
+                mode='lines',
+                name=f"μ={result['death_rate_true']:.4f}",
+                line=dict(color=ptolqual[i % len(ptolqual)]),
+            )
+        )
+        # Add vertical line for true value
+        fig_birth_comp.add_trace(
+            go.Scatter(
+                x=[result['birth_rate_true'], result['birth_rate_true']],
+                y=[0, max(kde(x_vals))],
+                mode='lines',
+                line=dict(color=ptolqual[i % len(ptolqual)], dash='dash'),
+                showlegend=False,
+            )
+        )
+
+fig_birth_comp = apply_professional_styling(
+    fig_birth_comp,
+    "Birth Rate Estimates Across Death Rate Values",
+    r"$\hat{\lambda}$",
+    "Density"
+)
+fig_birth_comp = apply_tufte_axes(fig_birth_comp)
+fig_birth_comp.update_xaxes(tickformat=".4f")
+fig_birth_comp.update_yaxes(rangemode="tozero")
+try:
+    from inf_bp_texts.visualization.plotting import apply_tufte_legend
+    fig_birth_comp = apply_tufte_legend(fig_birth_comp, position="top right")
+except Exception:
+    fig_birth_comp.update_layout(showlegend=True)
+fig_birth_comp.show()
+
+save_figure(fig_birth_comp, "mv_sensitivity_birth_comparison", width=397, height=250)
+```
+
+```{python}
+# | label: sensitivity-death-rate-comparison
+
+fig_death_comp = go.Figure()
+
+for i, result in enumerate(all_results):
+    if len(result['death_rates']) > 1:
+        kde = gaussian_kde(result['death_rates'])
+        x_vals = np.linspace(
+            min(result['death_rates']),
+            min([max(result['death_rates']), 2 * result['death_rate_true']]),
+            100
+        )
+        fig_death_comp.add_trace(
+            go.Scatter(
+                x=x_vals,
+                y=kde(x_vals),
+                mode='lines',
+                name=f"μ={result['death_rate_true']:.4f}",
+                line=dict(color=ptolqual[i % len(ptolqual)]),
+            )
+        )
+        # Add vertical line for true value
+        fig_death_comp.add_trace(
+            go.Scatter(
+                x=[result['death_rate_true'], result['death_rate_true']],
+                y=[0, max(kde(x_vals))],
+                mode='lines',
+                line=dict(color=ptolqual[i % len(ptolqual)], dash='dash'),
+                showlegend=False,
+            )
+        )
+
+fig_death_comp = apply_professional_styling(
+    fig_death_comp,
+    "Death Rate Estimates Across Death Rate Values",
+    r"$\hat{\mu}$",
+    "Density"
+)
+fig_death_comp = apply_tufte_axes(fig_death_comp)
+fig_death_comp.update_xaxes(tickformat=".4f")
+fig_death_comp.update_yaxes(rangemode="tozero")
+try:
+    from inf_bp_texts.visualization.plotting import apply_tufte_legend
+    fig_death_comp = apply_tufte_legend(fig_death_comp, position="top right")
+except Exception:
+    fig_death_comp.update_layout(showlegend=True)
+fig_death_comp.show()
+
+save_figure(fig_death_comp, "mv_sensitivity_death_comparison", width=397, height=250)
+```
+
+## Bias and RMSE Comparison
+
+```{python}
+# | label: sensitivity-bias-rmse-plots
+
+# Bias comparison
+fig_bias = go.Figure()
+
+fig_bias.add_trace(
+    go.Bar(
+        x=[f"μ={r['death_rate_true']:.4f}" for r in all_results],
+        y=[r['birth_rel_bias'] for r in all_results],
+        name='Birth Rate (λ)',
+        marker_color=ptolqual[0],
+    )
+)
+
+fig_bias.add_trace(
+    go.Bar(
+        x=[f"μ={r['death_rate_true']:.4f}" for r in all_results],
+        y=[r['death_rel_bias'] for r in all_results],
+        name='Death Rate (μ)',
+        marker_color=ptolqual[1],
+    )
+)
+
+fig_bias = apply_professional_styling(
+    fig_bias,
+    "Relative Bias Across Death Rate Values",
+    "Configuration",
+    "Relative Bias (%)"
+)
+fig_bias = apply_tufte_axes(fig_bias)
+try:
+    from inf_bp_texts.visualization.plotting import apply_tufte_legend
+    fig_bias = apply_tufte_legend(fig_bias, position="top right")
+except Exception:
+    fig_bias.update_layout(showlegend=True)
+fig_bias.show()
+
+save_figure(fig_bias, "mv_sensitivity_bias_comparison", width=397, height=250)
+
+# RMSE comparison
+fig_rmse = go.Figure()
+
+fig_rmse.add_trace(
+    go.Bar(
+        x=[f"μ={r['death_rate_true']:.4f}" for r in all_results],
+        y=[r['birth_rmse'] for r in all_results],
+        name='Birth Rate (λ)',
+        marker_color=ptolqual[0],
+    )
+)
+
+fig_rmse.add_trace(
+    go.Bar(
+        x=[f"μ={r['death_rate_true']:.4f}" for r in all_results],
+        y=[r['death_rmse'] for r in all_results],
+        name='Death Rate (μ)',
+        marker_color=ptolqual[1],
+    )
+)
+
+fig_rmse = apply_professional_styling(
+    fig_rmse,
+    "RMSE Across Death Rate Values",
+    "Configuration",
+    "RMSE"
+)
+fig_rmse = apply_tufte_axes(fig_rmse)
+fig_rmse.update_yaxes(tickformat=".6f")
+try:
+    from inf_bp_texts.visualization.plotting import apply_tufte_legend
+    fig_rmse = apply_tufte_legend(fig_rmse, position="top right")
+except Exception:
+    fig_rmse.update_layout(showlegend=True)
+fig_rmse.show()
+
+save_figure(fig_rmse, "mv_sensitivity_rmse_comparison", width=397, height=250)
+```
+
+## Success Rate Comparison
+
+```{python}
+# | label: sensitivity-success-rate
+
+fig_success = go.Figure()
+
+fig_success.add_trace(
+    go.Bar(
+        x=[f"μ={r['death_rate_true']:.4f}" for r in all_results],
+        y=[r['success_rate'] for r in all_results],
+        marker_color=ptolqual[0],
+    )
+)
+
+fig_success = apply_professional_styling(
+    fig_success,
+    "Optimization Success Rate Across Death Rate Values",
+    "Configuration",
+    "Success Rate (%)"
+)
+fig_success = apply_tufte_axes(fig_success)
+fig_success.update_yaxes(range=[0, 100])
+fig_success.show()
+
+save_figure(fig_success, "mv_sensitivity_success_rate", width=397, height=250)
+```
 
 *Analysis completed:*
 
