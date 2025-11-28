@@ -13,33 +13,56 @@ from numpy.typing import NDArray
 
 
 def calculate_populations_log_likelihood(
-    lambda_param: float,
-    mu_param: float,
-    time: float,
+    lambda_param: float | NDArray[np.float64],
+    mu_param: float | NDArray[np.float64],
+    time: float | NDArray[np.float64],
     ns: NDArray[np.integer] | int,
     log_scale_params: bool = False,
 ) -> np.float64:
     """
     Calculate the log-probability (log-likelihood) of observing given population counts
-    under a linear birth-and-death process at a single time point.
+    under a birth-and-death process, with support for piecewise-constant rate epochs.
+
     This function computes log P_n(T) for each count n in `ns` using closed-form
     expressions for the birth-and-death process probabilities. The computed log-probabilities
     are summed and returned as a single np.float64 value. Invalid or numerically
     unstable inputs return -inf (np.float64(-np.inf)).
+
     Parameters
     ----------
-    lambda_param : float
-        Birth rate λ. If `log_scale_params` is True, this is interpreted as log(λ).
-    mu_param : float
-        Death rate μ. If `log_scale_params` is True, this is interpreted as log(μ).
-    time : float
-        Time T at which the distribution is evaluated. Must be ≥ 0.
+    lambda_param : float or NDArray[np.float64]
+        Birth rate(s) λ. If `log_scale_params` is True, interpreted as log(λ).
+
+        - **Scalar**: Constant birth rate throughout the time period.
+        - **Array**: Piecewise-constant birth rates for time epochs. The i-th element
+          is the rate during epoch i, which ends at time[i]. Array length must match
+          `time` and `mu_param` if those are also arrays.
+
+    mu_param : float or NDArray[np.float64]
+        Death rate(s) μ. If `log_scale_params` is True, interpreted as log(μ).
+
+        - **Scalar**: Constant death rate throughout the time period.
+        - **Array**: Piecewise-constant death rates for time epochs. The i-th element
+          is the rate during epoch i, which ends at time[i]. Array length must match
+          `time` and `lambda_param` if those are also arrays.
+
+    time : float or NDArray[np.float64]
+        Time(s) T at which the distribution is evaluated. Must be ≥ 0.
+
+        - **Scalar**: Single observation time point.
+        - **Array**: Epoch end times for piecewise-constant rate model. The i-th element
+          is the end time of epoch i, during which rates lambda_param[i] and mu_param[i]
+          apply. Times must be monotonically increasing. Array length must match
+          `lambda_param` and `mu_param` if those are also arrays.
+
     ns : numpy.ndarray[int] or int
         Non-negative integer or array of non-negative integers representing the
         population counts n for which to evaluate the log-probabilities.
+
     log_scale_params : bool, optional
         If True, `lambda_param` and `mu_param` are treated as natural logarithms
         of the rates and are exponentiated internally. Default is False.
+
     Returns
     -------
     numpy.float64
@@ -47,66 +70,190 @@ def calculate_populations_log_likelihood(
         numerically invalid inputs (negative time, negative counts, non-positive rates
         when not in log-space, or α_t/β_t not in (0,1)). Programming errors (type errors,
         indexing errors) will raise exceptions.
+
     Behavior and formulas
     ---------------------
+    For constant rates (scalar inputs):
+
     Let α_t and β_t denote auxiliary probabilities defined by the birth-and-death process:
         α_t = μ (e^{(λ-μ) T} - 1) / (λ e^{(λ-μ) T} - μ)
         β_t = (λ / μ) * α_t
+
     The log-probabilities used are:
-        log P_n(T) = log(1 - α_t) + log(1 - β_t) + (n - 1) * log(β_t)   for n ≥ 1
+        log P_n(T) = log(α_t)                                           for n = 0
+        log P_n(T) = log(1 - α_t) + log(1 - β_t) + (n - 1) * log(β_t)  for n ≥ 1
+
+    For piecewise-constant rates (array inputs):
+
+    The process evolves through sequential epochs with different rates. The calculation
+    compounds the effects across epochs to compute the final distribution at the last
+    epoch's end time.
+
     The implementation handles the limiting case λ ≈ μ by using the limiting form
     α_t = β_t = (λ T) / (1 + λ T) to avoid catastrophic cancellation.
+
     Edge cases
     ----------
     - Negative time or negative counts produce -inf.
     - When `log_scale_params` is False, non-positive λ or μ produce -inf.
     - If α_t or β_t are not strictly between 0 and 1, the function returns -inf.
     - Non-finite intermediate values (overflow/underflow) produce -inf.
+    - Array inputs must have matching lengths (lambda_param, mu_param, time).
+    - Epoch times must be monotonically increasing when using array inputs.
     - The function accepts scalar or array-like `ns`; intermediate computations
       preserve array shape, but the returned value is the scalar sum of log-probabilities.
     - Type errors, shape mismatches, and other programming errors raise exceptions.
+
     Examples
     --------
-    # Scalar n
-    >>> calculate_population_log_likelihood(0.5, 0.3, 10.0, 2)
-    # Vectorized ns
-    >>> calculate_population_log_likelihood(0.5, 0.3, 10.0, np.array([0, 1, 2]))
+    # Constant rates (scalar inputs)
+    >>> calculate_populations_log_likelihood(0.5, 0.3, 10.0, 2)
+
+    # Vectorized population counts
+    >>> calculate_populations_log_likelihood(0.5, 0.3, 10.0, np.array([0, 1, 2]))
+
+    # Piecewise-constant rates (array inputs)
+    >>> # Two epochs: [0, 5) with λ=0.5, μ=0.3; [5, 10) with λ=0.4, μ=0.2
+    >>> calculate_populations_log_likelihood(
+    ...     lambda_param=np.array([0.5, 0.4]),
+    ...     mu_param=np.array([0.3, 0.2]),
+    ...     time=np.array([5.0, 10.0]),
+    ...     ns=2
+    ... )
     """
     # Input validation
     if np.any(ns < 0) or time < 0:
-        return np.float64(-np.inf)
+        raise ValueError("ns must be non-negative and time must be non-negative")
 
-    # Handle parameter scaling
-    if log_scale_params:
-        log_lambda = lambda_param
-        log_mu = mu_param
-        lambda_val = np.exp(lambda_param)
-        mu_val = np.exp(mu_param)
+    # Ensure consistent input types: either all arrays or all scalars
+    is_array_lambda = isinstance(lambda_param, np.ndarray)
+    is_array_mu = isinstance(mu_param, np.ndarray)
+    is_array_time = isinstance(time, np.ndarray)
+
+    if not (is_array_lambda == is_array_mu == is_array_time):
+        raise ValueError(
+            "lambda_param, mu_param, and time must all be arrays or all scalars. "
+            f"Got types: lambda={type(lambda_param).__name__}, mu={type(mu_param).__name__}, time={type(time).__name__}"
+        )
+
+    if (
+        isinstance(time, np.ndarray)
+        and isinstance(lambda_param, np.ndarray)
+        and isinstance(mu_param, np.ndarray)
+    ):
+        if not (len(lambda_param) == len(mu_param) == len(time)):
+            raise ValueError(
+                f"Array inputs must have matching lengths. "
+                f"Got: lambda_param length={len(lambda_param)}, mu_param length={len(mu_param)}, time length={len(time)}"
+            )
+        # Handle parameter scaling
+        if log_scale_params:
+            log_lambda_array = lambda_param
+            log_mu_array = mu_param
+            lambda_val_array = np.exp(lambda_param)
+            mu_val_array = np.exp(mu_param)
+        else:
+            # Validate non-negative parameters
+            if np.any(lambda_param < 0) or np.any(mu_param < 0):
+                return np.float64(-np.inf)
+            log_lambda_array = np.log(lambda_param)
+            log_mu_array = np.log(mu_param)
+            lambda_val_array = lambda_param
+            mu_val_array = mu_param
+        if not np.all(np.diff(time) > 0):
+            raise ValueError(
+                f"Epoch times must be strictly monotonically increasing. "
+                f"Got time array: {time}"
+            )
+
+        epoch_durations = np.diff(np.insert(time, 0, 0.0))
+        critical_mask = np.abs(log_lambda_array - log_mu_array) < 1e-12
+        non_critical_mask = np.invert(critical_mask)
+        p_ext_summands = np.zeros_like(time, dtype=np.float64)
+        growth_rates = lambda_val_array - mu_val_array
+        cum_growth = np.cumsum(growth_rates * epoch_durations)
+        trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
+
+        p_ext_summands[critical_mask] = (
+            mu_val_array[critical_mask]
+            * np.exp(-trunc_cum_growth[critical_mask])
+            * epoch_durations[critical_mask]
+        )
+        p_ext_summands[non_critical_mask] = (
+            mu_val_array[non_critical_mask]
+            * np.exp(-trunc_cum_growth[non_critical_mask])
+            / growth_rates[non_critical_mask]
+            * (
+                1
+                - np.exp(
+                    -growth_rates[non_critical_mask]
+                    * epoch_durations[non_critical_mask]
+                )
+            )
+        )
+        p_ext_num = np.sum(p_ext_summands)
+
+        alpha_t = p_ext_num / (1 + p_ext_num)
+
+        geom_summands = np.zeros_like(time, dtype=np.float64)
+        geom_summands[critical_mask] = (
+            lambda_val_array[critical_mask]
+            * np.exp(-trunc_cum_growth[critical_mask])
+            * epoch_durations[critical_mask]
+        )
+        geom_summands[non_critical_mask] = (
+            lambda_val_array[non_critical_mask]
+            * np.exp(-trunc_cum_growth[non_critical_mask])
+            / growth_rates[non_critical_mask]
+            * (
+                1
+                - np.exp(
+                    -growth_rates[non_critical_mask]
+                    * epoch_durations[non_critical_mask]
+                )
+            )
+        )
+        geom_num = np.sum(geom_summands)
+        beta_t = geom_num / (np.exp(-cum_growth[-1]) + geom_num)
     else:
-        # Validate positive parameters
-        if lambda_param <= 0 or mu_param <= 0:
-            return np.float64(-np.inf)
-        log_lambda = np.log(lambda_param)
-        log_mu = np.log(mu_param)
-        lambda_val = lambda_param
-        mu_val = mu_param
+        if (
+            not isinstance(lambda_param, float)
+            or not isinstance(mu_param, float)
+            or not isinstance(time, float)
+        ):
+            raise ValueError(
+                "When using scalar inputs, lambda_param, mu_param, and time must all be floats."
+            )
+        # Handle parameter scaling
+        if log_scale_params:
+            log_lambda = lambda_param
+            log_mu = mu_param
+            lambda_val = np.exp(lambda_param)
+            mu_val = np.exp(mu_param)
+        else:
+            # Validate non-negative parameters
+            if np.any(lambda_param < 0) or np.any(mu_param < 0):
+                return np.float64(-np.inf)
+            log_lambda = np.log(lambda_param)
+            log_mu = np.log(mu_param)
+            lambda_val = lambda_param
+            mu_val = mu_param
+        if abs(log_lambda - log_mu) < 1e-12:
+            # Limiting case: λ ≈ μ
+            rate_time_product = lambda_val * time
+            alpha_t = beta_t = rate_time_product / (1 + rate_time_product)
+        else:
+            # General case: λ ≠ μ
+            growth_rate = lambda_val - mu_val
+            exponent = growth_rate * time
+            exp_term = np.exp(exponent)
+            if not np.isfinite(exp_term):
+                return np.float64(-np.inf)
+            denominator = lambda_val * exp_term - mu_val
+            alpha_t = mu_val * (exp_term - 1) / denominator
 
-    if abs(log_lambda - log_mu) < 1e-12:
-        # Limiting case: λ ≈ μ
-        rate_time_product = lambda_val * time
-        alpha_t = beta_t = rate_time_product / (1 + rate_time_product)
-    else:
-        # General case: λ ≠ μ
-        growth_rate = lambda_val - mu_val
-        exponent = growth_rate * time
-        exp_term = np.exp(exponent)
-        if not np.isfinite(exp_term):
-            return np.float64(-np.inf)
-        denominator = lambda_val * exp_term - mu_val
-        alpha_t = mu_val * (exp_term - 1) / denominator
-
-        # Calculate β_t = (λ/μ) * α_t
-        beta_t = (lambda_val / mu_val) * alpha_t
+            # Calculate β_t = (λ/μ) * α_t
+            beta_t = (lambda_val / mu_val) * alpha_t
 
     # Validate α_t and β_t are in valid range (0, 1)
     if not ((0 < alpha_t < 1) and (0 < beta_t < 1)):
