@@ -138,9 +138,9 @@ def log_likelihood(
 
     # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
     log_P_n_T = calculate_populations_log_likelihood(
-        lambda_param=birth_rate,
-        mu_param=death_rate,
-        time=observation_time,
+        lambda_params=birth_rate,
+        mu_params=death_rate,
+        times=observation_time,
         ns=ns,
         log_scale_params=log_scale_params,
     )

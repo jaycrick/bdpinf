@@ -13,9 +13,9 @@ from numpy.typing import NDArray
 
 
 def calculate_populations_log_likelihood(
-    lambda_param: float | NDArray[np.float64],
-    mu_param: float | NDArray[np.float64],
-    time: float | NDArray[np.float64],
+    lambda_params: float | NDArray[np.float64],
+    mu_params: float | NDArray[np.float64],
+    times: float | NDArray[np.float64],
     ns: NDArray[np.integer] | int,
     log_scale_params: bool = False,
 ) -> np.float64:
@@ -30,7 +30,7 @@ def calculate_populations_log_likelihood(
 
     Parameters
     ----------
-    lambda_param : float or NDArray[np.float64]
+    lambda_params : float or NDArray[np.float64]
         Birth rate(s) λ. If `log_scale_params` is True, interpreted as log(λ).
 
         - **Scalar**: Constant birth rate throughout the time period.
@@ -38,7 +38,7 @@ def calculate_populations_log_likelihood(
           is the rate during epoch i, which ends at time[i]. Array length must match
           `time` and `mu_param` if those are also arrays.
 
-    mu_param : float or NDArray[np.float64]
+    mu_params : float or NDArray[np.float64]
         Death rate(s) μ. If `log_scale_params` is True, interpreted as log(μ).
 
         - **Scalar**: Constant death rate throughout the time period.
@@ -98,7 +98,7 @@ def calculate_populations_log_likelihood(
     - When `log_scale_params` is False, non-positive λ or μ produce -inf.
     - If α_t or β_t are not strictly between 0 and 1, the function returns -inf.
     - Non-finite intermediate values (overflow/underflow) produce -inf.
-    - Array inputs must have matching lengths (lambda_param, mu_param, time).
+    - Array inputs must have matching lengths (lambda_param, mu_params, time).
     - Epoch times must be monotonically increasing when using array inputs.
     - The function accepts scalar or array-like `ns`; intermediate computations
       preserve array shape, but the returned value is the scalar sum of log-probabilities.
@@ -122,130 +122,86 @@ def calculate_populations_log_likelihood(
     ... )
     """
     # Input validation
-    if np.any(ns < 0) or time < 0:
+    if np.any(ns < 0) or times < 0:
         raise ValueError("ns must be non-negative and time must be non-negative")
 
     # Ensure consistent input types: either all arrays or all scalars
-    is_array_lambda = isinstance(lambda_param, np.ndarray)
-    is_array_mu = isinstance(mu_param, np.ndarray)
-    is_array_time = isinstance(time, np.ndarray)
+    is_array_lambda = isinstance(lambda_params, np.ndarray)
+    is_array_mu = isinstance(mu_params, np.ndarray)
+    is_array_time = isinstance(times, np.ndarray)
 
     if not (is_array_lambda == is_array_mu == is_array_time):
         raise ValueError(
-            "lambda_param, mu_param, and time must all be arrays or all scalars. "
-            f"Got types: lambda={type(lambda_param).__name__}, mu={type(mu_param).__name__}, time={type(time).__name__}"
+            "lambda_param, mu_params, and time must all be arrays or all scalars. "
+            f"Got types: lambda={type(lambda_params).__name__}, mu={type(mu_params).__name__}, time={type(times).__name__}"
         )
 
     if (
-        isinstance(time, np.ndarray)
-        and isinstance(lambda_param, np.ndarray)
-        and isinstance(mu_param, np.ndarray)
+        isinstance(times, np.ndarray)
+        and isinstance(lambda_params, np.ndarray)
+        and isinstance(mu_params, np.ndarray)
     ):
-        if not (len(lambda_param) == len(mu_param) == len(time)):
+        if not (len(lambda_params) == len(mu_params) == len(times)):
             raise ValueError(
                 f"Array inputs must have matching lengths. "
-                f"Got: lambda_param length={len(lambda_param)}, mu_param length={len(mu_param)}, time length={len(time)}"
+                f"Got: lambda_params length={len(lambda_params)}, "
+                f"mu_params length={len(mu_params)}, time length={len(times)}"
             )
         # Handle parameter scaling
         if log_scale_params:
-            log_lambda_array = lambda_param
-            log_mu_array = mu_param
-            lambda_val_array = np.exp(lambda_param)
-            mu_val_array = np.exp(mu_param)
+            lambda_val_array = np.exp(lambda_params)
+            mu_val_array = np.exp(mu_params)
         else:
             # Validate non-negative parameters
-            if np.any(lambda_param < 0) or np.any(mu_param < 0):
+            if np.any(lambda_params < 0) or np.any(mu_params < 0):
                 return np.float64(-np.inf)
-            log_lambda_array = np.log(lambda_param)
-            log_mu_array = np.log(mu_param)
-            lambda_val_array = lambda_param
-            mu_val_array = mu_param
-        if not np.all(np.diff(time) > 0):
+            lambda_val_array = lambda_params
+            mu_val_array = mu_params
+        if not np.all(np.diff(times) > 0):
             raise ValueError(
                 f"Epoch times must be strictly monotonically increasing. "
-                f"Got time array: {time}"
+                f"Got time array: {times}"
             )
 
-        epoch_durations = np.diff(np.insert(time, 0, 0.0))
-        critical_mask = np.abs(log_lambda_array - log_mu_array) < 1e-12
-        non_critical_mask = np.invert(critical_mask)
-        p_ext_summands = np.zeros_like(time, dtype=np.float64)
-        growth_rates = lambda_val_array - mu_val_array
-        cum_growth = np.cumsum(growth_rates * epoch_durations)
-        trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
+        alpha_t = calculate_extinction_probability(
+            lambda_val_array, mu_val_array, times
+        )
 
-        p_ext_summands[critical_mask] = (
-            mu_val_array[critical_mask]
-            * np.exp(-trunc_cum_growth[critical_mask])
-            * epoch_durations[critical_mask]
-        )
-        p_ext_summands[non_critical_mask] = (
-            mu_val_array[non_critical_mask]
-            * np.exp(-trunc_cum_growth[non_critical_mask])
-            / growth_rates[non_critical_mask]
-            * (
-                1
-                - np.exp(
-                    -growth_rates[non_critical_mask]
-                    * epoch_durations[non_critical_mask]
-                )
-            )
-        )
-        p_ext_num = np.sum(p_ext_summands)
-
-        alpha_t = p_ext_num / (1 + p_ext_num)
-
-        geom_summands = np.zeros_like(time, dtype=np.float64)
-        geom_summands[critical_mask] = (
-            lambda_val_array[critical_mask]
-            * np.exp(-trunc_cum_growth[critical_mask])
-            * epoch_durations[critical_mask]
-        )
-        geom_summands[non_critical_mask] = (
-            lambda_val_array[non_critical_mask]
-            * np.exp(-trunc_cum_growth[non_critical_mask])
-            / growth_rates[non_critical_mask]
-            * (
-                1
-                - np.exp(
-                    -growth_rates[non_critical_mask]
-                    * epoch_durations[non_critical_mask]
-                )
-            )
-        )
-        geom_num = np.sum(geom_summands)
-        beta_t = geom_num / (np.exp(-cum_growth[-1]) + geom_num)
+        beta_t = 1 - _calculate_geom_param(lambda_val_array, mu_val_array, times)
     else:
         if (
-            not isinstance(lambda_param, float)
-            or not isinstance(mu_param, float)
-            or not isinstance(time, float)
+            not isinstance(lambda_params, float)
+            or not isinstance(mu_params, float)
+            or not isinstance(times, float)
         ):
             raise ValueError(
-                "When using scalar inputs, lambda_param, mu_param, and time must all be floats."
+                f"When using scalar inputs, lambda_params, mu_params, and times must all be floats. "
+                f"Got types: lambda_params={type(lambda_params).__name__}, "
+                f"mu_params={type(mu_params).__name__}, times={type(times).__name__}. "
+                f"Note: numpy scalar types (np.float64, np.int32, etc.) are not accepted - use Python float type."
             )
         # Handle parameter scaling
         if log_scale_params:
-            log_lambda = lambda_param
-            log_mu = mu_param
-            lambda_val = np.exp(lambda_param)
-            mu_val = np.exp(mu_param)
+            log_lambda = lambda_params
+            log_mu = mu_params
+            lambda_val = np.exp(lambda_params)
+            mu_val = np.exp(mu_params)
         else:
             # Validate non-negative parameters
-            if np.any(lambda_param < 0) or np.any(mu_param < 0):
+            if np.any(lambda_params < 0) or np.any(mu_params < 0):
                 return np.float64(-np.inf)
-            log_lambda = np.log(lambda_param)
-            log_mu = np.log(mu_param)
-            lambda_val = lambda_param
-            mu_val = mu_param
+            log_lambda = np.log(lambda_params)
+            log_mu = np.log(mu_params)
+            lambda_val = lambda_params
+            mu_val = mu_params
         if abs(log_lambda - log_mu) < 1e-12:
             # Limiting case: λ ≈ μ
-            rate_time_product = lambda_val * time
+            rate_time_product = lambda_val * times
             alpha_t = beta_t = rate_time_product / (1 + rate_time_product)
         else:
             # General case: λ ≠ μ
             growth_rate = lambda_val - mu_val
-            exponent = growth_rate * time
+            exponent = growth_rate * times
             exp_term = np.exp(exponent)
             if not np.isfinite(exp_term):
                 return np.float64(-np.inf)
@@ -1111,6 +1067,204 @@ def calculate_ages_log_likelihood_derivatives(
         return calculate_non_spine_ages_log_likelihood_derivatives(
             lambda_param, mu_param, ages_t, T, log_scale_params
         )
+
+
+def calculate_extinction_probability(
+    birth_rates: NDArray[np.float64],
+    death_rates: NDArray[np.float64],
+    times: NDArray[np.float64],
+    log_scale_params: bool = False,
+) -> np.float64:
+    """
+    Calculate the extinction probability (α_t) for a birth-death process with piecewise-constant rates.
+
+    This function computes the probability that a lineage starting with a single individual
+    at time 0 will have gone extinct by the final observation time, given piecewise-constant
+    birth and death rates across multiple time epochs.
+
+    The extinction probability is computed as:
+        α_t = p_ext_num / (1 + p_ext_num)
+
+    where p_ext_num is the integral of the extinction probability density across all epochs,
+    accounting for the cumulative growth rate effects.
+
+    Parameters
+    ----------
+    birth_rates : NDArray[np.float64]
+        Array of birth rates λ for each epoch. If `log_scale_params` is True,
+        these are interpreted as log(λ).
+    death_rates : NDArray[np.float64]
+        Array of death rates μ for each epoch. If `log_scale_params` is True,
+        these are interpreted as log(μ).
+    times : NDArray[np.float64]
+        Array of epoch end times. The i-th element is the end time of epoch i.
+        Must be monotonically increasing. Epochs are defined as [0, times[0]),
+        [times[0], times[1]), etc.
+    log_scale_params : bool, optional
+        If True, birth_rates and death_rates are provided in log-scale and will
+        be exponentiated internally. Default is False.
+
+    Returns
+    -------
+    np.float64
+        The extinction probability α_t ∈ (0, 1), representing the probability
+        that a lineage starting with one individual will be extinct by times[-1].
+
+    Notes
+    -----
+    - The function handles the limiting case λ ≈ μ using numerically stable
+      formulas when |log(λ) - log(μ)| < 1e-12.
+    - For the critical case (λ ≈ μ), uses: μ * exp(-cum_growth) * duration
+    - For the non-critical case (λ ≠ μ), uses:
+      (μ * exp(-cum_growth) / (λ - μ)) * (1 - exp(-(λ - μ) * duration))
+    - The cumulative growth rate accounts for the compounding effects across epochs.
+
+    See Also
+    --------
+    _calculate_geom_param : Calculates the geometric parameter β_t
+    calculate_populations_log_likelihood : Uses both α_t and β_t for likelihood calculations
+    """
+    if log_scale_params:
+        log_lambda_array = birth_rates
+        log_mu_array = death_rates
+        lambda_val_array = np.exp(birth_rates)
+        mu_val_array = np.exp(death_rates)
+    else:
+        log_lambda_array = np.log(birth_rates)
+        log_mu_array = np.log(death_rates)
+        lambda_val_array = birth_rates
+        mu_val_array = death_rates
+
+    epoch_durations = np.diff(np.insert(times, 0, 0.0))
+    critical_mask = np.abs(log_lambda_array - log_mu_array) < 1e-12
+    non_critical_mask = np.invert(critical_mask)
+    p_ext_summands = np.zeros_like(times, dtype=np.float64)
+    growth_rates = lambda_val_array - mu_val_array
+    cum_growth = np.cumsum(growth_rates * epoch_durations)
+    trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
+
+    p_ext_summands[critical_mask] = (
+        mu_val_array[critical_mask]
+        * np.exp(-trunc_cum_growth[critical_mask])
+        * epoch_durations[critical_mask]
+    )
+    p_ext_summands[non_critical_mask] = (
+        mu_val_array[non_critical_mask]
+        * np.exp(-trunc_cum_growth[non_critical_mask])
+        / growth_rates[non_critical_mask]
+        * (
+            1
+            - np.exp(
+                -growth_rates[non_critical_mask] * epoch_durations[non_critical_mask]
+            )
+        )
+    )
+    p_ext_num = np.sum(p_ext_summands)
+
+    alpha_t = p_ext_num / (1 + p_ext_num)
+
+    return alpha_t
+
+
+def _calculate_geom_param(
+    birth_rates: NDArray[np.float64],
+    death_rates: NDArray[np.float64],
+    times: NDArray[np.float64],
+    log_scale_params: bool = False,
+) -> np.float64:
+    """
+    Conditional on survival at the present, this calculated the geometric parameter (1 - β_t)
+    for the offspring distribution of a birth-death process with piecewise-constant rates.
+
+    This is a private helper function that computes the parameter 1 - β_t used in the
+    geometric offspring distribution of a birth-death process. The parameter represents
+    the probability related to the survival and reproduction dynamics across multiple
+    time epochs with varying rates.
+
+    The geometric parameter is computed as:
+        β_t = geom_num / (exp(-cum_growth[-1]) + geom_num)
+
+    where geom_num is the integral accounting for birth events across all epochs,
+    weighted by the cumulative growth rate at each point in time.
+
+    Parameters
+    ----------
+    birth_rates : NDArray[np.float64]
+        Array of birth rates λ for each epoch. If `log_scale_params` is True,
+        these are interpreted as log(λ). Length must match death_rates and times.
+    death_rates : NDArray[np.float64]
+        Array of death rates μ for each epoch. If `log_scale_params` is True,
+        these are interpreted as log(μ). Length must match birth_rates and times.
+    times : NDArray[np.float64]
+        Array of epoch end times. The i-th element is the end time of epoch i.
+        Must be monotonically increasing. Epochs span [0, times[0]),
+        [times[0], times[1]), etc.
+    log_scale_params : bool, optional
+        If True, birth_rates and death_rates are provided in log-scale and will
+        be exponentiated internally. Default is False.
+
+    Returns
+    -------
+    float
+        The geometric parameter 1 - β_t ∈ (0, 1), representing the success probability
+        in the geometric offspring distribution. This parameter, combined with the
+        extinction probability α_t, fully characterizes the population distribution.
+
+    Notes
+    -----
+    - This is a private function (prefixed with _) used internally by
+      calculate_populations_log_likelihood for array (piecewise-constant rate) inputs.
+    - Handles the limiting case λ ≈ μ when |log(λ) - log(μ)| < 1e-12 using
+      numerically stable formulas to avoid catastrophic cancellation.
+    - For critical case (λ ≈ μ): λ * exp(-cum_growth) * duration
+    - For non-critical case (λ ≠ μ):
+      (λ * exp(-cum_growth) / (λ - μ)) * (1 - exp(-(λ - μ) * duration))
+    - The final division by (exp(-cum_growth[-1]) + geom_num) normalizes
+      the result to ensure β_t ∈ (0, 1).
+
+    See Also
+    --------
+    calculate_extinction_probability : Calculates the extinction probability α_t
+    calculate_populations_log_likelihood : Uses β_t for likelihood calculations
+    """
+    if log_scale_params:
+        log_lambda_array = birth_rates
+        log_mu_array = death_rates
+        lambda_val_array = np.exp(birth_rates)
+        mu_val_array = np.exp(death_rates)
+    else:
+        log_lambda_array = np.log(birth_rates)
+        log_mu_array = np.log(death_rates)
+        lambda_val_array = birth_rates
+        mu_val_array = death_rates
+
+    epoch_durations = np.diff(np.insert(times, 0, 0.0))
+    critical_mask = np.abs(log_lambda_array - log_mu_array) < 1e-12
+    non_critical_mask = np.invert(critical_mask)
+    growth_rates = lambda_val_array - mu_val_array
+    cum_growth = np.cumsum(growth_rates * epoch_durations)
+    trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
+
+    geom_summands = np.zeros_like(times, dtype=np.float64)
+    geom_summands[critical_mask] = (
+        lambda_val_array[critical_mask]
+        * np.exp(-trunc_cum_growth[critical_mask])
+        * epoch_durations[critical_mask]
+    )
+    geom_summands[non_critical_mask] = (
+        lambda_val_array[non_critical_mask]
+        * np.exp(-trunc_cum_growth[non_critical_mask])
+        / growth_rates[non_critical_mask]
+        * (
+            1
+            - np.exp(
+                -growth_rates[non_critical_mask] * epoch_durations[non_critical_mask]
+            )
+        )
+    )
+    geom_num = np.sum(geom_summands)
+    beta_t = geom_num / (np.exp(-cum_growth[-1]) + geom_num)
+    return np.float64(1 - beta_t)
 
 
 def predict_manuscript_survival(
