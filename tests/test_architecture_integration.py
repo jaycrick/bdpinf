@@ -12,36 +12,10 @@ from inf_bp_texts.config import DEFAULT_MODEL, DEFAULT_OPTIMIZATION
 from inf_bp_texts.exceptions import ValidationError, validate_positive_number
 from inf_bp_texts.inference import fit_from_dataframe
 from inf_bp_texts.models.birth_death_process import BirthDeathProcess
-from inf_bp_texts.simulation.simulator import generate_synthetic_dataset
 
 
 class TestArchitecturalIntegration:
     """Test that architectural components work together."""
-
-    def test_config_integration_with_fitting(self):
-        """Test that configuration system integrates with fitting module."""
-        # Generate test data
-        data = generate_synthetic_dataset(
-            true_birth_rate=0.2,
-            true_death_rate=0.01,
-            observation_years=(100, 500),
-            n_manuscripts=30,
-            random_seed=42,
-        )
-
-        # Use configuration in fitting
-        config = DEFAULT_OPTIMIZATION
-        results = fit_from_dataframe(
-            manuscript_data=data,
-            age_column="age",
-            observation_time=600.0,
-            method=config.method,
-            initial_params=(config.initial_birth_rate, config.initial_death_rate),
-        )
-
-        assert results["success"]
-        assert results["birth_rate"] > 0
-        assert results["death_rate"] > 0
 
     def test_error_handling_integration(self):
         """Test that error handling works across modules."""

@@ -121,7 +121,7 @@ def calculate_populations_log_likelihood(
     ... )
     """
     # Input validation
-    if np.any(ns < 0) or times < 0:
+    if np.any(ns < 0) or np.any(times < 0):
         raise ValueError("ns must be non-negative and time must be non-negative")
 
     # Ensure consistent input types: either all arrays or all scalars
@@ -637,8 +637,10 @@ def calculate_non_spine_ages_log_likelihood(
 
     # Handle parameter scaling
     # Extract scalar values from single-element arrays
-    lambda_scalar = float(lambda_params)
-    mu_scalar = float(mu_params)
+    lambda_scalar = float(
+        lambda_params[0] if isinstance(lambda_params, np.ndarray) else lambda_params
+    )
+    mu_scalar = float(mu_params[0] if isinstance(mu_params, np.ndarray) else mu_params)
 
     if log_scale_params:
         log_lambda = lambda_scalar
@@ -764,8 +766,14 @@ def calculate_ages_log_likelihood(
             lambda_param, mu_param, ages_t, T, log_scale_params
         )
     else:
+        # calculate_non_spine_ages_log_likelihood requires array inputs
+        # Wrap scalar parameters in single-element arrays for single-epoch case
         return calculate_non_spine_ages_log_likelihood(
-            lambda_param, mu_param, ages_t, T, log_scale_params
+            np.array([lambda_param]),
+            np.array([mu_param]),
+            ages_t,
+            np.array([T]),
+            log_scale_params,
         )
 
 
@@ -1180,9 +1188,9 @@ def calculate_extinction_probability(
 
 
 def _calculate_geometric_parameter(
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
+    birth_rates: NDArray[np.float64] | float,
+    death_rates: NDArray[np.float64] | float,
+    times: NDArray[np.float64] | float,
     log_scale_params: bool = False,
 ) -> np.float64:
     """
@@ -1240,53 +1248,60 @@ def _calculate_geometric_parameter(
     calculate_extinction_probability : Calculates the extinction probability α_t
     calculate_populations_log_likelihood : Uses β_t for likelihood calculations
     """
+    birth_rates = np.atleast_1d(birth_rates)
+    death_rates = np.atleast_1d(death_rates)
+    times = np.atleast_1d(times)
+    epoch_durations = np.diff(np.insert(times, 0, 0.0))
+    if np.any(epoch_durations < 0):
+        raise ValueError("times array must be strictly increasing.")
     if log_scale_params:
-        log_lambda_array = birth_rates
-        log_mu_array = death_rates
         lambda_val_array = np.exp(birth_rates)
         mu_val_array = np.exp(death_rates)
     else:
-        log_lambda_array = np.log(birth_rates)
-        log_mu_array = np.log(death_rates)
         lambda_val_array = birth_rates
         mu_val_array = death_rates
 
-    epoch_durations = np.diff(np.insert(times, 0, 0.0))
-    critical_mask = np.abs(log_lambda_array - log_mu_array) < 1e-12
-    non_critical_mask = np.invert(critical_mask)
     growth_rates = lambda_val_array - mu_val_array
     cum_growth = np.cumsum(growth_rates * epoch_durations)
-    trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
 
-    geom_summands = np.zeros_like(times, dtype=np.float64)
-    geom_summands[critical_mask] = (
-        lambda_val_array[critical_mask]
-        * np.exp(-trunc_cum_growth[critical_mask])
-        * epoch_durations[critical_mask]
+    geom_sum = _probability_extinction_numerator(
+        birth_rates, death_rates, times, log_scale_params
     )
-    geom_summands[non_critical_mask] = (
-        lambda_val_array[non_critical_mask]
-        * np.exp(-trunc_cum_growth[non_critical_mask])
-        / growth_rates[non_critical_mask]
-        * (
-            1
-            - np.exp(
-                -growth_rates[non_critical_mask] * epoch_durations[non_critical_mask]
-            )
-        )
-    )
-    geom_num = np.sum(geom_summands)
-    beta_t = geom_num / (np.exp(-cum_growth[-1]) + geom_num)
-    return np.float64(1 - beta_t)
+    cond_geom_prob = np.exp(-cum_growth[-1]) / (1 + geom_sum)
+    return np.float64(cond_geom_prob)
 
 
 def _probability_extinction_numerator(
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
+    birth_rates: NDArray[np.float64] | float,
+    death_rates: NDArray[np.float64] | float,
+    times: NDArray[np.float64] | float,
     log_scale_params: bool,
     start_time: float = 0.0,
 ) -> np.float64:
+    """
+    Calculate the numerator of the extinction probability integral.
+    This function computes the integral that forms the numerator in the extinction
+    probability calculation for a birth-death process with piecewise-constant rates.
+    birth_rates : NDArray[np.float64]
+        Array of birth rates λ for each epoch. If `log_scale_params` is True,
+        these are interpreted as log(λ).
+    death_rates : NDArray[np.float64]
+        Array of death rates μ for each epoch. If `log_scale_params` is True,
+        these are interpreted as log(μ).
+    times : NDArray[np.float64]
+        Array of epoch end times. The i-th element is the end time of epoch i.
+        Must be monotonically increasing. Epochs are defined as [0, times[0]),
+        [times[0], times[1]), etc.
+    log_scale_params : bool
+        If True, birth_rates and death_rates are provided in log-scale and will
+        be exponentiated internally.
+    start_time : float, optional
+        The time from which to start the extinction probability calculation. Default is 0.0.
+    """
+    birth_rates = np.atleast_1d(birth_rates)
+    death_rates = np.atleast_1d(death_rates)
+    times = np.atleast_1d(times)
+
     if log_scale_params:
         log_lambda_array = birth_rates
         log_mu_array = death_rates
@@ -1303,33 +1318,34 @@ def _probability_extinction_numerator(
     times = times[after_start_mask]
     birth_rates = birth_rates[after_start_mask]
     death_rates = death_rates[after_start_mask]
+    # Also filter the derived arrays
+    log_lambda_array = log_lambda_array[after_start_mask]
+    log_mu_array = log_mu_array[after_start_mask]
+    lambda_val_array = lambda_val_array[after_start_mask]
+    mu_val_array = mu_val_array[after_start_mask]
+
     epoch_durations = np.diff(np.insert(times, 0, 0.0))
     critical_mask = np.abs(log_lambda_array - log_mu_array) < 1e-12
-    non_critical_mask = np.invert(critical_mask)
-    probability_extinction_summands = np.zeros_like(times, dtype=np.float64)
     growth_rates = lambda_val_array - mu_val_array
     cum_growth = np.cumsum(growth_rates * epoch_durations)
     trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
 
-    probability_extinction_summands[critical_mask] = (
-        mu_val_array[critical_mask]
-        * np.exp(-trunc_cum_growth[critical_mask])
-        * epoch_durations[critical_mask]
-    )
-    probability_extinction_summands[non_critical_mask] = (
-        mu_val_array[non_critical_mask]
-        * np.exp(-trunc_cum_growth[non_critical_mask])
-        / growth_rates[non_critical_mask]
-        * (
-            1
-            - np.exp(
-                -growth_rates[non_critical_mask] * epoch_durations[non_critical_mask]
-            )
+    growth_rates = lambda_val_array - mu_val_array
+    cum_growth = np.cumsum(growth_rates * epoch_durations)
+    trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
+
+    critical_mask = np.abs(growth_rates) < 1e-12
+    probability_extinction_numerator = (
+        mu_val_array
+        * np.exp(-trunc_cum_growth)
+        * np.where(
+            critical_mask,
+            epoch_durations,
+            (1 - np.exp(-growth_rates * epoch_durations)) / growth_rates,
         )
     )
-    probability_extinction_numerator = np.sum(probability_extinction_summands)
 
-    return probability_extinction_numerator
+    return np.sum(probability_extinction_numerator, dtype=np.float64)
 
 
 def _integrand_survival(
@@ -1482,14 +1498,18 @@ def _log_likelihood_ages(
         valid_indices = np.where(epoch_starts < age)[0]
         completed_epochs = valid_indices[:-1]
 
+        # The current epoch index is valid_indices[-1], but we need to cap it
+        # at len(lambda_val_array)-1 since epoch_starts has one extra element
+        current_epoch_idx = min(valid_indices[-1], len(lambda_val_array) - 1)
+
         cum_growth = (
             np.sum(
                 lambda_val_array[completed_epochs] * epoch_durations[completed_epochs]
             )
             + (age - epoch_starts[valid_indices[-1]])
-            * lambda_val_array[valid_indices[-1]]
+            * lambda_val_array[current_epoch_idx]
         )
-        current_lambda = lambda_val_array[valid_indices[-1]]
+        current_lambda = lambda_val_array[current_epoch_idx]
 
         log_likelihoods[i] = np.log(current_lambda) - cum_growth
 
