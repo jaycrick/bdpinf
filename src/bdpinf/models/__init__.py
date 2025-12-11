@@ -10,7 +10,6 @@ from .mathematical_functions import (
     calculate_ages_log_likelihood,
     calculate_non_spine_ages_log_likelihood,
     calculate_populations_log_likelihood,
-    predict_manuscript_survival,
 )
 
 __all__ = [
@@ -18,5 +17,4 @@ __all__ = [
     "calculate_populations_log_likelihood",
     "calculate_non_spine_ages_log_likelihood",
     "calculate_ages_log_likelihood",
-    "predict_manuscript_survival",
 ]

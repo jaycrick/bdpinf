@@ -7,16 +7,14 @@ process models and their results.
 
 from .plotting import (
     plot_bootstrap_confidence_intervals,
-    plot_fit_results,
     plot_parameter_comparison,
     plot_simulation_results,
     save_figure,
 )
 
 __all__ = [
-    "plot_fit_results",
-    "plot_simulation_results",
-    "plot_parameter_comparison",
     "plot_bootstrap_confidence_intervals",
+    "plot_parameter_comparison",
+    "plot_simulation_results",
     "save_figure",
 ]

@@ -6,13 +6,10 @@ initialization, and core functionality. Complex mathematical computations and
 fitting procedures are handled by separate modules.
 """
 
-import warnings
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 from numpy.typing import NDArray
-
-from .mathematical_functions import predict_manuscript_survival
 
 
 class BirthDeathProcess:
@@ -175,31 +172,6 @@ class BirthDeathProcess:
             )
 
         return summary
-
-    def predict(self, ages: NDArray[np.float64]) -> NDArray[np.float64]:
-        """
-        Predict expected manuscript counts for given ages.
-
-        Args:
-            ages: Array of ages to predict for
-
-        Returns:
-            Array of predicted manuscript counts
-        """
-        if not self.fitted:
-            warnings.warn("Model has not been fitted. Using current parameter values.")
-
-        if self.birth_rate is None or self.death_rate is None:
-            raise ValueError("Cannot predict without fitted birth_rate and death_rate")
-
-        result = predict_manuscript_survival(
-            float(self.birth_rate), float(self.death_rate), ages
-        )
-
-        # Ensure we return an NDArray
-        if not isinstance(result, np.ndarray):
-            return np.array([result], dtype=np.float64)
-        return np.asarray(result, dtype=np.float64)
 
     def validate_parameters(self) -> bool:
         """

@@ -41,8 +41,6 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from ..models.mathematical_functions import predict_manuscript_survival
-
 
 def simulate_birth_death_process(
     birth_rate: float,
@@ -149,92 +147,6 @@ def simulate_birth_death_process(
                 break
 
     return pd.DataFrame(all_manuscripts)
-
-
-def predict_manuscript_counts(
-    birth_rate: float,
-    death_rate: float,
-    ages: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """
-    Predict expected manuscript counts for given ages using birth-death model.
-
-    Args:
-        birth_rate: Birth rate parameter (λ)
-        death_rate: Death rate parameter (μ)
-        ages: Array of ages to predict for
-
-    Returns:
-        Array of predicted manuscript counts
-    """
-    if birth_rate <= 0 or death_rate <= 0:
-        raise ValueError("Birth rate and death rate must be positive")
-
-    result = predict_manuscript_survival(birth_rate, death_rate, ages)
-
-    # Ensure we return an NDArray
-    if not isinstance(result, np.ndarray):
-        return np.array([result], dtype=np.float64)
-    return np.asarray(result, dtype=np.float64)
-
-
-def generate_synthetic_dataset(
-    true_birth_rate: float,
-    true_death_rate: float,
-    observation_years: Tuple[float, float] = (500, 1500),
-    n_manuscripts: int = 30,
-    noise_level: float = 0.1,
-    random_seed: Optional[int] = None,
-) -> pd.DataFrame:
-    """
-    Generate synthetic manuscript dataset for testing and demonstration.
-
-    Args:
-        true_birth_rate: True birth rate parameter
-        true_death_rate: True death rate parameter
-        observation_years: Tuple of (start_year, end_year) for manuscript creation
-        n_manuscripts: Number of manuscripts to generate
-        noise_level: Amount of Poisson noise to add to counts
-        random_seed: Random seed for reproducibility
-
-    Returns:
-        DataFrame with synthetic manuscript data
-    """
-    # Create random number generator
-    rng = np.random.default_rng(random_seed)
-
-    start_year, end_year = observation_years
-
-    # Create manuscript years evenly spaced
-    manuscript_years = np.linspace(
-        start_year, end_year, n_manuscripts, dtype=np.float64
-    )
-
-    # Calculate ages when observed at end_year + some buffer
-    observation_time = end_year + 100
-    ages_at_observation = observation_time - manuscript_years
-
-    # Calculate true counts using the survival model
-    true_counts = predict_manuscript_survival(
-        true_birth_rate, true_death_rate, ages_at_observation
-    )
-
-    # Add Poisson noise to simulate realistic observation uncertainty
-    if noise_level > 0:
-        noisy_counts = rng.poisson(true_counts * (1 + noise_level))
-        # Ensure we have at least some manuscripts
-        noisy_counts = np.maximum(noisy_counts, 1)
-    else:
-        noisy_counts = np.round(true_counts).astype(int)
-
-    return pd.DataFrame(
-        {
-            "age": ages_at_observation,
-            "count": noisy_counts,
-            "manuscript_year": manuscript_years,
-            "true_count": true_counts,
-        }
-    )
 
 
 def simulate_multiple_scenarios(
