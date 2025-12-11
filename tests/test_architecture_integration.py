@@ -47,7 +47,7 @@ class TestArchitecturalIntegration:
 
         # 3. Fit using inference module
         results = fit_from_dataframe(
-            manuscript_data=test_data,
+            df=test_data,
             age_column="age",
             observation_time=model.final_time,
         )
@@ -89,7 +89,7 @@ class TestArchitecturalIntegration:
         # Should raise appropriate error when trying to fit
         with pytest.raises(Exception):  # Could be KeyError or ValidationError
             fit_from_dataframe(
-                manuscript_data=invalid_data,
+                df=invalid_data,
                 age_column="age",  # This column doesn't exist
                 observation_time=100.0,
             )

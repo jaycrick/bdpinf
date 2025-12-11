@@ -36,7 +36,9 @@ class TestIntegration:
             surviving_data = simulated_df[simulated_df["survived"]]
             if len(surviving_data) > 0:
                 fit_df = pd.DataFrame({"age": surviving_data["age"].values})
-                result = fit_from_dataframe(fit_df, observation_time=200.0)
+                result = fit_from_dataframe(
+                    fit_df, age_column="age", observation_time=200.0
+                )
                 if result["success"]:
                     fitted_birth = result["birth_rate"]
                     fitted_death = result["death_rate"]
@@ -75,7 +77,7 @@ class TestIntegration:
         assert summary["min_age"] == 100
         assert summary["max_age"] == 900
         fit_df = pd.DataFrame({"age": ages})
-        result = fit_from_dataframe(fit_df, observation_time=1000.0)
+        result = fit_from_dataframe(fit_df, age_column="age", observation_time=1000.0)
         assert isinstance(result, dict)
         assert "success" in result
         test_ages = np.array([100, 200, 300, 400, 500])
@@ -118,7 +120,9 @@ class TestIntegration:
 
         # Fit model
 
-        result = fit_from_dataframe(prepared_df, observation_time=2000.0)
+        result = fit_from_dataframe(
+            prepared_df, age_column="age", observation_time=2000.0
+        )
         assert result["success"]
         age_range = np.linspace(100, 1000, 10)
         predictions = [
@@ -149,7 +153,10 @@ class TestIntegration:
         for i, initial_params in enumerate(initial_params_list):
             try:
                 fit_result = fit_from_dataframe(
-                    df, observation_time=final_time, initial_params=initial_params
+                    df,
+                    age_column="age",
+                    observation_time=final_time,
+                    initial_params=initial_params,
                 )
                 results.append(
                     {

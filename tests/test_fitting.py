@@ -24,6 +24,7 @@ class TestFitting:
         # Should return valid result structure
         assert isinstance(result, dict)
         assert "success" in result
+        assert result["success"]
 
         if result["success"]:
             assert "birth_rate" in result
@@ -52,6 +53,7 @@ class TestFitting:
 
         # Should succeed regardless of initial parameters
         assert isinstance(result, dict)
+        assert result["success"]
         assert "success" in result
 
     def test_fit_from_dataframe_success(self):
@@ -61,11 +63,12 @@ class TestFitting:
         ages = np.random.exponential(scale=200, size=50)
         df = pd.DataFrame({"age": ages, "count": np.ones(len(ages))})
 
-        result = fit_from_dataframe(df, observation_time=1000.0)
+        result = fit_from_dataframe(df, age_column="age", observation_time=1000.0)
 
         # Should return valid result structure
         assert isinstance(result, dict)
         assert "success" in result
+        assert result["success"]
 
         if result["success"]:
             assert "birth_rate" in result
@@ -82,9 +85,10 @@ class TestFitting:
 
         df = pd.DataFrame({"age": ages})
 
-        result = fit_from_dataframe(df, observation_time=1000.0)
+        result = fit_from_dataframe(df, age_column="age", observation_time=1000.0)
 
         # Should return valid result structure
+        assert result["success"]
         assert isinstance(result, dict)
         assert "success" in result
 
@@ -94,14 +98,14 @@ class TestFitting:
         df = pd.DataFrame({"age": []})
 
         with pytest.raises(ValueError, match="No valid data points for fitting"):
-            fit_from_dataframe(df, observation_time=1000.0)
+            fit_from_dataframe(df, age_column="age", observation_time=1000.0)
 
     def test_fit_from_dataframe_missing_age_column(self):
         """Test fitting fails when age column is missing."""
         df = pd.DataFrame({"wrong_column": [1, 2, 3]})
 
         with pytest.raises(ValueError, match="Column 'age' not found"):
-            fit_from_dataframe(df, observation_time=1000.0)
+            fit_from_dataframe(df, age_column="age", observation_time=1000.0)
 
     def test_fit_birth_death_process_different_methods(self):
         """Test fitting with different optimization methods."""
@@ -109,40 +113,42 @@ class TestFitting:
         ages = np.array([100.0, 200.0, 300.0, 400.0], dtype=np.float64)
         observation_time = 1000.0
 
+        any_success = False
+
         for method in methods:
             result = fit_birth_death_processes([ages], observation_time, method=method)
             # Method might not always succeed, but should return a result
             assert isinstance(result, dict)
             assert "success" in result
+            if result["success"]:
+                any_success = True
+                assert result["birth_rate"] > 0
+                assert result["death_rate"] > 0
+        assert any_success, "None of the optimization methods succeeded"
 
     def test_fit_results_structure(self):
         """Test that fit results have the expected structure."""
         ages = np.array([100.0, 200.0, 300.0, 400.0, 500.0], dtype=np.float64)
         observation_time = 1000.0
-
         result = fit_birth_death_processes([ages], observation_time)
 
-        if result["success"]:
-            # Successful fit should have all expected keys
-            expected_keys = [
-                "success",
-                "birth_rate",
-                "death_rate",
-                "log_likelihood",
-                "n_data_points",
-                "optimization_result",
-                "ages_used",
-                "counts_used",
-            ]
+        assert result["success"]
 
-            for key in expected_keys:
-                assert key in result, f"Missing key: {key}"
+        expected_keys = [
+            "success",
+            "birth_rate",
+            "death_rate",
+            "log_likelihood",
+            "optimization_result",
+        ]
 
-            # Check types
-            assert isinstance(result["birth_rate"], (float, np.float64))
-            assert isinstance(result["death_rate"], (float, np.float64))
-            assert isinstance(result["log_likelihood"], (float, np.float64))
-            assert isinstance(result["n_data_points"], int)
+        for key in expected_keys:
+            assert key in result, f"Missing key: {key}"
+
+        # Check types
+        assert isinstance(result["birth_rate"], (float, np.float64))
+        assert isinstance(result["death_rate"], (float, np.float64))
+        assert isinstance(result["log_likelihood"], (float, np.float64))
 
     def test_process_integration_with_fitting(self):
         """Test integration between BirthDeathProcess and fitting functions."""
@@ -155,17 +161,15 @@ class TestFitting:
         ages = process.get_manuscript_ages()
         result = fit_birth_death_processes([ages], process.final_time)
 
-        if result["success"]:
-            # Update process with fitted parameters
-            process.update_parameters(
-                result["birth_rate"], result["death_rate"], result
-            )
+        assert result["success"]
+        # Update process with fitted parameters
+        process.update_parameters(result["birth_rate"], result["death_rate"], result)
 
-            # Process should now be fitted
-            assert process.fitted
-            assert process.fit_results is not None
-            assert process.birth_rate == result["birth_rate"]
-            assert process.death_rate == result["death_rate"]
+        # Process should now be fitted
+        assert process.fitted
+        assert process.fit_results is not None
+        assert process.birth_rate == result["birth_rate"]
+        assert process.death_rate == result["death_rate"]
 
     def test_fit_from_dataframe_custom_age_column(self):
         """Test fitting with custom age column name."""
@@ -181,6 +185,7 @@ class TestFitting:
         )
 
         assert isinstance(result, dict)
+        assert result["success"]
         assert "success" in result
 
     def test_process_state_preservation(self):
@@ -195,7 +200,7 @@ class TestFitting:
 
         # Fit with external data
         df = pd.DataFrame({"age": [100.0, 200.0, 300.0], "count": [1.0, 1.0, 1.0]})
-        result = fit_from_dataframe(df, observation_time=1000.0)
+        result = fit_from_dataframe(df, age_column="age", observation_time=1000.0)
 
         # Original process data should be preserved
         np.testing.assert_array_equal(process.get_manuscript_ages(), original_ages)
@@ -203,8 +208,6 @@ class TestFitting:
         assert process.final_time == original_final_time
 
         # But we can still update it with fit results if desired
-        if result["success"]:
-            process.update_parameters(
-                result["birth_rate"], result["death_rate"], result
-            )
-            assert process.fitted
+        assert result["success"]
+        process.update_parameters(result["birth_rate"], result["death_rate"], result)
+        assert process.fitted

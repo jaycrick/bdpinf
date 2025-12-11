@@ -304,6 +304,32 @@ class TestNumericalAccuracy:
         # For λ > μ, numerator should be between 0 and 1
         assert 0 < result < 1
 
+    def test_probability_extinction_numerator_shifted(self):
+        lambda_val = 0.2
+        mu_val = 0.1
+        T = 3.0
+        shift = 6.0
+
+        unshifted = _probability_extinction_numerator(lambda_val, mu_val, T)
+        shifted = _probability_extinction_numerator(
+            lambda_val, mu_val, T + shift, start_time=shift
+        )
+
+        assert_allclose(unshifted, shifted)
+
+    def test_probability_extinction_numerator_shifted_array(self):
+        lambda_val = np.array([0.2, 0.7])
+        mu_val = np.array([0.1, 0.7])
+        times = np.array([3.0, 4.0])
+        shift = 6.0
+
+        unshifted = _probability_extinction_numerator(lambda_val, mu_val, times)
+        shifted = _probability_extinction_numerator(
+            lambda_val, mu_val, times + shift, start_time=shift
+        )
+
+        assert_allclose(unshifted, shifted)
+
     def test_log_likelihood_ages_simple(self):
         """Test _log_likelihood_ages for simple scalar age.
 

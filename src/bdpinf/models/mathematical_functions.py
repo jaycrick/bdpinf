@@ -1275,7 +1275,7 @@ def _probability_extinction_numerator(
     birth_rates: NDArray[np.float64] | float,
     death_rates: NDArray[np.float64] | float,
     times: NDArray[np.float64] | float,
-    log_scale_params: bool,
+    log_scale_params: bool = False,
     start_time: float = 0.0,
 ) -> np.float64:
     """
@@ -1413,12 +1413,7 @@ def _log_probability_extinction_given_ages(
     Returns:
         The sum of the log extinction probabilities given age(s)
     """
-    # Handle scalar input
-    is_scalar = isinstance(ages, (int, float))
-    if is_scalar:
-        ages = np.array([ages], dtype=np.float64)
-    else:
-        ages = np.asarray(ages, dtype=np.float64)
+    ages = np.atleast_1d(ages)
 
     if log_scale_params:
         lambda_val_array = np.exp(birth_rates)
@@ -1478,11 +1473,7 @@ def _log_likelihood_ages(
         The sum of computed log likelihood values
     """
     # Handle scalar input
-    is_scalar = isinstance(ages, (int, float))
-    if is_scalar:
-        ages = np.array([ages], dtype=np.float64)
-    else:
-        ages = np.asarray(ages, dtype=np.float64)
+    ages = np.atleast_1d(ages)
 
     if log_scale_params:
         lambda_val_array = np.exp(birth_rates)
