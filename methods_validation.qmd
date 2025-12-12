@@ -154,7 +154,6 @@ def fit_single_model(ages, time_span):
             list_of_ages=[ages],
             observation_time=time_span,
             is_ordered=True,
-            method="L-BFGS-B",
             initial_params=None,
         )
         return model
@@ -1173,8 +1172,8 @@ fig_bias = go.Figure()
 fig_bias.add_trace(
     go.Bar(
         x=[f"μ={r['death_rate_true']:.4f}" for r in all_results],
-        y=[r['birth_rel_bias'] for r in all_results],
-        name='Birth Rate (λ)',
+        y=[r["birth_rel_bias"] for r in all_results],
+        name="Birth Rate (λ)",
         marker_color=ptolqual[0],
     )
 )
@@ -1182,8 +1181,8 @@ fig_bias.add_trace(
 fig_bias.add_trace(
     go.Bar(
         x=[f"μ={r['death_rate_true']:.4f}" for r in all_results],
-        y=[r['death_rel_bias'] for r in all_results],
-        name='Death Rate (μ)',
+        y=[r["death_rel_bias"] for r in all_results],
+        name="Death Rate (μ)",
         marker_color=ptolqual[1],
     )
 )
@@ -1192,11 +1191,12 @@ fig_bias = apply_professional_styling(
     fig_bias,
     "Relative Bias Across Death Rate Values",
     "Configuration",
-    "Relative Bias (%)"
+    "Relative Bias (%)",
 )
 fig_bias = apply_tufte_axes(fig_bias)
 try:
     from inf_bp_texts.visualization.plotting import apply_tufte_legend
+
     fig_bias = apply_tufte_legend(fig_bias, position="top right")
 except Exception:
     fig_bias.update_layout(showlegend=True)
@@ -1210,8 +1210,8 @@ fig_rmse = go.Figure()
 fig_rmse.add_trace(
     go.Bar(
         x=[f"μ={r['death_rate_true']:.4f}" for r in all_results],
-        y=[r['birth_rmse'] for r in all_results],
-        name='Birth Rate (λ)',
+        y=[r["birth_rmse"] for r in all_results],
+        name="Birth Rate (λ)",
         marker_color=ptolqual[0],
     )
 )
@@ -1219,22 +1219,20 @@ fig_rmse.add_trace(
 fig_rmse.add_trace(
     go.Bar(
         x=[f"μ={r['death_rate_true']:.4f}" for r in all_results],
-        y=[r['death_rmse'] for r in all_results],
-        name='Death Rate (μ)',
+        y=[r["death_rmse"] for r in all_results],
+        name="Death Rate (μ)",
         marker_color=ptolqual[1],
     )
 )
 
 fig_rmse = apply_professional_styling(
-    fig_rmse,
-    "RMSE Across Death Rate Values",
-    "Configuration",
-    "RMSE"
+    fig_rmse, "RMSE Across Death Rate Values", "Configuration", "RMSE"
 )
 fig_rmse = apply_tufte_axes(fig_rmse)
 fig_rmse.update_yaxes(tickformat=".6f")
 try:
     from inf_bp_texts.visualization.plotting import apply_tufte_legend
+
     fig_rmse = apply_tufte_legend(fig_rmse, position="top right")
 except Exception:
     fig_rmse.update_layout(showlegend=True)
@@ -1253,7 +1251,7 @@ fig_success = go.Figure()
 fig_success.add_trace(
     go.Bar(
         x=[f"μ={r['death_rate_true']:.4f}" for r in all_results],
-        y=[r['success_rate'] for r in all_results],
+        y=[r["success_rate"] for r in all_results],
         marker_color=ptolqual[0],
     )
 )
@@ -1262,7 +1260,7 @@ fig_success = apply_professional_styling(
     fig_success,
     "Optimization Success Rate Across Death Rate Values",
     "Configuration",
-    "Success Rate (%)"
+    "Success Rate (%)",
 )
 fig_success = apply_tufte_axes(fig_success)
 fig_success.update_yaxes(range=[0, 100])
@@ -1276,6 +1274,529 @@ The age distribution for a BD process with one epoch when there is a no more bir
 $$
 \frac{\left(\lambda  e^{(\lambda -\mu ) (T-l)}-\mu \right) e^{\lambda  l-l \mu +\lambda  M-\mu  M-\lambda  T} \left(\mu  e^{\mu  (l+M)+\lambda  T}-\lambda  e^{\lambda  l+\lambda  M+\mu  T}\right)}{\left(\lambda  e^{M (\lambda -\mu )}-\mu \right) \left(\lambda  e^{\lambda  (l+M)}-\lambda  e^{\mu  (l+M)+T (\lambda -\mu )}+\lambda  e^{l \mu +\lambda  T}-\mu  e^{l \mu +\lambda  T}\right)}
 $$
+
+# Optimization Method Benchmarking
+
+Compare different optimization methods and gradient computation approaches to determine the most efficient fitting strategy.
+
+## Setup for Benchmarking
+
+```{python}
+# | label: benchmark-setup
+
+import time
+from scipy import optimize
+from typing import Callable
+import warnings
+
+from inf_bp_texts.inference.likelihood import (
+    negative_log_likelihood,
+    log_likelihood_gradient,
+)
+
+# Generate test data for benchmarking
+np.random.seed(42)
+benchmark_ages = np.random.exponential(scale=200, size=100)
+benchmark_time = 1000.0
+benchmark_initial_params = (0.01, 0.02)
+benchmark_log_initial = np.log(benchmark_initial_params)
+
+print(f"\n📊 Benchmark Configuration:")
+print(f"   Number of ages: {len(benchmark_ages)}")
+print(f"   Observation time: {benchmark_time}")
+print(
+    f"   Initial parameters: λ={benchmark_initial_params[0]:.6f}, μ={benchmark_initial_params[1]:.6f}"
+)
+print(
+    f"   Initial log-parameters: log(λ)={benchmark_log_initial[0]:.6f}, log(μ)={benchmark_log_initial[1]:.6f}"
+)
+print(f"   Parameter bounds: [{np.exp(np.log(1e-8)):.2e}, {np.exp(np.log(100.0)):.2e}]")
+print("=" * 60)
+```
+
+## Define Optimization Strategies
+
+```{python}
+# | label: define-strategies
+
+# Parameter bounds in log space
+log_bounds = [
+    (np.log(1e-8), np.log(100.0)),  # log(birth_rate)
+    (np.log(1e-8), np.log(100.0)),  # log(death_rate)
+]
+
+
+def objective_analytical(log_params: np.ndarray) -> float:
+    """Objective function using analytical gradient."""
+    params = np.exp(log_params)
+    return negative_log_likelihood(
+        params=params,
+        ages=benchmark_ages,
+        observation_time=benchmark_time,
+        spine_ages=None,
+        ns=None,
+        is_ordered=False,
+        log_scale_params=False,
+    )
+
+
+def gradient_analytical(log_params: np.ndarray) -> np.ndarray:
+    """Analytical gradient in log-parameter space."""
+    params = np.exp(log_params)
+    return np.multiply(
+        params,
+        -log_likelihood_gradient(
+            params=params,
+            ages=benchmark_ages,
+            observation_time=benchmark_time,
+            spine_ages=None,
+            ns=None,
+            is_ordered=False,
+            log_scale_params=False,
+        ),
+    )
+
+
+print("✅ Optimization strategies defined")
+
+# Verify gradient and objective at initial point
+print("\n🔍 PRE-BENCHMARK DIAGNOSTICS")
+print("=" * 60)
+initial_obj = objective_analytical(benchmark_log_initial)
+initial_grad = gradient_analytical(benchmark_log_initial)
+print(f"Initial log-params: {benchmark_log_initial}")
+print(
+    f"Initial params (original): birth={np.exp(benchmark_log_initial[0]):.6f}, death={np.exp(benchmark_log_initial[1]):.6f}"
+)
+print(f"Initial objective value: {initial_obj:.6f}")
+print(f"Initial gradient: [{initial_grad[0]:.6e}, {initial_grad[1]:.6e}]")
+print(f"Gradient norm: {np.linalg.norm(initial_grad):.6e}")
+
+# Test a small step in the gradient direction
+step_size = 0.01
+test_point = benchmark_log_initial - step_size * initial_grad
+test_obj = objective_analytical(test_point)
+print(f"\nTest point (small step opposite to gradient):")
+print(f"  log-params: {test_point}")
+print(f"  Objective: {test_obj:.6f}")
+print(f"  Objective change: {test_obj - initial_obj:.6e} (should be negative)")
+
+# Check gradient with finite differences
+epsilon = 1e-7
+grad_numerical = optimize.approx_fprime(
+    benchmark_log_initial, objective_analytical, epsilon
+)
+print(f"\nGradient verification:")
+print(f"  Analytical: [{initial_grad[0]:.6e}, {initial_grad[1]:.6e}]")
+print(f"  Numerical:  [{grad_numerical[0]:.6e}, {grad_numerical[1]:.6e}]")
+print(
+    f"  Difference: [{abs(initial_grad[0]-grad_numerical[0]):.6e}, {abs(initial_grad[1]-grad_numerical[1]):.6e}]"
+)
+print("=" * 60)
+```
+
+## Benchmark Individual Methods
+
+```{python}
+# | label: benchmark-methods
+
+optimization_methods = [
+    {
+        "name": "BFGS (Analytical)",
+        "method": "BFGS",
+        "jac": gradient_analytical,
+        "bounds": None,
+        "options": {"maxiter": 1000},
+    },
+    {
+        "name": "BFGS (Numerical)",
+        "method": "BFGS",
+        "jac": None,
+        "bounds": None,
+        "options": {"maxiter": 1000},
+    },
+    {
+        "name": "L-BFGS-B (Analytical)",
+        "method": "L-BFGS-B",
+        "jac": gradient_analytical,
+        "bounds": log_bounds,
+        "options": {"maxiter": 1000, "ftol": 1e-12, "gtol": 1e-8},
+    },
+    {
+        "name": "L-BFGS-B (Numerical)",
+        "method": "L-BFGS-B",
+        "jac": None,
+        "bounds": log_bounds,
+        "options": {"maxiter": 1000, "ftol": 1e-12, "gtol": 1e-8},
+    },
+    {
+        "name": "Powell",
+        "method": "Powell",
+        "jac": None,
+        "bounds": None,
+        "options": {"maxiter": 1000, "ftol": 1e-9},
+    },
+    {
+        "name": "Nelder-Mead",
+        "method": "Nelder-Mead",
+        "jac": None,
+        "bounds": None,
+        "options": {"maxiter": 1000, "ftol": 1e-9},
+    },
+    {
+        "name": "Newton-CG (Analytical)",
+        "method": "Newton-CG",
+        "jac": gradient_analytical,
+        "bounds": None,
+        "options": {"maxiter": 1000},
+    },
+]
+
+benchmark_results = []
+
+print("\n🔬 Running optimization benchmarks...")
+print("=" * 60)
+
+for config in optimization_methods:
+    print(f"\n▶ Testing: {config['name']}")
+
+    timings = []
+    results_list = []
+    n_runs = 10  # Number of runs for averaging
+
+    for run in range(n_runs):
+        try:
+            start_time = time.perf_counter()
+
+            # Debug: Check objective and gradient at initial point
+            if run == 0:
+                initial_obj = objective_analytical(benchmark_log_initial)
+                initial_grad = (
+                    gradient_analytical(benchmark_log_initial)
+                    if config["jac"] is not None
+                    else None
+                )
+                print(f"  📍 Initial point: log_params = {benchmark_log_initial}")
+                print(f"  📍 Initial objective: {initial_obj:.6f}")
+                if initial_grad is not None:
+                    print(
+                        f"  📍 Initial gradient: [{initial_grad[0]:.6e}, {initial_grad[1]:.6e}]"
+                    )
+                    print(f"  📍 Gradient norm: {np.linalg.norm(initial_grad):.6e}")
+
+            result = optimize.minimize(
+                objective_analytical,
+                x0=benchmark_log_initial,
+                method=config["method"],
+                jac=config["jac"],
+                bounds=config["bounds"],
+                options=config["options"],
+            )
+
+            # Debug: Check if parameters actually changed
+            if run == 0:
+                param_change = np.linalg.norm(result.x - benchmark_log_initial)
+                print(f"  📍 Final point: log_params = {result.x}")
+                print(f"  📍 Final objective: {result.fun:.6f}")
+                print(f"  📍 Parameter change (L2 norm): {param_change:.6e}")
+                print(
+                    f"  📍 Max param change: {np.max(np.abs(result.x - benchmark_log_initial)):.6e}"
+                )
+
+            end_time = time.perf_counter()
+            elapsed = end_time - start_time
+
+            timings.append(elapsed)
+            results_list.append(result)
+
+        except Exception as e:
+            print(f"  ❌ Error on run {run + 1}: {str(e)}")
+            continue
+
+    if len(results_list) > 0:
+        # Use the best result (lowest function value)
+        best_idx = np.argmin([r.fun for r in results_list])
+        best_result = results_list[best_idx]
+
+        birth_rate = np.exp(best_result.x[0])
+        death_rate = np.exp(best_result.x[1])
+
+        benchmark_results.append(
+            {
+                "Method": config["name"],
+                "Success": best_result.success,
+                "Mean Time (s)": np.mean(timings),
+                "Std Time (s)": np.std(timings),
+                "Min Time (s)": np.min(timings),
+                "Max Time (s)": np.max(timings),
+                "Birth Rate": birth_rate,
+                "Death Rate": death_rate,
+                "Log Likelihood": -best_result.fun,
+                "N Function Evals": (
+                    best_result.nfev if hasattr(best_result, "nfev") else np.nan
+                ),
+                "N Iterations": (
+                    best_result.nit if hasattr(best_result, "nit") else np.nan
+                ),
+                "N Jacobian Evals": (
+                    best_result.njev if hasattr(best_result, "njev") else np.nan
+                ),
+            }
+        )
+
+        print(f"  ✅ Success: {best_result.success}")
+        print(
+            f"  ⏱️  Mean time: {np.mean(timings)*1000:.2f} ms (±{np.std(timings)*1000:.2f} ms)"
+        )
+        print(f"  📊 λ̂: {birth_rate:.6f}, μ̂: {death_rate:.6f}")
+        print(f"  📈 Log-likelihood: {-best_result.fun:.4f}")
+        if hasattr(best_result, "nfev"):
+            print(f"  🔢 Function evaluations: {best_result.nfev}")
+    else:
+        print(f"  ❌ All runs failed for {config['name']}")
+
+print("\n" + "=" * 60)
+print("✅ Benchmark completed")
+```
+
+## Benchmark Results Summary
+
+```{python}
+# | label: benchmark-summary
+
+benchmark_df = pd.DataFrame(benchmark_results)
+
+print("\n📊 OPTIMIZATION METHOD COMPARISON")
+print("=" * 80)
+print(benchmark_df.to_string(index=False, float_format="%.6f"))
+
+# Sort by mean time
+benchmark_df_sorted = benchmark_df.sort_values("Mean Time (s)")
+
+print("\n🏆 RANKING BY SPEED (fastest to slowest):")
+print("=" * 80)
+for idx, row in benchmark_df_sorted.iterrows():
+    if row["Success"]:
+        print(
+            f"{row['Method']:30s} {row['Mean Time (s)']*1000:8.2f} ms  "
+            f"(±{row['Std Time (s)']*1000:.2f} ms)"
+        )
+```
+
+## Visualization of Benchmark Results
+
+```{python}
+# | label: benchmark-plots
+
+# Time comparison plot
+fig_time = go.Figure()
+
+successful_methods = benchmark_df[benchmark_df["Success"] == True]
+if len(successful_methods) > 0:
+    fig_time.add_trace(
+        go.Bar(
+            x=successful_methods["Method"],
+            y=successful_methods["Mean Time (s)"] * 1000,  # Convert to ms
+            error_y=dict(
+                type="data",
+                array=successful_methods["Std Time (s)"] * 1000,
+                visible=True,
+            ),
+            marker=dict(color=color_palette),
+            showlegend=False,
+        )
+    )
+
+    fig_time = apply_professional_styling(
+        fig_time,
+        "Optimization Method Performance",
+        "Method",
+        "Mean Time (milliseconds)",
+    )
+    fig_time = apply_tufte_axes(fig_time)
+    fig_time.update_xaxes(tickangle=-45)
+    fig_time.update_yaxes(rangemode="tozero")
+    fig_time.show()
+
+    save_figure(fig_time, "mv_benchmark_time_comparison", width=397, height=250)
+
+# Function evaluations comparison
+fig_evals = go.Figure()
+
+methods_with_evals = benchmark_df[
+    (benchmark_df["Success"] == True) & (benchmark_df["N Function Evals"].notna())
+]
+
+if len(methods_with_evals) > 0:
+    fig_evals.add_trace(
+        go.Bar(
+            x=methods_with_evals["Method"],
+            y=methods_with_evals["N Function Evals"],
+            marker=dict(color=color_palette),
+            showlegend=False,
+        )
+    )
+
+    fig_evals = apply_professional_styling(
+        fig_evals,
+        "Function Evaluations by Method",
+        "Method",
+        "Number of Function Evaluations",
+    )
+    fig_evals = apply_tufte_axes(fig_evals)
+    fig_evals.update_xaxes(tickangle=-45)
+    fig_evals.update_yaxes(rangemode="tozero")
+    fig_evals.show()
+
+    save_figure(fig_evals, "mv_benchmark_function_evals", width=397, height=250)
+
+# Scatter plot: Time vs Accuracy (log-likelihood)
+fig_scatter = go.Figure()
+
+if len(successful_methods) > 0:
+    fig_scatter.add_trace(
+        go.Scatter(
+            x=successful_methods["Mean Time (s)"] * 1000,
+            y=successful_methods["Log Likelihood"],
+            mode="markers+text",
+            text=successful_methods["Method"],
+            textposition="top center",
+            marker=dict(size=12, color=color_palette[: len(successful_methods)]),
+            showlegend=False,
+        )
+    )
+
+    fig_scatter = apply_professional_styling(
+        fig_scatter,
+        "Optimization Trade-off: Speed vs Accuracy",
+        "Mean Time (milliseconds)",
+        "Log-Likelihood",
+    )
+    fig_scatter = apply_tufte_axes(fig_scatter)
+    fig_scatter.show()
+
+    save_figure(fig_scatter, "mv_benchmark_tradeoff", width=397, height=250)
+```
+
+## Efficiency Metrics
+
+```{python}
+# | label: benchmark-efficiency
+
+print("\n⚡ EFFICIENCY ANALYSIS")
+print("=" * 80)
+
+if len(successful_methods) > 0:
+    # Calculate efficiency score (higher log-likelihood per unit time)
+    successful_methods_copy = successful_methods.copy()
+    successful_methods_copy["Efficiency Score"] = (
+        successful_methods_copy["Log Likelihood"]
+        / successful_methods_copy["Mean Time (s)"]
+    )
+
+    successful_methods_copy = successful_methods_copy.sort_values(
+        "Efficiency Score", ascending=False
+    )
+
+    print("\n🏆 Methods ranked by efficiency (log-likelihood per second):")
+    print("-" * 80)
+    for idx, row in successful_methods_copy.iterrows():
+        print(
+            f"{row['Method']:30s} {row['Efficiency Score']:12.2f}  "
+            f"(LL: {row['Log Likelihood']:.4f}, Time: {row['Mean Time (s)']*1000:.2f} ms)"
+        )
+
+    # Identify Pareto-optimal methods
+    print("\n\n💡 RECOMMENDATIONS:")
+    print("-" * 80)
+
+    fastest = successful_methods_copy.iloc[
+        successful_methods_copy["Mean Time (s)"].argmin()
+    ]
+    best_likelihood = successful_methods_copy.iloc[
+        successful_methods_copy["Log Likelihood"].argmax()
+    ]
+    most_efficient = successful_methods_copy.iloc[0]  # Already sorted by efficiency
+
+    print(f"\n⚡ Fastest Method:")
+    print(f"   {fastest['Method']}: {fastest['Mean Time (s)']*1000:.2f} ms")
+
+    print(f"\n🎯 Best Log-Likelihood:")
+    print(f"   {best_likelihood['Method']}: {best_likelihood['Log Likelihood']:.6f}")
+
+    print(f"\n⭐ Most Efficient (Best Trade-off):")
+    print(
+        f"   {most_efficient['Method']}: Score {most_efficient['Efficiency Score']:.2f}"
+    )
+
+    # Compare analytical vs numerical gradients for BFGS
+    bfgs_analytical = benchmark_df[benchmark_df["Method"] == "BFGS (Analytical)"]
+    bfgs_numerical = benchmark_df[benchmark_df["Method"] == "BFGS (Numerical)"]
+
+    if len(bfgs_analytical) > 0 and len(bfgs_numerical) > 0:
+        print(f"\n\n📊 Analytical vs Numerical Gradients (BFGS):")
+        print("-" * 80)
+
+        time_analytical = bfgs_analytical.iloc[0]["Mean Time (s)"] * 1000
+        time_numerical = bfgs_numerical.iloc[0]["Mean Time (s)"] * 1000
+        speedup = time_numerical / time_analytical
+
+        print(f"   Analytical: {time_analytical:.2f} ms")
+        print(f"   Numerical:  {time_numerical:.2f} ms")
+        print(f"   Speedup:    {speedup:.2f}x {'faster' if speedup > 1 else 'slower'}")
+
+        if bfgs_analytical.iloc[0]["Success"] and bfgs_numerical.iloc[0]["Success"]:
+            print(
+                f"\n   Analytical grad evaluations: {bfgs_analytical.iloc[0]['N Jacobian Evals']:.0f}"
+            )
+            print(
+                f"   Numerical grad evaluations:  {bfgs_numerical.iloc[0]['N Jacobian Evals']:.0f}"
+            )
+
+print("\n" + "=" * 80)
+```
+
+## Gradient Verification
+
+```{python}
+# | label: gradient-verification
+
+print("\n🔍 GRADIENT VERIFICATION")
+print("=" * 80)
+
+# Test point
+test_log_params = benchmark_log_initial
+
+# Analytical gradient
+grad_analytical = gradient_analytical(test_log_params)
+
+# Numerical gradient using scipy.optimize.approx_fprime
+epsilon = 1e-7
+grad_numerical = optimize.approx_fprime(test_log_params, objective_analytical, epsilon)
+
+# Compare
+print(f"\nGradient at test point (log-params = {test_log_params}):")
+print(f"  Analytical:  [{grad_analytical[0]:.8f}, {grad_analytical[1]:.8f}]")
+print(f"  Numerical:   [{grad_numerical[0]:.8f}, {grad_numerical[1]:.8f}]")
+print(
+    f"  Difference:  [{grad_analytical[0]-grad_numerical[0]:.2e}, {grad_analytical[1]-grad_numerical[1]:.2e}]"
+)
+
+max_diff = np.max(np.abs(grad_analytical - grad_numerical))
+relative_diff = max_diff / np.max(np.abs(grad_analytical))
+
+print(f"\n  Max absolute difference: {max_diff:.2e}")
+print(f"  Max relative difference: {relative_diff:.2e}")
+
+if relative_diff < 1e-5:
+    print("  ✅ Gradients match closely!")
+elif relative_diff < 1e-3:
+    print("  ⚠️  Gradients differ slightly (acceptable for finite differences)")
+else:
+    print("  ❌ Significant gradient mismatch - check implementation!")
+
+print("\n" + "=" * 80)
+```
 
 *Analysis completed:*
 

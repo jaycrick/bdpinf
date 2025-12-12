@@ -316,95 +316,116 @@ def calculate_populations_log_likelihood_derivatives(
         log_lambda = np.log(lambda_param)
         log_mu = np.log(mu_param)
 
+    # Ensure ns is an array for consistent masking
+    ns = np.atleast_1d(ns)
+
     d_lambda = np.zeros_like(ns, dtype=np.float64)
     d_mu = np.zeros_like(ns, dtype=np.float64)
 
     zero_mask = ns == 0
     non_zero_mask = np.invert(zero_mask)
 
-    if abs(log_lambda - log_mu) < 1e-12:
+    if abs(log_lambda - log_mu) < 1e-14:  # Tighter tolerance for derivatives
         # Limiting case: λ ≈ μ
+        # α_t = β_t = λT/(1 + λT)
 
         if np.any(zero_mask):
-            d_lambda[zero_mask] = 1 / (lambda_val + lambda_val**2 * time)
-        if np.any(non_zero_mask):
-            numerator = ns - 1 - 2 * time * lambda_val
-            denominator = lambda_val * (1 + time * lambda_val)
-            d_lambda[non_zero_mask] = numerator / denominator
+            # For n=0: log p_0 = log(α_t) = log(λT) - log(1 + λT)
+            # ∂/∂λ = 1/λ - T/(1 + λT) = 1/(λ(1 + λT))
+            d_lambda[zero_mask] = 1 / (lambda_val * (1 + lambda_val * time))
+            # When λ = μ, both derivatives are the same
+            d_mu[zero_mask] = d_lambda[zero_mask]
 
-        return np.array([np.sum(d_lambda), np.sum(d_lambda)], dtype=np.float64)
+        if np.any(non_zero_mask):
+            # Extract only non-zero n values
+            ns_nonzero = ns[non_zero_mask]
+            # For n>0: log p_n = (n-1)log(λT) - (n+1)log(1+λT)
+            # ∂/∂λ = (n-1)/λ - (n+1)T/(1+λT) = [n - 1 - 2λT]/(λ(1+λT))
+            numerator = ns_nonzero - 1 - 2 * lambda_val * time
+            denominator = lambda_val * (1 + lambda_val * time)
+            d_lambda[non_zero_mask] = numerator / denominator
+            # When λ = μ, both derivatives are the same
+            d_mu[non_zero_mask] = d_lambda[non_zero_mask]
+
+        return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
     # General case: λ ≠ μ
     growth_rate = lambda_val - mu_val
+    exp_rT = np.exp(growth_rate * time)
+
     if np.any(zero_mask):
-        lambda_numerator = np.exp(time * (growth_rate)) * (
-            np.exp(time * (growth_rate)) - lambda_val * time + mu_val * time - 1
-        )
-        lambda_denominator = (np.exp(time * (growth_rate)) - 1) * (
-            lambda_val * np.exp(time * (growth_rate)) - mu_val
-        )
-        mu_numerator = np.exp(time * (growth_rate)) * (
-            lambda_val * (np.exp(time * (growth_rate)) - mu_val * time - 1)
-            + time * mu_val**2
-        )
-        mu_denominator = (
+        # For n=0: d log(α_t) / d param = (1/α_t) * dα_t/d param
+
+        # α_t = μ(e^{rT} - 1) / (λe^{rT} - μ)
+        alpha_t = mu_val * (exp_rT - 1) / (lambda_val * exp_rT - mu_val)
+
+        # ∂α_t/∂λ = μe^{rT} [(λ - μ)T - e^{rT} + 1] / (λe^{rT} - μ)²
+        d_alpha_d_lambda = (
             mu_val
-            * (np.exp(time * (growth_rate)) - 1)
-            * (lambda_val * np.exp(time * (growth_rate)) - mu_val)
-        )
-        d_lambda[zero_mask] = lambda_numerator / lambda_denominator
-        d_mu[zero_mask] = mu_numerator / mu_denominator
-    if np.any(non_zero_mask):
-        lambda_numerator_1 = mu_val * (
-            mu_val
-            - mu_val * ns
-            + lambda_val * (ns - mu_val * time + 1)
-            + lambda_val**2 * time
-        )
-        lambda_numerator_2 = np.exp(time * (growth_rate)) * (
-            ns * (growth_rate) * (lambda_val * time * (growth_rate) - mu_val)
-            - mu_val * (3 * lambda_val + mu_val)
-        )
-        lambda_numerator_3 = (
-            lambda_val
-            * np.exp(2 * time * (growth_rate))
-            * (2 * mu_val + lambda_val * time * (mu_val - lambda_val))
-        )
-        lambda_numerator = lambda_numerator_1 + lambda_numerator_2 + lambda_numerator_3
-        lambda_denominator = (
-            lambda_val
-            * (growth_rate)
-            * (np.exp(time * (growth_rate)) - 1)
-            * (lambda_val * np.exp(time * (growth_rate)) - mu_val)
+            * exp_rT
+            * (growth_rate * time - exp_rT + 1)
+            / (lambda_val * exp_rT - mu_val) ** 2
         )
 
-        mu_numerator_1 = (
-            lambda_val**2
-            * time
-            * np.exp(time * (growth_rate))
-            * (np.exp(time * (growth_rate)) - ns)
+        # ∂α_t/∂μ = e^{rT}[λ(e^{rT} - 1) - μT(λ - μ)] / (λe^{rT} - μ)²
+        d_alpha_d_mu = (
+            exp_rT
+            * (lambda_val * (exp_rT - 1) - mu_val * time * growth_rate)
+            / (lambda_val * exp_rT - mu_val) ** 2
         )
-        mu_numerator_2 = -lambda_val * (
-            -(2 * mu_val * ns * time + ns + 3) * np.exp(time * (growth_rate))
-            + ns
-            + (mu_val * time + 2) * np.exp(2 * time * (growth_rate))
-            + mu_val * time
-            + 1
+
+        d_lambda[zero_mask] = d_alpha_d_lambda / alpha_t
+        d_mu[zero_mask] = d_alpha_d_mu / alpha_t
+    if np.any(non_zero_mask):
+        # Extract only non-zero n values for computation
+        ns_nonzero = ns[non_zero_mask]
+
+        # For n>0: log p_n = log(1-α_t) + log(1-β_t) + (n-1)log(β_t)
+        # where β_t = (λ/μ) * α_t
+
+        alpha_t = mu_val * (exp_rT - 1) / (lambda_val * exp_rT - mu_val)
+        beta_t = (lambda_val / mu_val) * alpha_t
+
+        # Derivatives of α_t (from above)
+        d_alpha_d_lambda = (
+            mu_val
+            * exp_rT
+            * (growth_rate * time - exp_rT + 1)
+            / (lambda_val * exp_rT - mu_val) ** 2
         )
-        mu_numerator_3 = -mu_val * (
-            (mu_val * ns * time + ns - 1) * np.exp(time * (growth_rate))
-            - ns
-            - mu_val * time
-            + 1
+        d_alpha_d_mu = (
+            exp_rT
+            * (lambda_val * (exp_rT - 1) - mu_val * time * growth_rate)
+            / (lambda_val * exp_rT - mu_val) ** 2
         )
-        mu_numerator = mu_numerator_1 + mu_numerator_2 + mu_numerator_3
-        mu_denominator = (
-            (growth_rate)
-            * (np.exp(time * (growth_rate)) - 1)
-            * (lambda_val * np.exp(time * (growth_rate)) - mu_val)
+
+        # Derivatives of β_t = (λ/μ) * α_t
+        # ∂β_t/∂λ = (1/μ)·α_t + (λ/μ)·∂α_t/∂λ
+        d_beta_d_lambda = (alpha_t / mu_val) + (lambda_val / mu_val) * d_alpha_d_lambda
+
+        # ∂β_t/∂μ = -(λ/μ²)·α_t + (λ/μ)·∂α_t/∂μ
+        d_beta_d_mu = (
+            -(lambda_val / mu_val**2) * alpha_t + (lambda_val / mu_val) * d_alpha_d_mu
         )
-        d_lambda[non_zero_mask] = lambda_numerator[non_zero_mask] / lambda_denominator
-        d_mu[non_zero_mask] = mu_numerator[non_zero_mask] / mu_denominator
+
+        # ∂/∂λ [log(1-α_t) + log(1-β_t) + (n-1)log(β_t)]
+        #     = -1/(1-α_t)·∂α_t/∂λ - 1/(1-β_t)·∂β_t/∂λ + (n-1)/β_t·∂β_t/∂λ
+        d_lambda_nonzero = (
+            -d_alpha_d_lambda / (1 - alpha_t)
+            - d_beta_d_lambda / (1 - beta_t)
+            + (ns_nonzero - 1) * d_beta_d_lambda / beta_t
+        )
+
+        # ∂/∂μ [log(1-α_t) + log(1-β_t) + (n-1)log(β_t)]
+        #     = -1/(1-α_t)·∂α_t/∂μ - 1/(1-β_t)·∂β_t/∂μ + (n-1)/β_t·∂β_t/∂μ
+        d_mu_nonzero = (
+            -d_alpha_d_mu / (1 - alpha_t)
+            - d_beta_d_mu / (1 - beta_t)
+            + (ns_nonzero - 1) * d_beta_d_mu / beta_t
+        )
+
+        d_lambda[non_zero_mask] = d_lambda_nonzero
+        d_mu[non_zero_mask] = d_mu_nonzero
 
     return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
@@ -611,16 +632,20 @@ def calculate_non_spine_ages_log_likelihood(
     if np.any(ages_t < 0) or np.any(ages_t > end_time):
         return np.float64(-np.inf)
 
-    if np.shape(lambda_params) != np.shape(mu_params):
+    # Convert scalar parameters to arrays for single-epoch case
+    lambda_params = np.atleast_1d(lambda_params)
+    mu_params = np.atleast_1d(mu_params)
+
+    if len(lambda_params) != len(mu_params):
         raise ValueError(
-            f"lambda_param and mu_param must have the same shape. "
-            f"Got shapes: lambda_param={np.shape(lambda_params)}, mu_param={np.shape(mu_params)}"
+            f"lambda_param and mu_param must have the same length. "
+            f"Got lengths: lambda_param={len(lambda_params)}, mu_param={len(mu_params)}"
         )
 
-    if np.shape(lambda_params) != np.shape(times):
+    if len(lambda_params) != len(times):
         raise ValueError(
-            f"lambda_param and times must have the same shape. "
-            f"Got shapes: lambda_param={np.shape(lambda_params)}, times={np.shape(times)}"
+            f"lambda_param and times must have the same length. "
+            f"Got lengths: lambda_param={len(lambda_params)}, times={len(times)}"
         )
 
     if len(times) > 1:
@@ -636,11 +661,9 @@ def calculate_non_spine_ages_log_likelihood(
         )
 
     # Handle parameter scaling
-    # Extract scalar values from single-element arrays
-    lambda_scalar = float(
-        lambda_params[0] if isinstance(lambda_params, np.ndarray) else lambda_params
-    )
-    mu_scalar = float(mu_params[0] if isinstance(mu_params, np.ndarray) else mu_params)
+    # Extract scalar values from single-element arrays (atleast_1d guarantees arrays)
+    lambda_scalar = float(lambda_params[0])
+    mu_scalar = float(mu_params[0])
 
     if log_scale_params:
         log_lambda = lambda_scalar
@@ -667,7 +690,7 @@ def calculate_non_spine_ages_log_likelihood(
         log_denominator = np.log(end_time)
 
         # Check for numerical validity
-        if not (np.isfinite(log_numerator) and np.isfinite(log_denominator)):
+        if not np.all(np.isfinite([log_numerator, log_denominator])):
             return np.float64(-np.inf)
 
     else:
@@ -857,50 +880,48 @@ def calculate_non_spine_ages_log_likelihood_derivatives(
         log_mu = np.log(mu_param)
 
     # Check for numerical stability in parameter space
-    if abs(log_lambda - log_mu) < 1e-12:
+    if abs(log_lambda - log_mu) < 1e-14:  # Tighter tolerance for derivatives
         # Limiting case: λ ≈ μ
-        numerator = T + ages_t**2 * lambda_val - ages_t * (2 + lambda_val * T)
-        denominator = 1 - ages_t * lambda_val + lambda_val * T
-        d_mu = d_lambda = numerator / denominator
+        # f(t) = [1 + λ(T-t)] / T * e^{-λt}
+        # log f(t) = log(1 + λ(T-t)) - log(T) - λt
+        # ∂ log f(t)/∂λ = (T-t)/(1 + λ(T-t)) - t
+        d_mu = d_lambda = (T - ages_t) / (1 + lambda_val * (T - ages_t)) - ages_t
     else:
         # General case: λ ≠ μ
-        # Pre-compute common exponentials and products to avoid redundant calculations
-        lambda_ages_t = lambda_val * ages_t
-        mu_ages_t = mu_val * ages_t
+        # log f(t) = log(λe^{-λt} - μe^{-(λ-μ)T}e^{-μt}) - log(1 - e^{-(λ-μ)T})
+        # Let N = λe^{-λt} - μe^{-(λ-μ)T}e^{-μt}
+        # Let D = 1 - e^{-(λ-μ)T}
+
         growth_rate = lambda_val - mu_val
-        T_growth_rate = T * growth_rate
 
-        # Cache exponentials - these are expensive operations
-        exp_lambda_t = np.exp(lambda_ages_t)
-        exp_mu_t = np.exp(mu_ages_t)
-        exp_T_growth = np.exp(T_growth_rate)
-        exp_2T_growth = exp_T_growth * exp_T_growth  # Faster than np.exp(2*...)
+        # Calculate N and D
+        exp_lambda_t = np.exp(-lambda_val * ages_t)
+        exp_mu_t = np.exp(-mu_val * ages_t)
+        exp_growth_T = np.exp(-growth_rate * T)
 
-        # Pre-compute combined exponentials
-        exp_mu_t_T_growth = exp_mu_t * exp_T_growth
-        exp_mu_t_2T_growth = exp_mu_t * exp_2T_growth
-        lambda_numerator_1 = (lambda_ages_t - 1) * exp_mu_t_T_growth
-        lambda_numerator_2 = -(lambda_ages_t + lambda_val * T - 1) * exp_mu_t_2T_growth
-        lambda_numerator_3 = -mu_val * T * exp_lambda_t
-        lambda_numerator_4 = 2 * mu_val * T * exp_lambda_t * exp_T_growth
-        lambda_numerator = (
-            lambda_numerator_1
-            + lambda_numerator_2
-            + lambda_numerator_3
-            + lambda_numerator_4
-        )
-        denominator = (np.exp(T_growth_rate) - 1) * (
-            lambda_val * exp_mu_t_T_growth - mu_val * exp_lambda_t
-        )
-        mu_numerator_1 = lambda_val * T * exp_mu_t_2T_growth
-        mu_numerator_2 = exp_lambda_t * (-mu_ages_t + mu_val * T + 1)
-        mu_numerator_3 = (mu_ages_t - 2 * mu_val * T - 1) * np.exp(
-            lambda_ages_t + T_growth_rate
-        )
-        mu_numerator = mu_numerator_1 + mu_numerator_2 + mu_numerator_3
+        N = lambda_val * exp_lambda_t - mu_val * exp_growth_T * exp_mu_t
+        D = 1 - exp_growth_T
 
-        d_lambda = lambda_numerator / denominator
-        d_mu = mu_numerator / denominator
+        # ∂N/∂λ = e^{-λt}(1 - λt) + μT·e^{-(λ-μ)T}e^{-μt}
+        dN_dlambda = (
+            exp_lambda_t * (1 - lambda_val * ages_t)
+            + mu_val * T * exp_growth_T * exp_mu_t
+        )
+
+        # ∂D/∂λ = T·e^{-(λ-μ)T}
+        dD_dlambda = T * exp_growth_T
+
+        # ∂ log f(t)/∂λ = (1/N)·∂N/∂λ - (1/D)·∂D/∂λ
+        d_lambda = dN_dlambda / N - dD_dlambda / D
+
+        # ∂N/∂μ = -e^{-(λ-μ)T}e^{-μt}[1 + μ(T - t)]
+        dN_dmu = -exp_growth_T * exp_mu_t * (1 + mu_val * (T - ages_t))
+
+        # ∂D/∂μ = -T·e^{-(λ-μ)T}
+        dD_dmu = -T * exp_growth_T
+
+        # ∂ log f(t)/∂μ = (1/N)·∂N/∂μ - (1/D)·∂D/∂μ
+        d_mu = dN_dmu / N - dD_dmu / D
 
     return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
@@ -973,16 +994,23 @@ def calculate_spine_ages_log_likelihood_derivatives(
     d_mu = np.zeros_like(ages_t, dtype=np.float64)
 
     # Check for numerical stability in parameter space
-    if abs(log_lambda - log_mu) < 1e-12:
+    if abs(log_lambda - log_mu) < 1e-14:  # Tighter tolerance for derivatives
         # Limiting case: λ ≈ μ
+        # At boundary: log f(T) = 2log(λ) + log(T) - λT, so ∂/∂λ = 2/λ - T
+        # Interior: log f(t) = 2log(λ) + log(t) - λt, so ∂/∂λ = 2/λ - t
+
         if np.any(at_boundary):
-            # d/dλ = -(λ T^2)/(λ T + 1)
-            d_mu[at_boundary] = d_lambda[at_boundary] = -(lambda_val * T**2) / (
-                lambda_val * T + 1
-            )
+            # d/dλ = 2/λ - T
+            d_mu[at_boundary] = d_lambda[at_boundary] = 2 / lambda_val - T
+
         if np.any(not_at_boundary):
-            # d/dλ = 2/λ - a
-            d_mu[not_at_boundary] = d_lambda[not_at_boundary] = 2 / lambda_val - ages_t
+            # d/dλ = 2/λ - t
+            ages_interior = (
+                ages_t[not_at_boundary] if isinstance(ages_t, np.ndarray) else ages_t
+            )
+            d_mu[not_at_boundary] = d_lambda[not_at_boundary] = (
+                2 / lambda_val - ages_interior
+            )
     else:
         # General case: λ ≠ μ
         if np.any(at_boundary):
@@ -1002,29 +1030,26 @@ def calculate_spine_ages_log_likelihood_derivatives(
             )
             d_mu[at_boundary] = mu_numerator / denominator
         if np.any(not_at_boundary):
-            # d/dλ = (e^(μ a) (μ + λ a (λ - μ)) - μ e^(λ a))/(λ (λ - μ) (e^(λ a) - e^(μ a)))
-            lambda_numerator = np.exp(mu_val * ages_t) * (
-                mu_val + lambda_val * ages_t * (lambda_val - mu_val)
-            ) - mu_val * np.exp(lambda_val * ages_t)
-            lambda_denominator = (
-                lambda_val
-                * (lambda_val - mu_val)
-                * (np.exp(lambda_val * ages_t) - np.exp(mu_val * ages_t))
+            # Extract ages not at boundary for computation
+            ages_interior = (
+                ages_t[not_at_boundary] if isinstance(ages_t, np.ndarray) else ages_t
             )
+
+            # Interior: log f(t) = log(λ) + log(μ) + log(e^{-μT} - e^{-λT}) - log(λ - μ)
+            # Let B = e^{-μT} - e^{-λT}
+
+            B = np.exp(-mu_val * T) - np.exp(-lambda_val * T)
+
+            # ∂ log f(t)/∂λ = 1/λ + T·e^{-λT}/B - 1/(λ-μ)
             d_lambda[not_at_boundary] = (
-                lambda_numerator[not_at_boundary] / lambda_denominator[not_at_boundary]
+                1 / lambda_val
+                + T * np.exp(-lambda_val * T) / B
+                - 1 / (lambda_val - mu_val)
             )
-            # d/dμ = (e^(λ a) (λ - λ μ a + μ^2 a) - λ e^(μ a))/(μ (λ - μ) (e^(λ a) - e^(μ a)))
-            mu_numerator = np.exp(lambda_val * ages_t) * (
-                lambda_val - lambda_val * mu_val * ages_t + mu_val**2 * ages_t
-            ) - lambda_val * np.exp(mu_val * ages_t)
-            mu_denominator = (
-                mu_val
-                * (lambda_val - mu_val)
-                * (np.exp(lambda_val * ages_t) - np.exp(mu_val * ages_t))
-            )
+
+            # ∂ log f(t)/∂μ = 1/μ - T·e^{-μT}/B + 1/(λ-μ)
             d_mu[not_at_boundary] = (
-                mu_numerator[not_at_boundary] / mu_denominator[not_at_boundary]
+                1 / mu_val - T * np.exp(-mu_val * T) / B + 1 / (lambda_val - mu_val)
             )
 
     return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)

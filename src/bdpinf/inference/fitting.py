@@ -31,7 +31,7 @@ Examples:
     ... )
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Tuple
 
 import numpy as np
 import pandas as pd
@@ -80,10 +80,12 @@ def fit_birth_death_processes(
     list_of_ages: List[NDArray[np.float64]],
     observation_time: float,
     is_ordered: bool = False,
-    method: str = "L-BFGS-B",
     initial_params: Tuple[float, float] | None = None,
     spine_ages: NDArray[np.float64] | None = None,
     ns: NDArray[np.int64] | None = None,
+    birth_rates: NDArray[np.float64] | None = None,
+    death_rates: NDArray[np.float64] | None = None,
+    times: NDArray[np.float64] | None = None,
 ) -> Dict[str, Any]:
     """
     Fit birth-death process parameters to grouped manuscript-age data.
@@ -110,10 +112,6 @@ def fit_birth_death_processes(
         array in list_of_ages is treated as a spine observation and removed from the
         main ages used in the likelihood; collected spine ages are passed to the
         likelihood. Default is False.
-    method : str, optional
-        Primary scipy.optimize.minimize method to attempt (e.g., "L-BFGS-B").
-        If optimization with this method fails, the function will attempt "Nelder-Mead"
-        and "Powell" in that order as fallbacks. Default is "L-BFGS-B".
     initial_params : Tuple[float, float] | None, optional
         Initial guess for (birth_rate, death_rate) on the original scale. If None,
         a crude estimate is obtained by get_crude_parameter_estimates(non_empty_age, observation_time).
@@ -131,6 +129,16 @@ def fit_birth_death_processes(
         (is_ordered=True and spine_ages=None) you should supply ns explicitly if
         you require it to count spines, because the default ns is computed before
         spine extraction in the current implementation.
+    birth_rates : NDArray[np.float64] | None, optional
+        Array of birth rate values corresponding to time points in 'times'.
+        If provided, both death_rates and times must also be provided.
+        These can be used for reference or validation purposes.
+    death_rates : NDArray[np.float64] | None, optional
+        Array of death rate values corresponding to time points in 'times'.
+        If provided, both birth_rates and times must also be provided.
+    times : NDArray[np.float64] | None, optional
+        Array of time points corresponding to birth_rates and death_rates.
+        If provided, both birth_rates and death_rates must also be provided.
 
     Returns
     -------
@@ -163,14 +171,14 @@ def fit_birth_death_processes(
       parameters are enforced in log-space corresponding to birth_rate and death_rate
       in [1e-8, 100.0].
     - The objective minimized is the negative log-likelihood computed by
-      negative_log_likelihood(...). When available and used by the optimizer, the
-      gradient (w.r.t. log-parameters) is provided by gradient_func which applies
-      the chain rule to the log-likelihood gradient returned by
-      log_likelihood_gradient(...).
-    - The function will try the requested optimization method first; if it fails,
-      it will fall back to "Nelder-Mead" and "Powell". The first successful run is
-      returned. If none succeed, the best available result (or a failure summary)
-      is returned.
+      negative_log_likelihood(...).
+    - The function uses a robust optimization strategy with multiple fallbacks:
+      1. BFGS with analytical gradient (via log_likelihood_gradient)
+      2. BFGS with numerical gradient (via scipy.optimize.approx_fprime)
+      3. Nelder-Mead (gradient-free)
+      4. Powell (gradient-free)
+    - The first successful optimization in this sequence is returned. If none succeed,
+      the best available result (or a failure summary) is returned.
 
     Examples
     --------
@@ -198,19 +206,26 @@ def fit_birth_death_processes(
     if observation_time <= 0:
         raise ValueError("observation_time must be positive")
 
+    # Validate birth_rates, death_rates, and times arrays
+    if (birth_rates is not None) or (death_rates is not None) or (times is not None):
+        if not all(
+            [birth_rates is not None, death_rates is not None, times is not None]
+        ):
+            raise ValueError(
+                "If any of birth_rates, death_rates, or times is provided, all three must be provided"
+            )
+        # Type narrowing: at this point all three are guaranteed to be not None
+        assert birth_rates is not None and death_rates is not None and times is not None
+        if not (len(birth_rates) == len(death_rates) == len(times)):
+            raise ValueError(
+                "birth_rates, death_rates, and times must all have the same length"
+            )
+
     # Set initial parameters with better estimates based on data
     if initial_params is None:
         initial_params = get_crude_parameter_estimates(non_empty_age, observation_time)
     # Convert initial parameters to log scale
     log_initial_params = np.log(initial_params)
-
-    # Parameter bounds in log space: log(birth_rate), log(death_rate)
-    # birth_rate: 1e-8 to 100.0 -> log bounds: log(1e-8) to log(100.0)
-    # death_rate: 1e-8 to 100.0 -> log bounds: log(1e-8) to log(100.0)
-    bounds: List[Tuple[Optional[float], Optional[float]]] = [
-        (np.log(1e-8), np.log(100.0)),  # log(birth_rate) bounds
-        (np.log(1e-8), np.log(100.0)),  # log(death_rate) bounds
-    ]
 
     if ns is not None:
         if sum(ns) != len(list_of_ages):
@@ -278,32 +293,103 @@ def fit_birth_death_processes(
         return np.array(nll_grad)
 
     # Optimize with multiple strategies for robustness
-    optimization_methods = [method, "Nelder-Mead", "Powell"]
+    # Strategy: Try L-BFGS-B with analytical gradient, then with numerical gradient,
+    # then fall back to gradient-free methods
     best_result: Any = None
     best_likelihood = -np.inf
 
-    for opt_method in optimization_methods:
-        # Ensure parameters are numpy arrays for scipy compatibility
-        x0 = np.array(log_initial_params, dtype=np.float64)
+    # Ensure parameters are numpy arrays for scipy compatibility
+    x0 = np.array(log_initial_params, dtype=np.float64)
 
+    # Strategy 1: Try BFGS with analytical gradient
+    try:
         result: Any = optimize.minimize(
             objective_func,
             x0,
             jac=gradient_func,
-            method=opt_method,  # type: ignore
-            bounds=bounds,
+            method="BFGS",
             options={"maxiter": 1000, "ftol": 1e-9},
         )
 
         if result.success:
-            # First successful optimization - use it and stop trying others
-            best_result = result
-            best_likelihood = -result.fun
-            break
+            # Check if optimized parameters are too similar to initial parameters
+            # Use a reasonable threshold in log-space (0.01 = ~1% change in parameters)
+            param_change = np.max(np.abs(result.x - x0))
+            if param_change < 0.01:
+                # Parameters barely changed, try other methods
+                result.success = False
+            else:
+                best_result = result
+                best_likelihood = -result.fun
 
-        elif best_result is None:
-            # Keep even failed results if we have nothing better
+        if best_result is None:
             best_result = result
+    except Exception:
+        # If analytical gradient fails, continue to numerical gradient
+        pass
+
+    # Strategy 2: If analytical gradient didn't work, try BFGS with numerical gradient
+    if best_result is None or not best_result.success:
+        try:
+            # Create numerical gradient using scipy's approx_fprime
+            def numerical_gradient(
+                log_params: NDArray[np.float64],
+            ) -> NDArray[np.float64]:
+                return optimize.approx_fprime(log_params, objective_func, epsilon=1e-8)
+
+            result = optimize.minimize(
+                objective_func,
+                x0,
+                jac=numerical_gradient,
+                method="BFGS",
+                options={"maxiter": 1000, "ftol": 1e-9},
+            )
+
+            if result.success:
+                # Check if optimized parameters are too similar to initial parameters
+                # Use a reasonable threshold in log-space (0.01 = ~1% change in parameters)
+                param_change = np.max(np.abs(result.x - x0))
+                if param_change < 0.01:
+                    # Parameters barely changed, try other methods
+                    result.success = False
+                else:
+                    best_result = result
+                    best_likelihood = -result.fun
+
+            if best_result is None:
+                best_result = result
+        except Exception:
+            # If numerical gradient also fails, continue to gradient-free methods
+            pass
+
+    # Strategy 3: Try gradient-free methods if BFGS didn't succeed
+    if best_result is None or not best_result.success:
+        methods: List[Literal["Nelder-Mead", "Powell"]] = ["Nelder-Mead", "Powell"]
+        for opt_method in methods:
+            try:
+                result = optimize.minimize(
+                    objective_func,
+                    x0,
+                    method=opt_method,
+                    options={"maxiter": 1000, "ftol": 1e-9},
+                )
+
+                if result.success:
+                    # Check if optimized parameters are too similar to initial parameters
+                    # Use a reasonable threshold in log-space (0.01 = ~1% change in parameters)
+                    param_change = np.max(np.abs(result.x - x0))
+                    if param_change < 0.01:
+                        # Parameters barely changed, try next method
+                        result.success = False
+                    else:
+                        best_result = result
+                        best_likelihood = -result.fun
+                        break
+
+                if best_result is None:
+                    best_result = result
+            except Exception:
+                continue
 
     # Process the best result found
     if best_result is not None:
@@ -339,7 +425,6 @@ def fit_from_dataframe(
     age_column: str,
     observation_time: float,
     is_ordered: bool = False,
-    method: str = "L-BFGS-B",
     initial_params: Tuple[float, float] | None = None,
 ) -> Dict[str, Any]:
     """
@@ -350,7 +435,6 @@ def fit_from_dataframe(
         age_column: Name of the column with manuscript ages
         observation_time: Total observation time
         is_ordered: Whether the ages are ordered
-        method: Optimization method for scipy.optimize.minimize
         initial_params: Initial parameter values (birth_rate, death_rate) in original scale
     Returns:
         Dictionary with fit results including parameters and statistics
@@ -365,6 +449,5 @@ def fit_from_dataframe(
         list_of_ages=[ages],
         observation_time=observation_time,
         is_ordered=is_ordered,
-        method=method,
         initial_params=initial_params,
     )
