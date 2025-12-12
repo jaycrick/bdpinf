@@ -152,9 +152,8 @@ def fit_single_model(ages, time_span):
     try:
         model = fit_birth_death_processes(
             list_of_ages=[ages],
-            observation_time=time_span,
+            times=time_span,
             is_ordered=True,
-            initial_params=None,
         )
         return model
     except Exception as e:
@@ -519,7 +518,7 @@ save_figure(fig_box, "mv_parameter_boxplots", width=397, height=250)
 
 best_estimate = fit_birth_death_processes(
     list_of_ages=list_of_ages,
-    observation_time=time_span,
+    times=time_span,
     is_ordered=True,
 )
 
@@ -539,9 +538,8 @@ for i in [0, 1, int(num_sims / 8), int(num_sims / 4), int(num_sims / 2), int(num
     if has_age:
         model = fit_birth_death_processes(
             list_of_ages=list_of_ages[0 : (i + 1)],
-            observation_time=time_span,
+            times=time_span,
             is_ordered=True,
-            initial_params=cumulative_estimates[-1] if (i != 0) else None,
         )
         # model may be None, a dict, or an OptimizeResult-like object with attribute `x`.
         if model is None:

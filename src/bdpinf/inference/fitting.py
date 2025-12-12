@@ -78,14 +78,12 @@ def get_crude_parameter_estimates(
 
 def fit_birth_death_processes(
     list_of_ages: List[NDArray[np.float64]],
-    observation_time: float,
+    times: float | NDArray[np.float64],
     is_ordered: bool = False,
-    initial_params: Tuple[float, float] | None = None,
+    initial_birth_rates: NDArray[np.float64] | None = None,
+    initial_death_rates: NDArray[np.float64] | None = None,
     spine_ages: NDArray[np.float64] | None = None,
-    ns: NDArray[np.int64] | None = None,
-    birth_rates: NDArray[np.float64] | None = None,
-    death_rates: NDArray[np.float64] | None = None,
-    times: NDArray[np.float64] | None = None,
+    population_sizes: NDArray[np.int64] | None = None,
 ) -> Dict[str, Any]:
     """
     Fit birth-death process parameters to grouped manuscript-age data.
@@ -104,41 +102,37 @@ def fit_birth_death_processes(
         is required. For ordered data (is_ordered=True) each array is expected to
         have the spine observation as its first element (unless spine_ages is
         provided explicitly).
-    observation_time : float
-        Total observation time (must be positive). This is used by the likelihood
-        functions to compute probabilities over the observation window.
+    times : float | NDArray[np.float64]
+        Observation time(s) for the process. Can be a single float representing
+        the total observation time, or an array of time points. Must be positive.
+        This is used by the likelihood functions to compute probabilities over
+        the observation window.
     is_ordered : bool, optional
         If True and spine_ages is not provided, the first element of every non-empty
         array in list_of_ages is treated as a spine observation and removed from the
         main ages used in the likelihood; collected spine ages are passed to the
         likelihood. Default is False.
-    initial_params : Tuple[float, float] | None, optional
-        Initial guess for (birth_rate, death_rate) on the original scale. If None,
-        a crude estimate is obtained by get_crude_parameter_estimates(non_empty_age, observation_time).
-        The supplied or computed initial_params are converted to log-space for the optimizer.
+    initial_birth_rates : NDArray[np.float64] | None, optional
+        Initial guess for birth rate(s) on the original scale. If None,
+        a crude estimate is obtained. Can be a scalar or array matching the
+        structure of times. Values are converted to log-space for the optimizer.
+    initial_death_rates : NDArray[np.float64] | None, optional
+        Initial guess for death rate(s) on the original scale. If None,
+        a crude estimate is obtained. Can be a scalar or array matching the
+        structure of times. Values are converted to log-space for the optimizer.
     spine_ages : NDArray[np.float64] | None, optional
         If provided, these are the spine ages to be used directly in the likelihood.
         If is_ordered is True and this argument is None, spine_ages will be inferred
         from the first element of each non-empty array in list_of_ages.
-    ns : NDArray[np.int64] | None, optional
+    population_sizes : NDArray[np.int64] | None, optional
         Array of integer counts, one per entry in list_of_ages, representing the
         number of observed lineages for that group. If provided, its length must
         equal len(list_of_ages). If None, a default is constructed as
         np.array([len(ages) + int(spine_ages is not None) for ages in list_of_ages],
         dtype=np.int64). Note: if you rely on automatic spine extraction
-        (is_ordered=True and spine_ages=None) you should supply ns explicitly if
-        you require it to count spines, because the default ns is computed before
+        (is_ordered=True and spine_ages=None) you should supply population_sizes explicitly if
+        you require it to count spines, because the default is computed before
         spine extraction in the current implementation.
-    birth_rates : NDArray[np.float64] | None, optional
-        Array of birth rate values corresponding to time points in 'times'.
-        If provided, both death_rates and times must also be provided.
-        These can be used for reference or validation purposes.
-    death_rates : NDArray[np.float64] | None, optional
-        Array of death rate values corresponding to time points in 'times'.
-        If provided, both birth_rates and times must also be provided.
-    times : NDArray[np.float64] | None, optional
-        Array of time points corresponding to birth_rates and death_rates.
-        If provided, both birth_rates and death_rates must also be provided.
 
     Returns
     -------
@@ -162,8 +156,8 @@ def fit_birth_death_processes(
     ------
     ValueError
         - If all arrays in list_of_ages are empty (no valid data to fit).
-        - If observation_time <= 0.
-        - If ns is provided and sum(ns) != len(list_of_ages) (i.e., length mismatch).
+        - If times <= 0 (when times is a float) or any element of times <= 0 (when array).
+        - If population_sizes is provided and sum(population_sizes) != len(list_of_ages) (i.e., length mismatch).
 
     Notes
     -----
@@ -184,10 +178,10 @@ def fit_birth_death_processes(
     --------
     (Informal)
     - To fit unordered data:
-        fit_birth_death_processes(list_of_ages, observation_time=10.0)
+        fit_birth_death_processes(list_of_ages, times=10.0)
 
     - To fit ordered data with automatic spine extraction:
-        fit_birth_death_processes(list_of_ages, observation_time=10.0, is_ordered=True)
+        fit_birth_death_processes(list_of_ages, times=10.0, is_ordered=True)
 
     See Also
     --------
@@ -203,35 +197,42 @@ def fit_birth_death_processes(
     if non_empty_age is None:
         raise ValueError("No valid data points for fitting")
 
-    if observation_time <= 0:
-        raise ValueError("observation_time must be positive")
-
-    # Validate birth_rates, death_rates, and times arrays
-    if (birth_rates is not None) or (death_rates is not None) or (times is not None):
-        if not all(
-            [birth_rates is not None, death_rates is not None, times is not None]
-        ):
-            raise ValueError(
-                "If any of birth_rates, death_rates, or times is provided, all three must be provided"
-            )
-        # Type narrowing: at this point all three are guaranteed to be not None
-        assert birth_rates is not None and death_rates is not None and times is not None
-        if not (len(birth_rates) == len(death_rates) == len(times)):
-            raise ValueError(
-                "birth_rates, death_rates, and times must all have the same length"
-            )
+    # Validate times parameter
+    if isinstance(times, (int, float)):
+        observation_time = float(times)
+        if observation_time <= 0:
+            raise ValueError("times must be positive")
+    else:
+        # times is an array
+        if np.any(times <= 0):
+            raise ValueError("All elements of times must be positive")
+        # For now, use the last time point as observation_time for simple case
+        observation_time = float(np.max(times))
 
     # Set initial parameters with better estimates based on data
-    if initial_params is None:
+    if initial_birth_rates is None and initial_death_rates is None:
         initial_params = get_crude_parameter_estimates(non_empty_age, observation_time)
+    elif initial_birth_rates is not None and initial_death_rates is not None:
+        # Both provided - combine them
+        initial_params = (
+            float(np.atleast_1d(initial_birth_rates)[0]),
+            float(np.atleast_1d(initial_death_rates)[0]),
+        )
+    else:
+        raise ValueError(
+            "Either both initial_birth_rates and initial_death_rates must be provided, or neither"
+        )
+
     # Convert initial parameters to log scale
     log_initial_params = np.log(initial_params)
 
-    if ns is not None:
-        if sum(ns) != len(list_of_ages):
-            raise ValueError("Length of ns must match length of list_of_ages")
+    if population_sizes is not None:
+        if sum(population_sizes) != len(list_of_ages):
+            raise ValueError(
+                "Length of population_sizes must match length of list_of_ages"
+            )
     else:
-        ns = np.array(
+        population_sizes = np.array(
             [len(ages) + int(spine_ages is not None) for ages in list_of_ages],
             dtype=np.int64,
         )
@@ -269,7 +270,7 @@ def fit_birth_death_processes(
             ages=non_spine_ages,
             observation_time=observation_time,
             spine_ages=spine_ages,
-            ns=ns,
+            ns=population_sizes,
             is_ordered=False,
             log_scale_params=False,
         )
@@ -285,7 +286,7 @@ def fit_birth_death_processes(
                 ages=non_spine_ages,
                 observation_time=observation_time,
                 spine_ages=spine_ages,
-                ns=ns,
+                ns=population_sizes,
                 is_ordered=False,
                 log_scale_params=False,
             ),
@@ -423,9 +424,10 @@ def fit_birth_death_processes(
 def fit_from_dataframe(
     df: pd.DataFrame,
     age_column: str,
-    observation_time: float,
+    times: float | NDArray[np.float64],
     is_ordered: bool = False,
-    initial_params: Tuple[float, float] | None = None,
+    initial_birth_rates: NDArray[np.float64] | None = None,
+    initial_death_rates: NDArray[np.float64] | None = None,
 ) -> Dict[str, Any]:
     """
     Fit birth-death process parameters from a pandas DataFrame.
@@ -433,9 +435,10 @@ def fit_from_dataframe(
     Args:
         df: DataFrame containing manuscript data
         age_column: Name of the column with manuscript ages
-        observation_time: Total observation time
+        times: Observation time(s) - can be float or array
         is_ordered: Whether the ages are ordered
-        initial_params: Initial parameter values (birth_rate, death_rate) in original scale
+        initial_birth_rates: Initial birth rate values
+        initial_death_rates: Initial death rate values
     Returns:
         Dictionary with fit results including parameters and statistics
     """
@@ -447,7 +450,8 @@ def fit_from_dataframe(
 
     return fit_birth_death_processes(
         list_of_ages=[ages],
-        observation_time=observation_time,
+        times=times,
         is_ordered=is_ordered,
-        initial_params=initial_params,
+        initial_birth_rates=initial_birth_rates,
+        initial_death_rates=initial_death_rates,
     )

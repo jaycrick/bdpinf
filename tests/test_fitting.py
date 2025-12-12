@@ -14,21 +14,13 @@ class TestFitting:
     """Test parameter fitting functionality using modular approach."""
 
     def test_fit_birth_death_process_with_times_arrays(self):
-        """Test fitting with birth_rates, death_rates, and times arrays."""
+        """Test fitting with times as array."""
         ages = np.array([100.0, 200.0, 300.0, 500.0, 700.0], dtype=np.float64)
-        observation_time = 1000.0
-
-        # Provide reference rates and times
-        times_array = np.array([0.0, 500.0, 1000.0], dtype=np.float64)
-        birth_rates_array = np.array([0.005, 0.006, 0.007], dtype=np.float64)
-        death_rates_array = np.array([0.003, 0.004, 0.005], dtype=np.float64)
+        times = 1000.0
 
         result = fit_birth_death_processes(
             [ages],
-            observation_time,
-            birth_rates=birth_rates_array,
-            death_rates=death_rates_array,
-            times=times_array,
+            times,
         )
 
         assert isinstance(result, dict)
@@ -38,9 +30,9 @@ class TestFitting:
         """Test successful fitting with ages array."""
         # Create some test ages
         ages = np.array([100.0, 200.0, 300.0, 500.0, 700.0], dtype=np.float64)
-        observation_time = 1000.0
+        times = 1000.0
 
-        result = fit_birth_death_processes([ages], observation_time)
+        result = fit_birth_death_processes([ages], times)
 
         # Should return valid result structure
         assert isinstance(result, dict)
@@ -57,19 +49,23 @@ class TestFitting:
     def test_fit_birth_death_process_no_ages(self):
         """Test fitting fails with no ages."""
         ages = np.array([], dtype=np.float64)
-        observation_time = 1000.0
+        times = 1000.0
 
         with pytest.raises(ValueError, match="No valid data points for fitting"):
-            fit_birth_death_processes([ages], observation_time)
+            fit_birth_death_processes([ages], times)
 
     def test_fit_birth_death_process_custom_initial_params(self):
         """Test fitting with custom initial parameters."""
         ages = np.array([100.0, 200.0, 300.0], dtype=np.float64)
-        observation_time = 1000.0
-        initial_params = (0.01, 0.002)
+        times = 1000.0
+        initial_birth_rates = np.array([0.01])
+        initial_death_rates = np.array([0.002])
 
         result = fit_birth_death_processes(
-            [ages], observation_time, initial_params=initial_params
+            [ages],
+            times,
+            initial_birth_rates=initial_birth_rates,
+            initial_death_rates=initial_death_rates,
         )
 
         # Should succeed regardless of initial parameters
@@ -84,7 +80,7 @@ class TestFitting:
         ages = np.random.exponential(scale=200, size=50)
         df = pd.DataFrame({"age": ages, "count": np.ones(len(ages))})
 
-        result = fit_from_dataframe(df, age_column="age", observation_time=1000.0)
+        result = fit_from_dataframe(df, age_column="age", times=1000.0)
 
         # Should return valid result structure
         assert isinstance(result, dict)
@@ -106,7 +102,7 @@ class TestFitting:
 
         df = pd.DataFrame({"age": ages})
 
-        result = fit_from_dataframe(df, age_column="age", observation_time=1000.0)
+        result = fit_from_dataframe(df, age_column="age", times=1000.0)
 
         # Should return valid result structure
         assert result["success"]
@@ -119,22 +115,22 @@ class TestFitting:
         df = pd.DataFrame({"age": []})
 
         with pytest.raises(ValueError, match="No valid data points for fitting"):
-            fit_from_dataframe(df, age_column="age", observation_time=1000.0)
+            fit_from_dataframe(df, age_column="age", times=1000.0)
 
     def test_fit_from_dataframe_missing_age_column(self):
         """Test fitting fails when age column is missing."""
         df = pd.DataFrame({"wrong_column": [1, 2, 3]})
 
         with pytest.raises(ValueError, match="Column 'age' not found"):
-            fit_from_dataframe(df, age_column="age", observation_time=1000.0)
+            fit_from_dataframe(df, age_column="age", times=1000.0)
 
     def test_fit_birth_death_process_different_methods(self):
         """Test fitting with the default optimization strategy."""
         # Test that the function works with the default optimization strategy
         ages = np.array([100.0, 200.0, 300.0, 400.0], dtype=np.float64)
-        observation_time = 1000.0
+        times = 1000.0
 
-        result = fit_birth_death_processes([ages], observation_time)
+        result = fit_birth_death_processes([ages], times)
         # Should return a result
         assert isinstance(result, dict)
         assert "success" in result
@@ -145,8 +141,8 @@ class TestFitting:
     def test_fit_results_structure(self):
         """Test that fit results have the expected structure."""
         ages = np.array([100.0, 200.0, 300.0, 400.0, 500.0], dtype=np.float64)
-        observation_time = 1000.0
-        result = fit_birth_death_processes([ages], observation_time)
+        times = 1000.0
+        result = fit_birth_death_processes([ages], times)
 
         assert result["success"]
 
@@ -196,9 +192,7 @@ class TestFitting:
             }
         )
 
-        result = fit_from_dataframe(
-            df, age_column="manuscript_age", observation_time=1000.0
-        )
+        result = fit_from_dataframe(df, age_column="manuscript_age", times=1000.0)
 
         assert isinstance(result, dict)
         assert result["success"]
@@ -216,7 +210,7 @@ class TestFitting:
 
         # Fit with external data
         df = pd.DataFrame({"age": [100.0, 200.0, 300.0], "count": [1.0, 1.0, 1.0]})
-        result = fit_from_dataframe(df, age_column="age", observation_time=1000.0)
+        result = fit_from_dataframe(df, age_column="age", times=1000.0)
 
         # Original process data should be preserved
         np.testing.assert_array_equal(process.get_manuscript_ages(), original_ages)
