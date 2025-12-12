@@ -5,7 +5,7 @@ This module contains functions for simulating manuscript data from birth-death
 processes and making predictions using fitted models.
 
 Examples:
-    Simulating manuscript creation and survival:
+    Simulating manuscript creation and survival with constant rates:
 
     >>> import numpy as np
     >>> from inf_bp_texts.simulation.simulator import simulate_birth_death_process
@@ -15,11 +15,23 @@ Examples:
     >>> death_rate = 0.3
     >>> observation_time = 500
     >>>
-    >>> # Run simulation
+    >>> # Run simulation with constant rates
     >>> manuscripts = simulate_birth_death_process(
     ...     birth_rate, death_rate, observation_time, random_seed=42
     ... )
     >>> print(f"Simulated {len(manuscripts)} surviving manuscripts")
+
+    Simulating with time-varying rates:
+
+    >>> # Rates change at t=200 and t=400
+    >>> birth_rates = np.array([0.5, 0.3, 0.6])
+    >>> death_rates = np.array([0.3, 0.4, 0.2])
+    >>> times = np.array([200, 400, 600])
+    >>>
+    >>> manuscripts = simulate_birth_death_process(
+    ...     birth_rates, death_rates, times, random_seed=42
+    ... )
+    >>> print(f"Simulated {len(manuscripts)} manuscripts")
 
     Predicting future manuscript counts:
 
@@ -43,29 +55,51 @@ from numpy.typing import NDArray
 
 
 def simulate_birth_death_process(
-    birth_rate: float,
-    death_rate: float,
-    max_time: float = 2000,
+    birth_rates: float | NDArray[np.float64],
+    death_rates: float | NDArray[np.float64],
+    times: float | NDArray[np.float64],
     random_seed: Optional[int] = None,
 ) -> pd.DataFrame:
     """
-    Simulate manuscript data from the birth-death process.
+    Simulate manuscript data from the birth-death process with time-varying rates.
 
     This creates a proper birth-death process simulation where manuscripts
-    are born at rate λ and die at rate μ. The simulation runs until max_time
-    and records both creation times and survival status. If the
+    are born at rate λ and die at rate μ. The rates can change at specified
+    time points. The simulation runs until the final time is reached and
+    records both creation times and survival status.
 
     Args:
-        birth_rate: Birth rate (λ) for manuscript creation
-        death_rate: Death rate (μ) for manuscript loss
-        max_time: Maximum time to simulate the process
+        birth_rates: Birth rate(s) (λ) for manuscript creation. Either a single
+            float or an array of rates corresponding to time periods.
+        death_rates: Death rate(s) (μ) for manuscript loss. Either a single
+            float or an array of rates corresponding to time periods.
+        times: End time(s) for the simulation. Either a single float or an array
+            of time points at which rates change. Must be the same length as
+            birth_rates and death_rates if arrays are provided.
         random_seed: Random seed for reproducibility
 
     Returns:
         DataFrame with simulated manuscript data including creation times and ages
     """
-    if birth_rate <= 0 or death_rate <= 0:
-        raise ValueError("Birth rate and death rate must be positive")
+    # Convert inputs to arrays for uniform handling
+    birth_rates_arr = np.atleast_1d(birth_rates)
+    death_rates_arr = np.atleast_1d(death_rates)
+    times_arr = np.atleast_1d(times)
+
+    # Validate inputs
+    if not (len(birth_rates_arr) == len(death_rates_arr) == len(times_arr)):
+        raise ValueError(
+            "birth_rates, death_rates, and times must have the same length"
+        )
+
+    if np.any(birth_rates_arr <= 0) or np.any(death_rates_arr <= 0):
+        raise ValueError("Birth rates and death rates must be positive")
+
+    if np.any(times_arr <= 0):
+        raise ValueError("Times must be positive")
+
+    if len(times_arr) > 1 and np.any(np.diff(times_arr) <= 0):
+        raise ValueError("Times must be strictly increasing")
 
     # Create random number generator
     rng = np.random.default_rng(random_seed)
@@ -85,6 +119,13 @@ def simulate_birth_death_process(
         }
     ]  # Record of all manuscripts
     new_manuscript_id = 1
+
+    # Initialize rate tracking
+    period_idx = 0
+    birth_rate = float(birth_rates_arr[period_idx])
+    death_rate = float(death_rates_arr[period_idx])
+    max_time = float(times_arr[-1])
+
     birth_death_rate = birth_rate + death_rate
     prop_birth = birth_rate / birth_death_rate
     n_alive = len(manuscripts_alive)
@@ -97,6 +138,20 @@ def simulate_birth_death_process(
         # Time to next event
         dt = rng.exponential(1.0 / total_rate)
         current_time += dt
+
+        # Check if we've crossed into a new period and update rates
+        if period_idx < len(times_arr) - 1 and current_time > times_arr[period_idx]:
+            # Set current time to the period boundary
+            current_time = times_arr[period_idx]
+            # Update to next period's parameters
+            period_idx += 1
+            birth_rate = float(birth_rates_arr[period_idx])
+            death_rate = float(death_rates_arr[period_idx])
+            birth_death_rate = birth_rate + death_rate
+            prop_birth = birth_rate / birth_death_rate
+            total_rate = len(manuscripts_alive) * birth_death_rate
+            # Continue to start of loop to generate dt with new rates
+            continue
 
         if current_time >= max_time:
             break
@@ -146,12 +201,26 @@ def simulate_birth_death_process(
                 manuscript["is_spine"] = True
                 break
 
-    return pd.DataFrame(all_manuscripts)
+    # Create DataFrame and add derived columns
+    df = pd.DataFrame(all_manuscripts)
+
+    # Add survived column (True if death_time is None)
+    df["survived"] = df["death_time"].isna()
+
+    # Add age column for surviving manuscripts (vectorized)
+    df["age"] = np.where(df["survived"], max_time - df["creation_time"], np.nan)
+
+    # Add lifespan column for dead manuscripts (vectorized)
+    df["lifespan"] = np.where(
+        ~df["survived"], df["death_time"] - df["creation_time"], np.nan
+    )
+
+    return df
 
 
 def simulate_multiple_scenarios(
     parameter_sets: List[Tuple[float, float]],
-    max_time: float = 2000,
+    times: float | NDArray[np.float64] = 2000.0,
     n_simulations: int = 10,
     random_seed: Optional[int] = None,
 ) -> Dict[str, pd.DataFrame]:
@@ -160,7 +229,8 @@ def simulate_multiple_scenarios(
 
     Args:
         parameter_sets: List of (birth_rate, death_rate) tuples
-        max_time: Maximum simulation time
+        times: End time(s) for simulation. Either a single float or array
+            of time points for time-varying rates.
         n_simulations: Number of simulations per parameter set
         random_seed: Random seed for reproducibility
 
@@ -180,9 +250,9 @@ def simulate_multiple_scenarios(
             sim_seed = int(rng.integers(low=0, high=2**31))
 
             sim_data = simulate_birth_death_process(
-                birth_rate=birth_rate,
-                death_rate=death_rate,
-                max_time=max_time,
+                birth_rates=birth_rate,
+                death_rates=death_rate,
+                times=times,
                 random_seed=sim_seed,
             )
 

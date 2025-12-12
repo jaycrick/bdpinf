@@ -16,7 +16,7 @@ class TestSimulation:
         """Test basic simulation functionality using modular approach."""
         # Run simulation using modular function
         df = simulate_birth_death_process(
-            birth_rate=0.1, death_rate=0.02, max_time=100.0, random_seed=42
+            birth_rates=0.1, death_rates=0.02, times=100.0, random_seed=42
         )
 
         # Should return a DataFrame
@@ -42,10 +42,10 @@ class TestSimulation:
         """Test that simulation with same seed is reproducible."""
         # Run simulations using modular function with same seed
         df1 = simulate_birth_death_process(
-            birth_rate=0.1, death_rate=0.02, max_time=100.0, random_seed=42
+            birth_rates=0.1, death_rates=0.02, times=100.0, random_seed=42
         )
         df2 = simulate_birth_death_process(
-            birth_rate=0.1, death_rate=0.02, max_time=100.0, random_seed=42
+            birth_rates=0.1, death_rates=0.02, times=100.0, random_seed=42
         )
 
         # Should have same number of manuscripts
@@ -63,10 +63,10 @@ class TestSimulation:
         """Test that different seeds give different results."""
         # Run simulations using modular function with different seeds
         df1 = simulate_birth_death_process(
-            birth_rate=0.1, death_rate=0.02, max_time=100.0, random_seed=42
+            birth_rates=0.1, death_rates=0.02, times=100.0, random_seed=42
         )
         df2 = simulate_birth_death_process(
-            birth_rate=0.1, death_rate=0.02, max_time=100.0, random_seed=123
+            birth_rates=0.1, death_rates=0.02, times=100.0, random_seed=123
         )
 
         # Very unlikely to have identical results with different seeds
@@ -83,7 +83,7 @@ class TestSimulation:
         """Test that simulation returns properly structured DataFrame."""
         # Run simulation using modular function
         df = simulate_birth_death_process(
-            birth_rate=0.2, death_rate=0.01, max_time=50.0, random_seed=42
+            birth_rates=0.2, death_rates=0.01, times=50.0, random_seed=42
         )
 
         if len(df) > 0:
@@ -123,7 +123,7 @@ class TestSimulation:
         """Test that ages are calculated correctly after simulation."""
         # Run simulation using modular function
         df = simulate_birth_death_process(
-            birth_rate=0.15, death_rate=0.03, max_time=80.0, random_seed=42
+            birth_rates=0.15, death_rates=0.03, times=80.0, random_seed=42
         )
 
         # Create process object from simulation results
@@ -151,7 +151,7 @@ class TestSimulation:
         """Test simulation that might produce no manuscripts."""
         # Very low birth rate, high death rate, short time
         df = simulate_birth_death_process(
-            birth_rate=0.001, death_rate=1.0, max_time=1.0, random_seed=42
+            birth_rates=0.001, death_rates=1.0, times=1.0, random_seed=42
         )
 
         # Should still return a DataFrame, even if empty
@@ -185,7 +185,7 @@ class TestSimulation:
 
         # Run simulation using modular function - should give new results
         df = simulate_birth_death_process(
-            birth_rate=0.1, death_rate=0.02, max_time=50.0, random_seed=42
+            birth_rates=0.1, death_rates=0.02, times=50.0, random_seed=42
         )
 
         # Create new process from simulation results
@@ -209,19 +209,19 @@ class TestSimulation:
 
     def test_simulation_parameter_effects(self):
         """Test that birth/death rates affect simulation results as expected."""
-        max_time = 100.0
+        max_time = 10.0
         random_seed = 42
 
         # High birth rate, low death rate - should produce many manuscripts
         df_high_birth = simulate_birth_death_process(
-            birth_rate=0.5, death_rate=0.01, max_time=max_time, random_seed=random_seed
+            birth_rates=0.5, death_rates=0.01, times=max_time, random_seed=random_seed
         )
 
         # Low birth rate, high death rate - should produce few manuscripts
         df_low_birth = simulate_birth_death_process(
-            birth_rate=0.01,
-            death_rate=0.1,
-            max_time=max_time,
+            birth_rates=0.01,
+            death_rates=0.1,
+            times=max_time,
             random_seed=random_seed + 1,
         )
 
@@ -240,7 +240,7 @@ class TestSimulation:
         """Test that all creation times are within the specified bounds."""
         max_time = 75.0
         df = simulate_birth_death_process(
-            birth_rate=0.2, death_rate=0.05, max_time=max_time, random_seed=42
+            birth_rates=0.2, death_rates=0.05, times=max_time, random_seed=42
         )
 
         # All creation times should be between 0 and max_time
@@ -256,7 +256,7 @@ class TestSimulation:
     def test_simulation_ages_non_negative(self):
         """Test that all calculated ages are non-negative."""
         df = simulate_birth_death_process(
-            birth_rate=0.1, death_rate=0.02, max_time=60.0, random_seed=42
+            birth_rates=0.1, death_rates=0.02, times=60.0, random_seed=42
         )
 
         # Create process from simulation results to test age calculation

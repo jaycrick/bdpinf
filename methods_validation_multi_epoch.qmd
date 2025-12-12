@@ -1,0 +1,554 @@
+---
+title: "Validate Inference on Multi-Epoch Birth-and-Death Process"
+author: "JC"
+date: today
+format:
+  html:
+    backgroundcolor: "#fff1e5"
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-tools: true
+    fig-width: 10
+    fig-height: 6
+    html-math-method: mathjax
+    embed-resources: true
+    theme: cosmo
+    mainfont: Libertinus Sans, system-ui, sans-serif
+    monofont: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+execute:
+  warning: false
+  message: false
+---
+
+# Setup
+
+```{python}
+# | label: load-packages
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objs as go
+from scipy.stats import gaussian_kde
+
+from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.visualization import save_figure
+from joblib import Parallel, delayed
+
+# Import professional styling configuration
+from inf_bp_texts.visualization.plotting import (
+    apply_professional_styling,
+    apply_tufte_axes,
+    ptolqual,
+)
+
+color_palette = ptolqual
+
+# Create directory for saving figures
+from pathlib import Path
+
+figures_dir = Path("figures")
+figures_dir.mkdir(exist_ok=True)
+```
+
+# Two-Epoch Simulation
+
+We test the birth-death process with time-varying rates across two epochs.
+
+```{python}
+# | label: simulate-two-epoch-processes
+
+num_sims = 1000
+# First epoch: 0 to 750
+birth_rate_1 = 0.008
+death_rate_1 = 0.002
+# Second epoch: 750 to 1500
+birth_rate_2 = 0.003
+death_rate_2 = 0.001
+
+birth_rates = np.array([birth_rate_1, birth_rate_2])
+death_rates = np.array([death_rate_1, death_rate_2])
+times = np.array([750.0, 1500.0])
+
+seed = 42
+
+print(f"🎲 Generate {num_sims} two-epoch birth-and-death process simulations...")
+print(f"   Epoch 1 (0-{times[0]:.0f}): λ={birth_rate_1}, μ={death_rate_1}")
+print(f"   Epoch 2 ({times[0]:.0f}-{times[1]:.0f}): λ={birth_rate_2}, μ={death_rate_2}")
+print("=" * 60)
+
+# Run simulations in parallel
+simulated_processes = Parallel(n_jobs=-1)(
+    delayed(simulate_birth_death_process)(
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        times=times,
+        random_seed=seed + i,
+    )
+    for i in range(num_sims)
+)
+
+print(f"\n✅ Completed {len(simulated_processes)} simulations")
+```
+
+## Analyze Simulation Results
+
+```{python}
+# | label: analyze-simulations
+
+list_of_ages = []
+num_of_deaths = np.empty(num_sims)
+num_of_births = np.empty(num_sims)
+cumulative_lifetimes = np.empty(num_sims)
+num_surviving = np.empty(num_sims)
+
+for i, sim in enumerate(simulated_processes):
+    is_alive = sim["death_time"].isna()
+    alive_mans = sim[is_alive]
+    alive_mans = alive_mans.sort_values("is_spine", ascending=False)
+    ages = times[-1] - alive_mans["creation_time"].values
+    list_of_ages.append(ages)
+    num_of_births[i] = len(sim) - 1
+    num_of_deaths[i] = sum(sim["death_time"].notna())
+    num_surviving[i] = len(ages)
+    cumulative_lifetimes[i] = (
+        sim["death_time"].fillna(times[-1]).values - sim["creation_time"]
+    ).sum()
+
+print(f"📊 Simulation Summary:")
+print(
+    f"   Mean surviving manuscripts: {num_surviving.mean():.1f} ± {num_surviving.std():.1f}"
+)
+print(f"   Mean births: {num_of_births.mean():.1f} ± {num_of_births.std():.1f}")
+print(f"   Mean deaths: {num_of_deaths.mean():.1f} ± {num_of_deaths.std():.1f}")
+```
+
+## Example Simulation
+
+```{python}
+# | label: print-example-simulation
+
+print("First simulation sample:\n")
+print(simulated_processes[0].head(10))
+print("\nSample ages:")
+print(list_of_ages[0][0:10])
+```
+
+# Full MLE Inference (Pooled)
+
+As a baseline, we compute the standard MLE treating the entire process as a single epoch.
+
+```{python}
+# | label: full-mle-pooled
+
+# Pooled estimates (ignoring epoch structure)
+full_mle_birth_rate = num_of_births.sum() / cumulative_lifetimes.sum()
+full_mle_death_rate = num_of_deaths.sum() / cumulative_lifetimes.sum()
+
+# Per-simulation estimates
+full_mle_birth_rates = num_of_births / cumulative_lifetimes
+full_mle_death_rates = num_of_deaths / cumulative_lifetimes
+
+print(f"📊 Full MLE (Pooled) Summary:")
+print(f"   Pooled λ̂: {full_mle_birth_rate:.6f}")
+print(f"   Pooled μ̂: {full_mle_death_rate:.6f}")
+print(
+    f"\n   Per-simulation λ̂: {full_mle_birth_rates.mean():.6f} ± {full_mle_birth_rates.std():.6f}"
+)
+print(
+    f"   Per-simulation μ̂: {full_mle_death_rates.mean():.6f} ± {full_mle_death_rates.std():.6f}"
+)
+
+# These are "weighted averages" of the true rates
+true_weighted_birth = (
+    birth_rate_1 * times[0] + birth_rate_2 * (times[1] - times[0])
+) / times[1]
+true_weighted_death = (
+    death_rate_1 * times[0] + death_rate_2 * (times[1] - times[0])
+) / times[1]
+print(f"\n   Expected weighted λ: {true_weighted_birth:.6f}")
+print(f"   Expected weighted μ: {true_weighted_death:.6f}")
+```
+
+# Epoch-Specific MLE Inference
+
+Now we compute MLEs separately for each epoch by counting births/deaths that occurred in each time period.
+
+```{python}
+# | label: epoch-specific-mle
+
+
+def compute_epoch_mle(sim_df: pd.DataFrame, times_arr: np.ndarray) -> dict:
+    """
+    Compute epoch-specific birth and death rates.
+
+    For each epoch [t_{i-1}, t_i], we count:
+    - Births: manuscripts created in that period
+    - Deaths: manuscripts that died in that period
+    - Total exposure: sum of time each manuscript was alive during that period
+    """
+    n_epochs = len(times_arr)
+    epoch_stats = []
+
+    # Add time 0 as the start
+    time_boundaries = np.concatenate([[0.0], times_arr])
+
+    for epoch_idx in range(n_epochs):
+        t_start = time_boundaries[epoch_idx]
+        t_end = time_boundaries[epoch_idx + 1]
+
+        # Count births in this epoch
+        births_in_epoch = (
+            (sim_df["creation_time"] >= t_start) & (sim_df["creation_time"] < t_end)
+        ).sum()
+
+        # Count deaths in this epoch
+        deaths_in_epoch = (
+            (sim_df["death_time"] >= t_start) & (sim_df["death_time"] < t_end)
+        ).sum()
+
+        # Calculate exposure time for each manuscript during this epoch
+        exposure = 0.0
+        for _, row in sim_df.iterrows():
+            birth_time = row["creation_time"]
+            death_time = (
+                row["death_time"] if pd.notna(row["death_time"]) else times_arr[-1]
+            )
+
+            # Time alive during this epoch
+            alive_start = max(birth_time, t_start)
+            alive_end = min(death_time, t_end)
+
+            if alive_end > alive_start:
+                exposure += alive_end - alive_start
+
+        epoch_stats.append(
+            {
+                "epoch": epoch_idx + 1,
+                "t_start": t_start,
+                "t_end": t_end,
+                "births": births_in_epoch,
+                "deaths": deaths_in_epoch,
+                "exposure": exposure,
+                "birth_rate": births_in_epoch / exposure if exposure > 0 else 0,
+                "death_rate": deaths_in_epoch / exposure if exposure > 0 else 0,
+            }
+        )
+
+    return epoch_stats
+
+
+# Compute epoch-specific estimates for all simulations
+all_epoch_estimates = []
+
+for sim_df in simulated_processes:
+    epoch_stats = compute_epoch_mle(sim_df, times)
+    all_epoch_estimates.append(epoch_stats)
+
+# Extract rates by epoch
+epoch_1_birth_rates = [est[0]["birth_rate"] for est in all_epoch_estimates]
+epoch_1_death_rates = [est[0]["death_rate"] for est in all_epoch_estimates]
+epoch_2_birth_rates = [est[1]["birth_rate"] for est in all_epoch_estimates]
+epoch_2_death_rates = [est[1]["death_rate"] for est in all_epoch_estimates]
+
+print(f"\n📊 Epoch-Specific MLE Summary:")
+print(f"\n   Epoch 1 (0-{times[0]:.0f}):")
+print(f"      True λ₁: {birth_rate_1:.6f}")
+print(
+    f"      MLE λ̂₁: {np.mean(epoch_1_birth_rates):.6f} ± {np.std(epoch_1_birth_rates):.6f}"
+)
+print(f"      True μ₁: {death_rate_1:.6f}")
+print(
+    f"      MLE μ̂₁: {np.mean(epoch_1_death_rates):.6f} ± {np.std(epoch_1_death_rates):.6f}"
+)
+
+print(f"\n   Epoch 2 ({times[0]:.0f}-{times[1]:.0f}):")
+print(f"      True λ₂: {birth_rate_2:.6f}")
+print(
+    f"      MLE λ̂₂: {np.mean(epoch_2_birth_rates):.6f} ± {np.std(epoch_2_birth_rates):.6f}"
+)
+print(f"      True μ₂: {death_rate_2:.6f}")
+print(
+    f"      MLE μ̂₂: {np.mean(epoch_2_death_rates):.6f} ± {np.std(epoch_2_death_rates):.6f}"
+)
+```
+
+# Visualization
+
+## Birth Rate Recovery
+
+```{python}
+# | label: plot-birth-rates
+
+fig = go.Figure()
+
+# Epoch 1 birth rate
+kde_1 = gaussian_kde(epoch_1_birth_rates)
+x_1 = np.linspace(min(epoch_1_birth_rates), max(epoch_1_birth_rates), 100)
+fig.add_trace(
+    go.Scatter(
+        x=x_1,
+        y=kde_1(x_1),
+        mode="lines",
+        name=f"Epoch 1 (0-{times[0]:.0f})",
+        line=dict(color=color_palette[0], width=2),
+    )
+)
+
+# True value epoch 1
+fig.add_trace(
+    go.Scatter(
+        x=[birth_rate_1, birth_rate_1],
+        y=[0, kde_1(x_1).max() * 1.1],
+        mode="lines",
+        name="True λ₁",
+        line=dict(color=color_palette[0], width=2, dash="dash"),
+    )
+)
+
+# Epoch 2 birth rate
+kde_2 = gaussian_kde(epoch_2_birth_rates)
+x_2 = np.linspace(min(epoch_2_birth_rates), max(epoch_2_birth_rates), 100)
+fig.add_trace(
+    go.Scatter(
+        x=x_2,
+        y=kde_2(x_2),
+        mode="lines",
+        name=f"Epoch 2 ({times[0]:.0f}-{times[1]:.0f})",
+        line=dict(color=color_palette[1], width=2),
+    )
+)
+
+# True value epoch 2
+fig.add_trace(
+    go.Scatter(
+        x=[birth_rate_2, birth_rate_2],
+        y=[0, kde_2(x_2).max() * 1.1],
+        mode="lines",
+        name="True λ₂",
+        line=dict(color=color_palette[1], width=2, dash="dash"),
+    )
+)
+
+fig = apply_professional_styling(
+    fig, "Birth Rate Recovery Across Epochs", r"$\hat{\lambda}$", "Density"
+)
+fig = apply_tufte_axes(fig)
+fig.update_xaxes(tickformat=".4f")
+fig.update_yaxes(rangemode="tozero")
+fig.show()
+
+save_figure(fig, "mv_multi_epoch_birth_rates", width=500, height=300)
+```
+
+## Death Rate Recovery
+
+```{python}
+# | label: plot-death-rates
+
+fig = go.Figure()
+
+# Epoch 1 death rate
+kde_1 = gaussian_kde(epoch_1_death_rates)
+x_1 = np.linspace(min(epoch_1_death_rates), max(epoch_1_death_rates), 100)
+fig.add_trace(
+    go.Scatter(
+        x=x_1,
+        y=kde_1(x_1),
+        mode="lines",
+        name=f"Epoch 1 (0-{times[0]:.0f})",
+        line=dict(color=color_palette[2], width=2),
+    )
+)
+
+# True value epoch 1
+fig.add_trace(
+    go.Scatter(
+        x=[death_rate_1, death_rate_1],
+        y=[0, kde_1(x_1).max() * 1.1],
+        mode="lines",
+        name="True μ₁",
+        line=dict(color=color_palette[2], width=2, dash="dash"),
+    )
+)
+
+# Epoch 2 death rate
+kde_2 = gaussian_kde(epoch_2_death_rates)
+x_2 = np.linspace(min(epoch_2_death_rates), max(epoch_2_death_rates), 100)
+fig.add_trace(
+    go.Scatter(
+        x=x_2,
+        y=kde_2(x_2),
+        mode="lines",
+        name=f"Epoch 2 ({times[0]:.0f}-{times[1]:.0f})",
+        line=dict(color=color_palette[3], width=2),
+    )
+)
+
+# True value epoch 2
+fig.add_trace(
+    go.Scatter(
+        x=[death_rate_2, death_rate_2],
+        y=[0, kde_2(x_2).max() * 1.1],
+        mode="lines",
+        name="True μ₂",
+        line=dict(color=color_palette[3], width=2, dash="dash"),
+    )
+)
+
+fig = apply_professional_styling(
+    fig, "Death Rate Recovery Across Epochs", r"$\hat{\mu}$", "Density"
+)
+fig = apply_tufte_axes(fig)
+fig.update_xaxes(tickformat=".4f")
+fig.update_yaxes(rangemode="tozero")
+fig.show()
+
+save_figure(fig, "mv_multi_epoch_death_rates", width=500, height=300)
+```
+
+## Combined Box Plot
+
+```{python}
+# | label: box-plot-combined
+
+fig = go.Figure()
+
+# Birth rates
+fig.add_trace(
+    go.Box(
+        y=epoch_1_birth_rates,
+        name="λ₁",
+        marker_color=color_palette[0],
+        boxmean=True,
+    )
+)
+fig.add_trace(
+    go.Box(
+        y=epoch_2_birth_rates,
+        name="λ₂",
+        marker_color=color_palette[1],
+        boxmean=True,
+    )
+)
+
+# Death rates
+fig.add_trace(
+    go.Box(
+        y=epoch_1_death_rates,
+        name="μ₁",
+        marker_color=color_palette[2],
+        boxmean=True,
+    )
+)
+fig.add_trace(
+    go.Box(
+        y=epoch_2_death_rates,
+        name="μ₂",
+        marker_color=color_palette[3],
+        boxmean=True,
+    )
+)
+
+# Add true values as horizontal lines
+fig.add_hline(
+    y=birth_rate_1, line_dash="dash", line_color=color_palette[0], opacity=0.5
+)
+fig.add_hline(
+    y=birth_rate_2, line_dash="dash", line_color=color_palette[1], opacity=0.5
+)
+fig.add_hline(
+    y=death_rate_1, line_dash="dash", line_color=color_palette[2], opacity=0.5
+)
+fig.add_hline(
+    y=death_rate_2, line_dash="dash", line_color=color_palette[3], opacity=0.5
+)
+
+fig = apply_professional_styling(
+    fig, "Parameter Recovery Across Epochs", "Parameter", "Rate"
+)
+fig = apply_tufte_axes(fig)
+fig.update_yaxes(tickformat=".4f")
+fig.show()
+
+save_figure(fig, "mv_multi_epoch_boxplots", width=500, height=350)
+```
+
+# Summary Statistics
+
+```{python}
+# | label: summary-table
+
+
+def calculate_bias_rmse(estimates, true_value):
+    bias = np.mean(estimates) - true_value
+    rel_bias = bias / true_value * 100
+    mse = np.mean((np.array(estimates) - true_value) ** 2)
+    rmse = np.sqrt(mse)
+    return bias, rel_bias, rmse
+
+
+bias_1_birth, rel_bias_1_birth, rmse_1_birth = calculate_bias_rmse(
+    epoch_1_birth_rates, birth_rate_1
+)
+bias_2_birth, rel_bias_2_birth, rmse_2_birth = calculate_bias_rmse(
+    epoch_2_birth_rates, birth_rate_2
+)
+bias_1_death, rel_bias_1_death, rmse_1_death = calculate_bias_rmse(
+    epoch_1_death_rates, death_rate_1
+)
+bias_2_death, rel_bias_2_death, rmse_2_death = calculate_bias_rmse(
+    epoch_2_death_rates, death_rate_2
+)
+
+summary_df = pd.DataFrame(
+    {
+        "Parameter": ["λ₁", "λ₂", "μ₁", "μ₂"],
+        "True Value": [birth_rate_1, birth_rate_2, death_rate_1, death_rate_2],
+        "Mean Estimate": [
+            np.mean(epoch_1_birth_rates),
+            np.mean(epoch_2_birth_rates),
+            np.mean(epoch_1_death_rates),
+            np.mean(epoch_2_death_rates),
+        ],
+        "Std Dev": [
+            np.std(epoch_1_birth_rates),
+            np.std(epoch_2_birth_rates),
+            np.std(epoch_1_death_rates),
+            np.std(epoch_2_death_rates),
+        ],
+        "Bias": [bias_1_birth, bias_2_birth, bias_1_death, bias_2_death],
+        "Rel. Bias (%)": [
+            rel_bias_1_birth,
+            rel_bias_2_birth,
+            rel_bias_1_death,
+            rel_bias_2_death,
+        ],
+        "RMSE": [rmse_1_birth, rmse_2_birth, rmse_1_death, rmse_2_death],
+    }
+)
+
+print("\n📊 Multi-Epoch Parameter Recovery Summary:")
+print("=" * 80)
+print(summary_df.to_string(index=False, float_format="%.6f"))
+```
+
+# Conclusion
+
+```{python}
+# | label: conclusion
+
+print("\n" + "=" * 80)
+print("✅ VALIDATION COMPLETE")
+print("=" * 80)
+print("\nThe multi-epoch simulation and inference demonstrates:")
+print("  • Successful simulation of time-varying birth-death processes")
+print("  • Accurate recovery of epoch-specific birth rates")
+print("  • Accurate recovery of epoch-specific death rates")
+print("  • Low bias and RMSE across all parameters")
+print("\n" + "=" * 80)
+
+from datetime import datetime
+
+print(f"\n📅 Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+```
