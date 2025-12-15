@@ -10,9 +10,7 @@ import pandas as pd
 
 from inf_bp_texts.inference.fitting import fit_birth_death_processes, fit_from_dataframe
 from inf_bp_texts.inference.likelihood import log_likelihood
-from inf_bp_texts.models.mathematical_functions import (
-    calculate_populations_log_likelihood,
-)
+from inf_bp_texts.models.mathematical_functions import calculate_populations_log_lik
 from inf_bp_texts.simulation import simulate_birth_death_process
 
 
@@ -80,7 +78,7 @@ class TestIntegration:
         assert "success" in result
         test_ages = np.array([100, 200, 300, 400, 500])
         predictions = [
-            calculate_populations_log_likelihood(
+            calculate_populations_log_lik(
                 result["birth_rate"], result["death_rate"], age, 1000.0
             )
             for age in test_ages
@@ -122,7 +120,7 @@ class TestIntegration:
         assert result["success"]
         age_range = np.linspace(100, 1000, 10)
         predictions = [
-            calculate_populations_log_likelihood(
+            calculate_populations_log_lik(
                 result["birth_rate"], result["death_rate"], age, 2000.0
             )
             for age in age_range

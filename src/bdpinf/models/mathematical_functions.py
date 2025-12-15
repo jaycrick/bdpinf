@@ -11,7 +11,7 @@ import scipy
 from numpy.typing import NDArray
 
 
-def calculate_populations_log_likelihood(
+def calculate_populations_log_lik(
     lambda_params: float | NDArray[np.float64],
     mu_params: float | NDArray[np.float64],
     times: float | NDArray[np.float64],
@@ -106,14 +106,14 @@ def calculate_populations_log_likelihood(
     Examples
     --------
     # Constant rates (scalar inputs)
-    >>> calculate_populations_log_likelihood(0.5, 0.3, 10.0, 2)
+    >>> calculate_populations_log_lik(0.5, 0.3, 10.0, 2)
 
     # Vectorized population counts
-    >>> calculate_populations_log_likelihood(0.5, 0.3, 10.0, np.array([0, 1, 2]))
+    >>> calculate_populations_log_lik(0.5, 0.3, 10.0, np.array([0, 1, 2]))
 
     # Piecewise-constant rates (array inputs)
     >>> # Two epochs: [0, 5) with λ=0.5, μ=0.3; [5, 10) with λ=0.4, μ=0.2
-    >>> calculate_populations_log_likelihood(
+    >>> calculate_populations_log_lik(
     ...     lambda_param=np.array([0.5, 0.4]),
     ...     mu_param=np.array([0.3, 0.2]),
     ...     time=np.array([5.0, 10.0]),
@@ -162,11 +162,9 @@ def calculate_populations_log_likelihood(
                 f"Got time array: {times}"
             )
 
-        alpha_t = calculate_extinction_probability(
-            lambda_val_array, mu_val_array, times
-        )
+        alpha_t = calculate_extinction_pr(lambda_val_array, mu_val_array, times)
 
-        beta_t = 1 - _calculate_geometric_parameter(
+        beta_t = 1 - _population_geometric_parameter(
             lambda_val_array, mu_val_array, times
         )
     else:
@@ -217,12 +215,12 @@ def calculate_populations_log_likelihood(
         return np.float64(-np.inf)
 
     # Initialize log probability array
-    log_probability = np.zeros_like(ns, dtype=np.float64)
+    log_pr = np.zeros_like(ns, dtype=np.float64)
 
     # Handle n == 0 case
     zero_mask = ns == 0
     if np.any(zero_mask):
-        log_probability[zero_mask] = np.log(alpha_t)
+        log_pr[zero_mask] = np.log(alpha_t)
 
     # Handle n > 0 case
     nonzero_mask = np.invert(zero_mask)
@@ -239,16 +237,16 @@ def calculate_populations_log_likelihood(
         ):
             return np.float64(-np.inf)
 
-        log_probability[nonzero_mask] = log_term1 + log_term2 + log_term3[nonzero_mask]
+        log_pr[nonzero_mask] = log_term1 + log_term2 + log_term3[nonzero_mask]
 
     # Final numerical check
-    if not np.all(np.isfinite(log_probability)):
+    if not np.all(np.isfinite(log_pr)):
         return np.float64(-np.inf)
 
-    return np.float64(np.sum(log_probability))
+    return np.float64(np.sum(log_pr))
 
 
-def calculate_populations_log_likelihood_derivatives(
+def calculate_populations_log_lik_derivatives(
     lambda_param: float,
     mu_param: float,
     time: float,
@@ -295,11 +293,11 @@ def calculate_populations_log_likelihood_derivatives(
     Examples
     --------
     Scalar n:
-    >>> calculate_populations_log_likelihood_derivatives(0.2, 0.1, time=5.0, ns=0)
+    >>> calculate_populations_log_lik_derivatives(0.2, 0.1, time=5.0, ns=0)
     array([d_lambda_scalar, d_mu_scalar])
 
     Vectorized n:
-    >>> calculate_populations_log_likelihood_derivatives(0.2, 0.1, time=5.0, ns=np.array([0,1,2]))
+    >>> calculate_populations_log_lik_derivatives(0.2, 0.1, time=5.0, ns=np.array([0,1,2]))
     array([sum_d_lambda, sum_d_mu])
     """
 
@@ -430,133 +428,7 @@ def calculate_populations_log_likelihood_derivatives(
     return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
 
-def calculate_spine_ages_log_likelihood(
-    lambda_param: float,
-    mu_param: float,
-    ages_t: NDArray[np.float64] | float,
-    T: float,
-    log_scale_params: bool = False,
-) -> np.float64:
-    """
-    Calculate the log-likelihood of manuscript ages for the special-case "spine"
-    individual under a birth-and-death process with birth rate λ and death rate μ.
-    This function supports scalar or array-like ages and returns the sum of log-likelihoods
-    across all provided ages (i.e. the joint log-likelihood for independent age observations).
-    The age distribution for the spine is a mixture of a continuous density on (0, T) and a
-    point mass at t = T. The implementation handles the general case λ != μ and the limiting
-    case λ = μ. Parameters may be supplied either on the
-    original scale or as log-parameters controlled by `log_scale_params`.
-    Parameters
-    ----------
-    lambda_param : float
-        Birth rate (λ). If `log_scale_params` is True this is log(λ).
-    mu_param : float
-        Death rate (μ). If `log_scale_params` is True this is log(μ).
-    ages_t : NDArray[np.float64] | float
-        Age or array of ages of manuscripts (each t must satisfy 0 <= t <= T).
-    T : float
-        Total observation time (must satisfy T >= max(ages_t)).
-    log_scale_params : bool, optional
-        If True, `lambda_param` and `mu_param` are interpreted as log(λ) and log(μ)
-        and are exponentiated inside the function. Default is False.
-    Returns
-    -------
-    np.float64
-        The sum of the log age densities for all entries of `ages_t` (a scalar).
-        Returns -inf for numerically invalid inputs (negative ages, ages > T, non-positive
-        rates, or non-finite intermediate values). Programming errors raise exceptions.
-    Notes
-    -----
-    - Input validation: the function returns -inf if any age is negative or greater than T,
-      or if λ or μ are non-positive when provided on the original scale.
-    - Boundary behavior: ages exactly equal to T are treated as the discrete mass at T;
-      ages strictly less than T use the continuous density component.
-    - Limiting case: when λ is numerically very close to μ the function uses the analytic
-      limit form to avoid catastrophic cancellation.
-    - Numerical robustness: the implementation checks signs of intermediate expressions and
-      finiteness of results; if any intermediate quantity is invalid (non-finite or a sign
-      mismatch that would lead to a non-real log) the function returns -inf.
-    - Programming errors (type mismatches, array indexing errors) will raise exceptions
-      rather than returning -inf.
-    - The returned value is a scalar np.float64 equal to the summed log-density across
-      the provided ages (suitable for use inside likelihood computations or MCMC).
-    """
-    # Input validation
-    if np.any(ages_t < 0) or np.any(ages_t > T):
-        return np.float64(-np.inf)
-
-    # Handle parameter scaling
-    if log_scale_params:
-        log_lambda = lambda_param
-        log_mu = mu_param
-        # Convert log parameters back to original scale
-        lambda_val = np.exp(lambda_param)
-        mu_val = np.exp(mu_param)
-    else:
-        # Validate positive parameters
-        if lambda_param <= 0 or mu_param <= 0:
-            return np.float64(-np.inf)
-        lambda_val = lambda_param
-        mu_val = mu_param
-        log_lambda = np.log(lambda_param)
-        log_mu = np.log(mu_param)
-
-    at_boundary = ages_t == T
-    not_at_boundary = np.invert(at_boundary)
-
-    if abs(log_lambda - log_mu) < 1e-12:
-        # Limiting case: λ ≈ μ
-        boundary_val = np.log(1 + lambda_val * T) - lambda_val * T
-        log_density = np.where(
-            at_boundary,
-            boundary_val,
-            2 * np.log(lambda_val) + np.log(ages_t) - lambda_val * ages_t,
-        )
-        return np.float64(np.sum(log_density))
-
-    # General case: λ ≠ μ
-
-    # Initialize arrays for numerator and denominator
-    log_numerator = np.zeros_like(ages_t, dtype=np.float64)
-    denominator = lambda_val - mu_val
-    sign_denominator = np.sign(denominator)
-    log_denominator = np.log(np.abs(denominator))
-
-    if np.any(at_boundary):
-        numerator_boundary = lambda_val * np.exp(-mu_val * T) - mu_val * np.exp(
-            -lambda_val * T
-        )
-
-        if not np.all(np.sign(numerator_boundary) == sign_denominator):
-            return np.float64(-np.inf)
-
-        log_numerator[at_boundary] = np.log(np.abs(numerator_boundary))
-
-    if np.any(not_at_boundary):
-        numerator_1 = np.exp(-mu_val * T) - np.exp(-lambda_val * T)
-
-        if not np.all(np.sign(numerator_1) == sign_denominator):
-            return np.float64(-np.inf)
-
-        log_numerator[not_at_boundary] = (
-            np.log(lambda_val) + np.log(mu_val) + np.log(np.abs(numerator_1))
-        )
-
-    # Check for numerical validity
-    if not (np.all(np.isfinite(log_numerator)) and np.isfinite(log_denominator)):
-        return np.float64(-np.inf)
-
-    # Calculate final log density (sum across all ages)
-    log_density = np.sum(log_numerator - log_denominator)
-
-    # Final numerical check
-    if not np.isfinite(log_density):
-        return np.float64(-np.inf)
-
-    return np.float64(log_density)
-
-
-def calculate_non_spine_ages_log_likelihood(
+def calculate_non_spine_ages_log_lik(
     lambda_params: NDArray[np.float64] | float,
     mu_params: NDArray[np.float64] | float,
     ages_t: NDArray[np.float64] | float,
@@ -578,10 +450,10 @@ def calculate_non_spine_ages_log_likelihood(
 
     Parameters
     ----------
-    lambda_param : float
+    lambda_params : float
         Birth rate (λ > 0). If log_scale_params is True this argument is interpreted
         as log(λ).
-    mu_param : float
+    mu_params : float
         Death rate (μ > 0). If log_scale_params is True this argument is interpreted
         as log(μ).
     ages_t : float or numpy.ndarray of float
@@ -591,7 +463,7 @@ def calculate_non_spine_ages_log_likelihood(
         Observation time (time from process start to present). Must satisfy T >= t
         for each provided t.
     log_scale_params : bool, optional
-        If True, lambda_param and mu_param are provided on the log scale and are
+        If True, lambda_params and mu_params are provided on the log scale and are
         exponentiated inside the function. Default is False.
 
     Returns
@@ -614,11 +486,11 @@ def calculate_non_spine_ages_log_likelihood(
     Examples
     --------
     >>> # scalar inputs
-    >>> calculate_non_spine_ages_log_likelihood(1.0, 0.5, 2.0, 5.0)
+    >>> calculate_non_spine_ages_log_lik(1.0, 0.5, 2.0, 5.0)
     -2.03...
 
     >>> # log-scale parameters and multiple ages
-    >>> calculate_non_spine_ages_log_likelihood(np.log(1.0), np.log(0.5),
+    >>> calculate_non_spine_ages_log_lik(np.log(1.0), np.log(0.5),
     ...                                         np.array([1.0, 2.0]), 5.0,
     ...                                         log_scale_params=True)
     -3.01...
@@ -638,21 +510,21 @@ def calculate_non_spine_ages_log_likelihood(
 
     if len(lambda_params) != len(mu_params):
         raise ValueError(
-            f"lambda_param and mu_param must have the same length. "
+            f"lambda_params and mu_params must have the same length. "
             f"Got lengths: lambda_param={len(lambda_params)}, mu_param={len(mu_params)}"
         )
 
     if len(lambda_params) != len(times):
         raise ValueError(
-            f"lambda_param and times must have the same length. "
+            f"lambda_params and times must have the same length. "
             f"Got lengths: lambda_param={len(lambda_params)}, times={len(times)}"
         )
 
     if len(times) > 1:
-        inverted_times = np.flip(end_time - times)
+        inverted_times = np.flip(end_time - np.insert(times, 0, 0.0)[:-1])
         reflected_birth_rates = np.flip(mu_params)
         reflected_death_rates = np.flip(lambda_params)
-        return _log_likelihood_age_given_extinction(
+        return calculate_log_lik_initial_lifetimes_given_extinction(
             ages_t,
             reflected_birth_rates,
             reflected_death_rates,
@@ -725,11 +597,174 @@ def calculate_non_spine_ages_log_likelihood(
     return np.float64(log_density)
 
 
-def calculate_ages_log_likelihood(
-    lambda_param: float,
-    mu_param: float,
+def calculate_spine_ages_log_lik(
+    lambda_params: NDArray[np.float64] | float,
+    mu_params: NDArray[np.float64] | float,
     ages_t: NDArray[np.float64] | float,
-    T: float,
+    times: NDArray[np.float64] | float,
+    log_scale_params: bool = False,
+) -> np.float64:
+    """
+    Calculate the log-likelihood of manuscript ages for the special-case "spine"
+    individual under a birth-and-death process with birth rate λ and death rate μ.
+    This function supports scalar or array-like ages and returns the sum of log-likelihoods
+    across all provided ages (i.e. the joint log-likelihood for independent age observations).
+    The age distribution for the spine is a mixture of a continuous density on (0, T) and a
+    point mass at t = T. The implementation handles the general case λ != μ and the limiting
+    case λ = μ. Parameters may be supplied either on the
+    original scale or as log-parameters controlled by `log_scale_params`.
+    Parameters
+    ----------
+    lambda_params : float
+        Birth rate (λ). If `log_scale_params` is True this is log(λ).
+    mu_params : float
+        Death rate (μ). If `log_scale_params` is True this is log(μ).
+    ages_t : NDArray[np.float64] | float
+        Age or array of ages of manuscripts (each t must satisfy 0 <= t <= T).
+    T : float
+        Total observation time (must satisfy T >= max(ages_t)).
+    log_scale_params : bool, optional
+        If True, `lambda_param` and `mu_param` are interpreted as log(λ) and log(μ)
+        and are exponentiated inside the function. Default is False.
+    Returns
+    -------
+    np.float64
+        The sum of the log age densities for all entries of `ages_t` (a scalar).
+        Returns -inf for numerically invalid inputs (negative ages, ages > T, non-positive
+        rates, or non-finite intermediate values). Programming errors raise exceptions.
+    Notes
+    -----
+    - Input validation: the function returns -inf if any age is negative or greater than T,
+      or if λ or μ are non-positive when provided on the original scale.
+    - Boundary behavior: ages exactly equal to T are treated as the discrete mass at T;
+      ages strictly less than T use the continuous density component.
+    - Limiting case: when λ is numerically very close to μ the function uses the analytic
+      limit form to avoid catastrophic cancellation.
+    - Numerical robustness: the implementation checks signs of intermediate expressions and
+      finiteness of results; if any intermediate quantity is invalid (non-finite or a sign
+      mismatch that would lead to a non-real log) the function returns -inf.
+    - Programming errors (type mismatches, array indexing errors) will raise exceptions
+      rather than returning -inf.
+    - The returned value is a scalar np.float64 equal to the summed log-density across
+      the provided ages (suitable for use inside likelihood computations or MCMC).
+    """
+    times = np.atleast_1d(times)
+    end_time = times[-1]
+
+    if np.any(np.diff(np.insert(times, 0, 0.0)) <= 0):
+        raise ValueError(f"times must be strictly increasing. Got times: {times}")
+    # Input validation
+    if np.any(ages_t < 0) or np.any(ages_t > end_time):
+        return np.float64(-np.inf)
+
+    # Convert scalar parameters to arrays for single-epoch case
+    lambda_params = np.atleast_1d(lambda_params)
+    mu_params = np.atleast_1d(mu_params)
+
+    if len(lambda_params) != len(mu_params):
+        raise ValueError(
+            f"lambda_params and mu_params must have the same length. "
+            f"Got lengths: lambda_param={len(lambda_params)}, mu_param={len(mu_params)}"
+        )
+
+    if len(lambda_params) != len(times):
+        raise ValueError(
+            f"lambda_params and times must have the same length. "
+            f"Got lengths: lambda_param={len(lambda_params)}, times={len(times)}"
+        )
+
+    if len(times) > 1:
+        inverted_times = np.flip(end_time - times)
+        reflected_birth_rates = np.flip(mu_params)
+        reflected_death_rates = np.flip(lambda_params)
+        return calculate_log_lik_initial_lifetimes_given_non_extinction(
+            lifetimes=ages_t,
+            birth_rates=reflected_birth_rates,
+            death_rates=reflected_death_rates,
+            times=inverted_times,
+            log_scale_params=log_scale_params,
+        )
+
+    # Handle parameter scaling
+    # Extract scalar values from single-element arrays (atleast_1d guarantees arrays)
+    lambda_scalar = float(lambda_params[0])
+    mu_scalar = float(mu_params[0])
+
+    if log_scale_params:
+        log_lambda = lambda_scalar
+        log_mu = mu_scalar
+        # Convert log parameters back to original scale
+        lambda_val = np.exp(lambda_scalar)
+        mu_val = np.exp(mu_scalar)
+    else:
+        # Validate positive parameters
+        if lambda_scalar <= 0 or mu_scalar <= 0:
+            return np.float64(-np.inf)
+        lambda_val = lambda_scalar
+        mu_val = mu_scalar
+        log_lambda = np.log(lambda_scalar)
+        log_mu = np.log(mu_scalar)
+
+    at_boundary = ages_t == end_time
+    not_at_boundary = np.invert(at_boundary)
+
+    if abs(log_lambda - log_mu) < 1e-12:
+        # Limiting case: λ ≈ μ
+        boundary_val = np.log(1 + lambda_val * end_time) - lambda_val * end_time
+        log_density = np.where(
+            at_boundary,
+            boundary_val,
+            2 * np.log(lambda_val) + np.log(ages_t) - lambda_val * ages_t,
+        )
+        return np.sum(log_density, dtype=np.float64)
+
+    # General case: λ ≠ μ
+
+    # Initialize arrays for numerator and denominator
+    log_numerator = np.zeros_like(ages_t, dtype=np.float64)
+    denominator = lambda_val - mu_val
+    sign_denominator = np.sign(denominator)
+    log_denominator = np.log(np.abs(denominator))
+
+    if np.any(at_boundary):
+        numerator_boundary = lambda_val * np.exp(-mu_val * end_time) - mu_val * np.exp(
+            -lambda_val * end_time
+        )
+
+        if not np.all(np.sign(numerator_boundary) == sign_denominator):
+            return np.float64(-np.inf)
+
+        log_numerator[at_boundary] = np.log(np.abs(numerator_boundary))
+
+    if np.any(not_at_boundary):
+        numerator_1 = np.exp(-mu_val * end_time) - np.exp(-lambda_val * end_time)
+
+        if not np.all(np.sign(numerator_1) == sign_denominator):
+            return np.float64(-np.inf)
+
+        log_numerator[not_at_boundary] = (
+            np.log(lambda_val) + np.log(mu_val) + np.log(np.abs(numerator_1))
+        )
+
+    # Check for numerical validity
+    if not (np.all(np.isfinite(log_numerator)) and np.isfinite(log_denominator)):
+        return np.float64(-np.inf)
+
+    # Calculate final log density (sum across all ages)
+    log_density = np.sum(log_numerator - log_denominator)
+
+    # Final numerical check
+    if not np.isfinite(log_density):
+        return np.float64(-np.inf)
+
+    return np.float64(log_density)
+
+
+def calculate_ages_log_lik(
+    lambda_params: NDArray[np.float64] | float,
+    mu_params: NDArray[np.float64] | float,
+    ages_t: NDArray[np.float64] | float,
+    times: NDArray[np.float64] | float,
     log_scale_params: bool = False,
     are_spines: bool = False,
 ) -> np.float64:
@@ -745,10 +780,10 @@ def calculate_ages_log_likelihood(
 
     This function delegates to a spine-aware implementation when are_spines is True.
 
-        lambda_param (float):
+        lambda_params (float):
             Birth rate λ. Expected to be positive. If log_scale_params is True,
             this is interpreted as log(λ).
-        mu_param (float):
+        mu_params (float):
             Death rate μ. Expected to be positive. If log_scale_params is True,
             this is interpreted as log(μ).
         ages_t (float or array-like):
@@ -756,10 +791,10 @@ def calculate_ages_log_likelihood(
         T (float):
             Total observation time. Must satisfy T >= max(ages_t) and be non-negative.
         log_scale_params (bool, optional):
-            If True, lambda_param and mu_param are provided on the log scale and will
+            If True, lambda_params and mu_params are provided on the log scale and will
             be exponentiated before use. Default: False.
         are_spines (bool, optional):
-            If True, computation is routed to calculate_spine_ages_log_likelihood;
+            If True, computation is routed to calculate_spine_ages_log_lik;
             otherwise it uses the non-spine implementation. Default: False.
 
         numpy.float64 or numpy.ndarray
@@ -785,22 +820,22 @@ def calculate_ages_log_likelihood(
           vectorized over ages_t when supported by the delegated implementation.
     """
     if are_spines:
-        return calculate_spine_ages_log_likelihood(
-            lambda_param, mu_param, ages_t, T, log_scale_params
+        return calculate_spine_ages_log_lik(
+            lambda_params, mu_params, ages_t, times, log_scale_params
         )
     else:
-        # calculate_non_spine_ages_log_likelihood requires array inputs
+        # calculate_non_spine_ages_log_lik requires array inputs
         # Wrap scalar parameters in single-element arrays for single-epoch case
-        return calculate_non_spine_ages_log_likelihood(
-            np.array([lambda_param]),
-            np.array([mu_param]),
+        return calculate_non_spine_ages_log_lik(
+            lambda_params,
+            mu_params,
             ages_t,
-            np.array([T]),
+            times,
             log_scale_params,
         )
 
 
-def calculate_non_spine_ages_log_likelihood_derivatives(
+def calculate_non_spine_ages_log_lik_derivatives(
     lambda_param: float,
     mu_param: float,
     ages_t: NDArray[np.float64] | float,
@@ -857,11 +892,11 @@ def calculate_non_spine_ages_log_likelihood_derivatives(
     Examples
     --------
     # Single age, parameters on natural scale
-    d_vals = calculate_non_spine_ages_log_likelihood_derivatives(0.5, 0.3, 2.0, 5.0)
+    d_vals = calculate_non_spine_ages_log_lik_derivatives(0.5, 0.3, 2.0, 5.0)
 
     # Multiple ages, parameters given in log-scale
     log_lambda = np.log(0.5); log_mu = np.log(0.3)
-    d_vals = calculate_non_spine_ages_log_likelihood_derivatives(
+    d_vals = calculate_non_spine_ages_log_lik_derivatives(
         log_lambda, log_mu, np.array([1.0, 2.5]), 5.0, log_scale_params=True
     )
     """
@@ -926,7 +961,7 @@ def calculate_non_spine_ages_log_likelihood_derivatives(
     return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
 
-def calculate_spine_ages_log_likelihood_derivatives(
+def calculate_spine_ages_log_lik_derivatives(
     lambda_param: float,
     mu_param: float,
     ages_t: NDArray[np.float64] | float,
@@ -1055,7 +1090,7 @@ def calculate_spine_ages_log_likelihood_derivatives(
     return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
 
 
-def calculate_ages_log_likelihood_derivatives(
+def calculate_ages_log_lik_derivatives(
     lambda_param: float,
     mu_param: float,
     ages_t: NDArray[np.float64] | float,
@@ -1120,28 +1155,28 @@ def calculate_ages_log_likelihood_derivatives(
     Examples
     --------
     # Scalar ages
-    >>> calculate_ages_log_likelihood_derivatives(1.0, 0.5, 2.0, 3.0)
+    >>> calculate_ages_log_lik_derivatives(1.0, 0.5, 2.0, 3.0)
     array([..., ...])
 
     # Vectorized ages
-    >>> calculate_ages_log_likelihood_derivatives(1.0, 0.5, [0.5, 1.5, 2.5], 3.0)
+    >>> calculate_ages_log_lik_derivatives(1.0, 0.5, [0.5, 1.5, 2.5], 3.0)
     array([[..., ..., ...],
            [..., ..., ...]])
     """
     if are_spines:
-        return calculate_spine_ages_log_likelihood_derivatives(
+        return calculate_spine_ages_log_lik_derivatives(
             lambda_param, mu_param, ages_t, T, log_scale_params
         )
     else:
-        return calculate_non_spine_ages_log_likelihood_derivatives(
+        return calculate_non_spine_ages_log_lik_derivatives(
             lambda_param, mu_param, ages_t, T, log_scale_params
         )
 
 
-def calculate_extinction_probability(
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
+def calculate_extinction_pr(
+    birth_rates: NDArray[np.float64] | float,
+    death_rates: NDArray[np.float64] | float,
+    times: NDArray[np.float64] | float,
     log_scale_params: bool = False,
     return_log_prob: bool = False,
 ) -> np.float64:
@@ -1153,9 +1188,9 @@ def calculate_extinction_probability(
     birth and death rates across multiple time epochs.
 
     The extinction probability is computed as:
-        α_t = probability_extinction_numerator / (1 + probability_extinction_numerator)
+        α_t = pr_extinction_numerator / (1 + pr_extinction_numerator)
 
-    where probability_extinction_numerator is the integral of the extinction probability density across all epochs,
+    where pr_extinction_numerator is the integral of the extinction probability density across all epochs,
     accounting for the cumulative growth rate effects.
 
     Parameters
@@ -1191,28 +1226,276 @@ def calculate_extinction_probability(
 
     See Also
     --------
-    _calculate_geometric_parameter : Calculates the geometric parameter β_t
-    calculate_populations_log_likelihood : Uses both α_t and β_t for likelihood calculations
+    _population_geometric_parameter : Calculates the geometric parameter β_t
+    calculate_populations_log_lik : Uses both α_t and β_t for likelihood calculations
     """
-    probability_extinction_numerator = _probability_extinction_numerator(
-        birth_rates,
-        death_rates,
-        times,
-        log_scale_params,
-        start_time=0.0,
+    pr_extinction_numerator = _pr_extinction_numerator(
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        times=times,
+        log_scale_params=log_scale_params,
     )
     if return_log_prob:
-        log_alpha_t = np.log(probability_extinction_numerator) - np.log1p(
-            probability_extinction_numerator
+        log_alpha_t = np.log(pr_extinction_numerator) - np.log1p(
+            pr_extinction_numerator
         )
         return np.float64(log_alpha_t)
 
-    alpha_t = 1 - 1 / (1 + probability_extinction_numerator)
+    alpha_t = 1 - 1 / (1 + pr_extinction_numerator)
 
     return alpha_t
 
 
-def _calculate_geometric_parameter(
+def calculate_log_lik_initial_lifetimes_given_extinction(
+    lifetimes: NDArray[np.float64] | float,
+    birth_rates: NDArray[np.float64] | float,
+    death_rates: NDArray[np.float64] | float,
+    times: NDArray[np.float64] | float,
+    log_scale_params: bool = False,
+) -> np.float64:
+    """
+    Calculate the joint log likelihood of the lifetime(s) of the initial individual given extinction.
+    Pr(L ∈ [ℓ, ℓ+dℓ] | Z_T = 0) = Pr(Z_T = 0 | L = ℓ) * Pr(L ∈ [ℓ, ℓ + dℓ]) / Pr(Z_T = 0)
+
+    Args:
+        lifetimes: Lifetime(s) of the manuscript(s) - scalar or array
+        birth_rates: Array of birth rates for each epoch
+        death_rates: Array of death rates for each epoch
+        times: Array of epoch end times
+        log_scale_params: Whether the rates are in log scale
+    Returns:
+        The summed log likelihood values
+    """
+    lifetimes = np.atleast_1d(lifetimes)
+    n = len(lifetimes)
+
+    log_prs_extinction_given_lifetimes = (
+        calculate_log_pr_extinction_given_initial_lifetimes(
+            lifetimes=lifetimes,
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            log_scale_params=log_scale_params,
+        )
+    )
+    log_liks_lifetimes = calculate_log_lik_lifetimes(
+        lifetimes=lifetimes,
+        birth_rates=birth_rates,
+        times=times,
+        log_scale_params=log_scale_params,
+    )
+    log_extinction_prob = calculate_extinction_pr(
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        times=times,
+        log_scale_params=log_scale_params,
+        return_log_prob=True,
+    )
+
+    # Compute conditional log likelihood
+    result = (
+        np.sum(log_prs_extinction_given_lifetimes)
+        + np.sum(log_liks_lifetimes)
+        - n * log_extinction_prob
+    )
+    return result
+
+
+def calculate_log_lik_initial_lifetimes_given_non_extinction(
+    lifetimes: NDArray[np.float64] | float,
+    birth_rates: NDArray[np.float64] | float,
+    death_rates: NDArray[np.float64] | float,
+    times: NDArray[np.float64] | float,
+    log_scale_params: bool = False,
+) -> np.float64:
+    """
+    Calculate the log likelihood of the initial manuscript lifetime(s) given extinction.
+
+    Pr(Z_T ≥ 1 | L = ℓ) * Pr(L ∈ [ℓ, ℓ + dℓ]) /Pr(Z_T ≥ 1)
+    = [1 − Pr(Z_T = 0 | L = ℓ)] * Pr(L ∈ [ℓ, ℓ + dℓ]) / [1 − Pr(Z_T ≥ 1)]
+
+    This function computes the log likelihood of observing manuscript(s) of given
+    age(s) under the assumption that it/they have gone extinct. Handles both
+    scalar and array inputs efficiently.
+
+    Args:
+        ages: Age(s) of the manuscript(s) - scalar or array
+        birth_rates: Array of birth rates for each epoch
+        death_rates: Array of death rates for each epoch
+        times: Array of epoch end times
+        log_scale_params: Whether the rates are in log scale
+    Returns:
+        The summed log likelihood values
+    """
+    lifetimes = np.atleast_1d(lifetimes)
+    n = len(lifetimes)
+
+    log_prs_extinction_given_lifetimes = (
+        calculate_log_pr_extinction_given_initial_lifetimes(
+            lifetimes=lifetimes,
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            log_scale_params=log_scale_params,
+        )
+    )
+    log_liks_lifetimes = calculate_log_lik_lifetimes(
+        lifetimes=lifetimes,
+        birth_rates=birth_rates,
+        times=times,
+        log_scale_params=log_scale_params,
+    )
+    log_extinction_prob = calculate_extinction_pr(
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        times=times,
+        log_scale_params=log_scale_params,
+        return_log_prob=True,
+    )
+
+    # Compute conditional log likelihood
+    result = (
+        np.log(-np.expm1(log_prs_extinction_given_lifetimes))
+        + log_liks_lifetimes
+        - n * np.log(-np.expm1(log_extinction_prob))
+    )
+    return np.float64(result)
+
+
+def calculate_log_pr_extinction_given_initial_lifetimes(
+    lifetimes: NDArray[np.float64] | float,
+    birth_rates: NDArray[np.float64] | float,
+    death_rates: NDArray[np.float64] | float,
+    times: NDArray[np.float64] | float,
+    log_scale_params: bool = False,
+) -> np.float64:
+    """
+    Calculate the log probability of extinction given age(s).
+
+    This function computes the log probability that a manuscript of a given age
+    has gone extinct based on the birth and death rates. Efficiently handles
+    both scalar and array inputs for ages.
+
+    Args:
+        ages: Age(s) of the manuscript(s) - scalar or array
+        birth_rates: Array of birth rates for each epoch
+        death_rates: Array of death rates for each epoch
+        times: Array of epoch end times
+        log_scale_params: Whether the rates are in log scale
+    Returns:
+        The sum of the log extinction probabilities given age(s)
+    """
+    lifetimes = np.atleast_1d(lifetimes)
+    birth_rates = np.atleast_1d(birth_rates)
+    death_rates = np.atleast_1d(death_rates)
+    times = np.atleast_1d(times)
+
+    if len(birth_rates) != len(death_rates) or len(birth_rates) != len(times):
+        raise ValueError("Length of birth_rates, death_rates, and times must be equal.")
+
+    if log_scale_params:
+        birth_rates_array = np.exp(birth_rates)
+    else:
+        birth_rates_array = birth_rates
+
+    # epoch_durations = np.diff(np.insert(times, 0, 0.0))
+    # cum_birth_rates = np.cumsum(lambda_val_array * epoch_durations)
+
+    log_probs = np.zeros_like(lifetimes, dtype=np.float64)
+
+    # For each age, find which epoch it falls into and compute
+    for i, lifetime in enumerate(lifetimes):
+        # Find the last epoch that ends at or before this age
+        full_epochs = times[np.where(times < lifetime)[0]]
+        num_full_epochs = len(full_epochs)
+        lifetime_epochs = np.append(full_epochs, lifetime)
+        if len(birth_rates_array[0 : num_full_epochs + 1]) != len(
+            np.diff(np.insert(lifetime_epochs, 0, 0.0))
+        ):
+            raise ValueError(
+                "Mismatch in lengths when computing cumulative birth rates."
+                + f" birth_rates_array length: {len(birth_rates_array[0 : num_full_epochs + 1])}, "
+                + f" lifetime: {lifetime}, times: {times}.\n"
+                + f" lifetime_epochs: {lifetime_epochs}"
+            )
+        cum_birth_rate = np.sum(
+            birth_rates_array[0 : num_full_epochs + 1]
+            * np.diff(np.insert(lifetime_epochs, 0, 0.0))
+        )
+
+        # Compute integral using numerical integration
+        integral = scipy.integrate.quad(
+            _integrand_surv_from_weighted_birth_time,
+            0,
+            lifetime,
+            args=(birth_rates, death_rates, times, log_scale_params),
+        )[0]
+
+        log_probs[i] = integral - cum_birth_rate
+
+    return np.sum(log_probs)
+
+
+def calculate_log_lik_lifetimes(
+    lifetimes: NDArray[np.float64] | float,
+    birth_rates: NDArray[np.float64] | float,
+    times: NDArray[np.float64] | float,
+    log_scale_params: bool = False,
+) -> np.float64:
+    """
+    Calculate the log likelihood of manuscript age(s).
+
+    This function computes the log likelihood of observing a manuscript of a given
+    age based on the birth rates. Efficiently handles both scalar and array inputs.
+
+    Args:
+        ages: Age(s) of the manuscript(s) - scalar or array
+        birth_rates: Array of birth rates for each epoch
+        times: Array of epoch end times
+        log_scale_params: Whether the rates are in log scale
+    Returns:
+        The sum of computed log likelihood values
+    """
+    # Handle scalar input
+    lifetimes = np.atleast_1d(lifetimes)
+    birth_rates = np.atleast_1d(birth_rates)
+    times = np.atleast_1d(times)
+
+    if log_scale_params:
+        lambda_val_array = np.exp(birth_rates)
+    else:
+        lambda_val_array = birth_rates
+
+    epoch_starts = np.insert(times, 0, 0.0)[:-1]
+    epoch_durations = times - epoch_starts
+
+    cum_growth_at_epochs = np.cumsum(lambda_val_array * epoch_durations)
+
+    log_liks = np.zeros_like(lifetimes, dtype=np.float64)
+
+    for i, lifetime in enumerate(lifetimes):
+        if lifetime == times[-1]:
+            # Boundary case
+            log_liks[i] = -cum_growth_at_epochs[-1]
+            continue
+
+        valid_indices = np.where(epoch_starts < lifetime)[0]
+
+        # # The current epoch index is valid_indices[-1], but we need to cap it
+        # # at len(lambda_val_array)-1 since epoch_starts has one extra element
+        current_epoch_idx = valid_indices[-1]
+        current_lambda = lambda_val_array[current_epoch_idx]
+
+        cum_growth = (
+            cum_growth_at_epochs[current_epoch_idx] if current_epoch_idx > 0 else 0.0
+        ) + (lifetime - epoch_starts[current_epoch_idx]) * current_lambda
+
+        log_liks[i] = np.log(current_lambda) - cum_growth
+
+    return np.sum(log_liks)
+
+
+def _population_geometric_parameter(
     birth_rates: NDArray[np.float64] | float,
     death_rates: NDArray[np.float64] | float,
     times: NDArray[np.float64] | float,
@@ -1259,7 +1542,7 @@ def _calculate_geometric_parameter(
     Notes
     -----
     - This is a private function (prefixed with _) used internally by
-      calculate_populations_log_likelihood for array (piecewise-constant rate) inputs.
+      calculate_populations_log_lik for array (piecewise-constant rate) inputs.
     - Handles the limiting case λ ≈ μ when |log(λ) - log(μ)| < 1e-12 using
       numerically stable formulas to avoid catastrophic cancellation.
     - For critical case (λ ≈ μ): λ * exp(-cum_growth) * duration
@@ -1270,8 +1553,8 @@ def _calculate_geometric_parameter(
 
     See Also
     --------
-    calculate_extinction_probability : Calculates the extinction probability α_t
-    calculate_populations_log_likelihood : Uses β_t for likelihood calculations
+    calculate_extinction_pr : Calculates the extinction probability α_t
+    calculate_populations_log_lik : Uses β_t for likelihood calculations
     """
     birth_rates = np.atleast_1d(birth_rates)
     death_rates = np.atleast_1d(death_rates)
@@ -1289,19 +1572,64 @@ def _calculate_geometric_parameter(
     growth_rates = lambda_val_array - mu_val_array
     cum_growth = np.cumsum(growth_rates * epoch_durations)
 
-    geom_sum = _probability_extinction_numerator(
+    geom_sum = _pr_extinction_numerator(
         birth_rates, death_rates, times, log_scale_params
     )
     cond_geom_prob = np.exp(-cum_growth[-1]) / (1 + geom_sum)
     return np.float64(cond_geom_prob)
 
 
-def _probability_extinction_numerator(
+def _integrand_surv_from_weighted_birth_time(
+    birth_time: float,
     birth_rates: NDArray[np.float64] | float,
     death_rates: NDArray[np.float64] | float,
     times: NDArray[np.float64] | float,
     log_scale_params: bool = False,
-    start_time: float = 0.0,
+) -> np.float64:
+    """
+    Integrand function for manuscript survival probability calculation.
+
+    This function computes the integrand value for a given age based on the
+    birth and death rates.
+
+    Args:
+        birth_rate: Birth rate parameter
+        death_rate: Death rate parameter
+        age: Age at which to evaluate the integrand
+    Returns:
+        The computed integrand value
+    """
+    # Find the index of the last epoch that starts before or at start_time
+    if log_scale_params:
+        birth_rates = np.exp(birth_rates)
+        death_rates = np.exp(death_rates)
+    birth_rates = np.atleast_1d(birth_rates)
+    death_rates = np.atleast_1d(death_rates)
+    times = np.atleast_1d(times) - birth_time
+    valid_indices = np.where(times > 0)[0]
+
+    if len(valid_indices) == 0:
+        raise ValueError("birth_time exceeds all epoch end times.")
+
+    trunc_times = times[valid_indices]
+    trunc_birth_rates = birth_rates[valid_indices]
+    trunc_death_rates = death_rates[valid_indices]
+
+    ext_prob = calculate_extinction_pr(
+        birth_rates=trunc_birth_rates,
+        death_rates=trunc_death_rates,
+        times=trunc_times,
+        log_scale_params=False,
+    )
+
+    return np.float64(ext_prob * trunc_birth_rates[0])
+
+
+def _pr_extinction_numerator(
+    birth_rates: NDArray[np.float64] | float,
+    death_rates: NDArray[np.float64] | float,
+    times: NDArray[np.float64] | float,
+    log_scale_params: bool = False,
 ) -> np.float64:
     """
     Calculate the numerator of the extinction probability integral.
@@ -1338,29 +1666,13 @@ def _probability_extinction_numerator(
         lambda_val_array = birth_rates
         mu_val_array = death_rates
 
-    times -= start_time
-    after_start_mask = times > 0
-    times = times[after_start_mask]
-    birth_rates = birth_rates[after_start_mask]
-    death_rates = death_rates[after_start_mask]
-    # Also filter the derived arrays
-    log_lambda_array = log_lambda_array[after_start_mask]
-    log_mu_array = log_mu_array[after_start_mask]
-    lambda_val_array = lambda_val_array[after_start_mask]
-    mu_val_array = mu_val_array[after_start_mask]
-
     epoch_durations = np.diff(np.insert(times, 0, 0.0))
     critical_mask = np.abs(log_lambda_array - log_mu_array) < 1e-12
     growth_rates = lambda_val_array - mu_val_array
     cum_growth = np.cumsum(growth_rates * epoch_durations)
     trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
 
-    growth_rates = lambda_val_array - mu_val_array
-    cum_growth = np.cumsum(growth_rates * epoch_durations)
-    trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
-
-    critical_mask = np.abs(growth_rates) < 1e-12
-    probability_extinction_numerator = (
+    pr_extinction_numerator_summand = (
         mu_val_array
         * np.exp(-trunc_cum_growth)
         * np.where(
@@ -1370,212 +1682,4 @@ def _probability_extinction_numerator(
         )
     )
 
-    return np.sum(probability_extinction_numerator, dtype=np.float64)
-
-
-def _integrand_survival(
-    start_time: float,
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-    log_scale_params: bool = False,
-) -> np.float64:
-    """
-    Integrand function for manuscript survival probability calculation.
-
-    This function computes the integrand value for a given age based on the
-    birth and death rates.
-
-    Args:
-        birth_rate: Birth rate parameter
-        death_rate: Death rate parameter
-        age: Age at which to evaluate the integrand
-    Returns:
-        The computed integrand value
-    """
-    # Find the index of the last epoch that starts before or at start_time
-    valid_indices = np.where(times <= start_time)[0]
-    if len(valid_indices) > 0:
-        last_valid_idx = valid_indices[-1]
-        current_birth_rate = birth_rates[last_valid_idx]
-    else:
-        current_birth_rate = birth_rates[0]
-
-    ext_prob = 1 - 1 / (
-        1
-        + _probability_extinction_numerator(
-            start_time=start_time,
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            log_scale_params=log_scale_params,
-        )
-    )
-
-    return ext_prob * float(current_birth_rate)
-
-
-def _log_probability_extinction_given_ages(
-    ages: NDArray[np.float64] | float,
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-    log_scale_params: bool = False,
-) -> np.float64:
-    """
-    Calculate the log probability of extinction given age(s).
-
-    This function computes the log probability that a manuscript of a given age
-    has gone extinct based on the birth and death rates. Efficiently handles
-    both scalar and array inputs for ages.
-
-    Args:
-        ages: Age(s) of the manuscript(s) - scalar or array
-        birth_rates: Array of birth rates for each epoch
-        death_rates: Array of death rates for each epoch
-        times: Array of epoch end times
-        log_scale_params: Whether the rates are in log scale
-    Returns:
-        The sum of the log extinction probabilities given age(s)
-    """
-    ages = np.atleast_1d(ages)
-
-    if log_scale_params:
-        lambda_val_array = np.exp(birth_rates)
-        mu_val_array = np.exp(death_rates)
-    else:
-        lambda_val_array = birth_rates
-        mu_val_array = death_rates
-
-    epoch_durations = np.diff(np.insert(times, 0, 0.0))
-    growth_rates = lambda_val_array - mu_val_array
-    cum_growth = np.cumsum(growth_rates * epoch_durations)
-
-    # Vectorized computation for all ages
-    log_probs = np.zeros_like(ages, dtype=np.float64)
-
-    # For each age, find which epoch it falls into and compute
-    for i, age in enumerate(ages):
-        # Find the last epoch that ends at or before this age
-        valid_indices = np.where(times <= age)[0]
-        if len(valid_indices) > 0:
-            last_valid_idx = valid_indices[-1]
-            current_cum_growth = cum_growth[last_valid_idx]
-        else:
-            current_cum_growth = 0.0
-
-        # Compute integral using numerical integration
-        integral = scipy.integrate.quad(
-            _integrand_survival,
-            0,
-            age,
-            args=(birth_rates, death_rates, times, log_scale_params),
-        )[0]
-
-        log_probs[i] = -current_cum_growth - integral
-
-    return np.sum(log_probs)
-
-
-def _log_likelihood_ages(
-    ages: NDArray[np.float64] | float,
-    birth_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-    log_scale_params: bool = False,
-) -> np.float64:
-    """
-    Calculate the log likelihood of manuscript age(s).
-
-    This function computes the log likelihood of observing a manuscript of a given
-    age based on the birth rates. Efficiently handles both scalar and array inputs.
-
-    Args:
-        ages: Age(s) of the manuscript(s) - scalar or array
-        birth_rates: Array of birth rates for each epoch
-        times: Array of epoch end times
-        log_scale_params: Whether the rates are in log scale
-    Returns:
-        The sum of computed log likelihood values
-    """
-    # Handle scalar input
-    ages = np.atleast_1d(ages)
-
-    if log_scale_params:
-        lambda_val_array = np.exp(birth_rates)
-    else:
-        lambda_val_array = birth_rates
-
-    epoch_starts = np.insert(times, 0, 0.0)
-    epoch_durations = np.diff(epoch_starts)
-
-    log_likelihoods = np.zeros_like(ages, dtype=np.float64)
-
-    for i, age in enumerate(ages):
-        valid_indices = np.where(epoch_starts < age)[0]
-        completed_epochs = valid_indices[:-1]
-
-        # The current epoch index is valid_indices[-1], but we need to cap it
-        # at len(lambda_val_array)-1 since epoch_starts has one extra element
-        current_epoch_idx = min(valid_indices[-1], len(lambda_val_array) - 1)
-
-        cum_growth = (
-            np.sum(
-                lambda_val_array[completed_epochs] * epoch_durations[completed_epochs]
-            )
-            + (age - epoch_starts[valid_indices[-1]])
-            * lambda_val_array[current_epoch_idx]
-        )
-        current_lambda = lambda_val_array[current_epoch_idx]
-
-        log_likelihoods[i] = np.log(current_lambda) - cum_growth
-
-    return np.sum(log_likelihoods)
-
-
-def _log_likelihood_age_given_extinction(
-    ages: NDArray[np.float64] | float,
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-    log_scale_params: bool = False,
-) -> np.float64:
-    """
-    Calculate the log likelihood of manuscript age(s) given extinction.
-
-    This function computes the log likelihood of observing manuscript(s) of given
-    age(s) under the assumption that it/they have gone extinct. Handles both
-    scalar and array inputs efficiently.
-
-    Args:
-        ages: Age(s) of the manuscript(s) - scalar or array
-        birth_rates: Array of birth rates for each epoch
-        death_rates: Array of death rates for each epoch
-        times: Array of epoch end times
-        log_scale_params: Whether the rates are in log scale
-    Returns:
-        The summed log likelihood values
-    """
-    # Get log extinction probability (scalar)
-    log_extinction_prob = calculate_extinction_probability(
-        birth_rates, death_rates, times, log_scale_params, return_log_prob=True
-    )
-
-    # Get log probabilities given age (array or scalar)
-    log_probability_extinction_given_ages = _log_probability_extinction_given_ages(
-        ages, birth_rates, death_rates, times, log_scale_params
-    )
-
-    # Get log likelihood of ages (array or scalar)
-    log_likelihood_ages = _log_likelihood_ages(
-        ages, birth_rates, times, log_scale_params
-    )
-
-    # Compute conditional log likelihood
-    # For arrays, we sum over all ages; for scalar, just return the value
-    ages_array = np.atleast_1d(ages)
-    n_ages = len(ages_array)
-    result = (
-        np.sum(log_probability_extinction_given_ages + log_likelihood_ages)
-        - log_extinction_prob * n_ages
-    )
-    return result
+    return np.sum(pr_extinction_numerator_summand, dtype=np.float64)

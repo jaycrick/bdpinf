@@ -9,18 +9,18 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..models.mathematical_functions import (
-    calculate_ages_log_likelihood,
-    calculate_ages_log_likelihood_derivatives,
-    calculate_populations_log_likelihood,
-    calculate_populations_log_likelihood_derivatives,
+    calculate_ages_log_lik,
+    calculate_ages_log_lik_derivatives,
+    calculate_populations_log_lik,
+    calculate_populations_log_lik_derivatives,
 )
 
 
 def log_likelihood(
-    birth_rate: float,
-    death_rate: float,
+    birth_rates: NDArray[np.float64] | float,
+    death_rates: NDArray[np.float64] | float,
     ages: NDArray[np.float64] | float,
-    observation_time: float,
+    times: NDArray[np.float64] | float,
     spine_ages: NDArray[np.float64] | None = None,
     ns: NDArray[np.int64] | None = None,
     is_ordered: bool = False,
@@ -95,31 +95,37 @@ def log_likelihood(
     See also:
         calculate_populations_log_likelihood, calculate_ages_log_likelihood
     """
-    # Normalize ages and spine_ages to numpy arrays so len() and vectorized ops are valid
-    ages = np.atleast_1d(np.array(ages, dtype=np.float64))
+    birth_rates = np.atleast_1d(birth_rates)
+    death_rates = np.atleast_1d(death_rates)
+    ages = np.atleast_1d(ages)
+    times = np.atleast_1d(times)
+
     if spine_ages is not None:
-        spine_ages = np.atleast_1d(np.array(spine_ages, dtype=np.float64))
+        spine_ages = np.atleast_1d(spine_ages)
 
     if is_ordered and (spine_ages is not None):
         raise ValueError("Cannot have both is_ordered=True and spine_ages provided.")
     # Input validation
-    if not (np.isfinite(birth_rate) and np.isfinite(death_rate)):
+    if not (np.all(np.isfinite(birth_rates)) and np.all(np.isfinite(death_rates))):
         return np.float64(-np.inf)
 
-    if not log_scale_params and (birth_rate <= 0 or death_rate <= 0):
+    if not log_scale_params and (np.any(birth_rates <= 0) or np.any(death_rates <= 0)):
         return np.float64(-np.inf)
+
+    if np.any(np.diff(times) < 0):
+        raise ValueError("Observation times must be non-decreasing.")
 
     # Check age range
-    if observation_time <= 0:
-        return np.float64(-np.inf)
+    if times[0] <= 0:
+        raise ValueError("Observation times must be positive.")
 
-    if np.any(ages < 0) or np.any(ages > observation_time):
-        return np.float64(-np.inf)
+    if np.any(ages < 0) or np.any(ages > times[-1]):
+        raise ValueError(f"Ages must be in the range [0, {times[-1]}].")
 
     if spine_ages is not None and (
-        np.any(spine_ages < 0) or np.any(spine_ages > observation_time)
+        np.any(spine_ages < 0) or np.any(spine_ages > times[-1])
     ):
-        return np.float64(-np.inf)
+        raise ValueError(f"Spine ages must be in the range [0, {times[-1]}].")
 
     # Total number of observed manuscripts
     if ns is None:
@@ -137,10 +143,10 @@ def log_likelihood(
         )
 
     # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
-    log_P_n_T = calculate_populations_log_likelihood(
-        lambda_params=birth_rate,
-        mu_params=death_rate,
-        times=observation_time,
+    log_P_n_T = calculate_populations_log_lik(
+        lambda_params=birth_rates,
+        mu_params=death_rates,
+        times=times,
         ns=ns,
         log_scale_params=log_scale_params,
     )
@@ -160,20 +166,20 @@ def log_likelihood(
             ages = ages[1:]
         # Calculate log age density
         assert spine_ages is not None
-        ages_log_lik += calculate_ages_log_likelihood(
-            birth_rate,
-            death_rate,
+        ages_log_lik += calculate_ages_log_lik(
+            birth_rates,
+            death_rates,
             ages_t=spine_ages,
-            T=observation_time,
+            times=times,
             log_scale_params=log_scale_params,
             are_spines=True,
         )
     if len(ages) > 0:
-        ages_log_lik += calculate_ages_log_likelihood(
-            birth_rate,
-            death_rate,
+        ages_log_lik += calculate_ages_log_lik(
+            birth_rates,
+            death_rates,
             ages,
-            observation_time,
+            times=times,
             log_scale_params=log_scale_params,
             are_spines=False,
         )
@@ -321,7 +327,7 @@ def log_likelihood_gradient(
         )
 
     # Gradient components
-    grad_log_P_n_T = calculate_populations_log_likelihood_derivatives(
+    grad_log_P_n_T = calculate_populations_log_lik_derivatives(
         birth_rate,
         death_rate,
         observation_time,
@@ -340,7 +346,7 @@ def log_likelihood_gradient(
             spine_ages = np.array([ages[0]], dtype=np.float64)
             ages = ages[1:]
         assert spine_ages is not None
-        grad_ages += calculate_ages_log_likelihood_derivatives(
+        grad_ages += calculate_ages_log_lik_derivatives(
             birth_rate,
             death_rate,
             spine_ages,
@@ -350,7 +356,7 @@ def log_likelihood_gradient(
         )
 
     if len(np.atleast_1d(ages)) > 0:
-        grad_ages += calculate_ages_log_likelihood_derivatives(
+        grad_ages += calculate_ages_log_lik_derivatives(
             birth_rate,
             death_rate,
             ages,
@@ -363,9 +369,10 @@ def log_likelihood_gradient(
 
 
 def negative_log_likelihood(
-    params: NDArray[np.float64],
+    birth_rates: NDArray[np.float64] | float,
+    death_rates: NDArray[np.float64] | float,
     ages: NDArray[np.float64] | float,
-    observation_time: float,
+    times: NDArray[np.float64] | float,
     spine_ages: NDArray[np.float64] | None = None,
     ns: NDArray[np.int64] | None = None,
     is_ordered: bool = False,
@@ -423,17 +430,12 @@ def negative_log_likelihood(
     - Programming errors in underlying functions will raise exceptions.
     - Designed to be cheap to call repeatedly by optimization routines.
     """
-    if len(params) != 2:
-        return np.float64(np.inf)
-
-    # Extract log-scale parameters and convert to original scale
-    birth_rate, death_rate = params
 
     result = -log_likelihood(
-        birth_rate=birth_rate,
-        death_rate=death_rate,
+        birth_rates=birth_rates,
+        death_rates=death_rates,
         ages=ages,
-        observation_time=observation_time,
+        times=times,
         spine_ages=spine_ages,
         ns=ns,
         is_ordered=is_ordered,

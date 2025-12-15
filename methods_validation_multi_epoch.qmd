@@ -32,6 +32,7 @@ import plotly.graph_objs as go
 from scipy.stats import gaussian_kde
 
 from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.inference import fit_birth_death_processes
 from inf_bp_texts.visualization import save_figure
 from joblib import Parallel, delayed
 
@@ -58,12 +59,12 @@ We test the birth-death process with time-varying rates across two epochs.
 ```{python}
 # | label: simulate-two-epoch-processes
 
-num_sims = 1000
+num_sims = 100
 # First epoch: 0 to 750
-birth_rate_1 = 0.008
-death_rate_1 = 0.002
+birth_rate_1 = 0.01
+death_rate_1 = 0.001
 # Second epoch: 750 to 1500
-birth_rate_2 = 0.003
+birth_rate_2 = 0.001
 death_rate_2 = 0.001
 
 birth_rates = np.array([birth_rate_1, birth_rate_2])
@@ -134,6 +135,87 @@ print("\nSample ages:")
 print(list_of_ages[0][0:10])
 ```
 
+```{python}
+# | label: try-single-fit
+
+# Debug: check the data structure
+print(f"Number of ages in first simulation: {len(list_of_ages[0])}")
+print(f"First few ages: {list_of_ages[0][:5]}")
+print(f"Times array: {times}")
+print(f"Expected number of parameters: {2 * len(times)}")
+
+# Test if we can evaluate the likelihood at initial parameters
+from inf_bp_texts.inference import negative_log_likelihood
+
+test_ages = list_of_ages[0]
+if len(test_ages) > 0 and test_ages[0] == test_ages.max():
+    # First element is oldest (spine)
+    spine_ages = np.array([test_ages[0]])
+    non_spine_ages = test_ages[1:] if len(test_ages) > 1 else np.array([])
+else:
+    spine_ages = None
+    non_spine_ages = test_ages
+
+print(f"\nData structure:")
+print(f"  Spine ages: {spine_ages}")
+print(f"  Non-spine ages (count): {len(non_spine_ages)}")
+
+# Try crude initial parameters
+from inf_bp_texts.inference.fitting import get_crude_parameter_estimates
+
+init_birth, init_death = get_crude_parameter_estimates(test_ages, times)
+print(f"\nInitial parameter estimates:")
+print(f"  Birth rates: {init_birth}")
+print(f"  Death rates: {init_death}")
+
+# Test objective function
+nll = negative_log_likelihood(
+    birth_rates=init_birth,
+    death_rates=init_death,
+    ages=non_spine_ages,
+    times=times,
+    spine_ages=spine_ages,
+    ns=None,
+    is_ordered=False,
+    log_scale_params=False,
+)
+print(f"  Initial NLL: {nll}")
+
+
+print("\n" + "=" * 60)
+
+try:
+    result = fit_birth_death_processes(
+        list_of_ages=[list_of_ages[0]], times=times, is_ordered=True
+    )
+    print(
+        f"\n{'✅' if result['success'] else '❌'} Fit {'succeeded' if result['success'] else 'failed'}!"
+    )
+
+    if result["success"]:
+        print(f"Birth rates: {result['birth_rates']}")
+        print(f"Death rates: {result['death_rates']}")
+        print(f"Log likelihood: {result['log_likelihood']}")
+    else:
+        print(f"Failure reason: {result.get('message', 'Unknown')}")
+        if "optimization_result" in result:
+            opt_result = result["optimization_result"]
+            print(f"\nOptimizer details:")
+            print(f"  Final parameters (log-scale): {opt_result.x}")
+            print(f"  Final parameters (exp): {np.exp(opt_result.x)}")
+            print(f"  Final objective value: {opt_result.fun}")
+            print(f"  Number of iterations: {opt_result.get('nit', 'N/A')}")
+            print(f"  Number of function evaluations: {opt_result.get('nfev', 'N/A')}")
+            print(f"  Optimizer message: {opt_result.get('message', 'N/A')}")
+
+except Exception as e:
+    print(f"\n❌ Fit failed with exception:")
+    print(f"   {type(e).__name__}: {e}")
+    import traceback
+
+    traceback.print_exc()
+```
+
 # Full MLE Inference (Pooled)
 
 As a baseline, we compute the standard MLE treating the entire process as a single epoch.
@@ -172,84 +254,60 @@ print(f"   Expected weighted μ: {true_weighted_death:.6f}")
 
 # Epoch-Specific MLE Inference
 
-Now we compute MLEs separately for each epoch by counting births/deaths that occurred in each time period.
+Now we use `fit_birth_death_processes` to estimate rates for each epoch by analyzing the age distributions.
 
 ```{python}
 # | label: epoch-specific-mle
 
+# For epoch-specific inference, we need to fit using the structure of the data
+# We'll fit to each simulation separately and extract epoch-specific rates
 
-def compute_epoch_mle(sim_df: pd.DataFrame, times_arr: np.ndarray) -> dict:
-    """
-    Compute epoch-specific birth and death rates.
 
-    For each epoch [t_{i-1}, t_i], we count:
-    - Births: manuscripts created in that period
-    - Deaths: manuscripts that died in that period
-    - Total exposure: sum of time each manuscript was alive during that period
-    """
-    n_epochs = len(times_arr)
-    epoch_stats = []
+def fit_single_epoch_simulation(sim_df: pd.DataFrame, times_arr: np.ndarray):
+    """Fit epoch-specific rates for a single simulation."""
+    # Extract ages of surviving manuscripts
+    is_alive = sim_df["death_time"].isna()
+    alive_mans = sim_df[is_alive]
+    ages = times_arr[-1] - alive_mans["creation_time"].values
 
-    # Add time 0 as the start
-    time_boundaries = np.concatenate([[0.0], times_arr])
+    if len(ages) == 0:
+        return None
 
-    for epoch_idx in range(n_epochs):
-        t_start = time_boundaries[epoch_idx]
-        t_end = time_boundaries[epoch_idx + 1]
-
-        # Count births in this epoch
-        births_in_epoch = (
-            (sim_df["creation_time"] >= t_start) & (sim_df["creation_time"] < t_end)
-        ).sum()
-
-        # Count deaths in this epoch
-        deaths_in_epoch = (
-            (sim_df["death_time"] >= t_start) & (sim_df["death_time"] < t_end)
-        ).sum()
-
-        # Calculate exposure time for each manuscript during this epoch
-        exposure = 0.0
-        for _, row in sim_df.iterrows():
-            birth_time = row["creation_time"]
-            death_time = (
-                row["death_time"] if pd.notna(row["death_time"]) else times_arr[-1]
-            )
-
-            # Time alive during this epoch
-            alive_start = max(birth_time, t_start)
-            alive_end = min(death_time, t_end)
-
-            if alive_end > alive_start:
-                exposure += alive_end - alive_start
-
-        epoch_stats.append(
-            {
-                "epoch": epoch_idx + 1,
-                "t_start": t_start,
-                "t_end": t_end,
-                "births": births_in_epoch,
-                "deaths": deaths_in_epoch,
-                "exposure": exposure,
-                "birth_rate": births_in_epoch / exposure if exposure > 0 else 0,
-                "death_rate": deaths_in_epoch / exposure if exposure > 0 else 0,
-            }
+    try:
+        # Fit with multi-epoch model
+        result = fit_birth_death_processes(
+            list_of_ages=[ages],
+            times=times_arr,
+            is_ordered=True,
         )
 
-    return epoch_stats
+        if result.get("success", False):
+            return {
+                "birth_rates": result["birth_rates"],
+                "death_rates": result["death_rates"],
+            }
+    except Exception as e:
+        return None
+
+    return None
 
 
-# Compute epoch-specific estimates for all simulations
-all_epoch_estimates = []
+# Fit all simulations in parallel
+print("🔍 Fitting epoch-specific rates...")
+fitted_results = Parallel(n_jobs=-1)(
+    delayed(fit_single_epoch_simulation)(sim_df, times)
+    for sim_df in simulated_processes
+)
 
-for sim_df in simulated_processes:
-    epoch_stats = compute_epoch_mle(sim_df, times)
-    all_epoch_estimates.append(epoch_stats)
+# Filter successful fits
+successful_fits = [r for r in fitted_results if r is not None]
+print(f"   Successful fits: {len(successful_fits)}/{len(simulated_processes)}")
 
 # Extract rates by epoch
-epoch_1_birth_rates = [est[0]["birth_rate"] for est in all_epoch_estimates]
-epoch_1_death_rates = [est[0]["death_rate"] for est in all_epoch_estimates]
-epoch_2_birth_rates = [est[1]["birth_rate"] for est in all_epoch_estimates]
-epoch_2_death_rates = [est[1]["death_rate"] for est in all_epoch_estimates]
+epoch_1_birth_rates = [r["birth_rates"][0] for r in successful_fits]
+epoch_1_death_rates = [r["death_rates"][0] for r in successful_fits]
+epoch_2_birth_rates = [r["birth_rates"][1] for r in successful_fits]
+epoch_2_death_rates = [r["death_rates"][1] for r in successful_fits]
 
 print(f"\n📊 Epoch-Specific MLE Summary:")
 print(f"\n   Epoch 1 (0-{times[0]:.0f}):")
@@ -373,8 +431,13 @@ fig.add_trace(
 )
 
 # Epoch 2 death rate
-kde_2 = gaussian_kde(epoch_2_death_rates)
-x_2 = np.linspace(min(epoch_2_death_rates), max(epoch_2_death_rates), 100)
+epoch_2_death_filtered = np.array(epoch_2_death_rates)
+epoch_2_death_filtered = epoch_2_death_filtered[
+    (epoch_2_death_filtered >= np.percentile(epoch_2_death_filtered, 2.5))
+    & (epoch_2_death_filtered <= np.percentile(epoch_2_death_filtered, 97.5))
+]
+kde_2 = gaussian_kde(epoch_2_death_filtered)
+x_2 = np.linspace(min(epoch_2_death_filtered), max(epoch_2_death_filtered), 100)
 fig.add_trace(
     go.Scatter(
         x=x_2,
@@ -510,6 +573,12 @@ summary_df = pd.DataFrame(
             np.mean(epoch_2_birth_rates),
             np.mean(epoch_1_death_rates),
             np.mean(epoch_2_death_rates),
+        ],
+        "Median Estimate": [
+            np.median(epoch_1_birth_rates),
+            np.median(epoch_2_birth_rates),
+            np.median(epoch_1_death_rates),
+            np.median(epoch_2_death_rates),
         ],
         "Std Dev": [
             np.std(epoch_1_birth_rates),

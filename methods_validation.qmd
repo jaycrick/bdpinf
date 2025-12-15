@@ -86,9 +86,9 @@ print("=" * 60)
 # Run simulations in parallel using all available CPU cores
 simulated_processes = Parallel(n_jobs=-1)(
     delayed(simulate_birth_death_process)(
-        birth_rate=birth_rate,
-        death_rate=death_rate,
-        max_time=time_span,
+        birth_rates=birth_rate,
+        death_rates=death_rate,
+        times=time_span,
         random_seed=seed + i,
     )
     for i in range(num_sims)
@@ -201,12 +201,20 @@ print(f"Result: {result}")
 print("📊 Compute summary statistics...")
 
 # Collect birth and death rates from fitted models
-birth_rates = [
-    m["birth_rate"] for m in fitted_models if m is not None and m.get("success", False)
-]
-death_rates = [
-    m["death_rate"] for m in fitted_models if m is not None and m.get("success", False)
-]
+birth_rates = np.concatenate(
+    [
+        m["birth_rates"]
+        for m in fitted_models
+        if m is not None and m.get("success", False)
+    ]
+)
+death_rates = np.concatenate(
+    [
+        m["death_rates"]
+        for m in fitted_models
+        if m is not None and m.get("success", False)
+    ]
+)
 
 print(
     f"   Successfully extracted {len(birth_rates)} birth rates and {len(death_rates)} death rates"
@@ -235,116 +243,105 @@ print(stats_df.to_string(index=False, float_format="%.6f"))
 ```{python}
 # | label: plot-bd-inference
 
-if len(birth_rates) > 1:
-    birth_kde = gaussian_kde(birth_rates)
-    x_birth = np.linspace(
-        min(birth_rates), min([max(birth_rates), 10 * birth_rate]), 100
+birth_kde = gaussian_kde(birth_rates)
+x_birth = np.linspace(min(birth_rates), min([max(birth_rates), 10 * birth_rate]), 100)
+fig_birth = go.Figure()
+fig_birth.add_trace(
+    go.Scatter(
+        x=x_birth,
+        y=birth_kde(x_birth),
+        mode="lines",
+        name="Density",
+        line=dict(color=ptolqual[0]),
+        showlegend=False,
     )
-    fig_birth = go.Figure()
-    fig_birth.add_trace(
-        go.Scatter(
-            x=x_birth,
-            y=birth_kde(x_birth),
-            mode="lines",
-            name="Density",
-            line=dict(color=ptolqual[0]),
-            showlegend=False,
-        )
+)
+# Add vertical line for true birth_rate
+fig_birth.add_trace(
+    go.Scatter(
+        x=[birth_rate, birth_rate],
+        y=[0, max(birth_kde(x_birth))],
+        mode="lines",
+        name="λ",
+        line=dict(color=ptolqual[1], dash="dash"),
+        showlegend=False,
     )
-    # Add vertical line for true birth_rate
-    fig_birth.add_trace(
-        go.Scatter(
-            x=[birth_rate, birth_rate],
-            y=[0, max(birth_kde(x_birth))],
-            mode="lines",
-            name="λ",
-            line=dict(color=ptolqual[1], dash="dash"),
-            showlegend=False,
-        )
-    )
-    # Add annotation for λ above the density curve
-    fig_birth.add_annotation(
-        x=birth_rate,  # point annotation above the true-rate line
-        y=max(birth_kde(x_birth)) * 1.05,  # place slightly above the density peak
-        text="True λ",
-        showarrow=True,
-        arrowhead=2,
-        ax=0,
-        ay=-30,  # draw arrow from label down to the line
-        xanchor="center",
-        font=dict(color=ptolqual[1], size=11),
-        bgcolor="rgba(255,255,255,0.75)",
-    )
-    # Place a small, unobtrusive legend inside the plot
-    fig_birth.update_layout(showlegend=False)
-    fig_birth = apply_professional_styling(
-        fig_birth, None, r"$\hat{\lambda}$", "Density"
-    )
-    fig_birth = apply_tufte_axes(fig_birth)
-    # Format axes: rate with 4 decimals, density baseline at zero
-    fig_birth.update_xaxes(tickformat=".4f")
-    fig_birth.update_yaxes(rangemode="tozero")
-    fig_birth.show()
+)
+# Add annotation for λ above the density curve
+fig_birth.add_annotation(
+    x=birth_rate,  # point annotation above the true-rate line
+    y=max(birth_kde(x_birth)) * 1.05,  # place slightly above the density peak
+    text="True λ",
+    showarrow=True,
+    arrowhead=2,
+    ax=0,
+    ay=-30,  # draw arrow from label down to the line
+    xanchor="center",
+    font=dict(color=ptolqual[1], size=11),
+    bgcolor="rgba(255,255,255,0.75)",
+)
+# Place a small, unobtrusive legend inside the plot
+fig_birth.update_layout(showlegend=False)
+fig_birth = apply_professional_styling(fig_birth, None, r"$\hat{\lambda}$", "Density")
+fig_birth = apply_tufte_axes(fig_birth)
+# Format axes: rate with 4 decimals, density baseline at zero
+fig_birth.update_xaxes(tickformat=".4f")
+fig_birth.update_yaxes(rangemode="tozero")
+fig_birth.show()
 
-    # Save the figure
-    save_figure(fig_birth, "mv_birth_rate_density_marg", width=192, height=110)
-    save_figure(fig_birth, "mv_birth_rate_density", width=397, height=200)
-else:
-    print("   ⚠️  Not enough fitted models to plot birth rate density.")
+# Save the figure
+save_figure(fig_birth, "mv_birth_rate_density_marg", width=192, height=110)
+save_figure(fig_birth, "mv_birth_rate_density", width=397, height=200)
 
-if len(death_rates) > 1:
-    death_kde = gaussian_kde(death_rates)
-    x_death = np.linspace(
-        min(death_rates), min([max(death_rates), 10 * death_rate]), 100
-    )
-    fig_death = go.Figure()
-    fig_death.add_trace(
-        go.Scatter(
-            x=x_death,
-            y=death_kde(x_death),
-            mode="lines",
-            name="Density",
-            line=dict(color=ptolqual[0]),
-            showlegend=False,
-        )
-    )
-    # Add vertical line for true death_rate
-    fig_death.add_trace(
-        go.Scatter(
-            x=[death_rate, death_rate],
-            y=[0, max(death_kde(x_death))],
-            mode="lines",
-            name="μ",
-            line=dict(color=ptolqual[1], dash="dash"),
-            showlegend=False,
-        )
-    )
-    # Add annotation for μ to the above of the density curve
-    fig_death.add_annotation(
-        x=death_rate,  # Position to the right of the line
-        y=max(death_kde(x_death)) * 1.05,  # Near the top of the density
-        text="True μ",
-        showarrow=True,
-        arrowhead=2,
-        ax=0,
-        ay=-30,  # draw arrow from label down to the line
-        xanchor="center",
-        font=dict(color=ptolqual[1], size=11),
-        bgcolor="rgba(255,255,255,0.75)",
-    )
-    fig_death = apply_professional_styling(fig_death, None, r"$\hat{\mu}$", "Density")
-    fig_death = apply_tufte_axes(fig_death)
-    # Format axes: rate with 4 decimals, density baseline at zero
-    fig_death.update_xaxes(tickformat=".4f")
-    fig_death.update_yaxes(rangemode="tozero")
-    fig_death.update_layout(showlegend=False)
-    fig_death.show()
 
-    # Save the figure
-    save_figure(fig_death, "mv_death_rate_density_marg", width=192, height=100)
-    save_figure(fig_death, "mv_death_rate_density", width=397, height=200)
-else:
-    print("   ⚠️  Not enough fitted models to plot death rate density.")
+death_kde = gaussian_kde(death_rates)
+x_death = np.linspace(min(death_rates), min([max(death_rates), 10 * death_rate]), 100)
+fig_death = go.Figure()
+fig_death.add_trace(
+    go.Scatter(
+        x=x_death,
+        y=death_kde(x_death),
+        mode="lines",
+        name="Density",
+        line=dict(color=ptolqual[0]),
+        showlegend=False,
+    )
+)
+# Add vertical line for true death_rate
+fig_death.add_trace(
+    go.Scatter(
+        x=[death_rate, death_rate],
+        y=[0, max(death_kde(x_death))],
+        mode="lines",
+        name="μ",
+        line=dict(color=ptolqual[1], dash="dash"),
+        showlegend=False,
+    )
+)
+# Add annotation for μ to the above of the density curve
+fig_death.add_annotation(
+    x=death_rate,  # Position to the right of the line
+    y=max(death_kde(x_death)) * 1.05,  # Near the top of the density
+    text="True μ",
+    showarrow=True,
+    arrowhead=2,
+    ax=0,
+    ay=-30,  # draw arrow from label down to the line
+    xanchor="center",
+    font=dict(color=ptolqual[1], size=11),
+    bgcolor="rgba(255,255,255,0.75)",
+)
+fig_death = apply_professional_styling(fig_death, None, r"$\hat{\mu}$", "Density")
+fig_death = apply_tufte_axes(fig_death)
+# Format axes: rate with 4 decimals, density baseline at zero
+fig_death.update_xaxes(tickformat=".4f")
+fig_death.update_yaxes(rangemode="tozero")
+fig_death.update_layout(showlegend=False)
+fig_death.show()
+
+# Save the figure
+save_figure(fig_death, "mv_death_rate_density_marg", width=192, height=100)
+save_figure(fig_death, "mv_death_rate_density", width=397, height=200)
 ```
 
 ```{python}
@@ -954,9 +951,9 @@ for config_idx, config in enumerate(parameter_configs):
     # Run simulations
     simulated_processes_config = Parallel(n_jobs=-1)(
         delayed(simulate_birth_death_process)(
-            birth_rate=config["birth_rate"],
-            death_rate=config["death_rate"],
-            max_time=config["time_span"],
+            birth_rates=config["birth_rate"],
+            death_rates=config["death_rate"],
+            times=config["time_span"],
             random_seed=seed + i + config_idx * 10000,
         )
         for i in range(config["num_sims"])
@@ -981,8 +978,8 @@ for config_idx, config in enumerate(parameter_configs):
     successful_fits = [
         m for m in fitted_models_config if m is not None and m.get("success", False)
     ]
-    birth_rates_config = [m["birth_rate"] for m in successful_fits]
-    death_rates_config = [m["death_rate"] for m in successful_fits]
+    birth_rates_config = np.concatenate([m["birth_rates"] for m in successful_fits])
+    death_rates_config = np.concatenate([m["death_rates"] for m in successful_fits])
 
     # Calculate statistics
     if len(birth_rates_config) > 0:
@@ -1351,11 +1348,16 @@ log_bounds = [
 
 def objective_analytical(log_params: np.ndarray) -> float:
     """Objective function using analytical gradient."""
+    # Split params into birth_rates and death_rates
     params = np.exp(log_params)
+    n_epochs = len(params) // 2
+    birth_rates = params[:n_epochs]
+    death_rates = params[n_epochs:]
     return negative_log_likelihood(
-        params=params,
+        birth_rates=birth_rates,
+        death_rates=death_rates,
         ages=benchmark_ages,
-        observation_time=benchmark_time,
+        times=benchmark_time,
         spine_ages=None,
         ns=None,
         is_ordered=False,
@@ -1413,7 +1415,7 @@ print(f"\nGradient verification:")
 print(f"  Analytical: [{initial_grad[0]:.6e}, {initial_grad[1]:.6e}]")
 print(f"  Numerical:  [{grad_numerical[0]:.6e}, {grad_numerical[1]:.6e}]")
 print(
-    f"  Difference: [{abs(initial_grad[0]-grad_numerical[0]):.6e}, {abs(initial_grad[1]-grad_numerical[1]):.6e}]"
+    f"  Difference: [{abs(initial_grad[0] - grad_numerical[0]):.6e}, {abs(initial_grad[1] - grad_numerical[1]):.6e}]"
 )
 print("=" * 60)
 ```

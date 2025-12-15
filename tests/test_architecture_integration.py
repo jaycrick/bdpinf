@@ -49,7 +49,7 @@ class TestArchitecturalIntegration:
         results = fit_from_dataframe(
             df=test_data,
             age_column="age",
-            observation_time=model.final_time,
+            times=model.final_time,
         )
 
         # 4. Update model with results
@@ -87,11 +87,11 @@ class TestArchitecturalIntegration:
         invalid_data = pd.DataFrame({"wrong_column": [1, 2, 3]})
 
         # Should raise appropriate error when trying to fit
-        with pytest.raises(Exception):  # Could be KeyError or ValidationError
+        with pytest.raises(Exception):
             fit_from_dataframe(
                 df=invalid_data,
-                age_column="age",  # This column doesn't exist
-                observation_time=100.0,
+                age_column="age",
+                times=100.0,
             )
 
     def test_configuration_customization(self):

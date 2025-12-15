@@ -43,8 +43,10 @@ from .likelihood import log_likelihood_gradient, negative_log_likelihood
 
 def get_crude_parameter_estimates(
     ages: NDArray[np.float64],
-    observation_time: float,
-) -> Tuple[float, float]:
+    times: NDArray[np.float64] | float,
+    birth_rates: NDArray[np.float64] | float | None = None,
+    death_rates: NDArray[np.float64] | float | None = None,
+) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
     """
     Get crude initial parameter estimates based on manuscript age data.
 
@@ -59,6 +61,11 @@ def get_crude_parameter_estimates(
     Returns:
         Tuple of (estimated_birth_rate, estimated_death_rate)
     """
+    if birth_rates is not None and death_rates is not None:
+        raise ValueError("Cannot provide both birth_rates and death_rates")
+    times = np.atleast_1d(times)
+
+    observation_time = times[-1]
     n_manuscripts = len(ages)
     if n_manuscripts == 0:
         raise ValueError("Cannot estimate parameters from empty age data")
@@ -67,13 +74,28 @@ def get_crude_parameter_estimates(
 
     # Simple heuristic: death rate inversely related to max survival age
     # birth rate related to total observed manuscripts
-    est_birth_rate = np.float64(1.0 / mean_age)
-    est_death_rate = np.max(
-        [est_birth_rate - np.log(n_manuscripts) / observation_time, 1e-8]
-    )
+    if birth_rates is None:
+        est_birth_rates = np.ones_like(times, dtype=np.float64) / mean_age
+    else:
+        est_birth_rates = np.atleast_1d(birth_rates)
 
-    # Convert to log scale for optimization
-    return (est_birth_rate, est_death_rate)
+    if death_rates is None:
+        est_death_rates = np.maximum(
+            est_birth_rates - np.log(n_manuscripts) / observation_time,
+            1e-8 * np.ones_like(times, dtype=np.float64),
+        )
+    else:
+        est_death_rates = np.atleast_1d(death_rates)
+
+    # Validate that all arrays have consistent sizes
+    if len(times) != len(est_birth_rates) or len(times) != len(est_death_rates):
+        raise ValueError(
+            f"Size mismatch: times ({len(times)}), "
+            f"est_birth_rates ({len(est_birth_rates)}), "
+            f"est_death_rates ({len(est_death_rates)}) must all be equal"
+        )
+
+    return (est_birth_rates, est_death_rates)
 
 
 def fit_birth_death_processes(
@@ -210,17 +232,22 @@ def fit_birth_death_processes(
         observation_time = float(np.max(times))
 
     # Set initial parameters with better estimates based on data
-    if initial_birth_rates is None and initial_death_rates is None:
-        initial_params = get_crude_parameter_estimates(non_empty_age, observation_time)
-    elif initial_birth_rates is not None and initial_death_rates is not None:
-        # Both provided - combine them
-        initial_params = (
-            float(np.atleast_1d(initial_birth_rates)[0]),
-            float(np.atleast_1d(initial_death_rates)[0]),
+    if initial_birth_rates is None or initial_death_rates is None:
+        initial_params = np.concatenate(
+            get_crude_parameter_estimates(
+                non_empty_age, times, initial_birth_rates, initial_death_rates
+            )
         )
     else:
+        # Both provided - combine them
+        initial_params = np.concatenate(
+            (np.atleast_1d(initial_birth_rates), np.atleast_1d(initial_death_rates))
+        )
+
+    if len(initial_params) != 2 * len(np.atleast_1d(times)):
         raise ValueError(
-            "Either both initial_birth_rates and initial_death_rates must be provided, or neither"
+            "Initial parameters size mismatch with times: "
+            f"expected {2 * len(np.atleast_1d(times))}, got {len(initial_params)}"
         )
 
     # Convert initial parameters to log scale
@@ -264,11 +291,16 @@ def fit_birth_death_processes(
     def objective_func(log_params: NDArray[np.float64]) -> np.float64:
         # Convert log-scale parameters back to original scale
         params = np.exp(log_params)
+        # Split params into birth_rates and death_rates
+        n_epochs = len(params) // 2
+        birth_rates = params[:n_epochs]
+        death_rates = params[n_epochs:]
         # Single age array - no parallelization needed
         nll = negative_log_likelihood(
-            params=params,
+            birth_rates=birth_rates,
+            death_rates=death_rates,
             ages=non_spine_ages,
-            observation_time=observation_time,
+            times=times,
             spine_ages=spine_ages,
             ns=population_sizes,
             is_ordered=False,
@@ -398,14 +430,15 @@ def fit_birth_death_processes(
 
         if result.success:
             # Convert log-scale parameters back to original scale
-            log_birth_rate, log_death_rate = result.x
-            birth_rate = np.exp(log_birth_rate)
-            death_rate = np.exp(log_death_rate)
+            params = np.exp(result.x)
+            n_epochs = len(params) // 2
+            birth_rates = params[:n_epochs]
+            death_rates = params[n_epochs:]
 
             return {
                 "success": True,
-                "birth_rate": birth_rate,
-                "death_rate": death_rate,
+                "birth_rates": birth_rates,
+                "death_rates": death_rates,
                 "log_likelihood": best_likelihood,
                 "optimization_result": result,
             }
