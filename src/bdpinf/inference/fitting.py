@@ -336,12 +336,18 @@ def fit_birth_death_processes(
 
     # Strategy 1: Try BFGS with analytical gradient
     try:
+        if len(np.atleast_1d(times)) == 1:
+            raise RuntimeError(
+                "Skip analytical gradient for single-parameter case to avoid issues"
+            )
+
         result: Any = optimize.minimize(
             objective_func,
             x0,
-            jac=gradient_func,
             method="BFGS",
-            options={"maxiter": 1000, "ftol": 1e-9},
+            jac=gradient_func,
+            tol=1e-9,
+            options={"maxiter": 1000},
         )
 
         if result.success:
@@ -364,18 +370,13 @@ def fit_birth_death_processes(
     # Strategy 2: If analytical gradient didn't work, try BFGS with numerical gradient
     if best_result is None or not best_result.success:
         try:
-            # Create numerical gradient using scipy's approx_fprime
-            def numerical_gradient(
-                log_params: NDArray[np.float64],
-            ) -> NDArray[np.float64]:
-                return optimize.approx_fprime(log_params, objective_func, epsilon=1e-8)
-
             result = optimize.minimize(
                 objective_func,
                 x0,
-                jac=numerical_gradient,
                 method="BFGS",
-                options={"maxiter": 1000, "ftol": 1e-9},
+                jac=None,
+                tol=1e-9,
+                options={"maxiter": 1000},
             )
 
             if result.success:
@@ -404,7 +405,8 @@ def fit_birth_death_processes(
                     objective_func,
                     x0,
                     method=opt_method,
-                    options={"maxiter": 1000, "ftol": 1e-9},
+                    tol=1e-9,
+                    options={"maxiter": 1000},
                 )
 
                 if result.success:

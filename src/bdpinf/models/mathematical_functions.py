@@ -1575,7 +1575,10 @@ def _population_geometric_parameter(
     geom_sum = _pr_extinction_numerator(
         birth_rates, death_rates, times, log_scale_params
     )
-    cond_geom_prob = np.exp(-cum_growth[-1]) / (1 + geom_sum)
+    # Compute in log-domain to avoid overflow: cond = exp(-C) / (1 + geom_sum)
+    # => log(cond) = -C - log1p(geom_sum)
+    log_cond = -cum_growth[-1] - np.log1p(geom_sum)
+    cond_geom_prob = np.exp(log_cond)
     return np.float64(cond_geom_prob)
 
 
@@ -1672,14 +1675,10 @@ def _pr_extinction_numerator(
     cum_growth = np.cumsum(growth_rates * epoch_durations)
     trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
 
-    pr_extinction_numerator_summand = (
-        mu_val_array
-        * np.exp(-trunc_cum_growth)
-        * np.where(
-            critical_mask,
-            epoch_durations,
-            (1 - np.exp(-growth_rates * epoch_durations)) / growth_rates,
-        )
-    )
+    # Stable evaluation of (1 - exp(-x)) / x via expm1 to avoid overflow/underflow
+    x = growth_rates * epoch_durations
+    stable_frac = -np.expm1(-x) / np.where(growth_rates == 0.0, 1.0, growth_rates)
+    kernel = np.where(critical_mask, epoch_durations, stable_frac)
+    pr_extinction_numerator_summand = mu_val_array * np.exp(-trunc_cum_growth) * kernel
 
     return np.sum(pr_extinction_numerator_summand, dtype=np.float64)
