@@ -31,14 +31,14 @@ Examples:
     ... )
 """
 
-from typing import Any, Dict, List, Literal, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 from scipy import optimize
 
-from .likelihood import log_likelihood_gradient, negative_log_likelihood
+from .likelihood import negative_log_likelihood
 
 
 def get_crude_parameter_estimates(
@@ -183,18 +183,11 @@ def fit_birth_death_processes(
 
     Notes
     -----
-    - The optimization is performed in log-parameter space. Bounds on the original
-      parameters are enforced in log-space corresponding to birth_rate and death_rate
-      in [1e-8, 100.0].
+    - The optimization is performed in log-parameter space for numerical stability.
     - The objective minimized is the negative log-likelihood computed by
       negative_log_likelihood(...).
-    - The function uses a robust optimization strategy with multiple fallbacks:
-      1. BFGS with analytical gradient (via log_likelihood_gradient)
-      2. BFGS with numerical gradient (via scipy.optimize.approx_fprime)
-      3. Nelder-Mead (gradient-free)
-      4. Powell (gradient-free)
-    - The first successful optimization in this sequence is returned. If none succeed,
-      the best available result (or a failure summary) is returned.
+    - Uses BFGS with scipy's internal numerical gradient approximation, which reuses
+      cached objective evaluations to minimize expensive integral computations.
 
     Examples
     --------
@@ -287,15 +280,20 @@ def fit_birth_death_processes(
         # For unordered data, combine all non-empty age arrays into one array
         non_spine_ages = np.concatenate([arr for arr in list_of_ages if arr.size > 0])
 
-    # Create objective function wrapper
+    # Create objective function wrapper with caching
+    _objective_cache: Dict[Tuple[float, ...], float] = {}
+
     def objective_func(log_params: NDArray[np.float64]) -> np.float64:
-        # Convert log-scale parameters back to original scale
+        """Evaluate negative log-likelihood in log-parameter space."""
+        key = tuple(np.asarray(log_params, dtype=np.float64))
+        if key in _objective_cache:
+            return np.float64(_objective_cache[key])
+
         params = np.exp(log_params)
-        # Split params into birth_rates and death_rates
         n_epochs = len(params) // 2
         birth_rates = params[:n_epochs]
         death_rates = params[n_epochs:]
-        # Single age array - no parallelization needed
+
         nll = negative_log_likelihood(
             birth_rates=birth_rates,
             death_rates=death_rates,
@@ -306,132 +304,20 @@ def fit_birth_death_processes(
             is_ordered=False,
             log_scale_params=False,
         )
-        return nll
+        _objective_cache[key] = float(nll)
+        return np.float64(nll)
 
-    def gradient_func(log_params: NDArray[np.float64]) -> NDArray[np.float64]:
-        # Convert log-scale parameters back to original scale
-        params = np.exp(log_params)
-        nll_grad = np.multiply(
-            params,
-            -log_likelihood_gradient(
-                params=params,
-                ages=non_spine_ages,
-                observation_time=observation_time,
-                spine_ages=spine_ages,
-                ns=population_sizes,
-                is_ordered=False,
-                log_scale_params=False,
-            ),
-        )
-        return np.array(nll_grad)
-
-    # Optimize with multiple strategies for robustness
-    # Strategy: Try L-BFGS-B with analytical gradient, then with numerical gradient,
-    # then fall back to gradient-free methods
-    best_result: Any = None
-    best_likelihood = -np.inf
-
-    # Ensure parameters are numpy arrays for scipy compatibility
+    # Optimize with BFGS (scipy handles numerical gradient internally)
     x0 = np.array(log_initial_params, dtype=np.float64)
 
-    # Strategy 1: Try BFGS with analytical gradient
     try:
-        if len(np.atleast_1d(times)) == 1:
-            raise RuntimeError(
-                "Skip analytical gradient for single-parameter case to avoid issues"
-            )
-
-        result: Any = optimize.minimize(
+        result = optimize.minimize(
             objective_func,
             x0,
             method="BFGS",
-            jac=gradient_func,
-            tol=1e-9,
-            options={"maxiter": 1000},
+            options={"maxiter": 3000, "gtol": 5e-5},
         )
-
         if result.success:
-            # Check if optimized parameters are too similar to initial parameters
-            # Use a reasonable threshold in log-space (0.01 = ~1% change in parameters)
-            param_change = np.max(np.abs(result.x - x0))
-            if param_change < 0.01:
-                # Parameters barely changed, try other methods
-                result.success = False
-            else:
-                best_result = result
-                best_likelihood = -result.fun
-
-        if best_result is None:
-            best_result = result
-    except Exception:
-        # If analytical gradient fails, continue to numerical gradient
-        pass
-
-    # Strategy 2: If analytical gradient didn't work, try BFGS with numerical gradient
-    if best_result is None or not best_result.success:
-        try:
-            result = optimize.minimize(
-                objective_func,
-                x0,
-                method="BFGS",
-                jac=None,
-                tol=1e-9,
-                options={"maxiter": 1000},
-            )
-
-            if result.success:
-                # Check if optimized parameters are too similar to initial parameters
-                # Use a reasonable threshold in log-space (0.01 = ~1% change in parameters)
-                param_change = np.max(np.abs(result.x - x0))
-                if param_change < 0.01:
-                    # Parameters barely changed, try other methods
-                    result.success = False
-                else:
-                    best_result = result
-                    best_likelihood = -result.fun
-
-            if best_result is None:
-                best_result = result
-        except Exception:
-            # If numerical gradient also fails, continue to gradient-free methods
-            pass
-
-    # Strategy 3: Try gradient-free methods if BFGS didn't succeed
-    if best_result is None or not best_result.success:
-        methods: List[Literal["Nelder-Mead", "Powell"]] = ["Nelder-Mead", "Powell"]
-        for opt_method in methods:
-            try:
-                result = optimize.minimize(
-                    objective_func,
-                    x0,
-                    method=opt_method,
-                    tol=1e-9,
-                    options={"maxiter": 1000},
-                )
-
-                if result.success:
-                    # Check if optimized parameters are too similar to initial parameters
-                    # Use a reasonable threshold in log-space (0.01 = ~1% change in parameters)
-                    param_change = np.max(np.abs(result.x - x0))
-                    if param_change < 0.01:
-                        # Parameters barely changed, try next method
-                        result.success = False
-                    else:
-                        best_result = result
-                        best_likelihood = -result.fun
-                        break
-
-                if best_result is None:
-                    best_result = result
-            except Exception:
-                continue
-
-    # Process the best result found
-    if best_result is not None:
-        result = best_result
-
-        if result.success:
-            # Convert log-scale parameters back to original scale
             params = np.exp(result.x)
             n_epochs = len(params) // 2
             birth_rates = params[:n_epochs]
@@ -441,18 +327,40 @@ def fit_birth_death_processes(
                 "success": True,
                 "birth_rates": birth_rates,
                 "death_rates": death_rates,
-                "log_likelihood": best_likelihood,
+                "log_likelihood": -result.fun,
                 "optimization_result": result,
             }
+    except Exception:
+        pass
 
+    # Fallback: try Powell if BFGS fails
+    try:
+        result = optimize.minimize(
+            objective_func,
+            x0,
+            method="Powell",
+            options={"maxiter": 2000, "ftol": 1e-8},
+        )
+        if result.success:
+            params = np.exp(result.x)
+            n_epochs = len(params) // 2
+            birth_rates = params[:n_epochs]
+            death_rates = params[n_epochs:]
+
+            return {
+                "success": True,
+                "birth_rates": birth_rates,
+                "death_rates": death_rates,
+                "log_likelihood": -result.fun,
+                "optimization_result": result,
+            }
         else:
             return {
                 "success": False,
                 "message": result.message,
                 "optimization_result": result,
             }
-    else:
-        # No optimization succeeded
+    except Exception:
         return {"success": False}
 
 
