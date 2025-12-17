@@ -1129,14 +1129,26 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     else:
         birth_rates_array = birth_rates
 
-    # epoch_durations = np.diff(np.insert(times, 0, 0.0))
-    # cum_birth_rates = np.cumsum(lambda_val_array * epoch_durations)
+    # Sort lifetimes to enable cumulative integral caching
+    sorted_lifetimes = np.sort(lifetimes)
 
-    log_probs = np.zeros_like(lifetimes, dtype=np.float64)
+    log_prob_sum = 0.0
+    cumulative_integral = 0.0
+    prev_lifetime = 0.0
 
-    # For each age, find which epoch it falls into and compute
-    for i, lifetime in enumerate(lifetimes):
-        # Find the last epoch that ends at or before this age
+    # Process sorted lifetimes, computing integrals only over new segments
+    for lifetime in sorted_lifetimes:
+        # Compute integral from prev_lifetime to lifetime (only the new segment)
+        if lifetime > prev_lifetime:
+            integral_segment = scipy.integrate.quad(
+                _integrand_surv_from_weighted_birth_time,
+                prev_lifetime,
+                lifetime,
+                args=(birth_rates, death_rates, times, log_scale_params),
+            )[0]
+            cumulative_integral += integral_segment
+
+        # Compute cumulative birth rate for this lifetime
         full_epochs = times[np.where(times < lifetime)[0]]
         num_full_epochs = len(full_epochs)
         lifetime_epochs = np.append(full_epochs, lifetime)
@@ -1154,17 +1166,10 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
             * np.diff(np.insert(lifetime_epochs, 0, 0.0))
         )
 
-        # Compute integral using numerical integration
-        integral = scipy.integrate.quad(
-            _integrand_surv_from_weighted_birth_time,
-            0,
-            lifetime,
-            args=(birth_rates, death_rates, times, log_scale_params),
-        )[0]
+        log_prob_sum += cumulative_integral - cum_birth_rate
+        prev_lifetime = lifetime
 
-        log_probs[i] = integral - cum_birth_rate
-
-    return np.sum(log_probs)
+    return np.float64(log_prob_sum)
 
 
 def calculate_log_lik_lifetimes(
