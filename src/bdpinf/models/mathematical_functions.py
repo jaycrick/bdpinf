@@ -66,7 +66,8 @@ def calculate_populations_log_lik(
     if not (is_array_lambda == is_array_mu == is_array_time):
         raise ValueError(
             "lambda_param, mu_params, and time must all be arrays or all scalars. "
-            f"Got types: lambda={type(lambda_params).__name__}, mu={type(mu_params).__name__}, time={type(times).__name__}"
+            f"Got types: lambda={type(lambda_params).__name__}, "
+            f"mu={type(mu_params).__name__}, time={type(times).__name__}"
         )
 
     if (
@@ -108,10 +109,12 @@ def calculate_populations_log_lik(
             or not isinstance(times, float)
         ):
             raise ValueError(
-                f"When using scalar inputs, lambda_params, mu_params, and times must all be floats. "
+                "When using scalar inputs, lambda_params, mu_params, "
+                "and times must all be floats. "
                 f"Got types: lambda_params={type(lambda_params).__name__}, "
                 f"mu_params={type(mu_params).__name__}, times={type(times).__name__}. "
-                f"Note: numpy scalar types (np.float64, np.int32, etc.) are not accepted - use Python float type."
+                f"Note: numpy scalar types (np.float64, np.int32, etc.) "
+                f"are not accepted - use Python float type."
             )
         # Handle parameter scaling
         if log_scale_params:
@@ -389,7 +392,8 @@ def calculate_non_spine_ages_log_lik(
     if len(lambda_params) != len(mu_params):
         raise ValueError(
             f"lambda_params and mu_params must have the same length. "
-            f"Got lengths: lambda_param={len(lambda_params)}, mu_param={len(mu_params)}"
+            f"Got lengths: lambda_param={len(lambda_params)}, "
+            f"mu_param={len(mu_params)}"
         )
 
     if len(lambda_params) != len(times):
@@ -524,7 +528,8 @@ def calculate_spine_ages_log_lik(
     if len(lambda_params) != len(mu_params):
         raise ValueError(
             f"lambda_params and mu_params must have the same length. "
-            f"Got lengths: lambda_param={len(lambda_params)}, mu_param={len(mu_params)}"
+            f"Got lengths: lambda_param={len(lambda_params)}, "
+            f"mu_param={len(mu_params)}"
         )
 
     if len(lambda_params) != len(times):
@@ -1157,7 +1162,8 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
         ):
             raise ValueError(
                 "Mismatch in lengths when computing cumulative birth rates."
-                + f" birth_rates_array length: {len(birth_rates_array[0 : num_full_epochs + 1])}, "
+                + " birth_rates_array length: "
+                + f"{len(birth_rates_array[0 : num_full_epochs + 1])}, "
                 + f" lifetime: {lifetime}, times: {times}.\n"
                 + f" lifetime_epochs: {lifetime_epochs}"
             )
