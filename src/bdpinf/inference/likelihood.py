@@ -5,6 +5,8 @@ This module contains functions for calculating log-likelihood values for
 birth-death process models, used in parameter fitting and model evaluation.
 """
 
+import warnings
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -102,45 +104,57 @@ def log_likelihood(
 
     if spine_ages is not None:
         spine_ages = np.atleast_1d(spine_ages)
+        if len(spine_ages) == 0:
+            spine_ages = None
+        else:
+            if is_ordered:
+                raise ValueError(
+                    "Cannot have both is_ordered=True and spine_ages provided."
+                )
+            if ns is None:
+                if len(spine_ages) > 1:
+                    raise ValueError(
+                        "When multiple spine ages are provided, "
+                        "population sizes (ns) must also be provided."
+                    )
+                else:
+                    ns = np.array([len(ages) + len(spine_ages)], dtype=np.int64)
+            if np.any(spine_ages < 0) or np.any(spine_ages > times[-1]):
+                raise ValueError(f"Spine ages must be in the range [0, {times[-1]}].")
 
-    if is_ordered and (spine_ages is not None):
-        raise ValueError("Cannot have both is_ordered=True and spine_ages provided.")
+    if times[0] <= 0:
+        raise ValueError("Observation times must be positive.")
+
+    if np.any(np.diff(times) < 0):
+        raise ValueError("Observation times must be non-decreasing.")
+
+    if np.any(ages < 0) or np.any(ages > times[-1]):
+        raise ValueError(f"Ages must be in the range [0, {times[-1]}].")
+
+    # Total number of observed manuscripts
+    num_ages = len(ages) + (len(spine_ages) if spine_ages is not None else 0)
+    if ns is not None:
+        total_pop_size = sum(ns)
+        if total_pop_size < num_ages:
+            raise ValueError(
+                "Sum of the populations must equal the number of ages provided."
+            )
+        if total_pop_size > num_ages:
+            warnings.warn(
+                "Sum of the populations exceeds the number of ages provided; "
+                "not all ages have been provided (age information is partial).",
+                UserWarning,
+            )
+    else:
+        ns = np.array([num_ages], dtype=np.int64)
+        total_pop_size = num_ages
+
     # Input validation
     if not (np.all(np.isfinite(birth_rates)) and np.all(np.isfinite(death_rates))):
         return np.float64(-np.inf)
 
     if not log_scale_params and (np.any(birth_rates <= 0) or np.any(death_rates <= 0)):
         return np.float64(-np.inf)
-
-    if np.any(np.diff(times) < 0):
-        raise ValueError("Observation times must be non-decreasing.")
-
-    # Check age range
-    if times[0] <= 0:
-        raise ValueError("Observation times must be positive.")
-
-    if np.any(ages < 0) or np.any(ages > times[-1]):
-        raise ValueError(f"Ages must be in the range [0, {times[-1]}].")
-
-    if spine_ages is not None and (
-        np.any(spine_ages < 0) or np.any(spine_ages > times[-1])
-    ):
-        raise ValueError(f"Spine ages must be in the range [0, {times[-1]}].")
-
-    # Total number of observed manuscripts
-    if ns is None:
-        total_pop_size = len(np.atleast_1d(ages))
-        ns = np.array([total_pop_size], dtype=np.int64)
-    else:
-        total_pop_size = sum(ns)
-
-    if not total_pop_size == (
-        len(np.atleast_1d(ages))
-        + (len(np.atleast_1d(spine_ages)) if spine_ages is not None else 0)
-    ):
-        raise ValueError(
-            "Sum of the populations must equal the number of ages provided."
-        )
 
     # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
     log_P_n_T = calculate_populations_log_lik(
