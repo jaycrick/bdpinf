@@ -3,6 +3,7 @@ Test suite for BirthDeathProcess log-likelihood calculations.
 """
 
 import numpy as np
+from numpy.testing import assert_allclose
 
 from inf_bp_texts.inference.likelihood import log_likelihood, negative_log_likelihood
 from inf_bp_texts.models import BirthDeathProcess
@@ -94,7 +95,7 @@ class TestLogLikelihood:
             birth_rates=0.01, death_rates=0.005, ages=ages, times=1000.0
         )
 
-        assert np.isclose(result1, result2)
+        assert_allclose(result1, result2, rtol=1e-8)
         assert result1 < 0
         assert result2 < 0
 
@@ -250,12 +251,15 @@ class TestLogLikelihood:
         assert np.isfinite(result_single)
         assert np.isfinite(result_multi)
         # TODO: Fix multi-epoch implementation to match single-epoch
-        # assert np.isclose(result_single, result_multi, rtol=1e-10)
+        # assert_allclose(result_single, result_multi, rtol=1e-10)
 
         # For now, just verify they're reasonably close (within 5%)
-        assert np.isclose(result_single, result_multi, rtol=1e-10), (
-            f"Multi-epoch ({result_multi:.6f}) differs significantly from "
-            f"single-epoch ({result_single:.6f})"
+        (
+            assert_allclose(result_single, result_multi, rtol=1e-8),
+            (
+                f"Multi-epoch ({result_multi:.6f}) differs significantly from "
+                f"single-epoch ({result_single:.6f})"
+            ),
         )
 
     def test_multi_epoch_identical_rates_with_spine_ages(self):
@@ -266,9 +270,9 @@ class TestLogLikelihood:
         """
         ages = np.array([200.0, 300.0, 400.0])
         spine_ages = np.array([100.0])
-        birth_rate = 0.015
-        death_rate = 0.008
-        final_time = 800.0
+        birth_rate = np.array([0.015])
+        death_rate = np.array([0.008])
+        final_time = np.array([800.0])
 
         # Single epoch
         result_single = log_likelihood(
@@ -281,8 +285,8 @@ class TestLogLikelihood:
 
         # Multi-epoch with identical rates (2 epochs)
         epoch_times = np.array([500.0, 800.0])
-        birth_rates_multi = np.array([birth_rate, birth_rate])
-        death_rates_multi = np.array([death_rate, death_rate])
+        birth_rates_multi = np.array([birth_rate[0], birth_rate[0]])
+        death_rates_multi = np.array([death_rate[0], death_rate[0]])
 
         result_multi = log_likelihood(
             birth_rates=birth_rates_multi,
@@ -294,7 +298,7 @@ class TestLogLikelihood:
 
         assert np.isfinite(result_single)
         assert np.isfinite(result_multi)
-        assert np.isclose(result_single, result_multi, rtol=1e-12)
+        assert_allclose(result_single, result_multi, rtol=1e-8)
 
     def test_multi_epoch_identical_rates_with_populations(self):
         """Test multi-epoch equals single-epoch with population counts.
@@ -334,7 +338,7 @@ class TestLogLikelihood:
         assert np.isfinite(result_multi)
         # Relaxed tolerance due to known multi-epoch numerical differences
         # This case shows larger discrepancy (~10%) possibly due to multiple population groups
-        assert np.isclose(result_single, result_multi, rtol=0.15)
+        assert_allclose(result_single, result_multi, rtol=1e-8)
 
     def test_multi_epoch_identical_rates_ordered(self):
         """Test multi-epoch equals single-epoch with ordered ages.
@@ -372,7 +376,7 @@ class TestLogLikelihood:
         assert np.isfinite(result_single)
         assert np.isfinite(result_multi)
         # Relaxed tolerance due to known multi-epoch numerical differences
-        assert np.isclose(result_single, result_multi, rtol=0.05)
+        assert_allclose(result_single, result_multi, rtol=1e-8)
 
     def test_multi_epoch_identical_rates_log_scale(self):
         """Test multi-epoch equals single-epoch with log-scale parameters.
@@ -410,7 +414,7 @@ class TestLogLikelihood:
         assert np.isfinite(result_single)
         assert np.isfinite(result_multi)
         # Relaxed tolerance due to known multi-epoch numerical differences
-        assert np.isclose(result_single, result_multi, rtol=0.05)
+        assert_allclose(result_single, result_multi, rtol=1e-8)
 
     def test_multi_epoch_identical_rates_critical_case(self):
         """Test multi-epoch equals single-epoch when birth ≈ death.
@@ -446,7 +450,7 @@ class TestLogLikelihood:
         assert np.isfinite(result_single)
         assert np.isfinite(result_multi)
         # Relaxed tolerance due to known multi-epoch numerical differences
-        assert np.isclose(result_single, result_multi, rtol=0.15)
+        assert_allclose(result_single, result_multi, rtol=1e-8)
 
     def test_negative_log_likelihood_multi_epoch_matches_single(self):
         """Test negative_log_likelihood multi-epoch equals single-epoch.
@@ -482,4 +486,4 @@ class TestLogLikelihood:
         assert np.isfinite(result_single)
         assert np.isfinite(result_multi)
         # Relaxed tolerance due to known multi-epoch numerical differences
-        assert np.isclose(result_single, result_multi, rtol=0.05)
+        assert_allclose(result_single, result_multi, rtol=1e-8)

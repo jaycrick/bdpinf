@@ -177,7 +177,7 @@ print(list_of_ages[0][0:10])
 
 ```{python}
 # | label: try-single-fit
-%%prun -s cumulative -q -l 30 -T prof-multi-epoch-single-fit
+%%prun -s cumulative -q -l 60 -T prof-multi-epoch-single-fit
 
 # Debug: check the data structure
 print(f"Number of ages in first simulation: {len(list_of_ages[0])}")

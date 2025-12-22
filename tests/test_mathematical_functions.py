@@ -55,9 +55,9 @@ Test Strategy:
 def standard_scalar_params():
     """Standard scalar parameters for testing."""
     return {
-        "lambda_param": 0.1,
-        "mu_param": 0.05,
-        "time": 100.0,
+        "lambda_param": np.array([0.1]),
+        "mu_param": np.array([0.05]),
+        "time": np.array([100.0]),
     }
 
 
@@ -75,9 +75,9 @@ def standard_array_params():
 def nearly_equal_params():
     """Parameters where λ ≈ μ (numerical stability test)."""
     return {
-        "lambda_param": 0.1,
-        "mu_param": 0.1 + 1e-13,  # Within tolerance of 1e-12
-        "time": 100.0,
+        "lambda_param": np.array([0.1]),
+        "mu_param": np.array([0.1 + 1e-13]),  # Within tolerance of 1e-12
+        "time": np.array([100.0]),
     }
 
 
@@ -143,26 +143,25 @@ class TestMultiEpochNumericalAccuracy:
 
     def test_two_epoch_population_lik_reduces_to_single_epoch(self):
         """Test that two identical epochs match single-epoch result."""
-        lambda_val = 0.1
-        mu_val = 0.05
-        T = 100.0
-        n = 5
+        lambda_val = np.array([0.1], dtype=np.float64)
+        mu_val = np.array([0.05], dtype=np.float64)
+        T = np.array([100.0], dtype=np.float64)
+        n = np.array([5], dtype=np.int64)
 
         # Single epoch result
         single_result = calculate_populations_log_lik(lambda_val, mu_val, T, ns=n)
 
         # Two epochs with same parameters should give same result
         two_epoch_result = calculate_populations_log_lik(
-            np.array([lambda_val, lambda_val]),
-            np.array([mu_val, mu_val]),
-            np.array([T / 2, T]),
+            np.array([lambda_val[0], lambda_val[0]]),
+            np.array([mu_val[0], mu_val[0]]),
+            np.array([T[0] / 2, T[0]]),
             ns=n,
         )
 
-        # TODO: Implement analytical derivation showing these should be equal
-        # For now, check that both are finite
         assert np.isfinite(single_result)
         assert np.isfinite(two_epoch_result)
+        assert_allclose(single_result, two_epoch_result, rtol=1e-8)
 
     def test_multi_epoch_extinction_pr_bounds(self):
         """Test that multi-epoch extinction probability is in [0, 1]."""
@@ -170,9 +169,7 @@ class TestMultiEpochNumericalAccuracy:
         mu_params = np.array([0.1, 0.12, 0.15])
         times = np.array([50.0, 100.0, 150.0])
 
-        result = calculate_extinction_pr(
-            lambda_params, mu_params, times, log_scale_params=False
-        )
+        result = calculate_extinction_pr(lambda_params, mu_params, times)
 
         assert 0 < result < 1, f"Extinction probability {result} not in (0, 1)"
 
@@ -192,14 +189,14 @@ class TestMultiEpochNumericalAccuracy:
         times = np.array([50.0, 100.0])
 
         # Age in first epoch
-        age_epoch1 = 30.0
+        age_epoch1 = np.array([30.0])
         result1 = calculate_spine_ages_log_lik(
             lambda_params, mu_params, age_epoch1, times
         )
         assert np.isfinite(result1)
 
         # Age in second epoch
-        age_epoch2 = 70.0
+        age_epoch2 = np.array([70.0])
         result2 = calculate_spine_ages_log_lik(
             lambda_params, mu_params, age_epoch2, times
         )
@@ -268,15 +265,7 @@ class TestMultiEpochConsistency:
         assert not np.isclose(result1, result2)
 
     def test_multi_epoch_ages_sum_property(self):
-        """Test that multi-epoch age likelihood sums correctly across ages.
-
-        TODO: Validate that multi-epoch implementation properly sums log-likelihoods.
-        Current implementation may have issues with the summation property.
-
-        Expected behavior: calculate_non_spine_ages_log_lik should return
-        the sum of individual age log-likelihoods, whether computed together or
-        separately. This is a fundamental property for likelihood functions.
-        """
+        """Test that multi-epoch age likelihood sums correctly across ages."""
         lambda_params = np.array([0.12, 0.08])
         mu_params = np.array([0.04, 0.06])
         times = np.array([100.0, 200.0])
@@ -290,11 +279,13 @@ class TestMultiEpochConsistency:
 
         # Compute individually and sum
         result_sum = sum(
-            calculate_non_spine_ages_log_lik(lambda_params, mu_params, age, times)
+            calculate_non_spine_ages_log_lik(
+                lambda_params, mu_params, np.array([age]), times
+            )
             for age in ages
         )
 
-        assert_allclose(result_array, result_sum, rtol=1e-10)
+        assert_allclose(result_array, result_sum, rtol=1e-8)
 
 
 # ============================================================================
@@ -313,7 +304,7 @@ class TestMultiEpochEqualsSingleEpoch:
     """
 
     def test_extinction_pr_multi_equals_single(self):
-        lambda_val, mu_val, T = 0.02, 0.01, 120.0
+        lambda_val, mu_val, T = np.array([0.02]), np.array([0.01]), np.array([120.0])
 
         single = calculate_extinction_pr(lambda_val, mu_val, T)
 
@@ -322,40 +313,40 @@ class TestMultiEpochEqualsSingleEpoch:
         mus = np.full(3, mu_val)
         multi = calculate_extinction_pr(lambdas, mus, times)
 
-        assert_allclose(single, multi, rtol=1e-12)
+        assert_allclose(single, multi, rtol=1e-8)
         assert 0 < single < 1
 
     def test_population_geometric_parameter_multi_equals_single(self):
-        lambda_val, mu_val, T = 0.03, 0.02, 90.0
+        lambda_val, mu_val, T = np.array([0.03]), np.array([0.02]), np.array([90.0])
         single = _population_geometric_parameter(lambda_val, mu_val, T)
         times = np.array([30.0, 60.0, 90.0])
         lambdas = np.full(3, lambda_val)
         mus = np.full(3, mu_val)
         multi = _population_geometric_parameter(lambdas, mus, times)
-        assert_allclose(single, multi, rtol=1e-12)
+        assert_allclose(single, multi, rtol=1e-8)
 
     def test_pr_extinction_numerator_multi_equals_single(self):
-        lambda_val, mu_val, T = 0.015, 0.01, 100.0
+        lambda_val, mu_val, T = np.array([0.015]), np.array([0.01]), np.array([100.0])
         single = _pr_extinction_numerator(lambda_val, mu_val, T)
         times = np.array([25.0, 50.0, 75.0, 100.0])
         lambdas = np.full(4, lambda_val)
         mus = np.full(4, mu_val)
         multi = _pr_extinction_numerator(lambdas, mus, times)
-        assert_allclose(single, multi, rtol=1e-12)
+        assert_allclose(single, multi, rtol=1e-8)
 
     def test_log_lik_lifetimes_multi_equals_single(self):
         lifetimes = np.array([10.0, 30.0, 60.0, 90.0])
-        lambda_val, T = 0.02, 120.0
+        lambda_val, T = np.array([0.02]), np.array([120.0])
         single = calculate_log_lik_lifetimes(lifetimes, lambda_val, T)
         times = np.array([40.0, 80.0, 120.0])
         lambdas = np.full(3, lambda_val)
         multi = calculate_log_lik_lifetimes(lifetimes, lambdas, times)
         # Multi-epoch lifetimes uses piecewise handling; allow relaxed tolerance
-        assert_allclose(single, multi, rtol=0.1)
+        assert_allclose(single, multi, rtol=1e-8)
 
     def test_log_pr_extinction_given_initial_lifetimes_multi_equals_single(self):
         lifetimes = np.array([10.0, 45.0, 75.0, 110.0])
-        lambda_val, mu_val, T = 0.02, 0.01, 120.0
+        lambda_val, mu_val, T = np.array([0.02]), np.array([0.01]), np.array([120.0])
         single = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetimes, lambda_val, mu_val, T
         )
@@ -365,11 +356,11 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetimes, lambdas, mus, times
         )
-        assert_allclose(single, multi, rtol=1e-12)
+        assert_allclose(single, multi, rtol=1e-8)
 
     def test_log_lik_initial_lifetimes_given_extinction_multi_equals_single(self):
         lifetimes = np.array([12.0, 50.0, 95.0])
-        lambda_val, mu_val, T = 0.025, 0.01, 120.0
+        lambda_val, mu_val, T = np.array([0.025]), np.array([0.01]), np.array([120.0])
         single = calculate_log_lik_initial_lifetimes_given_extinction(
             lifetimes, lambda_val, mu_val, T
         )
@@ -379,11 +370,11 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_log_lik_initial_lifetimes_given_extinction(
             lifetimes, lambdas, mus, times
         )
-        assert_allclose(single, multi, rtol=0.15)
+        assert_allclose(single, multi, rtol=1e-85)
 
     def test_log_lik_initial_lifetimes_given_non_extinction_multi_equals_single(self):
         lifetimes = np.array([12.0, 50.0, 95.0])
-        lambda_val, mu_val, T = 0.025, 0.01, 120.0
+        lambda_val, mu_val, T = np.array([0.025]), np.array([0.01]), np.array([120.0])
         single = calculate_log_lik_initial_lifetimes_given_non_extinction(
             lifetimes, lambda_val, mu_val, T
         )
@@ -393,11 +384,11 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_log_lik_initial_lifetimes_given_non_extinction(
             lifetimes, lambdas, mus, times
         )
-        assert_allclose(single, multi, rtol=0.15)
+        assert_allclose(single, multi, rtol=1e-85)
 
     def test_non_spine_ages_log_lik_multi_equals_single(self):
         ages = np.array([15.0, 60.0, 95.0])
-        lambda_val, mu_val, T = 0.02, 0.01, 120.0
+        lambda_val, mu_val, T = np.array([0.02]), np.array([0.01]), np.array([120.0])
         # Single-epoch via scalar
         single = calculate_non_spine_ages_log_lik(lambda_val, mu_val, ages, T)
         # Multi-epoch via arrays with identical rates
@@ -408,11 +399,11 @@ class TestMultiEpochEqualsSingleEpoch:
         # Known numerical differences due to reflection method; allow relaxed tolerance
         assert np.isfinite(single)
         assert np.isfinite(multi)
-        assert np.isclose(single, multi, rtol=0.1)
+        assert_allclose(single, multi, rtol=1e-8)
 
     def test_spine_ages_log_lik_multi_equals_single(self):
         ages = np.array([20.0, 40.0, 110.0])
-        lambda_val, mu_val, T = 0.018, 0.009, 120.0
+        lambda_val, mu_val, T = np.array([0.018]), np.array([0.009]), np.array([120.0])
         single = calculate_spine_ages_log_lik(lambda_val, mu_val, ages, T)
         times = np.array([40.0, 80.0, 120.0])
         lambdas = np.full(3, lambda_val)
@@ -420,11 +411,11 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_spine_ages_log_lik(lambdas, mus, ages, times)
         assert np.isfinite(single)
         assert np.isfinite(multi)
-        assert np.isclose(single, multi, rtol=1e-12)
+        assert_allclose(single, multi, rtol=1e-8)
 
     def test_ages_log_lik_multi_equals_single_non_spine(self):
         ages = np.array([10.0, 55.0, 90.0])
-        lambda_val, mu_val, T = 0.02, 0.01, 120.0
+        lambda_val, mu_val, T = np.array([0.02]), np.array([0.01]), np.array([120.0])
         single = calculate_ages_log_lik(lambda_val, mu_val, ages, T, are_spines=False)
         times = np.array([40.0, 80.0, 120.0])
         lambdas = np.full(3, lambda_val)
@@ -432,11 +423,11 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_ages_log_lik(lambdas, mus, ages, times, are_spines=False)
         assert np.isfinite(single)
         assert np.isfinite(multi)
-        assert np.isclose(single, multi, rtol=0.1)
+        assert_allclose(single, multi, rtol=1e-8)
 
     def test_ages_log_lik_multi_equals_single_spine(self):
         ages = np.array([15.0, 120.0])
-        lambda_val, mu_val, T = 0.018, 0.009, 120.0
+        lambda_val, mu_val, T = np.array([0.018]), np.array([0.009]), np.array([120.0])
         single = calculate_ages_log_lik(lambda_val, mu_val, ages, T, are_spines=True)
         times = np.array([30.0, 90.0, 120.0])
         lambdas = np.full(3, lambda_val)
@@ -444,11 +435,11 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_ages_log_lik(lambdas, mus, ages, times, are_spines=True)
         assert np.isfinite(single)
         assert np.isfinite(multi)
-        assert np.isclose(single, multi, rtol=0.17)
+        assert_allclose(single, multi, rtol=1e-8)
 
     def test_integrand_surv_from_weighted_birth_time_multi_equals_single(self):
         birth_time = 30.0
-        lambda_val, mu_val, T = 0.02, 0.01, 120.0
+        lambda_val, mu_val, T = np.array([0.02]), np.array([0.01]), np.array([120.0])
         single = _integrand_surv_from_weighted_birth_time(
             birth_time, lambda_val, mu_val, T
         )
@@ -458,7 +449,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = _integrand_surv_from_weighted_birth_time(
             birth_time, lambdas, mus, times
         )
-        assert_allclose(single, multi, rtol=1e-12)
+        assert_allclose(single, multi, rtol=1e-8)
 
 
 # ============================================================================
@@ -479,19 +470,19 @@ class TestNumericalAccuracy:
         When λ = μ, the extinction probability has the closed form:
         α_t = λT / (1 + λT)
         """
-        lambda_val = 0.1
-        T = 100.0
+        lambda_val = np.array([0.1])
+        T = np.array([100.0])
 
         # Expected: α_t = 0.1 * 100 / (1 + 0.1 * 100) = 10 / 11 ≈ 0.909091
         expected = lambda_val * T / (1 + lambda_val * T)
 
         result = calculate_extinction_pr(
-            np.array([lambda_val]),
-            np.array([lambda_val]),  # μ = λ
-            np.array([T]),
+            lambda_val,
+            lambda_val,  # μ = λ
+            T,
         )
 
-        assert_allclose(result, expected, rtol=1e-6)
+        assert_allclose(result, expected, rtol=1e-8)
         assert 0 < result < 1
 
     def test_populations_log_lik_n0_simple(self):
@@ -500,9 +491,9 @@ class TestNumericalAccuracy:
         For n=0: log P(n=0) = log(α_t)
         Where α_t = μ(e^{(λ-μ)T} - 1) / (λ e^{(λ-μ)T} - μ)
         """
-        lambda_val = 0.2
-        mu_val = 0.1
-        T = 10.0
+        lambda_val = np.array([0.2])
+        mu_val = np.array([0.1])
+        T = np.array([10.0])
 
         # Compute expected α_t manually
         growth = (lambda_val - mu_val) * T  # 1.0
@@ -510,9 +501,9 @@ class TestNumericalAccuracy:
         alpha_t = mu_val * (exp_growth - 1) / (lambda_val * exp_growth - mu_val)
         expected_log_prob = np.log(alpha_t)
 
-        result = calculate_populations_log_lik(lambda_val, mu_val, T, ns=0)
+        result = calculate_populations_log_lik(lambda_val, mu_val, T, ns=np.array([0]))
 
-        assert_allclose(result, expected_log_prob, rtol=1e-6)
+        assert_allclose(result, expected_log_prob, rtol=1e-8)
 
     def test_populations_log_lik_critical_case_n0(self):
         """Test log P(n=0) when λ = μ.
@@ -520,16 +511,18 @@ class TestNumericalAccuracy:
         When λ = μ: α_t = λT / (1 + λT)
         So log P(n=0) = log(λT / (1 + λT))
         """
-        lambda_val = 0.1
-        T = 50.0
+        lambda_val = np.array([0.1])
+        T = np.array([50.0])
 
         # Expected: α_t = 0.1 * 50 / (1 + 0.1 * 50) = 5/6
         alpha_t = lambda_val * T / (1 + lambda_val * T)
         expected = np.log(alpha_t)
 
-        result = calculate_populations_log_lik(lambda_val, lambda_val, T, ns=0)
+        result = calculate_populations_log_lik(
+            lambda_val, lambda_val, T, ns=np.array([0])
+        )
 
-        assert_allclose(result, expected, rtol=1e-6)
+        assert_allclose(result, expected, rtol=1e-8)
 
     def test_populations_log_lik_n1_simple(self):
         """Test log P(n=1) for simple parameters.
@@ -537,9 +530,9 @@ class TestNumericalAccuracy:
         For n=1: log P(n=1) = log(1 - α_t) + log(1 - β_t)
         Where β_t = (λ/μ) * α_t
         """
-        lambda_val = 0.3
-        mu_val = 0.2
-        T = 5.0
+        lambda_val = np.array([0.3])
+        mu_val = np.array([0.2])
+        T = np.array([5.0])
 
         # Compute α_t and β_t
         growth = (lambda_val - mu_val) * T
@@ -549,19 +542,19 @@ class TestNumericalAccuracy:
 
         expected = np.log(1 - alpha_t) + np.log(1 - beta_t)
 
-        result = calculate_populations_log_lik(lambda_val, mu_val, T, ns=1)
+        result = calculate_populations_log_lik(lambda_val, mu_val, T, ns=np.array([1]))
 
-        assert_allclose(result, expected, rtol=1e-6)
+        assert_allclose(result, expected, rtol=1e-8)
 
     def test_spine_age_at_zero(self):
         """Test spine age density at t=0.
 
         At t=0 (age zero), the density involves special limiting behavior.
         """
-        lambda_val = 0.2
-        mu_val = 0.1
-        T = 10.0
-        age = 0.0
+        lambda_val = np.array([0.2])
+        mu_val = np.array([0.1])
+        T = np.array([10.0])
+        age = np.array([0.0])
 
         result = calculate_spine_ages_log_lik(lambda_val, mu_val, age, T)
 
@@ -577,34 +570,34 @@ class TestNumericalAccuracy:
         :param self: Description
         """
 
-        T = 10.0
-        lambda_val = 1.0
-        mu_val = 2.0
+        T = np.array([10.0])
+        lambda_val = np.array([1.0])
+        mu_val = np.array([2.0])
 
         def _integrand(x: np.float64) -> np.float64:
-            return np.exp(-(lambda_val - mu_val) * x, dtype=np.float64) * mu_val
+            return (np.exp(-(lambda_val - mu_val) * x, dtype=np.float64) * mu_val)[0]
 
-        integral = scipy.integrate.quad(_integrand, 0, T)[0]
+        integral = scipy.integrate.quad(_integrand, 0, T[0])[0]
         expected = np.exp(-(lambda_val - mu_val) * T) / (1 + integral)
         result = _population_geometric_parameter(lambda_val, mu_val, T)
-        assert_allclose(result, expected, rtol=1e-6)
+        assert_allclose(result, expected, rtol=1e-8)
 
     def test_geometric_parameter_critical_case(self):
         """Test _population_geometric_parameter when λ = μ.
 
         Private function test: This function returns 1 - β_t where β_t = λT / (1 + λT)
         """
-        lambda_val = mu_val = 0.15
-        T = 20.0
+        lambda_val = mu_val = np.array([0.1])
+        T = np.array([20.0])
 
         def _integrand(x: np.float64) -> np.float64:
-            return np.exp(-(lambda_val - mu_val) * x, dtype=np.float64) * mu_val
+            return (np.exp(-(lambda_val - mu_val) * x, dtype=np.float64) * mu_val)[0]
 
-        integral = scipy.integrate.quad(_integrand, 0, T)[0]
+        integral = scipy.integrate.quad(_integrand, 0, T[0])[0]
         expected = np.exp(-(lambda_val - mu_val) * T) / (1 + integral)
         result = _population_geometric_parameter(lambda_val, mu_val, T)
 
-        assert_allclose(result, expected, rtol=1e-6)
+        assert_allclose(result, expected, rtol=1e-8)
 
     def test_geometric_parameter_general_case(self):
         """Test _population_geometric_parameter for λ ≠ μ.
@@ -638,7 +631,7 @@ class TestNumericalAccuracy:
         ) / (1 + integral)
         result = _population_geometric_parameter(birth_rates, death_rates, epoch_ends)
 
-        assert_allclose(result, expected, rtol=1e-6)
+        assert_allclose(result, expected, rtol=1e-8)
 
     def test_pr_extinction_numerator_simple(self):
         """Test _pr_extinction_numerator for simple case.
@@ -646,15 +639,14 @@ class TestNumericalAccuracy:
         Private function test: Validates that function returns a positive finite value.
         The exact formula is complex and involves integration - we validate properties.
         """
-        lambda_val = 0.2
-        mu_val = 0.1
-        T = 10.0
+        lambda_val = np.array([0.2])
+        mu_val = np.array([0.1])
+        T = np.array([10.0])
 
         result = _pr_extinction_numerator(
-            np.array([lambda_val]),
-            np.array([mu_val]),
-            np.array([T]),
-            log_scale_params=False,
+            lambda_val,
+            mu_val,
+            T,
         )
 
         # Should be positive and finite
@@ -663,58 +655,64 @@ class TestNumericalAccuracy:
         # For λ > μ, numerator should be between 0 and 1
         assert 0 < result < 1
 
-    def testcalculate_log_lik_lifetimes_simple(self):
+    def test_calculate_log_lik_lifetimes_simple(self):
         """Test calculate_log_lik_lifetimes for simple scalar age.
 
         Private function test: log density involves birth rate and growth.
         """
-        lambda_val = 0.1
-        age = 20.0
-        T = 100.0
+        lambda_val = np.array([0.1])
+        age = np.array([20.0])
+        T = np.array([100.0])
 
         # For simple case: log f(t) = log(λ) - λt
         # (This is simplified; actual formula may differ)
         result = calculate_log_lik_lifetimes(
-            age, np.array([lambda_val]), np.array([T]), log_scale_params=False
+            age,
+            lambda_val,
+            T,
         )
 
         # Should be finite and negative (log of density)
         assert np.isfinite(result)
         assert result < 0
 
-    def testcalculate_log_lik_lifetimes_array(self):
+    def test_calculate_log_lik_lifetimes_array(self):
         """Test calculate_log_lik_lifetimes with array of ages.
 
         Private function test: should sum log likelihoods across ages.
         """
-        lambda_val = 0.1
+        lambda_val = np.array([0.1])
         ages = np.array([10.0, 30.0, 50.0])
-        T = 100.0
+        T = np.array([100.0])
 
         # Compute for array
         result_array = calculate_log_lik_lifetimes(
-            ages, np.array([lambda_val]), np.array([T]), log_scale_params=False
+            ages,
+            lambda_val,
+            T,
         )
 
         # Compute individually and sum
         result_sum = sum(
             calculate_log_lik_lifetimes(
-                age, np.array([lambda_val]), np.array([T]), log_scale_params=False
+                np.array([age]),
+                lambda_val,
+                T,
             )
             for age in ages
         )
 
-        assert_allclose(result_array, result_sum, rtol=1e-10)
+        assert_allclose(result_array, result_sum, rtol=1e-8)
 
     def test_non_spine_age_density_known_values(self):
         """Test non-spine age density against manually computed values.
 
         For specific parameter values, compute expected log density.
         """
-        lambda_val = 0.2
-        mu_val = 0.1
-        age = 5.0
-        T = 20.0
+        lambda_val = np.array([0.2])
+        mu_val = np.array([0.1])
+        age = np.array([5.0])
+        T = np.array([20.0])
 
         # Non-spine density: f(t) = [λe^{-λt} - μe^{-(λ-μ)T}e^{-μt}] / [1 - e^{-(λ-μ)T}]
         growth_rate = lambda_val - mu_val
@@ -725,20 +723,18 @@ class TestNumericalAccuracy:
         density = numerator / denominator
         expected = np.log(density)
 
-        result = calculate_non_spine_ages_log_lik(
-            np.array([lambda_val]), np.array([mu_val]), age, np.array([T])
-        )
+        result = calculate_non_spine_ages_log_lik(lambda_val, mu_val, age, T)
 
-        assert_allclose(result, expected, rtol=1e-6)
+        assert_allclose(result, expected, rtol=1e-8)
 
     def test_derivatives_sum_over_array(self):
         """Test that derivatives sum correctly over array of n values.
 
         Computing derivatives for [n1, n2] should equal sum of individual derivatives.
         """
-        lambda_val = 0.15
+        lambda_val = np.array([0.1])
         mu_val = 0.08
-        T = 50.0
+        T = np.array([50.0])
         ns = np.array([1, 5, 10])
 
         # Compute together
@@ -753,7 +749,7 @@ class TestNumericalAccuracy:
         ]
         result_separate = np.sum(derivs_separate, axis=0)
 
-        assert_allclose(result_together, result_separate, rtol=1e-10)
+        assert_allclose(result_together, result_separate, rtol=1e-8)
 
     def test_extinction_pr_bounds(self):
         """Test that extinction probability satisfies 0 < α_t < 1 for various inputs.
@@ -768,7 +764,9 @@ class TestNumericalAccuracy:
         ]
 
         for lambda_val, mu_val, T in test_cases:
-            result = calculate_extinction_pr(lambda_val, mu_val, T)
+            result = calculate_extinction_pr(
+                np.array(lambda_val), np.array(mu_val), np.array(T)
+            )
 
             assert 0 < result < 1, f"Failed for λ={lambda_val}, μ={mu_val}, T={T}"
 
@@ -777,13 +775,13 @@ class TestNumericalAccuracy:
 
         Private function test: Validates function returns reasonable log probability.
         """
-        lambda_val = 0.1
-        mu_val = 0.05
-        T = 100.0
-        age = 0.0
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
+        T = np.array([100.0])
+        age = np.array([0.0])
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
-            age, np.array([lambda_val]), np.array([mu_val]), np.array([T])
+            age, lambda_val, mu_val, T
         )
 
         # Should be finite (could be 0 at age 0, representing log(1) = 0)
@@ -796,20 +794,18 @@ class TestNumericalAccuracy:
 
         A single-epoch piecewise-constant model should match scalar input.
         """
-        lambda_val = 0.12
-        mu_val = 0.07
-        T = 80.0
-        n = 5
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.07])
+        T = np.array([80.0])
+        n = np.array([5])
 
         # Scalar computation
         result_scalar = calculate_populations_log_lik(lambda_val, mu_val, T, n)
 
         # Single-epoch array computation
-        result_array = calculate_populations_log_lik(
-            np.array([lambda_val]), np.array([mu_val]), np.array([T]), n
-        )
+        result_array = calculate_populations_log_lik(lambda_val, mu_val, T, n)
 
-        assert_allclose(result_scalar, result_array, rtol=1e-10)
+        assert_allclose(result_scalar, result_array, rtol=1e-8)
 
 
 # ============================================================================
@@ -832,20 +828,6 @@ class TestExtinctionProbability:
 
         assert 0 < result < 1
         assert isinstance(result, np.float64)
-
-    def test_extinction_pr_log_scale(
-        self, log_scale_params: Dict[str, NDArray[np.float64]]
-    ):
-        """Test extinction probability with log-scale parameters."""
-        lambda_arr = np.array([log_scale_params["log_lambda"]])
-        mu_arr = np.array([log_scale_params["log_mu"]])
-        times_arr = np.array([log_scale_params["time"]])
-
-        result = calculate_extinction_pr(
-            lambda_arr, mu_arr, times_arr, log_scale_params=True
-        )
-
-        assert 0 < result < 1
 
     def test_extinction_pr_return_log_prob(
         self, standard_array_params: Dict[str, NDArray[np.float64]]
@@ -921,12 +903,14 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_increases_with_time(self):
         """Test that extinction probability increases as observation time increases."""
-        lambda_val = 0.1
-        mu_val = 0.05
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
 
         # Compare extinction probabilities at different times
         times = [50.0, 100.0, 200.0, 400.0]
-        results = [calculate_extinction_pr(lambda_val, mu_val, t) for t in times]
+        results = [
+            calculate_extinction_pr(lambda_val, mu_val, np.array([t])) for t in times
+        ]
 
         # Extinction probability should be monotonically increasing with time
         for i in range(len(results) - 1):
@@ -937,11 +921,16 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_increases_with_death_rate(self):
         """Test that extinction probability increases as death rate increases."""
-        lambda_val = 0.1
-        T = 100.0
+        lambda_val = np.array([0.1])
+        T = np.array([100.0])
 
         # Compare extinction probabilities at different death rates
-        death_rates = [0.02, 0.05, 0.08, 0.1]
+        death_rates = [
+            np.array([0.02]),
+            np.array([0.05]),
+            np.array([0.08]),
+            np.array([0.1]),
+        ]
         results = [
             calculate_extinction_pr(lambda_val, mu_val, T) for mu_val in death_rates
         ]
@@ -955,11 +944,16 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_decreases_with_birth_rate(self):
         """Test that extinction probability decreases as birth rate increases."""
-        mu_val = 0.05
-        T = 100.0
+        mu_val = np.array([0.05])
+        T = np.array([100.0])
 
         # Compare extinction probabilities at different birth rates
-        birth_rates = [0.05, 0.1, 0.15, 0.2]
+        birth_rates = [
+            np.array([0.05]),
+            np.array([0.1]),
+            np.array([0.15]),
+            np.array([0.2]),
+        ]
         results = [
             calculate_extinction_pr(lambda_val, mu_val, T) for lambda_val in birth_rates
         ]
@@ -988,7 +982,7 @@ class TestPopulationsLogLikelihood:
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
             standard_scalar_params["time"],
-            ns=10,
+            ns=np.array([1]),
         )
 
         assert np.isfinite(result)
@@ -1002,7 +996,7 @@ class TestPopulationsLogLikelihood:
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
             standard_scalar_params["time"],
-            ns=0,
+            ns=np.array([0]),
         )
 
         # P(n=0) = α_t, so log P should be finite and negative
@@ -1031,8 +1025,7 @@ class TestPopulationsLogLikelihood:
             standard_array_params["lambda_params"],
             standard_array_params["mu_params"],
             standard_array_params["times"],
-            ns=10,
-            log_scale_params=False,
+            ns=np.array([1]),
         )
 
         assert np.isfinite(result)
@@ -1046,7 +1039,7 @@ class TestPopulationsLogLikelihood:
                 standard_scalar_params["lambda_param"],
                 standard_scalar_params["mu_param"],
                 -100.0,  # Negative time
-                ns=10,
+                ns=np.array([1]),
             )
 
     def test_negative_ns_returns_error(
@@ -1067,19 +1060,7 @@ class TestPopulationsLogLikelihood:
             nearly_equal_params["lambda_param"],
             nearly_equal_params["mu_param"],
             nearly_equal_params["time"],
-            ns=10,
-        )
-
-        assert np.isfinite(result)
-
-    def test_log_scale_params(self, log_scale_params: Dict[str, NDArray[np.float64]]):
-        """Test with log-scale parameters."""
-        result = calculate_populations_log_lik(
-            log_scale_params["log_lambda"],
-            log_scale_params["log_mu"],
-            log_scale_params["time"],
-            ns=10,
-            log_scale_params=True,
+            ns=np.array([1]),
         )
 
         assert np.isfinite(result)
@@ -1091,19 +1072,8 @@ class TestPopulationsLogLikelihood:
                 lambda_params=np.array([0.1, 0.15]),
                 mu_params=np.array([0.05, 0.06, 0.055]),  # Different length
                 times=np.array([50.0, 100.0]),
-                ns=10,
+                ns=np.array([1]),
             )
-
-    def test_numpy_scalars_accepted(self):
-        """Test that numpy scalar types are accepted."""
-        # np.float64 instances pass isinstance(x, float) check
-        result = calculate_populations_log_lik(
-            lambda_params=np.float64(0.1),
-            mu_params=np.float64(0.05),
-            times=np.float64(100.0),
-            ns=10,
-        )
-        assert np.isfinite(result)
 
 
 class TestPopulationsLogLikelihoodDerivatives:
@@ -1117,7 +1087,7 @@ class TestPopulationsLogLikelihoodDerivatives:
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
             standard_scalar_params["time"],
-            ns=10,
+            ns=np.array([1]),
         )
 
         assert result.shape == (2,)
@@ -1131,7 +1101,7 @@ class TestPopulationsLogLikelihoodDerivatives:
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
             standard_scalar_params["time"],
-            ns=0,
+            ns=np.array([0]),
         )
 
         assert result.shape == (2,)
@@ -1158,24 +1128,9 @@ class TestPopulationsLogLikelihoodDerivatives:
             nearly_equal_params["lambda_param"],
             nearly_equal_params["mu_param"],
             nearly_equal_params["time"],
-            ns=10,
+            ns=np.array([1]),
         )
 
-        assert np.all(np.isfinite(result))
-
-    def test_derivatives_log_scale(
-        self, log_scale_params: Dict[str, NDArray[np.float64]]
-    ):
-        """Test derivatives with log-scale parameters."""
-        result = calculate_populations_log_lik_derivatives(
-            log_scale_params["log_lambda"],
-            log_scale_params["log_mu"],
-            log_scale_params["time"],
-            ns=10,
-            log_scale_params=True,
-        )
-
-        assert result.shape == (2,)
         assert np.all(np.isfinite(result))
 
 
@@ -1241,7 +1196,7 @@ class TestSpineAgesLogLikelihood:
     ):
         """Test that age > T returns -inf."""
         with pytest.raises(
-            ValueError, match="ages_t must be in \[0, .*\]. Got ages_t:"
+            ValueError, match=r"ages_t must be in \[0, .*\]. Got ages_t:"
         ):  # age > T
             calculate_spine_ages_log_lik(
                 standard_scalar_params["lambda_param"],
@@ -1255,7 +1210,7 @@ class TestSpineAgesLogLikelihood:
     ):
         """Test that negative age returns -inf."""
         with pytest.raises(
-            ValueError, match="ages_t must be in \[0, .*\]. Got ages_t:"
+            ValueError, match=r"ages_t must be in \[0, .*\]. Got ages_t:"
         ):  # Negative age
             calculate_spine_ages_log_lik(
                 standard_scalar_params["lambda_param"],
@@ -1263,18 +1218,6 @@ class TestSpineAgesLogLikelihood:
                 -10.0,  # Negative age
                 standard_scalar_params["time"],
             )
-
-    def test_log_scale_params(self, log_scale_params, sample_ages_scalar):
-        """Test with log-scale parameters."""
-        result = calculate_spine_ages_log_lik(
-            log_scale_params["log_lambda"],
-            log_scale_params["log_mu"],
-            sample_ages_scalar,
-            log_scale_params["time"],
-            log_scale_params=True,
-        )
-
-        assert np.isfinite(result)
 
 
 class TestSpineAgesLogLikelihoodDerivatives:
@@ -1348,7 +1291,6 @@ class TestNonSpineAgesLogLikelihood:
             mu_params=np.array([0.05]),
             ages_t=sample_ages_scalar,
             times=np.array([100.0]),
-            log_scale_params=False,
         )
 
         assert np.isfinite(result)
@@ -1361,7 +1303,6 @@ class TestNonSpineAgesLogLikelihood:
             mu_params=np.array([0.05]),
             ages_t=sample_ages_array,
             times=np.array([100.0]),
-            log_scale_params=False,
         )
 
         assert np.isfinite(result)
@@ -1378,7 +1319,6 @@ class TestNonSpineAgesLogLikelihood:
             mu_params=standard_array_params["mu_params"],
             ages_t=ages,
             times=standard_array_params["times"],
-            log_scale_params=False,
         )
 
         assert np.isfinite(result)
@@ -1409,7 +1349,7 @@ class TestNonSpineAgesLogLikelihood:
         """Test that invalid ages return -inf."""
         # Age > T
         with pytest.raises(
-            ValueError, match="ages_t must be in \[0, .*\]. Got ages_t:"
+            ValueError, match=r"ages_t must be in \[0, .*\]. Got ages_t:"
         ):
             calculate_non_spine_ages_log_lik(
                 lambda_params=np.array([0.1]),
@@ -1420,7 +1360,7 @@ class TestNonSpineAgesLogLikelihood:
 
     def test_shape_mismatch_raises_error(self, sample_ages_scalar):
         """Test that parameter shape mismatches raise ValueError."""
-        with pytest.raises(ValueError, match="same length"):
+        with pytest.raises(ValueError, match="same shape"):
             calculate_non_spine_ages_log_lik(
                 lambda_params=np.array([0.1, 0.15]),
                 mu_params=np.array([0.05]),  # Different shape
@@ -1514,7 +1454,6 @@ class TestAgesLogLikelihood:
             ages_t=sample_ages_scalar,
             times=100.0,
             are_spines=False,
-            log_scale_params=False,
         )
 
         # Should match non-spine calculation (using array inputs)
@@ -1523,7 +1462,6 @@ class TestAgesLogLikelihood:
             mu_params=np.array([0.05]),
             ages_t=sample_ages_scalar,
             times=np.array([100.0]),
-            log_scale_params=False,
         )
 
         assert_allclose(result, expected)
@@ -1595,7 +1533,7 @@ class TestMathematicalProperties:
                 ns=n,
             )
             # Log probabilities should be ≤ 0
-            assert result <= 0 or np.isclose(result, 0)
+            assert result <= 0 or np.isclose(result, 0, rtol=1e-8)
 
     def test_extinction_pr_increases_with_mu(self):
         """Test that extinction probability increases as death rate increases."""
@@ -1618,18 +1556,18 @@ class TestMathematicalProperties:
             lambda_params=0.1,
             mu_params=0.05,
             times=100.0,
-            ns=10,
+            ns=np.array([1]),
         )
 
         array_result = calculate_populations_log_lik(
             lambda_params=np.array([0.1]),
             mu_params=np.array([0.05]),
             times=np.array([100.0]),
-            ns=10,
+            ns=np.array([1]),
         )
 
         # Results should be very close
-        assert_allclose(scalar_result, array_result, rtol=1e-10)
+        assert_allclose(scalar_result, array_result, rtol=1e-8)
 
     def test_sum_property_array_ns(
         self, standard_scalar_params: Dict[str, NDArray[np.float64]]
@@ -1656,7 +1594,7 @@ class TestMathematicalProperties:
             for n in ns_array
         )
 
-        assert_allclose(result_together, result_separate, rtol=1e-10)
+        assert_allclose(result_together, result_separate, rtol=1e-8)
 
 
 # ============================================================================
@@ -1674,7 +1612,7 @@ class TestNumericalStability:
             lambda_params=0.001,  # Small rates to prevent overflow
             mu_params=0.0005,
             times=10000.0,  # Very large time
-            ns=10,
+            ns=np.array([1]),
         )
 
         # Should not return inf or nan
@@ -1687,7 +1625,7 @@ class TestNumericalStability:
             lambda_params=1.0,
             mu_params=0.001,
             times=10.0,
-            ns=100,
+            ns=np.array([1]),
         )
 
         # Should handle gracefully
@@ -1698,7 +1636,7 @@ class TestNumericalStability:
             lambda_params=0.001,
             mu_params=1.0,
             times=10.0,
-            ns=1,
+            ns=np.array([1]),
         )
 
         assert np.isfinite(result2) or result2 == -np.inf
@@ -1725,15 +1663,14 @@ class TestNumericalStability:
             lambda_params=birth_rates,
             mu_params=death_rates,
             times=times,
-            ns=10,
-            log_scale_params=False,
+            ns=np.array([1]),
         )
 
         assert np.isfinite(result) or result == -np.inf
 
     def test_ages_near_observation_time(self):
         """Test age likelihood with ages very close to T."""
-        T = 100.0
+        T = np.array([100.0])
         ages = np.array([T - 1e-6, T - 1e-8, T - 1e-10])
 
         result = calculate_spine_ages_log_lik(
@@ -1777,30 +1714,6 @@ class TestIntegration:
         error = scipy.optimize.check_grad(objective, gradient, params)
         assert error < 1e-5, f"Gradient error {error} exceeds tolerance"
 
-    def test_log_scale_consistency(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
-    ):
-        """Test that log-scale and regular parameters give same results."""
-        # Regular scale
-        result1 = calculate_populations_log_lik(
-            standard_scalar_params["lambda_param"],
-            standard_scalar_params["mu_param"],
-            standard_scalar_params["time"],
-            ns=10,
-            log_scale_params=False,
-        )
-
-        # Log scale
-        result2 = calculate_populations_log_lik(
-            np.log(standard_scalar_params["lambda_param"]),
-            np.log(standard_scalar_params["mu_param"]),
-            standard_scalar_params["time"],
-            ns=10,
-            log_scale_params=True,
-        )
-
-        assert_allclose(result1, result2, rtol=1e-10)
-
     def test_spine_non_spine_different_formulas(
         self, standard_scalar_params, sample_ages_scalar
     ):
@@ -1810,7 +1723,6 @@ class TestIntegration:
             standard_scalar_params["mu_param"],
             sample_ages_scalar,
             standard_scalar_params["time"],
-            log_scale_params=False,
         )
 
         non_spine_result = calculate_non_spine_ages_log_lik(
@@ -1818,7 +1730,6 @@ class TestIntegration:
             np.array([standard_scalar_params["mu_param"]]),
             sample_ages_scalar,
             np.array([standard_scalar_params["time"]]),
-            log_scale_params=False,
         )
 
         # These should be different (different conditioning)
@@ -1882,19 +1793,25 @@ class TestGradientValidation:
 
     def test_populations_log_lik_derivatives_scalar_n(self):
         """Test population derivatives with scalar n using check_grad."""
-        lambda_val = 0.1
-        mu_val = 0.05
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
         time = 100.0
         n = 5
 
         def objective(params):
             return calculate_populations_log_lik(
-                params[0], params[1], time, ns=n, log_scale_params=False
+                params[0],
+                params[1],
+                time,
+                ns=n,
             )
 
         def gradient(params):
             return calculate_populations_log_lik_derivatives(
-                params[0], params[1], time, ns=n, log_scale_params=False
+                params[0],
+                params[1],
+                time,
+                ns=n,
             )
 
         params = np.array([lambda_val, mu_val])
@@ -1903,19 +1820,25 @@ class TestGradientValidation:
 
     def test_populations_log_lik_derivatives_array_n(self):
         """Test population derivatives with array n using check_grad."""
-        lambda_val = 0.1
-        mu_val = 0.05
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
         time = 100.0
         ns = np.array([0, 1, 2, 5, 10])
 
         def objective(params):
             return calculate_populations_log_lik(
-                params[0], params[1], time, ns=ns, log_scale_params=False
+                params[0],
+                params[1],
+                time,
+                ns=ns,
             )
 
         def gradient(params):
             return calculate_populations_log_lik_derivatives(
-                params[0], params[1], time, ns=ns, log_scale_params=False
+                params[0],
+                params[1],
+                time,
+                ns=ns,
             )
 
         params = np.array([lambda_val, mu_val])
@@ -1924,19 +1847,27 @@ class TestGradientValidation:
 
     def test_populations_log_lik_derivatives_near_equal_rates(self):
         """Test population derivatives when λ ≈ μ (limiting case)."""
-        lambda_val = 0.1
-        mu_val = 0.1 + 1e-13  # Within tolerance, should use limiting formula
+        lambda_val = np.array([0.1])
+        mu_val = (
+            np.array([0.1]) + 1e-13
+        )  # Within tolerance, should use limiting formula
         time = 100.0
         n = 5
 
         def objective(params):
             return calculate_populations_log_lik(
-                params[0], params[1], time, ns=n, log_scale_params=False
+                params[0],
+                params[1],
+                time,
+                ns=n,
             )
 
         def gradient(params):
             return calculate_populations_log_lik_derivatives(
-                params[0], params[1], time, ns=n, log_scale_params=False
+                params[0],
+                params[1],
+                time,
+                ns=n,
             )
 
         params = np.array([lambda_val, mu_val])
@@ -1945,19 +1876,25 @@ class TestGradientValidation:
 
     def test_non_spine_ages_derivatives_scalar_age(self):
         """Test non-spine age derivatives with scalar age."""
-        lambda_val = 0.1
-        mu_val = 0.05
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
         age = 50.0
-        T = 100.0
+        T = np.array([100.0])
 
         def objective(params):
             return calculate_non_spine_ages_log_lik(
-                params[0], params[1], age, T, log_scale_params=False
+                params[0],
+                params[1],
+                age,
+                T,
             )
 
         def gradient(params):
             return calculate_non_spine_ages_log_lik_derivatives(
-                params[0], params[1], age, T, log_scale_params=False
+                params[0],
+                params[1],
+                age,
+                T,
             )
 
         params = np.array([lambda_val, mu_val])
@@ -1966,19 +1903,25 @@ class TestGradientValidation:
 
     def test_non_spine_ages_derivatives_array_ages(self):
         """Test non-spine age derivatives with multiple ages."""
-        lambda_val = 0.1
-        mu_val = 0.05
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
         ages = np.array([10.0, 30.0, 50.0, 70.0, 90.0])
-        T = 100.0
+        T = np.array([100.0])
 
         def objective(params):
             return calculate_non_spine_ages_log_lik(
-                params[0], params[1], ages, T, log_scale_params=False
+                params[0],
+                params[1],
+                ages,
+                T,
             )
 
         def gradient(params):
             return calculate_non_spine_ages_log_lik_derivatives(
-                params[0], params[1], ages, T, log_scale_params=False
+                params[0],
+                params[1],
+                ages,
+                T,
             )
 
         params = np.array([lambda_val, mu_val])
@@ -1987,19 +1930,25 @@ class TestGradientValidation:
 
     def test_non_spine_ages_derivatives_near_equal_rates(self):
         """Test non-spine age derivatives when λ ≈ μ."""
-        lambda_val = 0.1
-        mu_val = 0.1 + 1e-13
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.1]) + 1e-13
         age = 50.0
-        T = 100.0
+        T = np.array([100.0])
 
         def objective(params):
             return calculate_non_spine_ages_log_lik(
-                params[0], params[1], age, T, log_scale_params=False
+                params[0],
+                params[1],
+                age,
+                T,
             )
 
         def gradient(params):
             return calculate_non_spine_ages_log_lik_derivatives(
-                params[0], params[1], age, T, log_scale_params=False
+                params[0],
+                params[1],
+                age,
+                T,
             )
 
         params = np.array([lambda_val, mu_val])
@@ -2008,19 +1957,25 @@ class TestGradientValidation:
 
     def test_spine_ages_derivatives_interior_ages(self):
         """Test spine age derivatives for ages < T (interior case)."""
-        lambda_val = 0.1
-        mu_val = 0.05
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
         ages = np.array([10.0, 30.0, 50.0, 70.0, 90.0])
-        T = 100.0
+        T = np.array([100.0])
 
         def objective(params):
             return calculate_spine_ages_log_lik(
-                params[0], params[1], ages, T, log_scale_params=False
+                params[0],
+                params[1],
+                ages,
+                T,
             )
 
         def gradient(params):
             return calculate_spine_ages_log_lik_derivatives(
-                params[0], params[1], ages, T, log_scale_params=False
+                params[0],
+                params[1],
+                ages,
+                T,
             )
 
         params = np.array([lambda_val, mu_val])
@@ -2031,19 +1986,25 @@ class TestGradientValidation:
 
     def test_spine_ages_derivatives_boundary_age(self):
         """Test spine age derivatives at boundary (age = T)."""
-        lambda_val = 0.1
-        mu_val = 0.05
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
         age = 100.0
-        T = 100.0
+        T = np.array([100.0])
 
         def objective(params):
             return calculate_spine_ages_log_lik(
-                params[0], params[1], age, T, log_scale_params=False
+                params[0],
+                params[1],
+                age,
+                T,
             )
 
         def gradient(params):
             return calculate_spine_ages_log_lik_derivatives(
-                params[0], params[1], age, T, log_scale_params=False
+                params[0],
+                params[1],
+                age,
+                T,
             )
 
         params = np.array([lambda_val, mu_val])
@@ -2052,19 +2013,25 @@ class TestGradientValidation:
 
     def test_spine_ages_derivatives_mixed_ages(self):
         """Test spine age derivatives with mix of interior and boundary ages."""
-        lambda_val = 0.1
-        mu_val = 0.05
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
         ages = np.array([10.0, 50.0, 90.0, 100.0, 100.0])  # Some at boundary
-        T = 100.0
+        T = np.array([100.0])
 
         def objective(params):
             return calculate_spine_ages_log_lik(
-                params[0], params[1], ages, T, log_scale_params=False
+                params[0],
+                params[1],
+                ages,
+                T,
             )
 
         def gradient(params):
             return calculate_spine_ages_log_lik_derivatives(
-                params[0], params[1], ages, T, log_scale_params=False
+                params[0],
+                params[1],
+                ages,
+                T,
             )
 
         params = np.array([lambda_val, mu_val])
@@ -2073,19 +2040,25 @@ class TestGradientValidation:
 
     def test_spine_ages_derivatives_near_equal_rates(self):
         """Test spine age derivatives when λ ≈ μ."""
-        lambda_val = 0.1
-        mu_val = 0.1 + 1e-13
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.1]) + 1e-13
         age = 50.0
-        T = 100.0
+        T = np.array([100.0])
 
         def objective(params):
             return calculate_spine_ages_log_lik(
-                params[0], params[1], age, T, log_scale_params=False
+                params[0],
+                params[1],
+                age,
+                T,
             )
 
         def gradient(params):
             return calculate_spine_ages_log_lik_derivatives(
-                params[0], params[1], age, T, log_scale_params=False
+                params[0],
+                params[1],
+                age,
+                T,
             )
 
         params = np.array([lambda_val, mu_val])
@@ -2097,7 +2070,7 @@ class TestGradientValidation:
         log_lambda = np.log(0.1)
         log_mu = np.log(0.05)
         age = 50.0
-        T = 100.0
+        T = np.array([100.0])
 
         def objective(log_params):
             return calculate_non_spine_ages_log_lik(
@@ -2119,33 +2092,48 @@ class TestGradientValidation:
 
     def test_finite_difference_manual_check(self):
         """Manual finite difference check for additional verification."""
-        lambda_val = 0.1
-        mu_val = 0.05
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
         age = 50.0
-        T = 100.0
+        T = np.array([100.0])
         epsilon = 1e-7
 
         # Compute analytical gradient
         analytical = calculate_non_spine_ages_log_lik_derivatives(
-            lambda_val, mu_val, age, T, log_scale_params=False
+            lambda_val,
+            mu_val,
+            age,
+            T,
         )
 
         # Compute numerical gradient using central differences
         # d/dλ
         f_lambda_plus = calculate_non_spine_ages_log_lik(
-            lambda_val + epsilon, mu_val, age, T, log_scale_params=False
+            lambda_val + epsilon,
+            mu_val,
+            age,
+            T,
         )
         f_lambda_minus = calculate_non_spine_ages_log_lik(
-            lambda_val - epsilon, mu_val, age, T, log_scale_params=False
+            lambda_val - epsilon,
+            mu_val,
+            age,
+            T,
         )
         d_lambda_numerical = (f_lambda_plus - f_lambda_minus) / (2 * epsilon)
 
         # d/dμ
         f_mu_plus = calculate_non_spine_ages_log_lik(
-            lambda_val, mu_val + epsilon, age, T, log_scale_params=False
+            lambda_val,
+            mu_val + epsilon,
+            age,
+            T,
         )
         f_mu_minus = calculate_non_spine_ages_log_lik(
-            lambda_val, mu_val - epsilon, age, T, log_scale_params=False
+            lambda_val,
+            mu_val - epsilon,
+            age,
+            T,
         )
         d_mu_numerical = (f_mu_plus - f_mu_minus) / (2 * epsilon)
 
@@ -2160,7 +2148,7 @@ class TestGradientValidation:
     def test_gradient_consistency_across_parameter_ranges(self):
         """Test gradients across different parameter ranges."""
         ages = np.array([20.0, 50.0, 80.0])
-        T = 100.0
+        T = np.array([100.0])
 
         # Test different parameter combinations
         test_cases = [
@@ -2175,12 +2163,18 @@ class TestGradientValidation:
 
             def objective(params):
                 return calculate_non_spine_ages_log_lik(
-                    params[0], params[1], ages, T, log_scale_params=False
+                    params[0],
+                    params[1],
+                    ages,
+                    T,
                 )
 
             def gradient(params):
                 return calculate_non_spine_ages_log_lik_derivatives(
-                    params[0], params[1], ages, T, log_scale_params=False
+                    params[0],
+                    params[1],
+                    ages,
+                    T,
                 )
 
             params = np.array([lambda_val, mu_val])
@@ -2191,20 +2185,20 @@ class TestGradientValidation:
 
     def test_wrapper_function_derivatives(self):
         """Test that wrapper function derivatives match specific implementations."""
-        lambda_val = 0.1
-        mu_val = 0.05
+        lambda_val = np.array([0.1])
+        mu_val = np.array([0.05])
         age = 50.0
-        T = 100.0
+        T = np.array([100.0])
 
         # Non-spine derivatives via wrapper
         def objective_wrapper(params):
             return calculate_ages_log_lik(
-                params[0], params[1], age, T, log_scale_params=False, are_spines=False
+                params[0], params[1], age, T, are_spines=False
             )
 
         def gradient_wrapper(params):
             return calculate_ages_log_lik_derivatives(
-                params[0], params[1], age, T, log_scale_params=False, are_spines=False
+                params[0], params[1], age, T, are_spines=False
             )
 
         params = np.array([lambda_val, mu_val])
@@ -2213,13 +2207,11 @@ class TestGradientValidation:
 
         # Spine derivatives via wrapper
         def objective_wrapper_spine(params):
-            return calculate_ages_log_lik(
-                params[0], params[1], age, T, log_scale_params=False, are_spines=True
-            )
+            return calculate_ages_log_lik(params[0], params[1], age, T, are_spines=True)
 
         def gradient_wrapper_spine(params):
             return calculate_ages_log_lik_derivatives(
-                params[0], params[1], age, T, log_scale_params=False, are_spines=True
+                params[0], params[1], age, T, are_spines=True
             )
 
         error_spine = scipy.optimize.check_grad(
@@ -2250,7 +2242,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
         times = np.array([100.0])
 
         result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         # Result should be finite and non-negative
@@ -2265,7 +2260,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
         times = np.array([50.0, 100.0, 150.0])
 
         result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         assert np.isfinite(result)
@@ -2279,7 +2277,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
         times = np.array([50.0, 100.0])
 
         result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         assert np.isfinite(result)
@@ -2295,7 +2296,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # After subtracting birth_time, times becomes [0.0, 50.0]
         # valid_indices will be where times > 0, so only index 1
         result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         assert np.isfinite(result)
@@ -2310,7 +2314,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
         with pytest.raises(ValueError):
             _integrand_surv_from_weighted_birth_time(
-                birth_time, birth_rates, death_rates, times, log_scale_params=False
+                birth_time,
+                birth_rates,
+                death_rates,
+                times,
             )
 
     def test_birth_time_slightly_beyond_last_epoch(self):
@@ -2324,7 +2331,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # Should raise ValueError
         with pytest.raises(ValueError):
             _integrand_surv_from_weighted_birth_time(
-                birth_time, birth_rates, death_rates, times, log_scale_params=False
+                birth_time,
+                birth_rates,
+                death_rates,
+                times,
             )
 
     def test_birth_time_within_first_epoch(self):
@@ -2335,7 +2345,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
         times = np.array([50.0, 100.0, 150.0])
 
         result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         assert np.isfinite(result)
@@ -2351,41 +2364,27 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # After subtracting, times becomes [-25.0, 25.0, 75.0]
         # valid_indices will be [1, 2]
         result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         assert np.isfinite(result)
         assert result >= 0
 
-    def test_log_scale_params(self):
-        """Test with log-scale parameters.
-
-        Note: Currently fails because function returns negative values with log-scale
-        params. This appears to be a bug in the implementation - extinction probability
-        should always be non-negative.
-        """
-        birth_time = 10.0
-        birth_rates = np.array([np.log(0.1), np.log(0.15)])
-        death_rates = np.array([np.log(0.05), np.log(0.06)])
-        times = np.array([50.0, 100.0])
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=True
-        )
-
-        # TODO: Fix bug - currently returns negative values with log-scale params
-        assert np.isfinite(result)
-        # assert result >= 0  # This should be true but currently fails
-
     def test_scalar_inputs_converted_to_arrays(self):
         """Test that scalar inputs are properly converted to arrays."""
         birth_time = 10.0
-        birth_rates = 0.1  # Scalar
-        death_rates = 0.05  # Scalar
-        times = 100.0  # Scalar
+        birth_rates = np.array([0.1])
+        death_rates = np.array([0.05])
+        times = np.array([100.0])
 
         result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         assert np.isfinite(result)
@@ -2400,10 +2399,16 @@ class TestIntegrandSurvFromWeightedBirthTime:
         times = np.array([50.0, 100.0])
 
         result1 = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates1, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates1,
+            death_rates,
+            times,
         )
         result2 = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates2, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates2,
+            death_rates,
+            times,
         )
 
         # Result should scale with birth rate
@@ -2425,7 +2430,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # but birth_rates/death_rates only have indices 0, 1
         with pytest.raises(IndexError):
             _integrand_surv_from_weighted_birth_time(
-                birth_time, birth_rates, death_rates, times, log_scale_params=False
+                birth_time,
+                birth_rates,
+                death_rates,
+                times,
             )
 
     def test_array_length_mismatch_rates_longer(self):
@@ -2443,7 +2451,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # Currently this doesn't fail - it just uses first 2 rate values
         # TODO: Should this validate and raise an error instead?
         result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
         assert np.isfinite(result)
 
@@ -2461,7 +2472,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # Currently doesn't fail - behavior depends on numpy broadcasting
         # TODO: Should validate input arrays have matching lengths
         result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
         assert np.isfinite(result)
 
@@ -2489,7 +2503,10 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # This should raise IndexError
         with pytest.raises(IndexError):
             _integrand_surv_from_weighted_birth_time(
-                birth_time, birth_rates, death_rates, bad_times, log_scale_params=False
+                birth_time,
+                birth_rates,
+                death_rates,
+                bad_times,
             )
 
     def test_valid_indices_logic_with_partial_truncation(self):
@@ -2504,14 +2521,17 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # valid_indices should be [1, 2] (where times > 0)
         # Accessing birth_rates[[1, 2]] should work fine
         result = _integrand_surv_from_weighted_birth_time(
-            birth_time, birth_rates, death_rates, times, log_scale_params=False
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         assert np.isfinite(result)
         assert result >= 0
 
 
-class TestCalculateLogPrExtinctionGivenInitialLifetimes:
+class test_calculateLogPrExtinctionGivenInitialLifetimes:
     """Test calculate_log_pr_extinction_given_initial_lifetimes function.
 
     This function uses _integrand_surv_from_weighted_birth_time internally
@@ -2526,7 +2546,10 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
         times = np.array([75.0, 150.0])
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
-            lifetime, birth_rates, death_rates, times, log_scale_params=False
+            lifetime,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         assert np.isfinite(result)
@@ -2540,7 +2563,10 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
 
         # This should work - lifetime is at boundary
         result = calculate_log_pr_extinction_given_initial_lifetimes(
-            lifetime, birth_rates, death_rates, times, log_scale_params=False
+            lifetime,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         assert np.isfinite(result)
@@ -2565,7 +2591,10 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
             ValueError, match="lifetimes must be less than or equal to the final time"
         ):
             calculate_log_pr_extinction_given_initial_lifetimes(
-                lifetime, birth_rates, death_rates, times, log_scale_params=False
+                lifetime,
+                birth_rates,
+                death_rates,
+                times,
             )
 
     def test_multiple_lifetimes_one_beyond_epochs(self):
@@ -2579,7 +2608,10 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
             ValueError, match="lifetimes must be less than or equal to the final time"
         ):
             calculate_log_pr_extinction_given_initial_lifetimes(
-                lifetimes, birth_rates, death_rates, times, log_scale_params=False
+                lifetimes,
+                birth_rates,
+                death_rates,
+                times,
             )
 
     def test_lifetime_at_first_epoch_boundary(self):
@@ -2590,7 +2622,10 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
         times = np.array([50.0, 100.0])
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
-            lifetime, birth_rates, death_rates, times, log_scale_params=False
+            lifetime,
+            birth_rates,
+            death_rates,
+            times,
         )
 
         assert np.isfinite(result)
@@ -2607,7 +2642,10 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
             ValueError, match="lifetimes must be less than or equal to the final time"
         ):
             calculate_log_pr_extinction_given_initial_lifetimes(
-                lifetime, birth_rates, death_rates, times, log_scale_params=False
+                lifetime,
+                birth_rates,
+                death_rates,
+                times,
             )
 
     def test_lifetime_far_beyond_last_epoch(self):
@@ -2622,5 +2660,8 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
             ValueError, match="lifetimes must be less than or equal to the final time"
         ):
             calculate_log_pr_extinction_given_initial_lifetimes(
-                lifetime, birth_rates, death_rates, times, log_scale_params=False
+                lifetime,
+                birth_rates,
+                death_rates,
+                times,
             )

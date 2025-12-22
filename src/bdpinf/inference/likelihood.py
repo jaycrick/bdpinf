@@ -97,10 +97,24 @@ def log_likelihood(
     See also:
         calculate_populations_log_likelihood, calculate_ages_log_likelihood
     """
-    birth_rates = np.atleast_1d(birth_rates)
-    death_rates = np.atleast_1d(death_rates)
-    ages = np.atleast_1d(ages)
-    times = np.atleast_1d(times)
+    birth_rates = np.atleast_1d(birth_rates).ravel()
+    death_rates = np.atleast_1d(death_rates).ravel()
+    ages = np.atleast_1d(ages).ravel()
+    times = np.atleast_1d(times).ravel()
+
+    if not (birth_rates.shape == death_rates.shape == times.shape):
+        raise ValueError(
+            "birth_rates, death_rates, and times must have the same shape, "
+            f"got {birth_rates.shape}, {death_rates.shape}, {times.shape}."
+        )
+
+    # Handle parameter conversion if in log scale
+    if log_scale_params:
+        birth_rates = np.exp(birth_rates)
+        death_rates = np.exp(death_rates)
+    else:
+        if np.any(birth_rates <= 0) or np.any(death_rates <= 0):
+            return np.float64(-np.inf)
 
     if spine_ages is not None:
         spine_ages = np.atleast_1d(spine_ages)
@@ -152,17 +166,12 @@ def log_likelihood(
     # Input validation
     if not (np.all(np.isfinite(birth_rates)) and np.all(np.isfinite(death_rates))):
         return np.float64(-np.inf)
-
-    if not log_scale_params and (np.any(birth_rates <= 0) or np.any(death_rates <= 0)):
-        return np.float64(-np.inf)
-
     # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
     log_P_n_T = calculate_populations_log_lik(
         lambda_params=birth_rates,
         mu_params=death_rates,
         times=times,
         ns=ns,
-        log_scale_params=log_scale_params,
     )
 
     # Check if population probability calculation succeeded
@@ -185,7 +194,6 @@ def log_likelihood(
             death_rates,
             ages_t=spine_ages,
             times=times,
-            log_scale_params=log_scale_params,
             are_spines=True,
         )
     if len(ages) > 0:
@@ -194,7 +202,6 @@ def log_likelihood(
             death_rates,
             ages,
             times=times,
-            log_scale_params=log_scale_params,
             are_spines=False,
         )
 
@@ -346,7 +353,6 @@ def log_likelihood_gradient(
         death_rate,
         observation_time,
         ns,
-        log_scale_params=log_scale_params,
     )
 
     if total_pop_size == 0:
@@ -365,7 +371,6 @@ def log_likelihood_gradient(
             death_rate,
             spine_ages,
             observation_time,
-            log_scale_params=log_scale_params,
             are_spines=True,
         )
 
@@ -375,7 +380,6 @@ def log_likelihood_gradient(
             death_rate,
             ages,
             observation_time,
-            log_scale_params=log_scale_params,
             are_spines=False,
         )
 

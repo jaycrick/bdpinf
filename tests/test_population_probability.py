@@ -7,6 +7,7 @@ probability calculation based on the Arley & Borchsenius formula.
 
 import numpy as np
 import pytest
+from numpy.testing import assert_allclose
 
 from inf_bp_texts.models.mathematical_functions import calculate_extinction_pr
 from src.inf_bp_texts.inference.likelihood import log_likelihood
@@ -50,7 +51,7 @@ class TestPopulationProbability:
         """Zero birth rate with n=0 stays finite."""
         result = calculate_populations_log_lik(0.0, 0.05, 100.0, 0)
         assert np.isfinite(result)
-        assert np.isclose(
+        assert_allclose(
             result, calculate_extinction_pr(0.0, 0.05, 100.0, return_log_prob=True)
         )
 
@@ -58,7 +59,7 @@ class TestPopulationProbability:
         """Zero birth rate with n=1 stays finite."""
         result = calculate_populations_log_lik(0.0, 0.05, 100.0, 1)
         assert np.isfinite(result)
-        assert np.isclose(result, np.log1p(-calculate_extinction_pr(0.0, 0.05, 100.0)))
+        assert_allclose(result, np.log1p(-calculate_extinction_pr(0.0, 0.05, 100.0)))
 
     def test_zero_birth_rate_high_n(self):
         """Zero birth rate with n>1 returns -inf."""
