@@ -25,17 +25,32 @@ class TestPopulationProbability:
         result = calculate_populations_log_lik(-0.1, 0.05, 100.0, 10)
         assert result == -np.inf
 
-        # Zero birth rate
-        result = calculate_populations_log_lik(0.0, 0.05, 100.0, 10)
-        assert result == -np.inf
-
         # Negative death rate
         result = calculate_populations_log_lik(0.1, -0.05, 100.0, 10)
         assert result == -np.inf
 
         # Zero death rate
         result = calculate_populations_log_lik(0.1, 0.0, 100.0, 10)
+        assert np.isfinite(result)
+
+        # Negative time
+        with pytest.raises(ValueError):
+            calculate_populations_log_lik(0.1, 0.05, -100.0, 10)
+
+        # Zero time
+        result = calculate_populations_log_lik(0.1, 0.05, 0.0, 10)
         assert result == -np.inf
+
+    def test_valid_edge_cases(self):
+        """Test that edge cases that should be valid produce finite results."""
+        # Zero birth rate with n=0 (extinction - should be valid and give log(1)=0)
+        result = calculate_populations_log_lik(0.0, 0.05, 100.0, 0)
+        assert np.isfinite(result), "Zero birth rate with n=0 should be valid"
+        assert result == 0.0, "Zero birth rate with n=0 should give log(1)=0"
+
+        # Zero birth rate with n>0 (impossible - should return -inf)
+        result = calculate_populations_log_lik(0.0, 0.05, 100.0, 10)
+        assert result == -np.inf, "Zero birth rate with n>0 should return -inf"
 
     def test_finite_results(self):
         """Test that valid inputs produce finite results."""
@@ -93,7 +108,7 @@ class TestPopulationProbability:
 
         results = []
         # Use shorter times to avoid β_t = 1 boundary issues
-        for time in [50, 100, 200, 500]:  # Removed 1000 which causes β_t = 1
+        for time in [50.0, 100.0, 200.0, 500.0]:  # Removed 1000 which causes β_t = 1
             result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
             results.append((time, result))
             assert np.isfinite(result), f"Non-finite result for T={time}"
@@ -276,7 +291,7 @@ class TestPopulationProbabilityIntegration:
         # Test that log-likelihood calculation doesn't fail using modular function
         ages = model.get_manuscript_ages()
         log_likelihood_value = log_likelihood(
-            birth_rate=0.1, death_rate=0.05, ages=ages, observation_time=1500.0
+            birth_rates=0.1, death_rates=0.05, ages=ages, times=1500.0
         )
 
         # Should be finite or -inf, but not NaN
