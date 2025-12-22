@@ -40,11 +40,11 @@ class TestFitting:
         assert result["success"]
 
         if result["success"]:
-            assert "birth_rate" in result
-            assert "death_rate" in result
+            assert "birth_rates" in result
+            assert "death_rates" in result
             assert "log_likelihood" in result
-            assert result["birth_rate"] > 0
-            assert result["death_rate"] > 0
+            assert result["birth_rates"] > 0
+            assert result["death_rates"] > 0
 
     def test_fit_birth_death_process_no_ages(self):
         """Test fitting fails with no ages."""
@@ -88,10 +88,10 @@ class TestFitting:
         assert result["success"]
 
         if result["success"]:
-            assert "birth_rate" in result
-            assert "death_rate" in result
-            assert result["birth_rate"] > 0
-            assert result["death_rate"] > 0
+            assert "birth_rates" in result
+            assert "death_rates" in result
+            assert result["birth_rates"] > 0
+            assert result["death_rates"] > 0
 
     def test_fit_from_dataframe_individual_records(self):
         """Test fitting with individual manuscript records."""
@@ -135,8 +135,8 @@ class TestFitting:
         assert isinstance(result, dict)
         assert "success" in result
         if result["success"]:
-            assert result["birth_rate"] > 0
-            assert result["death_rate"] > 0
+            assert result["birth_rates"] > 0
+            assert result["death_rates"] > 0
 
     def test_fit_results_structure(self):
         """Test that fit results have the expected structure."""
@@ -148,8 +148,8 @@ class TestFitting:
 
         expected_keys = [
             "success",
-            "birth_rate",
-            "death_rate",
+            "birth_rates",
+            "death_rates",
             "log_likelihood",
             "optimization_result",
         ]
@@ -158,8 +158,8 @@ class TestFitting:
             assert key in result, f"Missing key: {key}"
 
         # Check types
-        assert isinstance(result["birth_rate"], (float, np.float64))
-        assert isinstance(result["death_rate"], (float, np.float64))
+        assert isinstance(result["birth_rates"], (float, np.float64, np.ndarray))
+        assert isinstance(result["death_rates"], (float, np.float64, np.ndarray))
         assert isinstance(result["log_likelihood"], (float, np.float64))
 
     def test_process_integration_with_fitting(self):
@@ -175,13 +175,13 @@ class TestFitting:
 
         assert result["success"]
         # Update process with fitted parameters
-        process.update_parameters(result["birth_rate"], result["death_rate"], result)
+        process.update_parameters(result["birth_rates"], result["death_rates"], result)
 
         # Process should now be fitted
         assert process.fitted
         assert process.fit_results is not None
-        assert process.birth_rate == result["birth_rate"]
-        assert process.death_rate == result["death_rate"]
+        assert process.birth_rate == result["birth_rates"]
+        assert process.death_rate == result["death_rates"]
 
     def test_fit_from_dataframe_custom_age_column(self):
         """Test fitting with custom age column name."""
@@ -219,7 +219,7 @@ class TestFitting:
 
         # But we can still update it with fit results if desired
         assert result["success"]
-        process.update_parameters(result["birth_rate"], result["death_rate"], result)
+        process.update_parameters(result["birth_rates"], result["death_rates"], result)
         assert process.fitted
 
 

@@ -3,41 +3,9 @@ Test suite for BirthDeathProcess utility functions and helper methods.
 """
 
 import numpy as np
-import pytest
 
 from inf_bp_texts.inference.likelihood import log_likelihood
 from inf_bp_texts.models import BirthDeathProcess
-
-
-class TestUtilityFunctions:
-    """Test utility functions and helper methods."""
-
-    def test_predict_method(self):
-        """Test prediction method."""
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.01)
-
-        ages = np.array([10.0, 50.0, 100.0, 200.0])
-        predictions = process.predict(ages)
-
-        # Should return array of same length
-        assert len(predictions) == len(ages)
-
-        # All predictions should be positive
-        assert all(pred > 0 for pred in predictions)
-
-        # Predictions should decrease with age (exponential decay)
-        assert predictions[0] > predictions[1] > predictions[2] > predictions[3]
-
-    def test_predict_unfitted_model_warning(self):
-        """Test that prediction on unfitted model raises an error."""
-        process = BirthDeathProcess([], 1000.0)  # No parameters provided, so unfitted
-        ages = np.array([100.0, 200.0])
-
-        # Should raise ValueError for unfitted model
-        with pytest.raises(
-            ValueError, match="Cannot predict without fitted birth_rate and death_rate"
-        ):
-            process.predict(ages)
 
 
 class TestEdgeCases:

@@ -55,8 +55,8 @@ class TestArchitecturalIntegration:
         # 4. Update model with results
         if results["success"]:
             model.update_parameters(
-                birth_rate=results["birth_rate"],
-                death_rate=results["death_rate"],
+                birth_rate=results["birth_rates"],
+                death_rate=results["death_rates"],
                 fit_results=results,
             )
 
