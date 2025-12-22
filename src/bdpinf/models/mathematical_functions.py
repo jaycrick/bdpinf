@@ -55,8 +55,10 @@ def calculate_populations_log_lik(
     programming errors.
     """
     # Input validation
-    if np.any(ns < 0) or np.any(times < 0):
-        raise ValueError("ns must be non-negative and time must be non-negative")
+    if np.any(ns < 0):
+        raise ValueError(f"Population counts ns must be non-negative. Got ns: {ns}")
+    if np.any(times < 0):
+        raise ValueError(f"Times must be non-negative. Got times: {times}")
 
     # Ensure consistent input types: either all arrays or all scalars
     is_array_lambda = isinstance(lambda_params, np.ndarray)
@@ -86,7 +88,6 @@ def calculate_populations_log_lik(
             lambda_val_array = np.exp(lambda_params)
             mu_val_array = np.exp(mu_params)
         else:
-            # Validate non-negative parameters
             if np.any(lambda_params < 0) or np.any(mu_params < 0):
                 return np.float64(-np.inf)
             lambda_val_array = lambda_params
@@ -142,13 +143,18 @@ def calculate_populations_log_lik(
             if not np.isfinite(exp_term):
                 return np.float64(-np.inf)
             denominator = lambda_val * exp_term - mu_val
-            alpha_t = mu_val * (exp_term - 1) / denominator
+            # Guard against division by zero
+            if mu_val == 0.0:
+                alpha_t = np.float64(0.0)
+                beta_t = lambda_val * (exp_term - 1) / denominator
+            else:
+                alpha_t = mu_val * (exp_term - 1) / denominator
 
-            # Calculate β_t = (λ/μ) * α_t
-            beta_t = (lambda_val / mu_val) * alpha_t
+                # Calculate β_t = (λ/μ) * α_t
+                beta_t = (lambda_val / mu_val) * alpha_t
 
     # Validate α_t and β_t are in valid range (0, 1)
-    if not ((0 < alpha_t < 1) and (0 < beta_t < 1)):
+    if not ((0 <= alpha_t < 1) and (0 < beta_t <= 1)):
         return np.float64(-np.inf)
 
     # Initialize log probability array
@@ -162,8 +168,8 @@ def calculate_populations_log_lik(
     # Handle n > 0 case
     nonzero_mask = np.invert(zero_mask)
     if np.any(nonzero_mask):
-        log_term1 = np.log(1 - alpha_t)
-        log_term2 = np.log(1 - beta_t)
+        log_term1 = np.log1p(-alpha_t)
+        log_term2 = np.log1p(-beta_t)
         log_term3 = (ns - 1) * np.log(beta_t)
 
         # Check all terms are finite
@@ -383,7 +389,7 @@ def calculate_non_spine_ages_log_lik(
         raise ValueError(f"times must be strictly increasing. Got times: {times}")
     # Input validation
     if np.any(ages_t < 0) or np.any(ages_t > end_time):
-        return np.float64(-np.inf)
+        raise ValueError(f"ages_t must be in [0, {end_time}]. Got ages_t: {ages_t}")
 
     # Convert scalar parameters to arrays for single-epoch case
     lambda_params = np.atleast_1d(lambda_params)
@@ -427,7 +433,7 @@ def calculate_non_spine_ages_log_lik(
         mu_val = np.exp(mu_scalar)
     else:
         # Validate positive parameters
-        if lambda_scalar <= 0 or mu_scalar <= 0:
+        if lambda_scalar < 0 or mu_scalar <= 0:
             return np.float64(-np.inf)
         lambda_val = lambda_scalar
         mu_val = mu_scalar
@@ -519,7 +525,7 @@ def calculate_spine_ages_log_lik(
         raise ValueError(f"times must be strictly increasing. Got times: {times}")
     # Input validation
     if np.any(ages_t < 0) or np.any(ages_t > end_time):
-        return np.float64(-np.inf)
+        raise ValueError(f"ages_t must be in [0, {end_time}]. Got ages_t: {ages_t}")
 
     # Convert scalar parameters to arrays for single-epoch case
     lambda_params = np.atleast_1d(lambda_params)
@@ -563,7 +569,7 @@ def calculate_spine_ages_log_lik(
         mu_val = np.exp(mu_scalar)
     else:
         # Validate positive parameters
-        if lambda_scalar <= 0 or mu_scalar <= 0:
+        if lambda_scalar <= 0 or mu_scalar < 0:
             return np.float64(-np.inf)
         lambda_val = lambda_scalar
         mu_val = mu_scalar
@@ -575,7 +581,7 @@ def calculate_spine_ages_log_lik(
 
     if abs(log_lambda - log_mu) < 1e-12:
         # Limiting case: λ ≈ μ
-        boundary_val = np.log(1 + lambda_val * end_time) - lambda_val * end_time
+        boundary_val = np.log1p(lambda_val * end_time) - lambda_val * end_time
         log_density = np.where(
             at_boundary,
             boundary_val,
@@ -950,6 +956,11 @@ def calculate_extinction_pr(
     -----
     Handles λ ≈ μ limiting case for numerical stability.
     """
+    if np.any(np.atleast_1d(times) < 0):
+        raise ValueError(f"times must be non-negative. Got times: {times}")
+    if np.any(np.diff(np.insert(np.atleast_1d(times), 0, 0.0)) <= 0):
+        raise ValueError(f"times must be strictly increasing. Got times: {times}")
+
     pr_extinction_numerator = _pr_extinction_numerator(
         birth_rates=birth_rates,
         death_rates=death_rates,
@@ -1136,6 +1147,12 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
 
     # Sort lifetimes to enable cumulative integral caching
     sorted_lifetimes = np.sort(lifetimes)
+
+    if lifetimes[-1] > times[-1]:
+        raise ValueError(
+            "All lifetimes must be less than or equal to the final time point."
+            + f" Got max lifetime: {lifetimes[-1]}, final time: {times[-1]}"
+        )
 
     log_prob_sum = 0.0
     cumulative_integral = 0.0
