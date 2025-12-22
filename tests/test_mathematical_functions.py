@@ -174,11 +174,8 @@ class TestMultiEpochNumericalAccuracy:
             lambda_params, mu_params, times, log_scale_params=False
         )
 
-        assert 0 <= result <= 1, f"Extinction probability {result} not in [0, 1]"
+        assert 0 < result < 1, f"Extinction probability {result} not in (0, 1)"
 
-    @pytest.mark.skip(
-        reason="Multi-epoch spine age likelihood not yet fully implemented"
-    )
     def test_two_epoch_spine_age_density_basic(self):
         """Test two-epoch spine age density for ages in different epochs.
 
@@ -208,7 +205,6 @@ class TestMultiEpochNumericalAccuracy:
         )
         assert np.isfinite(result2)
 
-    @pytest.mark.skip(reason="Multi-epoch non-spine age likelihood needs validation")
     def test_multi_epoch_non_spine_age_array(self):
         """Test multi-epoch non-spine ages with ages across epochs.
 
@@ -327,6 +323,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_extinction_pr(lambdas, mus, times)
 
         assert_allclose(single, multi, rtol=1e-12)
+        assert 0 < single < 1
 
     def test_population_geometric_parameter_multi_equals_single(self):
         lambda_val, mu_val, T = 0.03, 0.02, 90.0
@@ -413,23 +410,17 @@ class TestMultiEpochEqualsSingleEpoch:
         assert np.isfinite(multi)
         assert np.isclose(single, multi, rtol=0.1)
 
-    @pytest.mark.xfail(
-        reason="Multi-epoch spine path raises for birth_time near end; pending fix."
-    )
     def test_spine_ages_log_lik_multi_equals_single(self):
-        ages = np.array(
-            [20.0, 40.0, 110.0]
-        )  # avoid boundary at T to prevent integrand error
+        ages = np.array([20.0, 40.0, 110.0])
         lambda_val, mu_val, T = 0.018, 0.009, 120.0
         single = calculate_spine_ages_log_lik(lambda_val, mu_val, ages, T)
         times = np.array([40.0, 80.0, 120.0])
         lambdas = np.full(3, lambda_val)
         mus = np.full(3, mu_val)
         multi = calculate_spine_ages_log_lik(lambdas, mus, ages, times)
-        # Known differences in multi-epoch branch; allow relaxed tolerance
         assert np.isfinite(single)
         assert np.isfinite(multi)
-        assert np.isclose(single, multi, rtol=0.17)
+        assert np.isclose(single, multi, rtol=1e-12)
 
     def test_ages_log_lik_multi_equals_single_non_spine(self):
         ages = np.array([10.0, 55.0, 90.0])
@@ -443,9 +434,6 @@ class TestMultiEpochEqualsSingleEpoch:
         assert np.isfinite(multi)
         assert np.isclose(single, multi, rtol=0.1)
 
-    @pytest.mark.xfail(
-        reason="Multi-epoch spine path raises for birth_time near end; pending fix."
-    )
     def test_ages_log_lik_multi_equals_single_spine(self):
         ages = np.array([15.0, 120.0])
         lambda_val, mu_val, T = 0.018, 0.009, 120.0
@@ -504,6 +492,7 @@ class TestNumericalAccuracy:
         )
 
         assert_allclose(result, expected, rtol=1e-6)
+        assert 0 < result < 1
 
     def test_populations_log_lik_n0_simple(self):
         """Test log P(n=0) for simple parameters.
@@ -779,9 +768,7 @@ class TestNumericalAccuracy:
         ]
 
         for lambda_val, mu_val, T in test_cases:
-            result = calculate_extinction_pr(
-                np.array([lambda_val]), np.array([mu_val]), np.array([T])
-            )
+            result = calculate_extinction_pr(lambda_val, mu_val, T)
 
             assert 0 < result < 1, f"Failed for λ={lambda_val}, μ={mu_val}, T={T}"
 
@@ -843,7 +830,6 @@ class TestExtinctionProbability:
             standard_array_params["times"],
         )
 
-        # α_t should be in (0, 1)
         assert 0 < result < 1
         assert isinstance(result, np.float64)
 
@@ -889,11 +875,101 @@ class TestExtinctionProbability:
         assert 0 < result < 1
         assert np.isfinite(result)
 
-    def test_extinction_pr_monotonic_times(self):
-        """Test that times must be monotonically increasing."""
-        # This test is implicit in the function's validation
-        # Non-monotonic times should raise an error in calling functions
-        pass
+    def test_extinction_pr_zero_rates_both(self):
+        """Test extinction probability when both λ = 0 and μ = 0."""
+        lambda_arr = np.array([0.0])
+        mu_arr = np.array([0.0])
+        times = np.array([100.0])
+
+        result = calculate_extinction_pr(lambda_arr, mu_arr, times)
+
+        # With no birth and no death, extinction probability should zero
+        assert result == 0.0
+
+    def test_extinction_pr_zero_birth_only(self):
+        """Test extinction probability when λ = 0 and μ > 0 (only death)."""
+        lambda_arr = np.array([0.0])
+        mu_arr = np.array([0.1])
+        times = np.array([100.0])
+
+        result = calculate_extinction_pr(lambda_arr, mu_arr, times)
+
+        assert 0 < result < 1
+
+    def test_extinction_pr_zero_death_only(self):
+        """Test extinction probability when λ > 0 and μ = 0 (only birth)."""
+        lambda_arr = np.array([0.1])
+        mu_arr = np.array([0.0])
+        times = np.array([100.0])
+
+        result = calculate_extinction_pr(lambda_arr, mu_arr, times)
+
+        # With zero death rate, extinction should be zero
+        assert result == 0
+
+    def test_extinction_pr_zero_rates_multi_epoch(self):
+        """Test extinction probability with multi-epoch where some epochs have zero rates."""
+        # Some epochs with normal rates, some with zero rates
+        lambda_arr = np.array([0.1, 0.0, 0.15])
+        mu_arr = np.array([0.05, 0.0, 0.08])
+        times = np.array([50.0, 100.0, 150.0])
+
+        result = calculate_extinction_pr(lambda_arr, mu_arr, times)
+
+        # Should handle mixed zero and non-zero rates
+        assert 0 < result < 1
+
+    def test_extinction_pr_increases_with_time(self):
+        """Test that extinction probability increases as observation time increases."""
+        lambda_val = 0.1
+        mu_val = 0.05
+
+        # Compare extinction probabilities at different times
+        times = [50.0, 100.0, 200.0, 400.0]
+        results = [calculate_extinction_pr(lambda_val, mu_val, t) for t in times]
+
+        # Extinction probability should be monotonically increasing with time
+        for i in range(len(results) - 1):
+            assert results[i] < results[i + 1], (
+                f"α(t={times[i]}) = {results[i]} should be < "
+                f"α(t={times[i + 1]}) = {results[i + 1]}"
+            )
+
+    def test_extinction_pr_increases_with_death_rate(self):
+        """Test that extinction probability increases as death rate increases."""
+        lambda_val = 0.1
+        T = 100.0
+
+        # Compare extinction probabilities at different death rates
+        death_rates = [0.02, 0.05, 0.08, 0.1]
+        results = [
+            calculate_extinction_pr(lambda_val, mu_val, T) for mu_val in death_rates
+        ]
+
+        # Extinction probability should be monotonically increasing with death rate
+        for i in range(len(results) - 1):
+            assert results[i] < results[i + 1], (
+                f"α(μ={death_rates[i]}) = {results[i]} should be < "
+                f"α(μ={death_rates[i + 1]}) = {results[i + 1]}"
+            )
+
+    def test_extinction_pr_decreases_with_birth_rate(self):
+        """Test that extinction probability decreases as birth rate increases."""
+        mu_val = 0.05
+        T = 100.0
+
+        # Compare extinction probabilities at different birth rates
+        birth_rates = [0.05, 0.1, 0.15, 0.2]
+        results = [
+            calculate_extinction_pr(lambda_val, mu_val, T) for lambda_val in birth_rates
+        ]
+
+        # Extinction probability should be monotonically decreasing with birth rate
+        for i in range(len(results) - 1):
+            assert results[i] > results[i + 1], (
+                f"α(λ={birth_rates[i]}) = {results[i]} should be > "
+                f"α(λ={birth_rates[i + 1]}) = {results[i + 1]}"
+            )
 
 
 # ============================================================================
@@ -1007,16 +1083,6 @@ class TestPopulationsLogLikelihood:
         )
 
         assert np.isfinite(result)
-
-    def test_mixed_input_types_raise_error(self):
-        """Test that mixing scalar and array inputs raises ValueError."""
-        with pytest.raises(ValueError, match="must all be arrays or all scalars"):
-            calculate_populations_log_lik(
-                lambda_params=0.1,  # scalar
-                mu_params=np.array([0.05, 0.06]),  # array
-                times=100.0,  # scalar
-                ns=10,
-            )
 
     def test_array_length_mismatch_raises_error(self):
         """Test that mismatched array lengths raise ValueError."""
@@ -1544,7 +1610,7 @@ class TestMathematicalProperties:
         )
 
         # Higher death rate → higher extinction probability
-        assert alpha_2 > alpha_1
+        assert 0 < alpha_1 < alpha_2 < 1
 
     def test_consistency_scalar_vs_single_element_array(self):
         """Test that scalar and single-element array give same results."""
@@ -1856,12 +1922,6 @@ class TestGradientValidation:
         error = scipy.optimize.check_grad(objective, gradient, params)
         assert error < 3e-5, f"Gradient error {error} exceeds tolerance for array n"
 
-    @pytest.mark.skip(
-        reason=(
-            "Near-equal rates tests are inconsistent: "
-            "use limiting formula but expect different derivatives"
-        )
-    )
     def test_populations_log_lik_derivatives_near_equal_rates(self):
         """Test population derivatives when λ ≈ μ (limiting case)."""
         lambda_val = 0.1
@@ -1925,12 +1985,6 @@ class TestGradientValidation:
         error = scipy.optimize.check_grad(objective, gradient, params)
         assert error < 1e-5, f"Gradient error {error} exceeds tolerance for array ages"
 
-    @pytest.mark.skip(
-        reason=(
-            "Near-equal rates tests are inconsistent: "
-            "use limiting formula but expect different derivatives"
-        )
-    )
     def test_non_spine_ages_derivatives_near_equal_rates(self):
         """Test non-spine age derivatives when λ ≈ μ."""
         lambda_val = 0.1
@@ -2017,12 +2071,6 @@ class TestGradientValidation:
         error = scipy.optimize.check_grad(objective, gradient, params)
         assert error < 1e-5, f"Gradient error {error} exceeds tolerance for mixed ages"
 
-    @pytest.mark.skip(
-        reason=(
-            "Near-equal rates tests are inconsistent: "
-            "use limiting formula but expect different derivatives"
-        )
-    )
     def test_spine_ages_derivatives_near_equal_rates(self):
         """Test spine age derivatives when λ ≈ μ."""
         lambda_val = 0.1

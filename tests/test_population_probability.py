@@ -8,6 +8,7 @@ probability calculation based on the Arley & Borchsenius formula.
 import numpy as np
 import pytest
 
+from inf_bp_texts.models.mathematical_functions import calculate_extinction_pr
 from src.inf_bp_texts.inference.likelihood import log_likelihood
 from src.inf_bp_texts.models import BirthDeathProcess, calculate_populations_log_lik
 
@@ -33,6 +34,10 @@ class TestPopulationProbability:
         result = calculate_populations_log_lik(0.1, 0.0, 100.0, 10)
         assert np.isfinite(result)
 
+        # Zero birth rate
+        result = calculate_populations_log_lik(0.0, 0.1, 100.0, 10)
+        assert result == -np.inf
+
         # Negative time
         with pytest.raises(ValueError):
             calculate_populations_log_lik(0.1, 0.05, -100.0, 10)
@@ -41,16 +46,24 @@ class TestPopulationProbability:
         result = calculate_populations_log_lik(0.1, 0.05, 0.0, 10)
         assert result == -np.inf
 
-    def test_valid_edge_cases(self):
-        """Test that edge cases that should be valid produce finite results."""
-        # Zero birth rate with n=0 (extinction - should be valid and give log(1)=0)
+    def test_zero_birth_rate_n_zero(self):
+        """Zero birth rate with n=0 stays finite."""
         result = calculate_populations_log_lik(0.0, 0.05, 100.0, 0)
-        assert np.isfinite(result), "Zero birth rate with n=0 should be valid"
-        assert result == 0.0, "Zero birth rate with n=0 should give log(1)=0"
+        assert np.isfinite(result)
+        assert np.isclose(
+            result, calculate_extinction_pr(0.0, 0.05, 100.0, return_log_prob=True)
+        )
 
-        # Zero birth rate with n>0 (impossible - should return -inf)
+    def test_zero_birth_rate_n_one(self):
+        """Zero birth rate with n=1 stays finite."""
+        result = calculate_populations_log_lik(0.0, 0.05, 100.0, 1)
+        assert np.isfinite(result)
+        assert np.isclose(result, np.log1p(-calculate_extinction_pr(0.0, 0.05, 100.0)))
+
+    def test_zero_birth_rate_high_n(self):
+        """Zero birth rate with n>1 returns -inf."""
         result = calculate_populations_log_lik(0.0, 0.05, 100.0, 10)
-        assert result == -np.inf, "Zero birth rate with n>0 should return -inf"
+        assert result == -np.inf
 
     def test_finite_results(self):
         """Test that valid inputs produce finite results."""

@@ -16,11 +16,11 @@ class TestLogLikelihood:
         process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.01)
 
         ages = process.get_manuscript_ages()
-        try:
-            log_likelihood(birth_rates=0.1, death_rates=0.01, ages=ages, times=1000.0)
-            assert False, "Expected ValueError for empty ages"
-        except ValueError:
-            pass
+        result = log_likelihood(
+            birth_rates=0.1, death_rates=0.01, ages=ages, times=1000.0
+        )
+        assert result < 0
+        assert np.isfinite(result)
 
     def test_basic_log_likelihood(self):
         """Test basic log-likelihood functionality."""
@@ -35,6 +35,7 @@ class TestLogLikelihood:
 
         # Check that the result is finite
         assert np.isfinite(result)
+        assert result < 0
 
     def test_log_likelihood_critical_case(self):
         """Test log-likelihood when birth_rate ≈ death_rate."""
@@ -56,6 +57,7 @@ class TestLogLikelihood:
 
         # Should handle near-critical case gracefully
         assert np.isfinite(result)
+        assert result < 0
 
     def test_log_likelihood_with_explicit_parameters(self):
         """Test log-likelihood with explicit parameters."""
@@ -93,6 +95,8 @@ class TestLogLikelihood:
         )
 
         assert np.isclose(result1, result2)
+        assert result1 < 0
+        assert result2 < 0
 
     def test_log_likelihood_negative_parameters(self):
         """Test log-likelihood with invalid (negative) parameters."""
@@ -145,6 +149,7 @@ class TestLogLikelihood:
 
         # Should be a finite value (the likelihood for an empty dataset)
         assert np.isfinite(result)
+        assert result > 0
 
     def test_external_log_likelihood_helper(self):
         """Test the external log-likelihood helper method via public interface."""
@@ -188,12 +193,14 @@ class TestLogLikelihood:
             birth_rates=1e-6, death_rates=1e-7, ages=ages, times=1000.0
         )
         assert np.isfinite(result1)
+        assert result1 < 0
 
         # Larger rates - may legitimately return -inf due to numerical limits
         result2 = log_likelihood(
             birth_rates=1.0, death_rates=0.1, ages=ages, times=1000.0
         )
         assert np.isfinite(result2) or result2 == -np.inf
+        assert result2 < 0
 
         # Very large ages with small rates - may return -inf due to numerical limits
         process_large = BirthDeathProcess(
@@ -208,19 +215,10 @@ class TestLogLikelihood:
         )
         # May be -inf due to numerical limits, but shouldn't crash
         assert np.isfinite(result3) or result3 == -np.inf
+        assert result3 < 0
 
     def test_multi_epoch_identical_rates_matches_single_epoch(self):
-        """Test that multi-epoch with identical rates equals single-epoch.
-
-        KNOWN ISSUE: This test currently fails due to numerical differences
-        between the single-epoch and multi-epoch implementations. The multi-epoch
-        code uses a reflection/time-reversal approach (swapping lambda/mu and
-        inverting time) that should theoretically be equivalent but introduces
-        numerical discrepancies.
-
-        The population component matches exactly, but the ages component differs
-        by ~0.27 in log-likelihood units (about 1.3x likelihood ratio).
-        """
+        """Test that multi-epoch with identical rates equals single-epoch."""
         # Create test data
         ages = np.array([100.0, 200.0, 300.0, 400.0])
         birth_rate = 0.01
@@ -255,7 +253,7 @@ class TestLogLikelihood:
         # assert np.isclose(result_single, result_multi, rtol=1e-10)
 
         # For now, just verify they're reasonably close (within 5%)
-        assert np.isclose(result_single, result_multi, rtol=0.05), (
+        assert np.isclose(result_single, result_multi, rtol=1e-10), (
             f"Multi-epoch ({result_multi:.6f}) differs significantly from "
             f"single-epoch ({result_single:.6f})"
         )
@@ -282,7 +280,7 @@ class TestLogLikelihood:
         )
 
         # Multi-epoch with identical rates (2 epochs)
-        epoch_times = np.array([400.0, 800.0])
+        epoch_times = np.array([500.0, 800.0])
         birth_rates_multi = np.array([birth_rate, birth_rate])
         death_rates_multi = np.array([death_rate, death_rate])
 
@@ -296,9 +294,7 @@ class TestLogLikelihood:
 
         assert np.isfinite(result_single)
         assert np.isfinite(result_multi)
-        # Relaxed tolerance due to known multi-epoch numerical differences
-        # Spine ages show larger discrepancy (~16%)
-        assert np.isclose(result_single, result_multi, rtol=0.17)
+        assert np.isclose(result_single, result_multi, rtol=1e-12)
 
     def test_multi_epoch_identical_rates_with_populations(self):
         """Test multi-epoch equals single-epoch with population counts.

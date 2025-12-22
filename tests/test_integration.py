@@ -24,9 +24,9 @@ class TestIntegration:
         true_death_rate = 0.01
         # Step 1: Simulate data using modular function
         simulated_df = simulate_birth_death_process(
-            birth_rate=true_birth_rate,
-            death_rate=true_death_rate,
-            max_time=200.0,
+            birth_rates=true_birth_rate,
+            death_rates=true_death_rate,
+            times=200.0,
             random_seed=42,
         )
 
@@ -36,8 +36,8 @@ class TestIntegration:
                 fit_df = pd.DataFrame({"age": surviving_data["age"].values})
                 result = fit_from_dataframe(fit_df, age_column="age", times=200.0)
                 if result["success"]:
-                    fitted_birth = result["birth_rate"]
-                    fitted_death = result["death_rate"]
+                    fitted_birth = result["birth_rates"]
+                    fitted_death = result["death_rates"]
                     assert fitted_birth > 0
                     assert fitted_death >= 0
                     assert np.isfinite(fitted_birth)
@@ -79,7 +79,7 @@ class TestIntegration:
         test_ages = np.array([100, 200, 300, 400, 500])
         predictions = [
             calculate_populations_log_lik(
-                result["birth_rate"], result["death_rate"], age, 1000.0
+                result["birth_rates"], result["death_rates"], age, 1000.0
             )
             for age in test_ages
         ]
@@ -121,7 +121,7 @@ class TestIntegration:
         age_range = np.linspace(100, 1000, 10)
         predictions = [
             calculate_populations_log_lik(
-                result["birth_rate"], result["death_rate"], age, 2000.0
+                result["birth_rates"], result["death_rates"], age, 2000.0
             )
             for age in age_range
         ]
@@ -190,22 +190,22 @@ class TestIntegration:
         final_time = 1000.0
         ages = np.array([final_time - ct for ct in creation_times], dtype=np.float64)
         base_ll = log_likelihood(
-            birth_rate=0.02, death_rate=0.005, ages=ages, observation_time=final_time
+            birth_rates=0.02, death_rates=0.005, ages=ages, times=final_time
         )
         higher_birth_ll = log_likelihood(
-            birth_rate=0.04, death_rate=0.005, ages=ages, observation_time=final_time
+            birth_rates=0.04, death_rates=0.005, ages=ages, times=final_time
         )
         lower_birth_ll = log_likelihood(
-            birth_rate=0.01, death_rate=0.005, ages=ages, observation_time=final_time
+            birth_rates=0.01, death_rates=0.005, ages=ages, times=final_time
         )
         assert np.isfinite(base_ll)
         assert np.isfinite(higher_birth_ll)
         assert np.isfinite(lower_birth_ll)
         higher_death_ll = log_likelihood(
-            birth_rate=0.02, death_rate=0.01, ages=ages, observation_time=final_time
+            birth_rates=0.02, death_rates=0.01, ages=ages, times=final_time
         )
         lower_death_ll = log_likelihood(
-            birth_rate=0.02, death_rate=0.002, ages=ages, observation_time=final_time
+            birth_rates=0.02, death_rates=0.002, ages=ages, times=final_time
         )
         assert np.isfinite(higher_death_ll)
         assert np.isfinite(lower_death_ll)
@@ -223,9 +223,7 @@ class TestIntegration:
         """Test robustness to different data quality scenarios."""
         # Scenario 1: Very few data points
         sparse_ages = np.array([1000.0 - t for t in [500.0, 600.0]], dtype=np.float64)
-        sparse_result = fit_birth_death_processes(
-            [sparse_ages], observation_time=1000.0
-        )
+        sparse_result = fit_birth_death_processes([sparse_ages], times=1000.0)
         assert isinstance(sparse_result, dict)
         assert "success" in sparse_result
 
@@ -234,7 +232,7 @@ class TestIntegration:
         dense_ages = np.array(
             [1000.0 - float(t) for t in dense_times], dtype=np.float64
         )
-        dense_result = fit_birth_death_processes([dense_ages], observation_time=1000.0)
+        dense_result = fit_birth_death_processes([dense_ages], times=1000.0)
         assert isinstance(dense_result, dict)
         assert "success" in dense_result
 
@@ -243,9 +241,7 @@ class TestIntegration:
         irregular_ages = np.array(
             [1000.0 - t for t in irregular_times], dtype=np.float64
         )
-        irregular_result = fit_birth_death_processes(
-            [irregular_ages], observation_time=1000.0
-        )
+        irregular_result = fit_birth_death_processes([irregular_ages], times=1000.0)
         assert isinstance(irregular_result, dict)
         assert "success" in irregular_result
 
@@ -258,10 +254,10 @@ class TestIntegration:
             [final_time_small - ct for ct in creation_times_small], dtype=np.float64
         )
         small_ll = log_likelihood(
-            birth_rate=1e-6,
-            death_rate=1e-7,
+            birth_rates=1e-6,
+            death_rates=1e-7,
             ages=ages_small,
-            observation_time=final_time_small,
+            times=final_time_small,
         )
         assert np.isfinite(small_ll) or small_ll == -np.inf
 
@@ -274,10 +270,10 @@ class TestIntegration:
         birth_rate = 0.01
         death_rate = 0.01 + 1e-12
         critical_ll = log_likelihood(
-            birth_rate=birth_rate,
-            death_rate=death_rate,
+            birth_rates=birth_rate,
+            death_rates=death_rate,
             ages=ages_critical,
-            observation_time=final_time_critical,
+            times=final_time_critical,
         )
         assert np.isfinite(critical_ll) or critical_ll == -np.inf
 
@@ -287,10 +283,10 @@ class TestIntegration:
             [final_time_large - ct for ct in creation_times_large], dtype=np.float64
         )
         large_ll = log_likelihood(
-            birth_rate=0.001,
-            death_rate=0.0001,
+            birth_rates=0.001,
+            death_rates=0.0001,
             ages=ages_large,
-            observation_time=final_time_large,
+            times=final_time_large,
         )
         assert np.isfinite(large_ll) or large_ll == -np.inf
 
@@ -308,7 +304,7 @@ class TestIntegration:
         assert len(creation_times) == 2
         assert len(ages) == 2
         np.testing.assert_array_equal(ages, [400.0, 300.0])
-        result = fit_birth_death_processes(ages, observation_time=final_time)
+        result = fit_birth_death_processes([ages], times=final_time)
         if result["success"]:
             assert result["success"]
             assert len(creation_times) == 2
@@ -318,7 +314,7 @@ class TestIntegration:
             assert len(ages) == 2
             np.testing.assert_array_equal(ages, [400.0, 300.0])
         simulated_df = simulate_birth_death_process(
-            birth_rate, death_rate, max_time=300.0, random_seed=42
+            birth_rate, death_rate, times=300.0, random_seed=42
         )
         final_time = 300.0
         creation_times = list(simulated_df["creation_time"].values)

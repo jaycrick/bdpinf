@@ -304,9 +304,6 @@ class TestMultiEpochFitting:
             assert len(result["birth_rates"]) == n_epochs
             assert len(result["death_rates"]) == n_epochs
 
-    @pytest.mark.xfail(
-        reason="Multi-epoch fitting currently has convergence issues - see methods_validation_multi_epoch.qmd"
-    )
     def test_multi_epoch_vs_single_epoch_different_results(self):
         """Test that multi-epoch and single-epoch fits give different results.
 
