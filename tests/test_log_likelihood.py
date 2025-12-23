@@ -250,17 +250,8 @@ class TestLogLikelihood:
         # Results should be very close (allowing for floating-point error)
         assert np.isfinite(result_single)
         assert np.isfinite(result_multi)
-        # TODO: Fix multi-epoch implementation to match single-epoch
-        # assert_allclose(result_single, result_multi, rtol=1e-10)
-
         # For now, just verify they're reasonably close (within 5%)
-        (
-            assert_allclose(result_single, result_multi, rtol=1e-8),
-            (
-                f"Multi-epoch ({result_multi:.6f}) differs significantly from "
-                f"single-epoch ({result_single:.6f})"
-            ),
-        )
+        assert_allclose(result_single, result_multi, rtol=1e-8)
 
     def test_multi_epoch_identical_rates_with_spine_ages(self):
         """Test multi-epoch equals single-epoch with spine ages.

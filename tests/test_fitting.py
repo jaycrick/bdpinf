@@ -305,12 +305,7 @@ class TestMultiEpochFitting:
             assert len(result["death_rates"]) == n_epochs
 
     def test_multi_epoch_vs_single_epoch_different_results(self):
-        """Test that multi-epoch and single-epoch fits give different results.
-
-        TODO: Debug multi-epoch optimization convergence issues.
-        Currently optimizer returns success=False for multi-epoch fits.
-        See methods_validation_multi_epoch.qmd for debugging details.
-        """
+        """Test that multi-epoch and single-epoch fits give different results."""
         ages = np.array([100.0, 200.0, 300.0, 400.0], dtype=np.float64)
         total_time = 500.0
 

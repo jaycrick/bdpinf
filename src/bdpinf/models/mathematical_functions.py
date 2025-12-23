@@ -960,14 +960,14 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
 
     Parameters
     ----------
-    lifetimes : float or NDArray[np.float64]
-        Lifetime(s) of manuscript(s).
-    birth_rates : float or NDArray[np.float64]
-        Birth rate(s) λ for each epoch.
-    death_rates : float or NDArray[np.float64]
-        Death rate(s) μ for each epoch.
-    times : float or NDArray[np.float64]
-        Epoch end time(s).
+    lifetimes : NDArray[np.float64]
+        1D array of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
+    birth_rates : NDArray[np.float64]
+        1D array of birth rates λ per epoch (shape: (n_epochs,)).
+    death_rates : NDArray[np.float64]
+        1D array of death rates μ per epoch; same length as ``birth_rates``.
+    times : NDArray[np.float64]
+        1D, strictly increasing array of epoch end times matching rate arrays.
 
     Returns
     -------
@@ -1017,14 +1017,14 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
 
     Parameters
     ----------
-    lifetimes : float or NDArray[np.float64]
-        Lifetime(s) of manuscript(s).
-    birth_rates : float or NDArray[np.float64]
-        Birth rate(s) λ for each epoch.
-    death_rates : float or NDArray[np.float64]
-        Death rate(s) μ for each epoch.
-    times : float or NDArray[np.float64]
-        Epoch end time(s).
+    lifetimes : NDArray[np.float64]
+        1D array of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
+    birth_rates : NDArray[np.float64]
+        1D array of birth rates λ per epoch (shape: (n_epochs,)).
+    death_rates : NDArray[np.float64]
+        1D array of death rates μ per epoch; same length as ``birth_rates``.
+    times : NDArray[np.float64]
+        1D, strictly increasing array of epoch end times matching rate arrays.
 
     Returns
     -------
@@ -1080,24 +1080,24 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
 
     Parameters
     ----------
-    lifetimes : float or NDArray[np.float64]
-        Lifetime(s) of manuscript(s).
-    birth_rates : float or NDArray[np.float64]
-        Birth rate(s) λ for each epoch.
-    death_rates : float or NDArray[np.float64]
-        Death rate(s) μ for each epoch.
-    times : float or NDArray[np.float64]
-        Epoch end time(s).
+    lifetimes : NDArray[np.float64]
+        1D array of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
+    birth_rates : NDArray[np.float64]
+        1D array of birth rates λ per epoch (shape: (n_epochs,)).
+    death_rates : NDArray[np.float64]
+        1D array of death rates μ per epoch; same length as ``birth_rates``.
+    times : NDArray[np.float64]
+        1D, strictly increasing array of epoch end times matching rate arrays.
     as_array : bool, optional
-        If True, return individual log probabilities as array.
-        If False, return sum of log probabilities. Default False.
+        If True, return log probabilities per lifetime (aligned to the original
+        ordering); if False, return their sum. Default False.
 
     Returns
     -------
     np.float64 or NDArray[np.float64]
-        If as_array=False: Sum of log extinction probabilities (scalar).
-        If as_array=True: Array of individual log extinction probabilities,
-        preserving the original order of lifetimes.
+        If ``as_array`` is False, the summed log extinction probability.
+        If ``as_array`` is True, a 1D array of log extinction probabilities
+        aligned with ``lifetimes``.
     """
 
     if len(birth_rates) != len(death_rates) or len(birth_rates) != len(times):
@@ -1199,12 +1199,12 @@ def calculate_log_lik_lifetimes(
 
     Parameters
     ----------
-    lifetimes : float or NDArray[np.float64]
-        Lifetime(s) of manuscript(s).
-    birth_rates : float or NDArray[np.float64]
-        Birth rate(s) λ for each epoch.
-    times : float or NDArray[np.float64]
-        Epoch end time(s).
+    lifetimes : NDArray[np.float64]
+        1D array of lifetimes (shape: (n,)), each ≤ times[-1].
+    birth_rates : NDArray[np.float64]
+        1D array of birth rates λ per epoch (shape: (n_epochs,)).
+    times : NDArray[np.float64]
+        1D, strictly increasing array of epoch end times matching ``birth_rates``.
 
     Returns
     -------
@@ -1256,12 +1256,12 @@ def _population_geometric_parameter(
 
     Parameters
     ----------
-    birth_rates : float or NDArray[np.float64]
-        Birth rate(s) λ.
-    death_rates : float or NDArray[np.float64]
-        Death rate(s) μ.
-    times : float or NDArray[np.float64]
-        Epoch end time(s). Must be monotonically increasing.
+    birth_rates : NDArray[np.float64]
+        1D array of birth rates λ per epoch (shape: (n_epochs,)).
+    death_rates : NDArray[np.float64]
+        1D array of death rates μ per epoch; same length as ``birth_rates``.
+    times : NDArray[np.float64]
+        1D, strictly increasing array of epoch end times (shape: (n_epochs,)).
 
     Returns
     -------
@@ -1302,12 +1302,12 @@ def _integrand_surv_from_weighted_birth_time(
     ----------
     birth_time : float
         Time at which birth occurred.
-    birth_rates : float or NDArray[np.float64]
-        Birth rate(s) λ.
-    death_rates : float or NDArray[np.float64]
-        Death rate(s) μ.
-    times : float or NDArray[np.float64]
-        Epoch end time(s).
+    birth_rates : NDArray[np.float64]
+        1D array of birth rates λ per epoch (shape: (n_epochs,)).
+    death_rates : NDArray[np.float64]
+        1D array of death rates μ per epoch; same length as ``birth_rates``.
+    times : NDArray[np.float64]
+        1D, strictly increasing array of epoch end times (shape: (n_epochs,)).
 
     Returns
     -------
@@ -1409,12 +1409,12 @@ def _pr_extinction_numerator(
 
     Parameters
     ----------
-    birth_rates : float or NDArray[np.float64]
-        Birth rate(s) λ.
-    death_rates : float or NDArray[np.float64]
-        Death rate(s) μ.
-    times : float or NDArray[np.float64]
-        Epoch end time(s). Must be monotonically increasing.
+    birth_rates : NDArray[np.float64]
+        1D array of birth rates λ per epoch (shape: (n_epochs,)).
+    death_rates : NDArray[np.float64]
+        1D array of death rates μ per epoch; same length as ``birth_rates``.
+    times : NDArray[np.float64]
+        1D, strictly increasing array of epoch end times (shape: (n_epochs,)).
 
     Returns
     -------

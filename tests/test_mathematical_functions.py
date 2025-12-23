@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 
 # Import private functions for direct testing
 from inf_bp_texts.models.mathematical_functions import (
-    _integrand_surv_from_weighted_birth_time,
+    _integrand_surv_from_weighted_birth_time_vectorized,
     _population_geometric_parameter,
     _pr_extinction_numerator,
     calculate_ages_log_lik,
@@ -174,15 +174,12 @@ class TestMultiEpochNumericalAccuracy:
         assert 0 < result < 1, f"Extinction probability {result} not in (0, 1)"
 
     def test_two_epoch_spine_age_density_basic(self):
-        """Test two-epoch spine age density for ages in different epochs.
+        """Validate multi-epoch spine age density for ages in each epoch.
 
-        TODO: Complete implementation in calculate_spine_ages_log_lik
-        for multi-epoch case. Currently returns -inf for len(times) > 1.
-
-        Analytical form needed:
-        - For age t in epoch i: compute density considering all previous epochs
-        - Formula should account for accumulated growth/decay from epoch transitions
-        - Expected to be finite for valid parameter ranges
+        This exercises the reflected multi-epoch path in
+        ``calculate_spine_ages_log_lik`` by checking that ages in both the first
+        and second epochs produce finite log densities with the current closed-form
+        implementation.
         """
         lambda_params = np.array([0.1, 0.2])
         mu_params = np.array([0.05, 0.1])
@@ -203,18 +200,11 @@ class TestMultiEpochNumericalAccuracy:
         assert np.isfinite(result2)
 
     def test_multi_epoch_non_spine_age_array(self):
-        """Test multi-epoch non-spine ages with ages across epochs.
+        """Check multi-epoch non-spine ages spanning epochs yield finite, negative log-lik.
 
-        TODO: Validate multi-epoch implementation in calculate_non_spine_ages_log_lik.
-        Current implementation returns positive values which suggests computational
-        issues.
-
-        Expected behavior:
-        - Log-likelihood should be negative (log of density < 1)
-        - Should properly handle ages spanning multiple epochs
-        - Need to verify: epoch transition handling, cumulative growth calculations
-
-        Analytical validation needed for specific test case to ensure correctness.
+        Confirms the multi-epoch branch of ``calculate_non_spine_ages_log_lik``
+        handles ages on either side of an epoch boundary and returns a negative
+        summed log-density as expected for probabilities < 1.
         """
         lambda_params = np.array([0.15, 0.1])
         mu_params = np.array([0.05, 0.08])
@@ -232,7 +222,6 @@ class TestMultiEpochNumericalAccuracy:
 
     def test_two_epoch_geometric_parameter(self):
         """Test _population_geometric_parameter for two epochs."""
-        # TODO: Derive analytical formula for specific two-epoch case
         birth_rates = np.array([0.2, 0.3])
         death_rates = np.array([0.1, 0.15])
         times = np.array([50.0, 100.0])
@@ -437,16 +426,18 @@ class TestMultiEpochEqualsSingleEpoch:
         assert np.isfinite(multi)
         assert_allclose(single, multi, rtol=1e-8)
 
-    def test_integrand_surv_from_weighted_birth_time_multi_equals_single(self):
-        birth_time = 30.0
+    def test_integrand_surv_from_weighted_birth_time_vectorized_multi_equals_single(
+        self,
+    ):
+        birth_time = np.array([30.0])
         lambda_val, mu_val, T = np.array([0.02]), np.array([0.01]), np.array([120.0])
-        single = _integrand_surv_from_weighted_birth_time(
+        single = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time, lambda_val, mu_val, T
         )
         times = np.array([40.0, 80.0, 120.0])
         lambdas = np.full(3, lambda_val)
         mus = np.full(3, mu_val)
-        multi = _integrand_surv_from_weighted_birth_time(
+        multi = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time, lambdas, mus, times
         )
         assert_allclose(single, multi, rtol=1e-8)
@@ -2228,7 +2219,7 @@ class TestGradientValidation:
 
 
 class TestIntegrandSurvFromWeightedBirthTime:
-    """Test the _integrand_surv_from_weighted_birth_time private helper function.
+    """Test the _integrand_surv_from_weighted_birth_time_vectorized private helper function.
 
     This function is used in calculating survival probabilities and can have
     issues with index out of bounds when birth_time is at or beyond epoch times.
@@ -2236,12 +2227,12 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
     def test_basic_single_epoch(self):
         """Test basic functionality with a single epoch."""
-        birth_time = 5.0
+        birth_time = np.array([5.0])
         birth_rates = np.array([0.1])
         death_rates = np.array([0.05])
         times = np.array([100.0])
 
-        result = _integrand_surv_from_weighted_birth_time(
+        result = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates,
             death_rates,
@@ -2254,12 +2245,12 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
     def test_basic_multiple_epochs(self):
         """Test with multiple epochs."""
-        birth_time = 25.0
+        birth_time = np.array([25.0])
         birth_rates = np.array([0.1, 0.15, 0.12])
         death_rates = np.array([0.05, 0.06, 0.055])
         times = np.array([50.0, 100.0, 150.0])
 
-        result = _integrand_surv_from_weighted_birth_time(
+        result = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates,
             death_rates,
@@ -2271,12 +2262,12 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
     def test_birth_time_at_zero(self):
         """Test when birth_time is 0 (start of process)."""
-        birth_time = 0.0
+        birth_time = np.array([0.0])
         birth_rates = np.array([0.1, 0.15])
         death_rates = np.array([0.05, 0.06])
         times = np.array([50.0, 100.0])
 
-        result = _integrand_surv_from_weighted_birth_time(
+        result = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates,
             death_rates,
@@ -2288,14 +2279,14 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
     def test_birth_time_equals_first_epoch_end(self):
         """Test edge case when birth_time equals first epoch end time."""
-        birth_time = 50.0
+        birth_time = np.array([50.0])
         birth_rates = np.array([0.1, 0.15])
         death_rates = np.array([0.05, 0.06])
         times = np.array([50.0, 100.0])
 
         # After subtracting birth_time, times becomes [0.0, 50.0]
         # valid_indices will be where times > 0, so only index 1
-        result = _integrand_surv_from_weighted_birth_time(
+        result = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates,
             death_rates,
@@ -2313,7 +2304,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         times = np.array([50.0, 100.0])
 
         with pytest.raises(ValueError):
-            _integrand_surv_from_weighted_birth_time(
+            _integrand_surv_from_weighted_birth_time_vectorized(
                 birth_time,
                 birth_rates,
                 death_rates,
@@ -2330,7 +2321,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # After subtracting birth_time, times becomes negative, no valid indices
         # Should raise ValueError
         with pytest.raises(ValueError):
-            _integrand_surv_from_weighted_birth_time(
+            _integrand_surv_from_weighted_birth_time_vectorized(
                 birth_time,
                 birth_rates,
                 death_rates,
@@ -2339,12 +2330,12 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
     def test_birth_time_within_first_epoch(self):
         """Test normal case with birth_time within first epoch."""
-        birth_time = 10.0
+        birth_time = np.array([10.0])
         birth_rates = np.array([0.1, 0.15, 0.12])
         death_rates = np.array([0.05, 0.06, 0.055])
         times = np.array([50.0, 100.0, 150.0])
 
-        result = _integrand_surv_from_weighted_birth_time(
+        result = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates,
             death_rates,
@@ -2356,14 +2347,14 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
     def test_birth_time_within_middle_epoch(self):
         """Test birth_time within a middle epoch."""
-        birth_time = 75.0
+        birth_time = np.array([75.0])
         birth_rates = np.array([0.1, 0.15, 0.12])
         death_rates = np.array([0.05, 0.06, 0.055])
         times = np.array([50.0, 100.0, 150.0])
 
         # After subtracting, times becomes [-25.0, 25.0, 75.0]
         # valid_indices will be [1, 2]
-        result = _integrand_surv_from_weighted_birth_time(
+        result = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates,
             death_rates,
@@ -2375,12 +2366,12 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
     def test_scalar_inputs_converted_to_arrays(self):
         """Test that scalar inputs are properly converted to arrays."""
-        birth_time = 10.0
+        birth_time = np.array([10.0])
         birth_rates = np.array([0.1])
         death_rates = np.array([0.05])
         times = np.array([100.0])
 
-        result = _integrand_surv_from_weighted_birth_time(
+        result = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates,
             death_rates,
@@ -2392,19 +2383,19 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
     def test_result_proportional_to_birth_rate(self):
         """Test that result is proportional to the first valid birth rate."""
-        birth_time = 10.0
+        birth_time = np.array([10.0])
         birth_rates1 = np.array([0.1, 0.15])
         birth_rates2 = np.array([0.2, 0.15])  # Double the first rate
         death_rates = np.array([0.05, 0.06])
         times = np.array([50.0, 100.0])
 
-        result1 = _integrand_surv_from_weighted_birth_time(
+        result1 = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates1,
             death_rates,
             times,
         )
-        result2 = _integrand_surv_from_weighted_birth_time(
+        result2 = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates2,
             death_rates,
@@ -2421,7 +2412,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         This could cause index out of bounds errors if valid_indices from the longer
         times array are used to index the shorter rate arrays.
         """
-        birth_time = 10.0
+        birth_time = np.array([10.0])
         birth_rates = np.array([0.1, 0.15])  # Length 2
         death_rates = np.array([0.05, 0.06])  # Length 2
         times = np.array([50.0, 100.0, 150.0])  # Length 3 - MISMATCH!
@@ -2429,7 +2420,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # This should raise an IndexError when valid_indices contains index 2
         # but birth_rates/death_rates only have indices 0, 1
         with pytest.raises(IndexError):
-            _integrand_surv_from_weighted_birth_time(
+            _integrand_surv_from_weighted_birth_time_vectorized(
                 birth_time,
                 birth_rates,
                 death_rates,
@@ -2443,14 +2434,13 @@ class TestIntegrandSurvFromWeightedBirthTime:
         the first N rate values where N = len(times). This could lead to
         subtle bugs where extra rate parameters are ignored.
         """
-        birth_time = 10.0
+        birth_time = np.array([10.0])
         birth_rates = np.array([0.1, 0.15, 0.12])  # Length 3
         death_rates = np.array([0.05, 0.06, 0.055])  # Length 3
         times = np.array([50.0, 100.0])  # Length 2 - MISMATCH!
 
         # Currently this doesn't fail - it just uses first 2 rate values
-        # TODO: Should this validate and raise an error instead?
-        result = _integrand_surv_from_weighted_birth_time(
+        result = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates,
             death_rates,
@@ -2464,14 +2454,13 @@ class TestIntegrandSurvFromWeightedBirthTime:
         Currently does NOT raise an error - uses the shorter length.
         This could lead to subtle bugs in calculations.
         """
-        birth_time = 10.0
+        birth_time = np.array([10.0])
         birth_rates = np.array([0.1, 0.15])  # Length 2
         death_rates = np.array([0.05, 0.06, 0.055])  # Length 3 - MISMATCH!
         times = np.array([50.0, 100.0])
 
         # Currently doesn't fail - behavior depends on numpy broadcasting
-        # TODO: Should validate input arrays have matching lengths
-        result = _integrand_surv_from_weighted_birth_time(
+        result = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates,
             death_rates,
@@ -2495,14 +2484,14 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
         # But somehow an extra time point gets added (e.g., lifetime appended)
         # This could happen in calculate_log_pr_extinction_given_initial_lifetimes
-        birth_time = 25.0  # Some point during integration
+        birth_time = np.array([25.0])  # Some point during integration
 
         # If times gets modified to include lifetime:
         bad_times = np.append(times, lifetime)  # Now length 3!
 
         # This should raise IndexError
         with pytest.raises(IndexError):
-            _integrand_surv_from_weighted_birth_time(
+            _integrand_surv_from_weighted_birth_time_vectorized(
                 birth_time,
                 birth_rates,
                 death_rates,
@@ -2512,7 +2501,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_valid_indices_logic_with_partial_truncation(self):
         """Test that valid_indices correctly handles partial epoch truncation."""
         # When birth_time is within epochs, valid_indices should be a subset
-        birth_time = 60.0
+        birth_time = np.array([60.0])
         birth_rates = np.array([0.1, 0.15, 0.12])
         death_rates = np.array([0.05, 0.06, 0.055])
         times = np.array([50.0, 100.0, 150.0])
@@ -2520,7 +2509,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # After subtracting birth_time, times becomes [-10.0, 40.0, 90.0]
         # valid_indices should be [1, 2] (where times > 0)
         # Accessing birth_rates[[1, 2]] should work fine
-        result = _integrand_surv_from_weighted_birth_time(
+        result = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time,
             birth_rates,
             death_rates,
@@ -2534,13 +2523,13 @@ class TestIntegrandSurvFromWeightedBirthTime:
 class test_calculateLogPrExtinctionGivenInitialLifetimes:
     """Test calculate_log_pr_extinction_given_initial_lifetimes function.
 
-    This function uses _integrand_surv_from_weighted_birth_time internally
+    This function uses _integrand_surv_from_weighted_birth_time_vectorized internally
     and has a bug where lifetime > max(times) causes IndexError.
     """
 
     def test_basic_single_lifetime_within_epochs(self):
         """Test basic case with lifetime within epoch boundaries."""
-        lifetime = 50.0
+        lifetime = np.array([50.0])
         birth_rates = np.array([0.1, 0.15])
         death_rates = np.array([0.05, 0.06])
         times = np.array([75.0, 150.0])

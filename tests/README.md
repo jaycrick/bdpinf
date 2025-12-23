@@ -1,6 +1,6 @@
 # Tests for inf-bp-texts
 
-This directory contains comprehensive test suites for the `inf_bp_texts.inference` module.
+This directory contains comprehensive test suites covering models, inference, simulation, parsing utilities, and supporting helpers.
 
 ## Test Organization
 
@@ -34,6 +34,11 @@ This directory contains comprehensive test suites for the `inf_bp_texts.inferenc
 - **`test_utils.py`** - Tests for utility functions and edge cases
   - Prediction methods
   - Edge cases and error handling
+
+- **`test_mathematical_functions.py`** - Pure-function math checks (extinction probability, age/population likelihoods)
+- **`test_population_probability.py`** - Population probability edge cases and bounds
+- **`test_german_pattern_parsing.py`** / **`test_pattern_analysis.py`** - Parsing and pattern analysis utilities
+- **`test_constants.py`** - Validates canonical constants and pattern maps
 
 - **`test_integration.py`** - Integration tests for complete workflows
   - End-to-end simulation and fitting
@@ -109,11 +114,12 @@ The test suite covers:
 - Reproducibility and randomness
 - State consistency
 
-### ✅ Utility Functions
+### ✅ Utility Functions and Parsing
 - Data preparation for analysis
 - Model comparison workflows
 - Prediction methods
 - Helper function validation
+- Pattern parsing and constant validation
 
 ### ✅ Integration Workflows
 - Complete analysis pipelines
@@ -151,7 +157,7 @@ Tests verify that components work together correctly in realistic workflows, not
 
 ## Adding New Tests
 
-When adding new functionality to `inference.py`, please add corresponding tests:
+When adding new functionality to `inf_bp_texts`, please add corresponding tests:
 
 1. **Unit tests** for individual methods
 2. **Integration tests** for workflows
