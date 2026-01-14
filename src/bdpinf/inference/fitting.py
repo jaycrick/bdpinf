@@ -289,25 +289,57 @@ def fit_birth_death_processes(
         if key in _objective_cache:
             return np.float64(_objective_cache[key])
 
+        # Apply soft constraints in log-space to prevent extreme parameter values
+        # that cause numerical instability (e.g., rates < 1e-20 or > 10)
+        # Use a strong penalty term that grows smoothly as parameters go out of bounds
+        MIN_LOG_PARAM = -40.0  # exp(-40) ≈ 4e-18
+        MAX_LOG_PARAM = 2.3  # exp(2.3) ≈ 10
+        penalty = 0.0
+
+        for log_p in log_params:
+            if log_p < MIN_LOG_PARAM:
+                # Strong quadratic penalty for going too low
+                penalty += 1000.0 * (MIN_LOG_PARAM - log_p) ** 2
+            elif log_p > MAX_LOG_PARAM:
+                # Strong quadratic penalty for going too high
+                penalty += 1000.0 * (log_p - MAX_LOG_PARAM) ** 2
+
         params = np.exp(log_params)
         n_epochs = len(params) // 2
         birth_rates = params[:n_epochs]
         death_rates = params[n_epochs:]
 
-        nll = negative_log_likelihood(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            ages=non_spine_ages,
-            times=times,
-            spine_ages=spine_ages,
-            ns=population_sizes,
-            is_ordered=False,
-            log_scale_params=False,
-        )
-        _objective_cache[key] = float(nll)
-        return np.float64(nll)
+        try:
+            nll = negative_log_likelihood(
+                birth_rates=birth_rates,
+                death_rates=death_rates,
+                ages=non_spine_ages,
+                times=times,
+                spine_ages=spine_ages,
+                ns=population_sizes,
+                is_ordered=False,
+                log_scale_params=False,
+            )
 
-    # Optimize with BFGS (scipy handles numerical gradient internally)
+            # If likelihood returns inf or nan, return a large finite value
+            if not np.isfinite(nll):
+                nll = np.float64(1e10)
+
+            # If nll is negative (which means log_likelihood is positive, indicating
+            # numerical issues or degenerate solutions), add a large penalty
+            if nll < 0:
+                penalty += 1e10 - nll
+                nll = np.float64(1e10)
+
+            result_value = float(nll + penalty)
+        except Exception:
+            # If likelihood computation fails, return a large finite value
+            result_value = 1e10 + penalty
+
+        _objective_cache[key] = result_value
+        return np.float64(result_value)
+
+    # Optimize with BFGS
     x0 = np.array(log_initial_params, dtype=np.float64)
 
     try:
@@ -323,11 +355,23 @@ def fit_birth_death_processes(
             birth_rates = params[:n_epochs]
             death_rates = params[n_epochs:]
 
+            # Recalculate the actual log-likelihood without penalty for reporting
+            actual_nll = negative_log_likelihood(
+                birth_rates=birth_rates,
+                death_rates=death_rates,
+                ages=non_spine_ages,
+                times=times,
+                spine_ages=spine_ages,
+                ns=population_sizes,
+                is_ordered=False,
+                log_scale_params=False,
+            )
+
             return {
                 "success": True,
                 "birth_rates": birth_rates,
                 "death_rates": death_rates,
-                "log_likelihood": -result.fun,
+                "log_likelihood": -actual_nll,
                 "optimization_result": result,
             }
     except Exception:
@@ -347,11 +391,23 @@ def fit_birth_death_processes(
             birth_rates = params[:n_epochs]
             death_rates = params[n_epochs:]
 
+            # Recalculate the actual log-likelihood without penalty for reporting
+            actual_nll = negative_log_likelihood(
+                birth_rates=birth_rates,
+                death_rates=death_rates,
+                ages=non_spine_ages,
+                times=times,
+                spine_ages=spine_ages,
+                ns=population_sizes,
+                is_ordered=False,
+                log_scale_params=False,
+            )
+
             return {
                 "success": True,
                 "birth_rates": birth_rates,
                 "death_rates": death_rates,
-                "log_likelihood": -result.fun,
+                "log_likelihood": -actual_nll,
                 "optimization_result": result,
             }
         else:
