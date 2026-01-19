@@ -1130,85 +1130,89 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
         Supports automatic differentiation.
     """
 
-    if len(birth_rates) != len(death_rates) or len(birth_rates) != len(times):
+    # Convert inputs to tensors
+    lifetimes_t = torch.as_tensor(lifetimes, dtype=torch.float64)
+    birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
+    death_rates_t = torch.as_tensor(death_rates, dtype=torch.float64)
+    times_t = torch.as_tensor(times, dtype=torch.float64)
+
+    if len(birth_rates_t) != len(death_rates_t) or len(birth_rates_t) != len(times_t):
         raise ValueError("Length of birth_rates, death_rates, and times must be equal.")
 
-    birth_rates_array = birth_rates
+    birth_rates_array = birth_rates_t
 
     # Sort lifetimes to enable cumulative integral caching
-    sorted_lifetimes = np.sort(lifetimes)
+    sorted_lifetimes, sort_indices = torch.sort(lifetimes_t)
 
-    if sorted_lifetimes[-1] > times[-1]:
+    if sorted_lifetimes[-1] > times_t[-1]:
         raise ValueError(
             "All lifetimes must be less than or equal to the final time point."
-            + f" Got max lifetime: {sorted_lifetimes[-1]}, final time: {times[-1]}"
+            + f" Got max lifetime: {sorted_lifetimes[-1]}, final time: {times_t[-1]}"
         )
 
-    log_probs = np.zeros_like(sorted_lifetimes, dtype=np.float64)
+    log_probs = torch.zeros_like(sorted_lifetimes, dtype=torch.float64)
 
     # Build integration intervals from sorted lifetimes
-    # Intervals are [0, lifetime[0]], [lifetime[0], lifetime[1]], ...
     n_lifetimes = len(sorted_lifetimes)
 
     # Create interval boundaries: [0, sorted_lifetimes[0], sorted_lifetimes[1], ...]
-    interval_boundaries = np.insert(sorted_lifetimes, 0, 0.0)
-
-    # Create intervals: each row is [start, end]
-    intervals = np.column_stack(
-        [
-            interval_boundaries[
-                :-1
-            ],  # Start points: [0, lifetime[0], lifetime[1], ...]
-            interval_boundaries[1:],  # End points: [lifetime[0], lifetime[1], ...]
-        ]
+    interval_boundaries = torch.cat(
+        [torch.tensor([0.0], dtype=torch.float64), sorted_lifetimes]
     )
 
-    # Remove zero-width intervals (can occur with duplicate lifetimes)
-    nonzero_mask = intervals[:, 1] > intervals[:, 0]
-    active_intervals = intervals[nonzero_mask]
+    # Create intervals: each row is [start, end]
+    interval_starts = interval_boundaries[:-1]
+    interval_ends = interval_boundaries[1:]
 
-    if len(active_intervals) > 0:
-        # Use scipy's fixed_quad for 15-point Gauss-Legendre quadrature
-        interval_integrals = np.zeros(len(active_intervals), dtype=np.float64)
+    # Identify non-zero width intervals
+    nonzero_mask = interval_ends > interval_starts
+    active_indices = torch.where(nonzero_mask)[0]
 
-        for i, (a, b) in enumerate(active_intervals):
+    cumulative_integrals = torch.zeros(n_lifetimes, dtype=torch.float64)
+
+    if len(active_indices) > 0:
+        # Use scipy's fixed_quad for integration
+        interval_integrals = []
+        for idx in active_indices:
+            a = interval_starts[idx].item()
+            b = interval_ends[idx].item()
             result, _ = scipy.integrate.fixed_quad(
                 _integrand_surv_from_weighted_birth_time_vectorized,
                 a,
                 b,
-                args=(birth_rates, death_rates, times),
+                args=(birth_rates_t, death_rates_t, times_t),
                 n=5,
             )
-            interval_integrals[i] = result
+            interval_integrals.append(result)
 
-        # Map integrals back to full intervals array (including zero-width ones)
-        full_interval_integrals = np.zeros(len(intervals), dtype=np.float64)
-        full_interval_integrals[nonzero_mask] = interval_integrals
-
-        # Compute cumulative integrals for each lifetime
-        # The cumulative integral at lifetime[i] is the sum of all intervals up to and including i
-        cumulative_integrals = np.cumsum(full_interval_integrals)
-    else:
-        cumulative_integrals = np.zeros(n_lifetimes, dtype=np.float64)
-
-    # Compute cumulative birth rates for each lifetime (vectorized)
-    for i, lifetime in enumerate(sorted_lifetimes):
-        full_epochs = times[np.where(times < lifetime)[0]]
-        num_full_epochs = len(full_epochs)
-        lifetime_epochs = np.append(full_epochs, lifetime)
-        if len(birth_rates_array[0 : num_full_epochs + 1]) != len(
-            np.diff(np.insert(lifetime_epochs, 0, 0.0))
-        ):
-            raise ValueError(
-                "Mismatch in lengths when computing cumulative birth rates."
-                + " birth_rates_array length: "
-                + f"{len(birth_rates_array[0 : num_full_epochs + 1])}, "
-                + f" lifetime: {lifetime}, times: {times}.\n"
-                + f" lifetime_epochs: {lifetime_epochs}"
+        # Build cumulative integrals
+        interval_integral_full = torch.zeros(n_lifetimes, dtype=torch.float64)
+        for i, idx in enumerate(active_indices):
+            interval_integral_full[idx] = torch.tensor(
+                interval_integrals[i], dtype=torch.float64
             )
-        cum_birth_rate = np.sum(
-            birth_rates_array[0 : num_full_epochs + 1]
-            * np.diff(np.insert(lifetime_epochs, 0, 0.0))
+
+        cumulative_integrals = torch.cumsum(interval_integral_full, dim=0)
+
+    # Compute cumulative birth rates for each lifetime
+    for i, lifetime in enumerate(sorted_lifetimes):
+        # Find epochs that end before this lifetime
+        epoch_mask = times_t < lifetime
+        num_full_epochs = torch.sum(epoch_mask).item()
+
+        # Build lifetime epochs
+        full_epochs = times_t[epoch_mask]
+        lifetime_epochs = torch.cat([full_epochs, lifetime.unsqueeze(0)])
+
+        # Compute epoch durations
+        lifetime_epochs_padded = torch.cat(
+            [torch.tensor([0.0], dtype=torch.float64), lifetime_epochs]
+        )
+        epoch_durs = torch.diff(lifetime_epochs_padded)
+
+        # Compute cumulative birth rate
+        cum_birth_rate = torch.sum(
+            birth_rates_array[: num_full_epochs + 1] * epoch_durs
         )
 
         log_probs[i] = cumulative_integrals[i] - cum_birth_rate
@@ -1216,7 +1220,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     if as_array:
         return log_probs
 
-    return np.sum(log_probs)
+    return torch.sum(log_probs)
 
 
 def calculate_log_lik_lifetimes(
@@ -1320,16 +1324,25 @@ def _population_geometric_parameter(
     Handles λ ≈ μ limiting case for numerical stability. Returns tensor
     for full PyTorch autograd support.
     """
-    epoch_durations = np.diff(np.insert(times, 0, 0.0))
-    if np.any(epoch_durations < 0):
+    # Convert inputs to tensors
+    birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
+    death_rates_t = torch.as_tensor(death_rates, dtype=torch.float64)
+    times_t = torch.as_tensor(times, dtype=torch.float64)
+
+    # Compute epoch durations
+    times_padded = torch.cat([torch.tensor([0.0], dtype=torch.float64), times_t])
+    epoch_durations = torch.diff(times_padded)
+
+    if torch.any(epoch_durations < 0):
         raise ValueError("times array must be strictly increasing.")
-    lambda_val_array = birth_rates
-    mu_val_array = death_rates
+
+    lambda_val_array = birth_rates_t
+    mu_val_array = death_rates_t
 
     growth_rates = lambda_val_array - mu_val_array
-    cum_growth = np.cumsum(growth_rates * epoch_durations)
+    cum_growth = torch.cumsum(growth_rates * epoch_durations, dim=0)
 
-    geom_sum = _pr_extinction_numerator(birth_rates, death_rates, times)
+    geom_sum = _pr_extinction_numerator(birth_rates_t, death_rates_t, times_t)
     # Compute in log-domain to avoid overflow: cond = exp(-C) / (1 + geom_sum)
     # => log(cond) = -C - log1p(geom_sum)
     log_cond = -cum_growth[-1] - torch.log1p(geom_sum)
@@ -1363,17 +1376,23 @@ def _integrand_surv_from_weighted_birth_time(
         Scalar tensor (shape ()) containing integrand value.
         dtype: torch.float64. Supports automatic differentiation.
     """
-    # Find the index of the last epoch that starts before or at start_time
+    # Convert inputs to tensors
+    birth_time_t = torch.as_tensor(birth_time, dtype=torch.float64)
+    birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
+    death_rates_t = torch.as_tensor(death_rates, dtype=torch.float64)
+    times_t = torch.as_tensor(times, dtype=torch.float64)
 
-    times = times - birth_time
-    valid_indices = np.where(times > 0)[0]
+    # Find the index of the last epoch that starts before or at start_time
+    times_shifted = times_t - birth_time_t
+    valid_mask = times_shifted > 0
+    valid_indices = torch.where(valid_mask)[0]
 
     if len(valid_indices) == 0:
         raise ValueError("birth_time exceeds all epoch end times.")
 
-    trunc_times = times[valid_indices]
-    trunc_birth_rates = birth_rates[valid_indices]
-    trunc_death_rates = death_rates[valid_indices]
+    trunc_times = times_shifted[valid_indices]
+    trunc_birth_rates = birth_rates_t[valid_indices]
+    trunc_death_rates = death_rates_t[valid_indices]
 
     ext_prob = calculate_extinction_pr(
         birth_rates=trunc_birth_rates,
@@ -1381,7 +1400,7 @@ def _integrand_surv_from_weighted_birth_time(
         times=trunc_times,
     )
 
-    return np.float64(ext_prob * trunc_birth_rates[0])
+    return ext_prob * trunc_birth_rates[0]
 
 
 def _integrand_surv_from_weighted_birth_time_vectorized(
@@ -1412,29 +1431,35 @@ def _integrand_surv_from_weighted_birth_time_vectorized(
         1D tensor of integrand values for each birth time. Shape: (n_points,).
         dtype: torch.float64. Supports automatic differentiation.
     """
+    # Convert inputs to tensors
+    birth_times_t = torch.as_tensor(birth_times, dtype=torch.float64)
+    birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
+    death_rates_t = torch.as_tensor(death_rates, dtype=torch.float64)
+    times_t = torch.as_tensor(times, dtype=torch.float64)
 
-    if not (birth_rates.shape == death_rates.shape == times.shape):
+    if not (birth_rates_t.shape == death_rates_t.shape == times_t.shape):
         raise ValueError(
             "Length of birth_rates, death_rates, and times must be equal. "
-            f"Got shapes {birth_rates.shape}, {death_rates.shape}, {times.shape}."
+            f"Got shapes {birth_rates_t.shape}, {death_rates_t.shape}, {times_t.shape}."
         )
-    n_points = len(birth_times)
-    results = np.zeros(n_points, dtype=np.float64)
+    n_points = len(birth_times_t)
+    results = torch.zeros(n_points, dtype=torch.float64)
 
     # For each birth time, compute the extinction probability
     # This is the main computational bottleneck - we compute extinction probabilities
     # for different time-shifted parameter sets
-    for i, birth_time in enumerate(birth_times):
-        shifted_times = times - birth_time
-        valid_indices = np.where(shifted_times > 0)[0]
+    for i, birth_time in enumerate(birth_times_t):
+        shifted_times = times_t - birth_time
+        valid_mask = shifted_times > 0
+        valid_indices = torch.where(valid_mask)[0]
 
         if len(valid_indices) == 0:
-            results[i] = 0.0
+            results[i] = torch.tensor(0.0, dtype=torch.float64)
             continue
 
         trunc_times = shifted_times[valid_indices]
-        trunc_birth_rates = birth_rates[valid_indices]
-        trunc_death_rates = death_rates[valid_indices]
+        trunc_birth_rates = birth_rates_t[valid_indices]
+        trunc_death_rates = death_rates_t[valid_indices]
 
         ext_prob = calculate_extinction_pr(
             birth_rates=trunc_birth_rates,

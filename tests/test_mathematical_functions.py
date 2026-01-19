@@ -2518,9 +2518,8 @@ class TestIntegrandSurvFromWeightedBirthTime:
             [50.0, 100.0, 150.0], dtype=torch.float64
         )  # Length 3 - MISMATCH!
 
-        # This should raise an IndexError when valid_indices contains index 2
-        # but birth_rates/death_rates only have indices 0, 1
-        with pytest.raises(IndexError):
+        # This should raise an ValueError
+        with pytest.raises(ValueError):
             _integrand_surv_from_weighted_birth_time_vectorized(
                 birth_time,
                 birth_rates,
@@ -2594,8 +2593,8 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # If times gets modified to include lifetime:
         bad_times = np.append(times, lifetime)  # Now length 3!
 
-        # This should raise IndexError
-        with pytest.raises(IndexError):
+        # This should raise ValueError due to birth_time causing valid_indices
+        with pytest.raises(ValueError):
             _integrand_surv_from_weighted_birth_time_vectorized(
                 birth_time,
                 birth_rates,
