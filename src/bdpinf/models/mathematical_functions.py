@@ -1243,35 +1243,50 @@ def calculate_log_lik_lifetimes(
         dtype: torch.float64. Supports automatic differentiation.
     """
 
-    lambda_val_array = birth_rates
+    # Convert inputs to tensors
+    lifetimes_t = torch.as_tensor(lifetimes, dtype=torch.float64)
+    birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
+    times_t = torch.as_tensor(times, dtype=torch.float64)
 
-    epoch_starts = np.insert(times, 0, 0.0)[:-1]
-    epoch_durations = times - epoch_starts
+    lambda_val_array = birth_rates_t
 
-    cum_growth_at_epochs = np.cumsum(lambda_val_array * epoch_durations)
+    # Compute epoch starts and durations
+    times_padded = torch.cat([torch.tensor([0.0], dtype=torch.float64), times_t])
+    epoch_starts = times_padded[:-1]
+    epoch_durations = times_t - epoch_starts
 
-    log_liks = np.zeros_like(lifetimes, dtype=np.float64)
+    # Compute cumulative growth at each epoch
+    cum_growth_at_epochs = torch.cumsum(lambda_val_array * epoch_durations, dim=0)
 
-    for i, lifetime in enumerate(lifetimes):
-        if lifetime == times[-1]:
+    log_liks = torch.zeros_like(lifetimes_t, dtype=torch.float64)
+
+    for i, lifetime in enumerate(lifetimes_t):
+        if torch.isclose(lifetime, times_t[-1]):
             # Boundary case
             log_liks[i] = -cum_growth_at_epochs[-1]
             continue
 
-        valid_indices = np.where(epoch_starts < lifetime)[0]
+        # Find valid epoch indices where epoch_starts < lifetime
+        valid_mask = epoch_starts < lifetime
+        valid_indices = torch.where(valid_mask)[0]
 
-        # # The current epoch index is valid_indices[-1], but we need to cap it
-        # # at len(lambda_val_array)-1 since epoch_starts has one extra element
+        if len(valid_indices) == 0:
+            continue
+
+        # The current epoch index is the last valid index
         current_epoch_idx = valid_indices[-1]
         current_lambda = lambda_val_array[current_epoch_idx]
 
+        # Compute cumulative growth up to current lifetime
         cum_growth = (
-            cum_growth_at_epochs[current_epoch_idx] if current_epoch_idx > 0 else 0.0
+            cum_growth_at_epochs[current_epoch_idx - 1]
+            if current_epoch_idx > 0
+            else torch.tensor(0.0, dtype=torch.float64)
         ) + (lifetime - epoch_starts[current_epoch_idx]) * current_lambda
 
         log_liks[i] = torch.log(current_lambda) - cum_growth
 
-    return np.sum(log_liks)
+    return torch.sum(log_liks)
 
 
 def _population_geometric_parameter(
