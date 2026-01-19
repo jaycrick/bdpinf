@@ -43,6 +43,7 @@ repos:
           - scipy-stubs
           - plotly-stubs
           - lxml-stubs
+          - types-torch
         files: ^src/
 
   # toml-sort
