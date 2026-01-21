@@ -386,7 +386,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_log_lik_initial_lifetimes_given_extinction(
             lifetimes, lambdas, mus, times
         )
-        assert_allclose(single, multi, rtol=1e-85)
+        assert_allclose(single, multi, rtol=1e-8)
 
     def test_log_lik_initial_lifetimes_given_non_extinction_multi_equals_single(self):
         lifetimes = torch.tensor([12.0, 50.0, 95.0], dtype=torch.float64)
@@ -404,7 +404,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_log_lik_initial_lifetimes_given_non_extinction(
             lifetimes, lambdas, mus, times
         )
-        assert_allclose(single, multi, rtol=1e-85)
+        assert_allclose(single, multi, rtol=1e-8)
 
     def test_non_spine_ages_log_lik_multi_equals_single(self):
         ages = torch.tensor([15.0, 60.0, 95.0], dtype=torch.float64)

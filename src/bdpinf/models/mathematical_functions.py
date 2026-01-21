@@ -989,16 +989,18 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
     """
     Calculate log-likelihood of initial lifetime(s) given extinction.
 
+    Uses only PyTorch operations to maintain autograd support.
+
     Parameters
     ----------
-    lifetimes : NDArray[np.float64]
-        1D array of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times matching rate arrays.
+    lifetimes : torch.Tensor
+        1D tensor of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,)).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch; same length as ``birth_rates``.
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times matching rate arrays.
 
     Returns
     -------
@@ -1031,7 +1033,7 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
 
     # Compute conditional log likelihood
     result = (
-        np.sum(log_prs_extinction_given_lifetimes)
+        torch.sum(log_prs_extinction_given_lifetimes)
         + log_liks_lifetimes
         - n * log_extinction_prob
     )
@@ -1047,22 +1049,25 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     """
     Calculate log-likelihood of initial lifetime(s) given non-extinction.
 
+    This implementation uses only PyTorch operations to preserve
+    autograd support end-to-end.
+
     Parameters
     ----------
-    lifetimes : NDArray[np.float64]
-        1D array of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times matching rate arrays.
+    lifetimes : torch.Tensor
+        1D tensor of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,)).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch; same length as ``birth_rates``.
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times matching rate arrays.
 
     Returns
     -------
     torch.Tensor
-        Scalar tensor (shape ()) containing summed log-likelihood values.
-        dtype: torch.float64. Supports automatic differentiation.
+        Scalar tensor (shape ()) containing summed log-likelihood values
+        in torch.float64. Supports automatic differentiation.
     """
 
     n = len(lifetimes)
@@ -1094,11 +1099,11 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
 
     # Compute conditional log likelihood
     result = (
-        np.sum(log_prs_non_extinction_given_lifetimes)
+        torch.sum(log_prs_non_extinction_given_lifetimes)
         + log_liks_lifetimes
         - n * torch.log(-torch.expm1(log_extinction_prob))
     )
-    return np.float64(result)
+    return result
 
 
 def calculate_log_pr_extinction_given_initial_lifetimes(
