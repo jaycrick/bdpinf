@@ -2141,28 +2141,42 @@ class TestGradientValidation:
         assert error < 1e-5, f"Gradient error {error} exceeds tolerance for λ ≈ μ case"
 
     def test_derivatives_with_log_scale_params(self):
-        """Test that derivatives work correctly with log-scale parameters."""
-        log_lambda = torch.log(0.1)
-        log_mu = torch.log(0.05)
+        """Test that derivatives work correctly with log-scale parameters using PyTorch autograd."""
+        log_lambda = torch.log(torch.tensor(0.1, dtype=torch.float64))
+        log_mu = torch.log(torch.tensor(0.05, dtype=torch.float64))
         age = 50.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
-        def objective(log_params):
-            return calculate_non_spine_ages_log_lik(
-                log_params[0], log_params[1], age, T, log_scale_params=True
-            )
+        # Create params with requires_grad for autograd
+        log_params = torch.tensor([log_lambda, log_mu], dtype=torch.float64, requires_grad=True)
 
-        def gradient(log_params):
-            grads = calculate_non_spine_ages_log_lik_derivatives(
-                log_params[0], log_params[1], age, T, log_scale_params=True
-            )
-            # Chain rule: d/d(log λ) = (d/dλ) * λ
-            return grads * torch.exp(log_params)
+        # Compute objective with autograd tracking
+        lambda_val = torch.exp(log_params[0])
+        mu_val = torch.exp(log_params[1])
 
-        params = torch.tensor([log_lambda, log_mu], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, (
-            f"Gradient error {error} exceeds tolerance for log-scale params"
+        objective_val = calculate_non_spine_ages_log_lik(
+            lambda_val, mu_val, age, T
+        )
+
+        # Compute autograd gradients via chain rule
+        objective_val.backward()
+        autograd_grads = log_params.grad  # d/d(log λ), d/d(log μ)
+
+        # Compute analytical derivatives in parameter space
+        # Convert back to regular parameters for analytical computation
+        with torch.no_grad():
+            analytical_grads = calculate_non_spine_ages_log_lik_derivatives(
+                lambda_val.detach(), mu_val.detach(), age, T
+            )
+            # Apply chain rule: d/d(log λ) = (d/dλ) * dλ/d(log λ) = (d/dλ) * λ
+            analytical_grads_log = analytical_grads * torch.exp(log_params.detach())
+
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads_log) / (
+            torch.abs(analytical_grads_log) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error} exceeds tolerance for log-scale params"
         )
 
     def test_finite_difference_manual_check(self):

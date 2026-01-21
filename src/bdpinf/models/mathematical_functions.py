@@ -693,15 +693,17 @@ def calculate_non_spine_ages_log_lik_derivatives(
     """
     Calculate derivatives of log age-density for non-spine manuscripts.
 
+    Uses only PyTorch operations to preserve autograd support.
+
     Parameters
     ----------
-    lambda_param : float
+    lambda_param : torch.Tensor | float
         Birth rate λ.
-    mu_param : float
+    mu_param : torch.Tensor | float
         Death rate μ.
-    ages_t : float | NDArray[np.float64]
+    ages_t : torch.Tensor | float
         Manuscript age(s) t (0 ≤ t ≤ T).
-    T : float
+    T : torch.Tensor | float
         Observation time T.
 
     Returns
@@ -715,12 +717,19 @@ def calculate_non_spine_ages_log_lik_derivatives(
     Handles λ ≈ μ limiting case for numerical stability.
     """
 
-    # Handle parameter scaling
-    lambda_val = lambda_param
-    mu_val = mu_param
+    # Convert to tensors for consistent torch operations
+    lambda_val = torch.as_tensor(lambda_param, dtype=torch.float64)
+    mu_val = torch.as_tensor(mu_param, dtype=torch.float64)
+    ages_t_t = torch.as_tensor(ages_t, dtype=torch.float64)
+    T_t = torch.as_tensor(T, dtype=torch.float64)
+
+    lambda_val = torch.atleast_1d(lambda_val).ravel()
+    mu_val = torch.atleast_1d(mu_val).ravel()
+    ages_t_t = torch.atleast_1d(ages_t_t).ravel()
+    T_t = torch.atleast_1d(T_t).ravel()
 
     # Pre-compute isclose check once (avoids repeated calls in vectorized operations)
-    is_critical = np.isclose(lambda_val, mu_val, rtol=1e-14)
+    is_critical = torch.isclose(lambda_val, mu_val, rtol=1e-14)
 
     # Check for numerical stability in parameter space
     if is_critical:
@@ -728,7 +737,9 @@ def calculate_non_spine_ages_log_lik_derivatives(
         # f(t) = [1 + λ(T-t)] / T * e^{-λt}
         # log f(t) = log(1 + λ(T-t)) - log(T) - λt
         # ∂ log f(t)/∂λ = (T-t)/(1 + λ(T-t)) - t
-        d_mu = d_lambda = (T - ages_t) / (1 + lambda_val * (T - ages_t)) - ages_t
+        d_mu = d_lambda = (T_t - ages_t_t) / (
+            1 + lambda_val * (T_t - ages_t_t)
+        ) - ages_t_t
     else:
         # General case: λ ≠ μ
         # log f(t) = log(λe^{-λt} - μe^{-(λ-μ)T}e^{-μt}) - log(1 - e^{-(λ-μ)T})
@@ -738,35 +749,35 @@ def calculate_non_spine_ages_log_lik_derivatives(
         growth_rate = lambda_val - mu_val
 
         # Calculate N and D
-        exp_lambda_t = torch.exp(-lambda_val * ages_t)
-        exp_mu_t = torch.exp(-mu_val * ages_t)
-        exp_growth_T = torch.exp(-growth_rate * T)
+        exp_lambda_t = torch.exp(-lambda_val * ages_t_t)
+        exp_mu_t = torch.exp(-mu_val * ages_t_t)
+        exp_growth_T = torch.exp(-growth_rate * T_t)
 
         N = lambda_val * exp_lambda_t - mu_val * exp_growth_T * exp_mu_t
         D = 1 - exp_growth_T
 
         # ∂N/∂λ = e^{-λt}(1 - λt) + μT·e^{-(λ-μ)T}e^{-μt}
         dN_dlambda = (
-            exp_lambda_t * (1 - lambda_val * ages_t)
-            + mu_val * T * exp_growth_T * exp_mu_t
+            exp_lambda_t * (1 - lambda_val * ages_t_t)
+            + mu_val * T_t * exp_growth_T * exp_mu_t
         )
 
         # ∂D/∂λ = T·e^{-(λ-μ)T}
-        dD_dlambda = T * exp_growth_T
+        dD_dlambda = T_t * exp_growth_T
 
         # ∂ log f(t)/∂λ = (1/N)·∂N/∂λ - (1/D)·∂D/∂λ
         d_lambda = dN_dlambda / N - dD_dlambda / D
 
         # ∂N/∂μ = -e^{-(λ-μ)T}e^{-μt}[1 + μ(T - t)]
-        dN_dmu = -exp_growth_T * exp_mu_t * (1 + mu_val * (T - ages_t))
+        dN_dmu = -exp_growth_T * exp_mu_t * (1 + mu_val * (T_t - ages_t_t))
 
         # ∂D/∂μ = -T·e^{-(λ-μ)T}
-        dD_dmu = -T * exp_growth_T
+        dD_dmu = -T_t * exp_growth_T
 
         # ∂ log f(t)/∂μ = (1/N)·∂N/∂μ - (1/D)·∂D/∂μ
         d_mu = dN_dmu / N - dD_dmu / D
 
-    return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
+    return torch.stack((torch.sum(d_lambda), torch.sum(d_mu)))
 
 
 def calculate_spine_ages_log_lik_derivatives(
@@ -778,15 +789,17 @@ def calculate_spine_ages_log_lik_derivatives(
     """
     Calculate derivatives of log age-density for spine manuscripts.
 
+    Uses only PyTorch operations to preserve autograd support.
+
     Parameters
     ----------
-    lambda_param : float
+    lambda_param : torch.Tensor | float
         Birth rate λ.
-    mu_param : float
+    mu_param : torch.Tensor | float
         Death rate μ.
-    ages_t : float | NDArray[np.float64]
+    ages_t : torch.Tensor | float
         Manuscript age(s) t (0 ≤ t ≤ T). Values at T use boundary formula.
-    T : float
+    T : torch.Tensor | float
         Observation time T.
 
     Returns
@@ -799,17 +812,24 @@ def calculate_spine_ages_log_lik_derivatives(
     -----
     Vectorized over ages. Handles λ ≈ μ limiting case for numerical stability.
     """
-    # Handle parameter scaling
-    lambda_val = lambda_param
-    mu_val = mu_param
+    # Convert to tensors for consistent torch operations
+    lambda_val = torch.as_tensor(lambda_param, dtype=torch.float64)
+    mu_val = torch.as_tensor(mu_param, dtype=torch.float64)
+    ages_t_t = torch.as_tensor(ages_t, dtype=torch.float64)
+    T_t = torch.as_tensor(T, dtype=torch.float64)
 
-    at_boundary = ages_t == T
-    not_at_boundary = np.invert(at_boundary)
-    d_lambda = np.zeros_like(ages_t, dtype=np.float64)
-    d_mu = np.zeros_like(ages_t, dtype=np.float64)
+    lambda_val = torch.atleast_1d(lambda_val).ravel()
+    mu_val = torch.atleast_1d(mu_val).ravel()
+    ages_t_t = torch.atleast_1d(ages_t_t).ravel()
+    T_t = torch.atleast_1d(T_t).ravel()
+
+    at_boundary = ages_t_t == T_t
+    not_at_boundary = torch.logical_not(at_boundary)
+    d_lambda = torch.zeros_like(ages_t_t, dtype=torch.float64)
+    d_mu = torch.zeros_like(ages_t_t, dtype=torch.float64)
 
     # Pre-compute isclose check once (avoids repeated calls in vectorized operations)
-    is_critical = np.isclose(lambda_val, mu_val, rtol=1e-14)
+    is_critical = torch.isclose(lambda_val, mu_val, rtol=1e-14)
 
     # Check for numerical stability in parameter space
     if is_critical:
@@ -817,60 +837,59 @@ def calculate_spine_ages_log_lik_derivatives(
         # At boundary: log f(T) = 2log(λ) + log(T) - λT, so ∂/∂λ = 2/λ - T
         # Interior: log f(t) = 2log(λ) + log(t) - λt, so ∂/∂λ = 2/λ - t
 
-        if np.any(at_boundary):
+        if torch.any(at_boundary):
             # d/dλ = 2/λ - T
-            d_mu[at_boundary] = d_lambda[at_boundary] = 2 / lambda_val - T
+            d_mu[at_boundary] = d_lambda[at_boundary] = 2 / lambda_val - T_t
 
-        if np.any(not_at_boundary):
+        if torch.any(not_at_boundary):
             # d/dλ = 2/λ - t
-            ages_interior = (
-                ages_t[not_at_boundary] if isinstance(ages_t, np.ndarray) else ages_t
-            )
+            ages_interior = ages_t_t[not_at_boundary]
             d_mu[not_at_boundary] = d_lambda[not_at_boundary] = (
                 2 / lambda_val - ages_interior
             )
     else:
         # General case: λ ≠ μ
-        if np.any(at_boundary):
+        if torch.any(at_boundary):
             # d/dλ = (μ (e^(μ T) (T (λ - μ) + 1) - e^(λ T)))/((λ - μ) (λ e^(λ T) - μ e^(μ T)))
             lambda_numerator = mu_val * (
-                torch.exp(mu_val * T) * (T * (lambda_val - mu_val) + 1)
-                - torch.exp(lambda_val * T)
+                torch.exp(mu_val * T_t) * (T_t * (lambda_val - mu_val) + 1)
+                - torch.exp(lambda_val * T_t)
             )
             denominator = (lambda_val - mu_val) * (
-                lambda_val * torch.exp(lambda_val * T) - mu_val * torch.exp(mu_val * T)
+                lambda_val * torch.exp(lambda_val * T_t)
+                - mu_val * torch.exp(mu_val * T_t)
             )
             d_lambda[at_boundary] = lambda_numerator / denominator
             # d/dμ = -(λ (e^(λ T) (T (λ - μ) - 1) + e^(μ T)))/((λ - μ) (λ e^(λ T) - μ e^(μ T)))
             mu_numerator = -lambda_val * (
-                torch.exp(lambda_val * T) * (T * (lambda_val - mu_val) - 1)
-                + torch.exp(mu_val * T)
+                torch.exp(lambda_val * T_t) * (T_t * (lambda_val - mu_val) - 1)
+                + torch.exp(mu_val * T_t)
             )
             d_mu[at_boundary] = mu_numerator / denominator
-        if np.any(not_at_boundary):
+        if torch.any(not_at_boundary):
             # Extract ages not at boundary for computation
-            ages_interior = (
-                ages_t[not_at_boundary] if isinstance(ages_t, np.ndarray) else ages_t
-            )
+            ages_interior = ages_t_t[not_at_boundary]
 
             # Interior: log f(t) = log(λ) + log(μ) + log(e^{-μT} - e^{-λT}) - log(λ - μ)
             # Let B = e^{-μT} - e^{-λT}
 
-            B = torch.exp(-mu_val * T) - torch.exp(-lambda_val * T)
+            B = torch.exp(-mu_val * T_t) - torch.exp(-lambda_val * T_t)
 
             # ∂ log f(t)/∂λ = 1/λ + T·e^{-λT}/B - 1/(λ-μ)
             d_lambda[not_at_boundary] = (
                 1 / lambda_val
-                + T * torch.exp(-lambda_val * T) / B
+                + T_t * torch.exp(-lambda_val * T_t) / B
                 - 1 / (lambda_val - mu_val)
             )
 
             # ∂ log f(t)/∂μ = 1/μ - T·e^{-μT}/B + 1/(λ-μ)
             d_mu[not_at_boundary] = (
-                1 / mu_val - T * torch.exp(-mu_val * T) / B + 1 / (lambda_val - mu_val)
+                1 / mu_val
+                - T_t * torch.exp(-mu_val * T_t) / B
+                + 1 / (lambda_val - mu_val)
             )
 
-    return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
+    return torch.stack((torch.sum(d_lambda), torch.sum(d_mu)))
 
 
 def calculate_ages_log_lik_derivatives(
