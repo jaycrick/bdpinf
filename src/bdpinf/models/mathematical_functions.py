@@ -53,10 +53,10 @@ def calculate_populations_log_lik(
     programming errors.
     """
     # Convert scalar inputs to arrays for consistent handling
-    lambda_params = np.atleast_1d(lambda_params).ravel()
-    mu_params = np.atleast_1d(mu_params).ravel()
-    times = np.atleast_1d(times).ravel()
-    ns = np.atleast_1d(ns).ravel()
+    lambda_params = torch.atleast_1d(lambda_params).ravel()
+    mu_params = torch.atleast_1d(mu_params).ravel()
+    times = torch.atleast_1d(times).ravel()
+    ns = torch.atleast_1d(ns).ravel()
 
     # Input validation
     if np.any(ns < 0):
@@ -195,7 +195,7 @@ def calculate_populations_log_lik_derivatives(
     mu_val = mu_param
 
     # Ensure ns is an array for consistent masking
-    ns = np.atleast_1d(ns)
+    ns = torch.atleast_1d(ns)
 
     d_lambda = np.zeros_like(ns, dtype=np.float64)
     d_mu = np.zeros_like(ns, dtype=np.float64)
@@ -343,10 +343,12 @@ def calculate_non_spine_ages_log_lik(
     rates via array inputs.
     """
     # Normalize to 1D arrays so scalar inputs still support indexing
-    lambda_params = np.atleast_1d(np.asarray(lambda_params, dtype=np.float64)).ravel()
-    mu_params = np.atleast_1d(np.asarray(mu_params, dtype=np.float64)).ravel()
-    times = np.atleast_1d(np.asarray(times, dtype=np.float64)).ravel()
-    ages_t = np.atleast_1d(np.asarray(ages_t, dtype=np.float64)).ravel()
+    lambda_params = torch.atleast_1d(
+        np.asarray(lambda_params, dtype=np.float64)
+    ).ravel()
+    mu_params = torch.atleast_1d(np.asarray(mu_params, dtype=np.float64)).ravel()
+    times = torch.atleast_1d(np.asarray(times, dtype=np.float64)).ravel()
+    ages_t = torch.atleast_1d(np.asarray(ages_t, dtype=np.float64)).ravel()
 
     if not (lambda_params.shape == mu_params.shape == times.shape):
         raise ValueError(
@@ -525,10 +527,12 @@ def calculate_spine_ages_log_lik(
     """
 
     # Normalize to 1D arrays so scalar inputs still support indexing
-    lambda_params = np.atleast_1d(np.asarray(lambda_params, dtype=np.float64)).ravel()
-    mu_params = np.atleast_1d(np.asarray(mu_params, dtype=np.float64)).ravel()
-    times = np.atleast_1d(np.asarray(times, dtype=np.float64)).ravel()
-    ages_t = np.atleast_1d(np.asarray(ages_t, dtype=np.float64)).ravel()
+    lambda_params = torch.atleast_1d(
+        np.asarray(lambda_params, dtype=np.float64)
+    ).ravel()
+    mu_params = torch.atleast_1d(np.asarray(mu_params, dtype=np.float64)).ravel()
+    times = torch.atleast_1d(np.asarray(times, dtype=np.float64)).ravel()
+    ages_t = torch.atleast_1d(np.asarray(ages_t, dtype=np.float64)).ravel()
 
     if not (lambda_params.shape == mu_params.shape == times.shape):
         raise ValueError(

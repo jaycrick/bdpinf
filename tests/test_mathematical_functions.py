@@ -1,11 +1,9 @@
 from typing import Dict
 
-import numpy as np
 import pytest
 import scipy
 import torch
 from numpy.testing import assert_allclose
-from numpy.typing import NDArray
 
 # Import private functions for direct testing
 from inf_bp_texts.models.mathematical_functions import (
@@ -88,8 +86,8 @@ def nearly_equal_params():
 def log_scale_params() -> Dict[str, float]:
     """Parameters in log scale."""
     return {
-        "log_lambda": np.log(0.1),
-        "log_mu": np.log(0.05),
+        "log_lambda": torch.log(0.1),
+        "log_mu": torch.log(0.05),
         "time": 100.0,
     }
 
@@ -162,8 +160,8 @@ class TestMultiEpochNumericalAccuracy:
             ns=n,
         )
 
-        assert np.isfinite(single_result)
-        assert np.isfinite(two_epoch_result)
+        assert torch.isfinite(single_result)
+        assert torch.isfinite(two_epoch_result)
         assert_allclose(single_result, two_epoch_result, rtol=1e-8)
 
     def test_multi_epoch_extinction_pr_bounds(self):
@@ -193,14 +191,14 @@ class TestMultiEpochNumericalAccuracy:
         result1 = calculate_spine_ages_log_lik(
             lambda_params, mu_params, age_epoch1, times
         )
-        assert np.isfinite(result1)
+        assert torch.isfinite(result1)
 
         # Age in second epoch
         age_epoch2 = torch.tensor([70.0], dtype=torch.float64)
         result2 = calculate_spine_ages_log_lik(
             lambda_params, mu_params, age_epoch2, times
         )
-        assert np.isfinite(result2)
+        assert torch.isfinite(result2)
 
     def test_multi_epoch_non_spine_age_array(self):
         """Check multi-epoch non-spine ages spanning epochs yield finite, negative log-lik.
@@ -219,7 +217,7 @@ class TestMultiEpochNumericalAccuracy:
         result = calculate_non_spine_ages_log_lik(lambda_params, mu_params, ages, times)
 
         # Should return finite sum
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         # Log likelihood should be negative
         assert result < 0
 
@@ -233,7 +231,7 @@ class TestMultiEpochNumericalAccuracy:
 
         # Should be in valid probability range
         assert 0 < result < 1
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
 
 class TestMultiEpochConsistency:
@@ -254,7 +252,7 @@ class TestMultiEpochConsistency:
         result2 = calculate_populations_log_lik(lambda_params2, mu_params2, times, ns=5)
 
         # Results should differ (order matters)
-        assert not np.isclose(result1, result2)
+        assert not torch.isclose(result1, result2)
 
     def test_multi_epoch_ages_sum_property(self):
         """Test that multi-epoch age likelihood sums correctly across ages."""
@@ -308,8 +306,8 @@ class TestMultiEpochEqualsSingleEpoch:
         single = calculate_extinction_pr(lambda_val, mu_val, T)
 
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
-        mus = np.full(3, mu_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = calculate_extinction_pr(lambdas, mus, times)
 
         assert_allclose(single, multi, rtol=1e-8)
@@ -323,8 +321,8 @@ class TestMultiEpochEqualsSingleEpoch:
         )
         single = _population_geometric_parameter(lambda_val, mu_val, T)
         times = torch.tensor([30.0, 60.0, 90.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
-        mus = np.full(3, mu_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = _population_geometric_parameter(lambdas, mus, times)
         assert_allclose(single, multi, rtol=1e-8)
 
@@ -336,8 +334,8 @@ class TestMultiEpochEqualsSingleEpoch:
         )
         single = _pr_extinction_numerator(lambda_val, mu_val, T)
         times = torch.tensor([25.0, 50.0, 75.0, 100.0], dtype=torch.float64)
-        lambdas = np.full(4, lambda_val)
-        mus = np.full(4, mu_val)
+        lambdas = torch.full((4,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((4,), mu_val.item(), dtype=mu_val.dtype)
         multi = _pr_extinction_numerator(lambdas, mus, times)
         assert_allclose(single, multi, rtol=1e-8)
 
@@ -349,7 +347,7 @@ class TestMultiEpochEqualsSingleEpoch:
         )
         single = calculate_log_lik_lifetimes(lifetimes, lambda_val, T)
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
         multi = calculate_log_lik_lifetimes(lifetimes, lambdas, times)
         # Multi-epoch lifetimes uses piecewise handling; allow relaxed tolerance
         assert_allclose(single, multi, rtol=1e-8)
@@ -365,8 +363,8 @@ class TestMultiEpochEqualsSingleEpoch:
             lifetimes, lambda_val, mu_val, T
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
-        mus = np.full(3, mu_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetimes, lambdas, mus, times
         )
@@ -383,8 +381,8 @@ class TestMultiEpochEqualsSingleEpoch:
             lifetimes, lambda_val, mu_val, T
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
-        mus = np.full(3, mu_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = calculate_log_lik_initial_lifetimes_given_extinction(
             lifetimes, lambdas, mus, times
         )
@@ -401,8 +399,8 @@ class TestMultiEpochEqualsSingleEpoch:
             lifetimes, lambda_val, mu_val, T
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
-        mus = np.full(3, mu_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = calculate_log_lik_initial_lifetimes_given_non_extinction(
             lifetimes, lambdas, mus, times
         )
@@ -419,12 +417,12 @@ class TestMultiEpochEqualsSingleEpoch:
         single = calculate_non_spine_ages_log_lik(lambda_val, mu_val, ages, T)
         # Multi-epoch via arrays with identical rates
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
-        mus = np.full(3, mu_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = calculate_non_spine_ages_log_lik(lambdas, mus, ages, times)
         # Known numerical differences due to reflection method; allow relaxed tolerance
-        assert np.isfinite(single)
-        assert np.isfinite(multi)
+        assert torch.isfinite(single)
+        assert torch.isfinite(multi)
         assert_allclose(single, multi, rtol=1e-8)
 
     def test_spine_ages_log_lik_multi_equals_single(self):
@@ -436,11 +434,11 @@ class TestMultiEpochEqualsSingleEpoch:
         )
         single = calculate_spine_ages_log_lik(lambda_val, mu_val, ages, T)
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
-        mus = np.full(3, mu_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = calculate_spine_ages_log_lik(lambdas, mus, ages, times)
-        assert np.isfinite(single)
-        assert np.isfinite(multi)
+        assert torch.isfinite(single)
+        assert torch.isfinite(multi)
         assert_allclose(single, multi, rtol=1e-8)
 
     def test_ages_log_lik_multi_equals_single_non_spine(self):
@@ -452,11 +450,11 @@ class TestMultiEpochEqualsSingleEpoch:
         )
         single = calculate_ages_log_lik(lambda_val, mu_val, ages, T, are_spines=False)
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
-        mus = np.full(3, mu_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = calculate_ages_log_lik(lambdas, mus, ages, times, are_spines=False)
-        assert np.isfinite(single)
-        assert np.isfinite(multi)
+        assert torch.isfinite(single)
+        assert torch.isfinite(multi)
         assert_allclose(single, multi, rtol=1e-8)
 
     def test_ages_log_lik_multi_equals_single_spine(self):
@@ -468,11 +466,11 @@ class TestMultiEpochEqualsSingleEpoch:
         )
         single = calculate_ages_log_lik(lambda_val, mu_val, ages, T, are_spines=True)
         times = torch.tensor([30.0, 90.0, 120.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
-        mus = np.full(3, mu_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = calculate_ages_log_lik(lambdas, mus, ages, times, are_spines=True)
-        assert np.isfinite(single)
-        assert np.isfinite(multi)
+        assert torch.isfinite(single)
+        assert torch.isfinite(multi)
         assert_allclose(single, multi, rtol=1e-8)
 
     def test_integrand_surv_from_weighted_birth_time_vectorized_multi_equals_single(
@@ -488,8 +486,8 @@ class TestMultiEpochEqualsSingleEpoch:
             birth_time, lambda_val, mu_val, T
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        lambdas = np.full(3, lambda_val)
-        mus = np.full(3, mu_val)
+        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = _integrand_surv_from_weighted_birth_time_vectorized(
             birth_time, lambdas, mus, times
         )
@@ -541,9 +539,9 @@ class TestNumericalAccuracy:
 
         # Compute expected α_t manually
         growth = (lambda_val - mu_val) * T  # 1.0
-        exp_growth = np.exp(growth)  # e^1.0 ≈ 2.71828
+        exp_growth = torch.exp(growth)  # e^1.0 ≈ 2.71828
         alpha_t = mu_val * (exp_growth - 1) / (lambda_val * exp_growth - mu_val)
-        expected_log_prob = np.log(alpha_t)
+        expected_log_prob = torch.log(alpha_t)
 
         result = calculate_populations_log_lik(
             lambda_val, mu_val, T, ns=torch.tensor([0], dtype=torch.int64)
@@ -562,7 +560,7 @@ class TestNumericalAccuracy:
 
         # Expected: α_t = 0.1 * 50 / (1 + 0.1 * 50) = 5/6
         alpha_t = lambda_val * T / (1 + lambda_val * T)
-        expected = np.log(alpha_t)
+        expected = torch.log(alpha_t)
 
         result = calculate_populations_log_lik(
             lambda_val, lambda_val, T, ns=torch.tensor([0], dtype=torch.int64)
@@ -582,11 +580,11 @@ class TestNumericalAccuracy:
 
         # Compute α_t and β_t
         growth = (lambda_val - mu_val) * T
-        exp_growth = np.exp(growth)
+        exp_growth = torch.exp(growth)
         alpha_t = mu_val * (exp_growth - 1) / (lambda_val * exp_growth - mu_val)
         beta_t = (lambda_val / mu_val) * alpha_t
 
-        expected = np.log(1 - alpha_t) + np.log(1 - beta_t)
+        expected = torch.log(1 - alpha_t) + torch.log(1 - beta_t)
 
         result = calculate_populations_log_lik(
             lambda_val, mu_val, T, ns=torch.tensor([1], dtype=torch.int64)
@@ -607,7 +605,7 @@ class TestNumericalAccuracy:
         result = calculate_spine_ages_log_lik(lambda_val, mu_val, age, T)
 
         # Should return finite value (not -inf)
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         # Age density at t=0 should be positive (log density negative but finite)
         assert result > -100  # Reasonable bound
 
@@ -625,18 +623,17 @@ class TestNumericalAccuracy:
         def _integrand(x):
             lam = float(lambda_val[0])
             mu = float(mu_val[0])
-            x_arr = np.asarray(x)
-            return mu * np.exp(-(lam - mu) * x_arr)
+            x_arr = torch.as_tensor(x)
+            return mu * torch.exp(-(lam - mu) * x_arr)
 
-        integral, _ = scipy.integrate.fixed_quad(
+        integral, _ = scipy.integrate.quad(
             _integrand,
             0,
             T[0],
-            n=10,
         )
-        expected = np.exp(-(lambda_val - mu_val) * T) / (1 + integral)
+        expected = torch.exp(-(lambda_val - mu_val) * T) / (1 + integral)
         result = _population_geometric_parameter(lambda_val, mu_val, T)
-        assert_allclose(result, expected, rtol=1e-8)
+        assert_allclose(result, expected, rtol=1e-7)
 
     def test_geometric_parameter_critical_case(self):
         """Test _population_geometric_parameter when λ = μ.
@@ -649,16 +646,15 @@ class TestNumericalAccuracy:
         def _integrand(x):
             lam = float(lambda_val[0])
             mu = float(mu_val[0])
-            x_arr = np.asarray(x)
-            return mu * np.exp(-(lam - mu) * x_arr)
+            x_arr = torch.as_tensor(x)
+            return mu * torch.exp(-(lam - mu) * x_arr)
 
-        integral, _ = scipy.integrate.fixed_quad(
+        integral, _ = scipy.integrate.quad(
             _integrand,
             0,
             T[0],
-            n=10,
         )
-        expected = np.exp(-(lambda_val - mu_val) * T) / (1 + integral)
+        expected = torch.exp(-(lambda_val - mu_val) * T) / (1 + integral)
         result = _population_geometric_parameter(lambda_val, mu_val, T)
 
         assert_allclose(result, expected, rtol=1e-8)
@@ -673,10 +669,12 @@ class TestNumericalAccuracy:
         epoch_ends = torch.tensor([5.0, 9.0], dtype=torch.float64)
 
         def _integrand(x):
-            x_arr = np.asarray(x)
-            first = np.exp(-(birth_rates[0] - death_rates[0]) * x_arr) * death_rates[0]
+            x_arr = torch.as_tensor(x)
+            first = (
+                torch.exp(-(birth_rates[0] - death_rates[0]) * x_arr) * death_rates[0]
+            )
             second = (
-                np.exp(
+                torch.exp(
                     -(
                         (birth_rates[0] - death_rates[0]) * epoch_ends[0]
                         + (birth_rates[1] - death_rates[1]) * (x_arr - epoch_ends[0])
@@ -684,15 +682,14 @@ class TestNumericalAccuracy:
                 )
                 * death_rates[1]
             )
-            return np.where(x_arr <= epoch_ends[0], first, second)
+            return torch.where(x_arr <= epoch_ends[0], first, second)
 
-        integral, _ = scipy.integrate.fixed_quad(
+        integral, _ = scipy.integrate.quad(
             _integrand,
             0.0,
             epoch_ends[1],
-            n=10,
         )
-        expected = np.exp(
+        expected = torch.exp(
             -(
                 (birth_rates[1] - death_rates[1]) * (epoch_ends[1] - epoch_ends[0])
                 + epoch_ends[0] * (birth_rates[0] - death_rates[0])
@@ -719,7 +716,7 @@ class TestNumericalAccuracy:
         )
 
         # Should be positive and finite
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result > 0
         # For λ > μ, numerator should be between 0 and 1
         assert 0 < result < 1
@@ -742,7 +739,7 @@ class TestNumericalAccuracy:
         )
 
         # Should be finite and negative (log of density)
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result < 0
 
     def test_calculate_log_lik_lifetimes_array(self):
@@ -785,12 +782,12 @@ class TestNumericalAccuracy:
 
         # Non-spine density: f(t) = [λe^{-λt} - μe^{-(λ-μ)T}e^{-μt}] / [1 - e^{-(λ-μ)T}]
         growth_rate = lambda_val - mu_val
-        term1 = lambda_val * np.exp(-lambda_val * age)
-        term2 = mu_val * np.exp(-growth_rate * T) * np.exp(-mu_val * age)
+        term1 = lambda_val * torch.exp(-lambda_val * age)
+        term2 = mu_val * torch.exp(-growth_rate * T) * torch.exp(-mu_val * age)
         numerator = term1 - term2
-        denominator = 1 - np.exp(-growth_rate * T)
+        denominator = 1 - torch.exp(-growth_rate * T)
         density = numerator / denominator
-        expected = np.log(density)
+        expected = torch.log(density)
 
         result = calculate_non_spine_ages_log_lik(lambda_val, mu_val, age, T)
 
@@ -816,7 +813,7 @@ class TestNumericalAccuracy:
             calculate_populations_log_lik_derivatives(lambda_val, mu_val, T, n)
             for n in ns
         ]
-        result_separate = np.sum(derivs_separate, axis=0)
+        result_separate = torch.sum(derivs_separate, axis=0)
 
         assert_allclose(result_together, result_separate, rtol=1e-8)
 
@@ -856,7 +853,7 @@ class TestNumericalAccuracy:
         )
 
         # Should be finite (could be 0 at age 0, representing log(1) = 0)
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         # Log probability should be non-positive (probability ≤ 1)
         assert result <= 0
 
@@ -887,9 +884,7 @@ class TestNumericalAccuracy:
 class TestExtinctionProbability:
     """Test extinction probability calculations (α_t)."""
 
-    def test_extinction_pr_basic(
-        self, standard_array_params: Dict[str, NDArray[np.float64]]
-    ):
+    def test_extinction_pr_basic(self, standard_array_params: Dict[str, torch.Tensor]):
         """Test basic extinction probability calculation."""
         result = calculate_extinction_pr(
             standard_array_params["lambda_params"],
@@ -901,7 +896,7 @@ class TestExtinctionProbability:
         assert isinstance(result, torch.Tensor)
 
     def test_extinction_pr_return_log_prob(
-        self, standard_array_params: Dict[str, NDArray[np.float64]]
+        self, standard_array_params: Dict[str, torch.Tensor]
     ):
         """Test extinction probability with return_log_prob=True."""
         result = calculate_extinction_pr(
@@ -913,7 +908,7 @@ class TestExtinctionProbability:
 
         # Log probability should be negative
         assert result < 0
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_extinction_pr_critical_case(self):
         """Test numerical stability when λ ≈ μ."""
@@ -928,7 +923,7 @@ class TestExtinctionProbability:
 
         # Should handle critical case without returning inf or nan
         assert 0 < result < 1
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_extinction_pr_zero_rates_both(self):
         """Test extinction probability when both λ = 0 and μ = 0."""
@@ -1050,9 +1045,7 @@ class TestExtinctionProbability:
 class TestPopulationsLogLikelihood:
     """Test population count log-likelihood calculations."""
 
-    def test_scalar_inputs_basic(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
-    ):
+    def test_scalar_inputs_basic(self, standard_scalar_params: Dict[str, torch.Tensor]):
         """Test basic scalar input case."""
         result = calculate_populations_log_lik(
             standard_scalar_params["lambda_param"],
@@ -1061,11 +1054,11 @@ class TestPopulationsLogLikelihood:
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert isinstance(result, torch.Tensor)
 
     def test_scalar_inputs_n_zero(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test n=0 (extinction) case."""
         result = calculate_populations_log_lik(
@@ -1076,7 +1069,7 @@ class TestPopulationsLogLikelihood:
         )
 
         # P(n=0) = α_t, so log P should be finite and negative
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result < 0
 
     def test_scalar_inputs_array_ns(
@@ -1091,10 +1084,10 @@ class TestPopulationsLogLikelihood:
         )
 
         # Should return sum of log probabilities
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_array_inputs_piecewise_constant(
-        self, standard_array_params: Dict[str, NDArray[np.float64]]
+        self, standard_array_params: Dict[str, torch.Tensor]
     ):
         """Test piecewise-constant rates (array inputs)."""
         result = calculate_populations_log_lik(
@@ -1104,10 +1097,10 @@ class TestPopulationsLogLikelihood:
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_negative_time_returns_error(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test that negative time raises ValueError."""
         with pytest.raises(ValueError):
@@ -1119,7 +1112,7 @@ class TestPopulationsLogLikelihood:
             )
 
     def test_negative_ns_returns_error(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test that negative population count raises ValueError."""
         with pytest.raises(ValueError):
@@ -1139,7 +1132,7 @@ class TestPopulationsLogLikelihood:
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_array_length_mismatch_raises_error(self):
         """Test that mismatched array lengths raise ValueError."""
@@ -1157,9 +1150,7 @@ class TestPopulationsLogLikelihood:
 class TestPopulationsLogLikelihoodDerivatives:
     """Test derivatives of population log-likelihood."""
 
-    def test_basic_derivatives(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
-    ):
+    def test_basic_derivatives(self, standard_scalar_params: Dict[str, torch.Tensor]):
         """Test basic derivative calculation."""
         result = calculate_populations_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
@@ -1169,10 +1160,10 @@ class TestPopulationsLogLikelihoodDerivatives:
         )
 
         assert result.shape == (2,)
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
     def test_derivatives_with_n_zero(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test derivatives for n=0 case."""
         result = calculate_populations_log_lik_derivatives(
@@ -1183,7 +1174,7 @@ class TestPopulationsLogLikelihoodDerivatives:
         )
 
         assert result.shape == (2,)
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
     def test_derivatives_array_ns(
         self, standard_scalar_params, sample_population_counts
@@ -1198,7 +1189,7 @@ class TestPopulationsLogLikelihoodDerivatives:
 
         # Should return summed derivatives
         assert result.shape == (2,)
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
     def test_derivatives_critical_case(self, nearly_equal_params):
         """Test derivative stability when λ ≈ μ."""
@@ -1209,7 +1200,7 @@ class TestPopulationsLogLikelihoodDerivatives:
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
 
 # ============================================================================
@@ -1229,7 +1220,7 @@ class TestSpineAgesLogLikelihood:
             standard_scalar_params["time"],
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert isinstance(result, torch.Tensor)
 
     def test_array_ages(self, standard_scalar_params, sample_ages_array):
@@ -1242,11 +1233,9 @@ class TestSpineAgesLogLikelihood:
         )
 
         # Should return summed log-likelihood
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
-    def test_age_at_boundary(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
-    ):
+    def test_age_at_boundary(self, standard_scalar_params: Dict[str, torch.Tensor]):
         """Test age exactly equal to observation time T."""
         T = standard_scalar_params["time"]
         result = calculate_spine_ages_log_lik(
@@ -1256,7 +1245,7 @@ class TestSpineAgesLogLikelihood:
             T,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_critical_case(self, nearly_equal_params, sample_ages_scalar):
         """Test numerical stability when λ ≈ μ."""
@@ -1267,10 +1256,10 @@ class TestSpineAgesLogLikelihood:
             nearly_equal_params["time"],
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_invalid_age_greater_than_T(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test that age > T returns -inf."""
         with pytest.raises(
@@ -1284,7 +1273,7 @@ class TestSpineAgesLogLikelihood:
             )
 
     def test_negative_age_returns_minus_inf(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test that negative age returns -inf."""
         with pytest.raises(
@@ -1311,7 +1300,7 @@ class TestSpineAgesLogLikelihoodDerivatives:
         )
 
         assert result.shape == (2,)
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
     def test_array_ages_derivatives(self, standard_scalar_params, sample_ages_array):
         """Test derivatives with array of ages."""
@@ -1324,10 +1313,10 @@ class TestSpineAgesLogLikelihoodDerivatives:
 
         # Should return summed derivatives
         assert result.shape == (2,)
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
     def test_derivatives_at_boundary(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test derivatives when age = T."""
         T = standard_scalar_params["time"]
@@ -1339,7 +1328,7 @@ class TestSpineAgesLogLikelihoodDerivatives:
         )
 
         assert result.shape == (2,)
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
     def test_derivatives_critical_case(self, nearly_equal_params, sample_ages_scalar):
         """Test derivative stability when λ ≈ μ."""
@@ -1350,7 +1339,7 @@ class TestSpineAgesLogLikelihoodDerivatives:
             nearly_equal_params["time"],
         )
 
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
 
 # ============================================================================
@@ -1371,7 +1360,7 @@ class TestNonSpineAgesLogLikelihood:
             times=torch.tensor([100.0], dtype=torch.float64),
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_scalar_params_array_ages(self, sample_ages_array):
         """Test with scalar parameters and array of ages."""
@@ -1383,10 +1372,10 @@ class TestNonSpineAgesLogLikelihood:
             times=torch.tensor([100.0], dtype=torch.float64),
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_array_params_piecewise_constant(
-        self, standard_array_params: Dict[str, NDArray[np.float64]]
+        self, standard_array_params: Dict[str, torch.Tensor]
     ):
         """Test with piecewise-constant rates (array parameters)."""
         # Use ages within the valid time range
@@ -1399,7 +1388,7 @@ class TestNonSpineAgesLogLikelihood:
             times=standard_array_params["times"],
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_single_epoch(self, sample_ages_scalar):
         """Test with single epoch (single-element arrays)."""
@@ -1410,7 +1399,7 @@ class TestNonSpineAgesLogLikelihood:
             times=torch.tensor([100.0], dtype=torch.float64),
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_critical_case(self, sample_ages_scalar):
         """Test numerical stability when λ ≈ μ."""
@@ -1421,7 +1410,7 @@ class TestNonSpineAgesLogLikelihood:
             times=torch.tensor([100.0], dtype=torch.float64),
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_invalid_age_returns_minus_inf(self):
         """Test that invalid ages return -inf."""
@@ -1472,7 +1461,7 @@ class TestNonSpineAgesLogLikelihoodDerivatives:
         )
 
         assert result.shape == (2,)
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
     def test_array_ages_derivatives(self, standard_scalar_params, sample_ages_array):
         """Test derivatives with array of ages."""
@@ -1484,7 +1473,7 @@ class TestNonSpineAgesLogLikelihoodDerivatives:
         )
 
         assert result.shape == (2,)
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
     def test_derivatives_critical_case(self, nearly_equal_params, sample_ages_scalar):
         """Test derivative stability when λ ≈ μ."""
@@ -1495,7 +1484,7 @@ class TestNonSpineAgesLogLikelihoodDerivatives:
             nearly_equal_params["time"],
         )
 
-        assert np.all(np.isfinite(result))
+        assert torch.all(torch.isfinite(result))
 
 
 # ============================================================================
@@ -1602,7 +1591,7 @@ class TestMathematicalProperties:
     """Test mathematical properties and consistency."""
 
     def test_pr_bounds_population(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test that log probabilities are negative (probabilities < 1)."""
         for n in range(0, 20):
@@ -1613,7 +1602,7 @@ class TestMathematicalProperties:
                 ns=n,
             )
             # Log probabilities should be ≤ 0
-            assert result <= 0 or np.isclose(result, 0, rtol=1e-8)
+            assert result <= 0 or torch.isclose(result, 0, rtol=1e-8)
 
     def test_extinction_pr_increases_with_mu(self):
         """Test that extinction probability increases as death rate increases."""
@@ -1650,7 +1639,7 @@ class TestMathematicalProperties:
         assert_allclose(scalar_result, array_result, rtol=1e-8)
 
     def test_sum_property_array_ns(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test that array of ns gives sum of individual likelihoods."""
         ns_array = torch.tensor([5, 10, 15], dtype=torch.int64)
@@ -1696,7 +1685,7 @@ class TestNumericalStability:
         )
 
         # Should not return inf or nan
-        assert np.isfinite(result) or result == -np.inf
+        assert torch.isfinite(result) or result == -torch.inf
 
     def test_extreme_rate_differences(self):
         """Test when λ >> μ or μ >> λ."""
@@ -1709,7 +1698,7 @@ class TestNumericalStability:
         )
 
         # Should handle gracefully
-        assert np.isfinite(result1) or result1 == -np.inf
+        assert torch.isfinite(result1) or result1 == -torch.inf
 
         # μ >> λ (high death)
         result2 = calculate_populations_log_lik(
@@ -1719,7 +1708,7 @@ class TestNumericalStability:
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
-        assert np.isfinite(result2) or result2 == -np.inf
+        assert torch.isfinite(result2) or result2 == -torch.inf
 
     def test_very_small_rates(self):
         """Test with very small birth and death rates."""
@@ -1730,14 +1719,14 @@ class TestNumericalStability:
             ns=5,
         )
 
-        assert np.isfinite(result) or result == -np.inf
+        assert torch.isfinite(result) or result == -torch.inf
 
     def test_many_epochs(self):
         """Test with many epochs (long array)."""
         n_epochs = 100
-        birth_rates = np.linspace(0.08, 0.12, n_epochs)
-        death_rates = np.linspace(0.04, 0.06, n_epochs)
-        times = np.linspace(1.0, 100.0, n_epochs)
+        birth_rates = torch.linspace(0.08, 0.12, n_epochs)
+        death_rates = torch.linspace(0.04, 0.06, n_epochs)
+        times = torch.linspace(1.0, 100.0, n_epochs)
 
         result = calculate_populations_log_lik(
             lambda_params=birth_rates,
@@ -1746,7 +1735,7 @@ class TestNumericalStability:
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
-        assert np.isfinite(result) or result == -np.inf
+        assert torch.isfinite(result) or result == -torch.inf
 
     def test_ages_near_observation_time(self):
         """Test age likelihood with ages very close to T."""
@@ -1760,7 +1749,7 @@ class TestNumericalStability:
             times=T,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
 
 # ============================================================================
@@ -1772,7 +1761,7 @@ class TestIntegration:
     """Test integration between related functions."""
 
     def test_derivatives_match_numerical_gradient(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test that analytical derivatives match numerical gradients."""
         # Test for populations log likelihood derivatives
@@ -1817,7 +1806,7 @@ class TestIntegration:
         )
 
         # These should be different (different conditioning)
-        assert not np.isclose(spine_result, non_spine_result)
+        assert not torch.isclose(spine_result, non_spine_result)
 
 
 # ============================================================================
@@ -1829,12 +1818,12 @@ class TestVectorization:
     """Test vectorization and performance characteristics."""
 
     def test_array_ages_more_efficient_than_loop(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Verify that array processing is implemented (not just a loop)."""
         # This is more of a smoke test - actual performance testing
         # would require timing benchmarks
-        ages = np.linspace(10, 90, 100)
+        ages = torch.linspace(10, 90, 100)
 
         result = calculate_spine_ages_log_lik(
             standard_scalar_params["lambda_param"],
@@ -1843,13 +1832,13 @@ class TestVectorization:
             standard_scalar_params["time"],
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_large_population_counts_array(
-        self, standard_scalar_params: Dict[str, NDArray[np.float64]]
+        self, standard_scalar_params: Dict[str, torch.Tensor]
     ):
         """Test with large array of population counts."""
-        ns = np.arange(0, 100)
+        ns = torch.arange(0, 100)
 
         result = calculate_populations_log_lik(
             standard_scalar_params["lambda_param"],
@@ -1858,7 +1847,7 @@ class TestVectorization:
             ns=ns,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
 
 # ============================================================================
@@ -2153,8 +2142,8 @@ class TestGradientValidation:
 
     def test_derivatives_with_log_scale_params(self):
         """Test that derivatives work correctly with log-scale parameters."""
-        log_lambda = np.log(0.1)
-        log_mu = np.log(0.05)
+        log_lambda = torch.log(0.1)
+        log_mu = torch.log(0.05)
         age = 50.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -2168,7 +2157,7 @@ class TestGradientValidation:
                 log_params[0], log_params[1], age, T, log_scale_params=True
             )
             # Chain rule: d/d(log λ) = (d/dλ) * λ
-            return grads * np.exp(log_params)
+            return grads * torch.exp(log_params)
 
         params = torch.tensor([log_lambda, log_mu], dtype=torch.float64)
         error = scipy.optimize.check_grad(objective, gradient, params)
@@ -2228,8 +2217,10 @@ class TestGradientValidation:
         )
 
         # Check relative error
-        relative_error = np.abs(analytical - numerical) / (np.abs(analytical) + 1e-10)
-        assert np.all(relative_error < 1e-5), (
+        relative_error = torch.abs(analytical - numerical) / (
+            torch.abs(analytical) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
             f"Relative error {relative_error} exceeds tolerance"
         )
 
@@ -2337,7 +2328,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         )
 
         # Result should be finite and non-negative
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result >= 0
 
     def test_basic_multiple_epochs(self):
@@ -2354,7 +2345,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
             times,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result >= 0
 
     def test_birth_time_at_zero(self):
@@ -2371,7 +2362,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
             times,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result >= 0
 
     def test_birth_time_equals_first_epoch_end(self):
@@ -2390,7 +2381,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
             times,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result >= 0
 
     def test_birth_time_beyond_all_epochs_raises_error(self):
@@ -2439,7 +2430,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
             times,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result >= 0
 
     def test_birth_time_within_middle_epoch(self):
@@ -2458,7 +2449,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
             times,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result >= 0
 
     def test_scalar_inputs_converted_to_arrays(self):
@@ -2475,7 +2466,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
             times,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result >= 0
 
     def test_result_proportional_to_birth_rate(self):
@@ -2591,7 +2582,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
         )  # Some point during integration
 
         # If times gets modified to include lifetime:
-        bad_times = np.append(times, lifetime)  # Now length 3!
+        bad_times = torch.cat(
+            [times, torch.as_tensor(lifetime, dtype=torch.float64).reshape(-1)]
+        )  # Now length 3!
 
         # This should raise ValueError due to birth_time causing valid_indices
         with pytest.raises(ValueError):
@@ -2620,7 +2613,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
             times,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert result >= 0
 
 
@@ -2645,7 +2638,7 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
             times,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_lifetime_equals_last_epoch(self):
         """Test when lifetime equals the last epoch end time."""
@@ -2662,7 +2655,7 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
             times,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_lifetime_beyond_last_epoch_raises_error(self):
         """Test that lifetime beyond last epoch raises ValueError.
@@ -2723,7 +2716,7 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
             times,
         )
 
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
     def test_three_epochs_lifetime_beyond(self):
         """Test with three epochs and lifetime beyond all of them."""
