@@ -1113,14 +1113,17 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
 
     Parameters
     ----------
-    lifetimes : NDArray[np.float64]
-        1D array of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times matching rate arrays.
+    lifetimes : torch.Tensor
+        1D tensor of manuscript lifetimes (shape: (n,), dtype: torch.float64).
+        Each lifetime must be ≤ times[-1].
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch. Same shape as ``birth_rates``
+        (dtype: torch.float64).
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,),
+        dtype: torch.float64). Must have same length as ``birth_rates``.
     as_array : bool, optional
         If True, return log probabilities per lifetime (aligned to the original
         ordering); if False, return their sum. Default False.
@@ -1132,6 +1135,12 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
         log extinction probability. If ``as_array`` is True, 1D tensor of log
         extinction probabilities aligned with ``lifetimes``. dtype: torch.float64.
         Supports automatic differentiation.
+
+    Notes
+    -----
+    Uses adaptive quadrature (scipy.integrate.quad) for numerical integration.
+    Handles multi-epoch piecewise-constant rates with cumulative integral caching
+    for efficiency.
     """
 
     # Convert inputs to tensors
@@ -1175,17 +1184,16 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     cumulative_integrals = torch.zeros(n_lifetimes, dtype=torch.float64)
 
     if len(active_indices) > 0:
-        # Use scipy's fixed_quad for integration
+        # Use scipy's adaptive quadrature for integration
         interval_integrals = []
         for idx in active_indices:
             a = interval_starts[idx].item()
             b = interval_ends[idx].item()
-            result, _ = scipy.integrate.fixed_quad(
+            result, _ = scipy.integrate.quad(
                 _integrand_surv_from_weighted_birth_time_vectorized,
                 a,
                 b,
                 args=(birth_rates_t, death_rates_t, times_t),
-                n=5,
             )
             interval_integrals.append(result)
 
