@@ -1102,7 +1102,7 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
 
 
 def calculate_log_pr_extinction_given_initial_lifetimes(
-    lifetimes: torch.Tensor,
+    lifetimes: torch.Tensor | float,
     birth_rates: torch.Tensor,
     death_rates: torch.Tensor,
     times: torch.Tensor,
@@ -1148,6 +1148,11 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
     death_rates_t = torch.as_tensor(death_rates, dtype=torch.float64)
     times_t = torch.as_tensor(times, dtype=torch.float64)
+
+    lifetimes_t = torch.atleast_1d(lifetimes_t).ravel()
+    birth_rates_t = torch.atleast_1d(birth_rates_t).ravel()
+    death_rates_t = torch.atleast_1d(death_rates_t).ravel()
+    times_t = torch.atleast_1d(times_t).ravel()
 
     if len(birth_rates_t) != len(death_rates_t) or len(birth_rates_t) != len(times_t):
         raise ValueError("Length of birth_rates, death_rates, and times must be equal.")
