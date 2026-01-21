@@ -2540,13 +2540,13 @@ class TestIntegrandSurvFromWeightedBirthTime:
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)  # Length 2 - MISMATCH!
 
         # Currently this doesn't fail - it just uses first 2 rate values
-        result = _integrand_surv_from_weighted_birth_time_vectorized(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-        assert np.isfinite(result)
+        with pytest.raises(ValueError):
+            _integrand_surv_from_weighted_birth_time_vectorized(
+                birth_time,
+                birth_rates,
+                death_rates,
+                times,
+            )
 
     def test_birth_and_death_rates_different_lengths(self):
         """Test when birth_rates and death_rates have different lengths.
@@ -2562,13 +2562,13 @@ class TestIntegrandSurvFromWeightedBirthTime:
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
         # Currently doesn't fail - behavior depends on numpy broadcasting
-        result = _integrand_surv_from_weighted_birth_time_vectorized(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-        assert np.isfinite(result)
+        with pytest.raises(ValueError):
+            _integrand_surv_from_weighted_birth_time_vectorized(
+                birth_time,
+                birth_rates,
+                death_rates,
+                times,
+            )
 
     def test_integration_context_array_length_issue(self):
         """Test scenario that mimics the integration context where error occurred.
@@ -2624,7 +2624,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         assert result >= 0
 
 
-class test_calculateLogPrExtinctionGivenInitialLifetimes:
+class TestCalculateLogPrExtinctionGivenInitialLifetimes:
     """Test calculate_log_pr_extinction_given_initial_lifetimes function.
 
     This function uses _integrand_surv_from_weighted_birth_time_vectorized internally

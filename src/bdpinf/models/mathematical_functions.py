@@ -1437,6 +1437,12 @@ def _integrand_surv_from_weighted_birth_time_vectorized(
     death_rates_t = torch.as_tensor(death_rates, dtype=torch.float64)
     times_t = torch.as_tensor(times, dtype=torch.float64)
 
+    # Ensure 1D shape
+    birth_times_t = torch.atleast_1d(birth_times_t).ravel()
+    birth_rates_t = torch.atleast_1d(birth_rates_t).ravel()
+    death_rates_t = torch.atleast_1d(death_rates_t).ravel()
+    times_t = torch.atleast_1d(times_t).ravel()
+
     if not (birth_rates_t.shape == death_rates_t.shape == times_t.shape):
         raise ValueError(
             "Length of birth_rates, death_rates, and times must be equal. "
@@ -1448,6 +1454,7 @@ def _integrand_surv_from_weighted_birth_time_vectorized(
     # For each birth time, compute the extinction probability
     # This is the main computational bottleneck - we compute extinction probabilities
     # for different time-shifted parameter sets
+    has_valid_indices = False
     for i, birth_time in enumerate(birth_times_t):
         shifted_times = times_t - birth_time
         valid_mask = shifted_times > 0
@@ -1457,6 +1464,7 @@ def _integrand_surv_from_weighted_birth_time_vectorized(
             results[i] = torch.tensor(0.0, dtype=torch.float64)
             continue
 
+        has_valid_indices = True
         trunc_times = shifted_times[valid_indices]
         trunc_birth_rates = birth_rates_t[valid_indices]
         trunc_death_rates = death_rates_t[valid_indices]
@@ -1468,6 +1476,12 @@ def _integrand_surv_from_weighted_birth_time_vectorized(
         )
 
         results[i] = ext_prob * trunc_birth_rates[0]
+
+    if not has_valid_indices:
+        raise ValueError(
+            "All birth times exceed all epoch end times. "
+            f"Max birth_time: {torch.max(birth_times_t)}, final epoch time: {times_t[-1]}"
+        )
 
     return results
 
