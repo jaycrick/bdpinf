@@ -8,7 +8,7 @@ main BirthDeathProcess class for better testability and modularity.
 
 import numpy as np
 import scipy
-import torch  # type: ignore
+import torch
 
 
 def calculate_populations_log_lik(
@@ -28,16 +28,16 @@ def calculate_populations_log_lik(
 
     Parameters
     ----------
-    lambda_params : float or NDArray[np.float64]
+    lambda_params : float | NDArray[np.float64]
         Birth rate(s) λ. Scalar for constant rate, array for piecewise-constant rates.
         If `log_scale_params` is True, interpreted as log(λ).
-    mu_params : float or NDArray[np.float64]
+    mu_params : float | NDArray[np.float64]
         Death rate(s) μ. Scalar for constant rate, array for piecewise-constant rates.
         If `log_scale_params` is True, interpreted as log(μ).
-    times : float or NDArray[np.float64]
+    times : float | NDArray[np.float64]
         Time(s) T at which to evaluate the distribution. Scalar for single time point,
         array for epoch end times in piecewise-constant model. Must be ≥ 0 and increasing.
-    ns : int or NDArray[np.integer]
+    ns : int | NDArray[np.integer]
         Non-negative population count(s) for which to evaluate log-probabilities.
 
     Returns
@@ -176,7 +176,7 @@ def calculate_populations_log_lik_derivatives(
         Death rate μ.
     time : float
         Time t at which to evaluate (t ≥ 0).
-    ns : int or NDArray[np.int64]
+    ns : int | NDArray[np.int64]
         Population count(s) to evaluate.
 
     Returns
@@ -322,13 +322,13 @@ def calculate_non_spine_ages_log_lik(
 
     Parameters
     ----------
-    lambda_params : float or NDArray[np.float64]
+    lambda_params : float | NDArray[np.float64]
         Birth rate(s) λ.
-    mu_params : float or NDArray[np.float64]
+    mu_params : float | NDArray[np.float64]
         Death rate(s) μ.
-    ages_t : float or NDArray[np.float64]
+    ages_t : float | NDArray[np.float64]
         Manuscript age(s) t (t ≥ 0).
-    times : float or NDArray[np.float64]
+    times : float | NDArray[np.float64]
         Observation time(s) T. Must satisfy T ≥ t for all ages.
 
     Returns
@@ -503,13 +503,13 @@ def calculate_spine_ages_log_lik(
 
     Parameters
     ----------
-    lambda_params : float or NDArray[np.float64]
+    lambda_params : float | NDArray[np.float64]
         Birth rate(s) λ.
-    mu_params : float or NDArray[np.float64]
+    mu_params : float | NDArray[np.float64]
         Death rate(s) μ.
-    ages_t : float or NDArray[np.float64]
+    ages_t : float | NDArray[np.float64]
         Manuscript age(s) t (0 ≤ t ≤ T).
-    times : float or NDArray[np.float64]
+    times : float | NDArray[np.float64]
         Observation time(s) T.
 
     Returns
@@ -650,13 +650,13 @@ def calculate_ages_log_lik(
 
     Parameters
     ----------
-    lambda_params : float or NDArray[np.float64]
+    lambda_params : float | NDArray[np.float64]
         Birth rate(s) λ.
-    mu_params : float or NDArray[np.float64]
+    mu_params : float | NDArray[np.float64]
         Death rate(s) μ.
-    ages_t : float or NDArray[np.float64]
+    ages_t : float | NDArray[np.float64]
         Manuscript age(s) t (0 ≤ t ≤ T).
-    times : float or NDArray[np.float64]
+    times : float | NDArray[np.float64]
         Observation time(s) T.
     are_spines : bool, optional
         If True, use spine calculation; otherwise non-spine. Default False.
@@ -695,7 +695,7 @@ def calculate_non_spine_ages_log_lik_derivatives(
         Birth rate λ.
     mu_param : float
         Death rate μ.
-    ages_t : float or NDArray[np.float64]
+    ages_t : float | NDArray[np.float64]
         Manuscript age(s) t (0 ≤ t ≤ T).
     T : float
         Observation time T.
@@ -780,7 +780,7 @@ def calculate_spine_ages_log_lik_derivatives(
         Birth rate λ.
     mu_param : float
         Death rate μ.
-    ages_t : float or NDArray[np.float64]
+    ages_t : float | NDArray[np.float64]
         Manuscript age(s) t (0 ≤ t ≤ T). Values at T use boundary formula.
     T : float
         Observation time T.
@@ -885,7 +885,7 @@ def calculate_ages_log_lik_derivatives(
         Birth rate λ.
     mu_param : float
         Death rate μ.
-    ages_t : float or NDArray[np.float64]
+    ages_t : float | NDArray[np.float64]
         Manuscript age(s) t (0 ≤ t ≤ T).
     T : float
         Observation time T.
@@ -1233,18 +1233,18 @@ def calculate_log_lik_lifetimes(
 
     Parameters
     ----------
-    lifetimes : NDArray[np.float64]
-        1D array of lifetimes (shape: (n,)), each ≤ times[-1].
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times matching ``birth_rates``.
+    lifetimes : torch.Tensor
+        1D tensor of lifetimes (shape: (n,), dtype: torch.float64). Each lifetime ≤ times[-1].
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,), dtype: torch.float64).
 
     Returns
     -------
     torch.Tensor
-        Scalar tensor (shape ()) containing sum of log-likelihood values.
-        dtype: torch.float64. Supports automatic differentiation.
+        Scalar tensor containing sum of log-likelihood values.
+        Shape: (), dtype: torch.float64. Supports automatic differentiation.
     """
 
     # Convert inputs to tensors
@@ -1306,23 +1306,23 @@ def _population_geometric_parameter(
 
     Parameters
     ----------
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times (shape: (n_epochs,)).
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch; same shape as ``birth_rates`` (dtype: torch.float64).
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,), dtype: torch.float64).
 
     Returns
     -------
     torch.Tensor
-        Scalar tensor (shape ()) containing geometric parameter 1 - β_t ∈ (0, 1).
-        dtype: torch.float64. Supports automatic differentiation.
+        Scalar tensor containing geometric parameter 1 - β_t ∈ (0, 1).
+        Shape: (), dtype: torch.float64. Supports automatic differentiation.
 
     Notes
     -----
-    Handles λ ≈ μ limiting case for numerical stability. Returns tensor
-    for full PyTorch autograd support.
+    Handles λ ≈ μ limiting case for numerical stability. Full support for
+    PyTorch's autograd differentiation.
     """
     # Convert inputs to tensors
     birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
@@ -1361,19 +1361,19 @@ def _integrand_surv_from_weighted_birth_time(
 
     Parameters
     ----------
-    birth_time : float
-        Time at which birth occurred.
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times (shape: (n_epochs,)).
+    birth_time : torch.Tensor | float
+        Scalar time at which birth occurred.
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch; same shape as ``birth_rates`` (dtype: torch.float64).
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,), dtype: torch.float64).
 
     Returns
     -------
     torch.Tensor
-        Scalar tensor (shape ()) containing integrand value.
+        Scalar tensor containing integrand value. Shape: (),
         dtype: torch.float64. Supports automatic differentiation.
     """
     # Convert inputs to tensors
@@ -1416,19 +1416,19 @@ def _integrand_surv_from_weighted_birth_time_vectorized(
 
     Parameters
     ----------
-    birth_times : NDArray[np.float64]
-        Array of times at which births occurred. Shape: (n_points,)
-    birth_rates : NDArray[np.float64]
-        Birth rate(s) λ for each epoch. Shape: (n_epochs,)
-    death_rates : NDArray[np.float64]
-        Death rate(s) μ for each epoch. Shape: (n_epochs,)
-    times : NDArray[np.float64]
-        Epoch end time(s). Shape: (n_epochs,)
+    birth_times : torch.Tensor
+        1D tensor of times at which births occurred. Shape: (n_points,), dtype: torch.float64.
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ for each epoch. Shape: (n_epochs,), dtype: torch.float64.
+    death_rates : torch.Tensor
+        1D tensor of death rates μ for each epoch. Shape: (n_epochs,), dtype: torch.float64.
+    times : torch.Tensor
+        1D tensor of epoch end times. Shape: (n_epochs,), dtype: torch.float64.
 
     Returns
     -------
     torch.Tensor
-        1D tensor of integrand values for each birth time. Shape: (n_points,).
+        1D tensor of integrand values for each birth time. Shape: (n_points,),
         dtype: torch.float64. Supports automatic differentiation.
     """
     # Convert inputs to tensors
@@ -1484,23 +1484,23 @@ def _pr_extinction_numerator(
 
     Parameters
     ----------
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times (shape: (n_epochs,)).
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch; same shape as ``birth_rates`` (dtype: torch.float64).
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,), dtype: torch.float64).
 
     Returns
     -------
     torch.Tensor
         Scalar tensor containing numerator value for extinction probability.
-        Shape: (), dtype: torch.float64.
+        Shape: (), dtype: torch.float64. Supports automatic differentiation.
 
     Notes
     -----
-    Handles λ ≈ μ limiting case for numerical stability. Supports automatic
-    differentiation through PyTorch's autograd.
+    Handles λ ≈ μ limiting case for numerical stability. Full support for
+    PyTorch's autograd differentiation.
     """
 
     if not (birth_rates.shape == death_rates.shape == times.shape):
