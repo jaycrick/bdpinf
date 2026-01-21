@@ -1766,26 +1766,43 @@ class TestIntegration:
         """Test that analytical derivatives match numerical gradients."""
         # Test for populations log likelihood derivatives
 
-        def objective(params):
-            return calculate_populations_log_lik(
-                params[0], params[1], standard_scalar_params["time"], ns=5
-            )
-
-        def gradient(params):
-            return calculate_populations_log_lik_derivatives(
-                params[0], params[1], standard_scalar_params["time"], ns=5
-            )
-
-        params = torch.tensor(
-            [
-                standard_scalar_params["lambda_param"],
-                standard_scalar_params["mu_param"],
-            ],
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(
+            standard_scalar_params["lambda_param"],
             dtype=torch.float64,
+            requires_grad=True,
+        )
+        mu_param = torch.tensor(
+            standard_scalar_params["mu_param"], dtype=torch.float64, requires_grad=True
         )
 
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, f"Gradient error {error} exceeds tolerance"
+        # Compute objective with autograd tracking
+        objective_val = calculate_populations_log_lik(
+            lambda_param, mu_param, standard_scalar_params["time"], ns=5
+        )
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_populations_log_lik_derivatives(
+                lambda_param.detach(),
+                mu_param.detach(),
+                standard_scalar_params["time"],
+                ns=5,
+            )
+
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance"
+        )
 
     def test_spine_non_spine_different_formulas(
         self, standard_scalar_params, sample_ages_scalar
@@ -1858,287 +1875,349 @@ class TestVectorization:
 class TestGradientValidation:
     """
     Comprehensive tests for analytical gradient functions
-    using numerical approximations.
+    using PyTorch's native autograd.
 
-    Uses scipy.optimize.check_grad and manual finite differences to verify that
-    analytical derivatives match numerical gradients.
+    Uses PyTorch autograd and manual finite differences to verify that
+    analytical derivatives match automatic differentiation gradients.
     """
 
     def test_populations_log_lik_derivatives_scalar_n(self):
-        """Test population derivatives with scalar n using check_grad."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = torch.tensor([0.05], dtype=torch.float64)
+        """Test population derivatives with scalar n using PyTorch autograd."""
         time = 100.0
         n = 5
 
-        def objective(params):
-            return calculate_populations_log_lik(
-                params[0],
-                params[1],
-                time,
-                ns=n,
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
+
+        # Compute objective with autograd tracking
+        objective_val = calculate_populations_log_lik(
+            lambda_param, mu_param, time, ns=n
+        )
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_populations_log_lik_derivatives(
+                lambda_param.detach(), mu_param.detach(), time, ns=n
             )
 
-        def gradient(params):
-            return calculate_populations_log_lik_derivatives(
-                params[0],
-                params[1],
-                time,
-                ns=n,
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, f"Gradient error {error} exceeds tolerance for scalar n"
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance for scalar n"
+        )
 
     def test_populations_log_lik_derivatives_array_n(self):
-        """Test population derivatives with array n using check_grad."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = torch.tensor([0.05], dtype=torch.float64)
+        """Test population derivatives with array n using PyTorch autograd."""
         time = 100.0
         ns = torch.tensor([0, 1, 2, 5, 10], dtype=torch.int64)
 
-        def objective(params):
-            return calculate_populations_log_lik(
-                params[0],
-                params[1],
-                time,
-                ns=ns,
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
+
+        # Compute objective with autograd tracking
+        objective_val = calculate_populations_log_lik(
+            lambda_param, mu_param, time, ns=ns
+        )
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_populations_log_lik_derivatives(
+                lambda_param.detach(), mu_param.detach(), time, ns=ns
             )
 
-        def gradient(params):
-            return calculate_populations_log_lik_derivatives(
-                params[0],
-                params[1],
-                time,
-                ns=ns,
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 3e-5, f"Gradient error {error} exceeds tolerance for array n"
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 3e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance for array n"
+        )
 
     def test_populations_log_lik_derivatives_near_equal_rates(self):
         """Test population derivatives when λ ≈ μ (limiting case)."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = (
-            torch.tensor([0.1], dtype=torch.float64) + 1e-13
-        )  # Within tolerance, should use limiting formula
         time = 100.0
         n = 5
 
-        def objective(params):
-            return calculate_populations_log_lik(
-                params[0],
-                params[1],
-                time,
-                ns=n,
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.1 + 1e-13, dtype=torch.float64, requires_grad=True)
+
+        # Compute objective with autograd tracking
+        objective_val = calculate_populations_log_lik(
+            lambda_param, mu_param, time, ns=n
+        )
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_populations_log_lik_derivatives(
+                lambda_param.detach(), mu_param.detach(), time, ns=n
             )
 
-        def gradient(params):
-            return calculate_populations_log_lik_derivatives(
-                params[0],
-                params[1],
-                time,
-                ns=n,
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, f"Gradient error {error} exceeds tolerance for λ ≈ μ case"
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance for λ ≈ μ case"
+        )
 
     def test_non_spine_ages_derivatives_scalar_age(self):
         """Test non-spine age derivatives with scalar age."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = torch.tensor([0.05], dtype=torch.float64)
         age = 50.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
-        def objective(params):
-            return calculate_non_spine_ages_log_lik(
-                params[0],
-                params[1],
-                age,
-                T,
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
+
+        # Compute objective with autograd tracking
+        objective_val = calculate_non_spine_ages_log_lik(lambda_param, mu_param, age, T)
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_non_spine_ages_log_lik_derivatives(
+                lambda_param.detach(), mu_param.detach(), age, T
             )
 
-        def gradient(params):
-            return calculate_non_spine_ages_log_lik_derivatives(
-                params[0],
-                params[1],
-                age,
-                T,
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, f"Gradient error {error} exceeds tolerance for scalar age"
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance for scalar age"
+        )
 
     def test_non_spine_ages_derivatives_array_ages(self):
         """Test non-spine age derivatives with multiple ages."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = torch.tensor([0.05], dtype=torch.float64)
         ages = torch.tensor([10.0, 30.0, 50.0, 70.0, 90.0], dtype=torch.float64)
         T = torch.tensor([100.0], dtype=torch.float64)
 
-        def objective(params):
-            return calculate_non_spine_ages_log_lik(
-                params[0],
-                params[1],
-                ages,
-                T,
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
+
+        # Compute objective with autograd tracking
+        objective_val = calculate_non_spine_ages_log_lik(
+            lambda_param, mu_param, ages, T
+        )
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_non_spine_ages_log_lik_derivatives(
+                lambda_param.detach(), mu_param.detach(), ages, T
             )
 
-        def gradient(params):
-            return calculate_non_spine_ages_log_lik_derivatives(
-                params[0],
-                params[1],
-                ages,
-                T,
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, f"Gradient error {error} exceeds tolerance for array ages"
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance for array ages"
+        )
 
     def test_non_spine_ages_derivatives_near_equal_rates(self):
         """Test non-spine age derivatives when λ ≈ μ."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = torch.tensor([0.1], dtype=torch.float64) + 1e-13
         age = 50.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
-        def objective(params):
-            return calculate_non_spine_ages_log_lik(
-                params[0],
-                params[1],
-                age,
-                T,
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.1 + 1e-13, dtype=torch.float64, requires_grad=True)
+
+        # Compute objective with autograd tracking
+        objective_val = calculate_non_spine_ages_log_lik(lambda_param, mu_param, age, T)
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_non_spine_ages_log_lik_derivatives(
+                lambda_param.detach(), mu_param.detach(), age, T
             )
 
-        def gradient(params):
-            return calculate_non_spine_ages_log_lik_derivatives(
-                params[0],
-                params[1],
-                age,
-                T,
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, f"Gradient error {error} exceeds tolerance for λ ≈ μ case"
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance for λ ≈ μ case"
+        )
 
     def test_spine_ages_derivatives_interior_ages(self):
         """Test spine age derivatives for ages < T (interior case)."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = torch.tensor([0.05], dtype=torch.float64)
         ages = torch.tensor([10.0, 30.0, 50.0, 70.0, 90.0], dtype=torch.float64)
         T = torch.tensor([100.0], dtype=torch.float64)
 
-        def objective(params):
-            return calculate_spine_ages_log_lik(
-                params[0],
-                params[1],
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
+
+        # Compute objective with autograd tracking
+        objective_val = calculate_spine_ages_log_lik(
+            lambda_param,
+            mu_param,
+            ages,
+            T,
+        )
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_spine_ages_log_lik_derivatives(
+                lambda_param.detach(),
+                mu_param.detach(),
                 ages,
                 T,
             )
 
-        def gradient(params):
-            return calculate_spine_ages_log_lik_derivatives(
-                params[0],
-                params[1],
-                ages,
-                T,
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, (
-            f"Gradient error {error} exceeds tolerance for interior ages"
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance for interior ages"
         )
 
     def test_spine_ages_derivatives_boundary_age(self):
         """Test spine age derivatives at boundary (age = T)."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = torch.tensor([0.05], dtype=torch.float64)
         age = 100.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
-        def objective(params):
-            return calculate_spine_ages_log_lik(
-                params[0],
-                params[1],
-                age,
-                T,
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
+
+        # Compute objective with autograd tracking
+        objective_val = calculate_spine_ages_log_lik(lambda_param, mu_param, age, T)
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_spine_ages_log_lik_derivatives(
+                lambda_param.detach(), mu_param.detach(), age, T
             )
 
-        def gradient(params):
-            return calculate_spine_ages_log_lik_derivatives(
-                params[0],
-                params[1],
-                age,
-                T,
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, f"Gradient error {error} exceeds tolerance at boundary"
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance at boundary"
+        )
 
     def test_spine_ages_derivatives_mixed_ages(self):
         """Test spine age derivatives with mix of interior and boundary ages."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = torch.tensor([0.05], dtype=torch.float64)
         ages = torch.tensor(
             [10.0, 50.0, 90.0, 100.0, 100.0], dtype=torch.float64
         )  # Some at boundary
         T = torch.tensor([100.0], dtype=torch.float64)
 
-        def objective(params):
-            return calculate_spine_ages_log_lik(
-                params[0],
-                params[1],
-                ages,
-                T,
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
+
+        # Compute objective with autograd tracking
+        objective_val = calculate_spine_ages_log_lik(lambda_param, mu_param, ages, T)
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_spine_ages_log_lik_derivatives(
+                lambda_param.detach(), mu_param.detach(), ages, T
             )
 
-        def gradient(params):
-            return calculate_spine_ages_log_lik_derivatives(
-                params[0],
-                params[1],
-                ages,
-                T,
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, f"Gradient error {error} exceeds tolerance for mixed ages"
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance for mixed ages"
+        )
 
     def test_spine_ages_derivatives_near_equal_rates(self):
         """Test spine age derivatives when λ ≈ μ."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = torch.tensor([0.1], dtype=torch.float64) + 1e-13
         age = 50.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
-        def objective(params):
-            return calculate_spine_ages_log_lik(
-                params[0],
-                params[1],
-                age,
-                T,
+        # Create parameters as separate tensors with requires_grad
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.1 + 1e-13, dtype=torch.float64, requires_grad=True)
+
+        # Compute objective with autograd tracking
+        objective_val = calculate_spine_ages_log_lik(lambda_param, mu_param, age, T)
+
+        # Compute autograd gradients
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        # Compute analytical derivatives
+        with torch.no_grad():
+            analytical_grads = calculate_spine_ages_log_lik_derivatives(
+                lambda_param.detach(), mu_param.detach(), age, T
             )
 
-        def gradient(params):
-            return calculate_spine_ages_log_lik_derivatives(
-                params[0],
-                params[1],
-                age,
-                T,
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective, gradient, params)
-        assert error < 1e-5, f"Gradient error {error} exceeds tolerance for λ ≈ μ case"
+        # Compare autograd vs analytical gradients
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Gradient error {relative_error.max().item():.2e} exceeds tolerance for λ ≈ μ case"
+        )
 
     def test_derivatives_with_log_scale_params(self):
         """Test that derivatives work correctly with log-scale parameters using PyTorch autograd."""
@@ -2148,15 +2227,15 @@ class TestGradientValidation:
         T = torch.tensor([100.0], dtype=torch.float64)
 
         # Create params with requires_grad for autograd
-        log_params = torch.tensor([log_lambda, log_mu], dtype=torch.float64, requires_grad=True)
+        log_params = torch.tensor(
+            [log_lambda, log_mu], dtype=torch.float64, requires_grad=True
+        )
 
         # Compute objective with autograd tracking
         lambda_val = torch.exp(log_params[0])
         mu_val = torch.exp(log_params[1])
 
-        objective_val = calculate_non_spine_ages_log_lik(
-            lambda_val, mu_val, age, T
-        )
+        objective_val = calculate_non_spine_ages_log_lik(lambda_val, mu_val, age, T)
 
         # Compute autograd gradients via chain rule
         objective_val.backward()
@@ -2253,65 +2332,95 @@ class TestGradientValidation:
         ]
 
         for lambda_val, mu_val, description in test_cases:
+            # Create parameters as separate tensors with requires_grad
+            lambda_param = torch.tensor(
+                lambda_val, dtype=torch.float64, requires_grad=True
+            )
+            mu_param = torch.tensor(mu_val, dtype=torch.float64, requires_grad=True)
 
-            def objective(params):
-                return calculate_non_spine_ages_log_lik(
-                    params[0],
-                    params[1],
-                    ages,
-                    T,
+            # Compute objective with autograd tracking
+            objective_val = calculate_non_spine_ages_log_lik(
+                lambda_param, mu_param, ages, T
+            )
+
+            # Compute autograd gradients
+            objective_val.backward()
+            autograd_grads = torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+
+            # Compute analytical derivatives
+            with torch.no_grad():
+                analytical_grads = calculate_non_spine_ages_log_lik_derivatives(
+                    lambda_param.detach(), mu_param.detach(), ages, T
                 )
 
-            def gradient(params):
-                return calculate_non_spine_ages_log_lik_derivatives(
-                    params[0],
-                    params[1],
-                    ages,
-                    T,
-                )
-
-            params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-            error = scipy.optimize.check_grad(objective, gradient, params)
-            assert error < 1e-4, (
-                f"Gradient error {error} exceeds tolerance for {description}"
+            # Compare autograd vs analytical gradients
+            relative_error = torch.abs(autograd_grads - analytical_grads) / (
+                torch.abs(analytical_grads) + 1e-10
+            )
+            assert torch.all(relative_error < 1e-4), (
+                f"Gradient error {relative_error.max().item():.2e} exceeds tolerance for {description}"
             )
 
     def test_wrapper_function_derivatives(self):
         """Test that wrapper function derivatives match specific implementations."""
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
-        mu_val = torch.tensor([0.05], dtype=torch.float64)
         age = 50.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
         # Non-spine derivatives via wrapper
-        def objective_wrapper(params):
-            return calculate_ages_log_lik(
-                params[0], params[1], age, T, are_spines=False
+        lambda_param = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
+
+        objective_val = calculate_ages_log_lik(
+            lambda_param, mu_param, age, T, are_spines=False
+        )
+
+        objective_val.backward()
+        autograd_grads = torch.tensor(
+            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        )
+
+        with torch.no_grad():
+            analytical_grads = calculate_ages_log_lik_derivatives(
+                lambda_param.detach(), mu_param.detach(), age, T, are_spines=False
             )
 
-        def gradient_wrapper(params):
-            return calculate_ages_log_lik_derivatives(
-                params[0], params[1], age, T, are_spines=False
-            )
-
-        params = torch.tensor([lambda_val, mu_val], dtype=torch.float64)
-        error = scipy.optimize.check_grad(objective_wrapper, gradient_wrapper, params)
-        assert error < 1e-5, f"Wrapper gradient error {error} exceeds tolerance"
+        relative_error = torch.abs(autograd_grads - analytical_grads) / (
+            torch.abs(analytical_grads) + 1e-10
+        )
+        assert torch.all(relative_error < 1e-5), (
+            f"Wrapper gradient error {relative_error.max().item():.2e} exceeds tolerance"
+        )
 
         # Spine derivatives via wrapper
-        def objective_wrapper_spine(params):
-            return calculate_ages_log_lik(params[0], params[1], age, T, are_spines=True)
+        lambda_param_spine = torch.tensor(0.1, dtype=torch.float64, requires_grad=True)
+        mu_param_spine = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
 
-        def gradient_wrapper_spine(params):
-            return calculate_ages_log_lik_derivatives(
-                params[0], params[1], age, T, are_spines=True
+        objective_val_spine = calculate_ages_log_lik(
+            lambda_param_spine, mu_param_spine, age, T, are_spines=True
+        )
+
+        objective_val_spine.backward()
+        autograd_grads_spine = torch.tensor(
+            [lambda_param_spine.grad.item(), mu_param_spine.grad.item()],
+            dtype=torch.float64,
+        )
+
+        with torch.no_grad():
+            analytical_grads_spine = calculate_ages_log_lik_derivatives(
+                lambda_param_spine.detach(),
+                mu_param_spine.detach(),
+                age,
+                T,
+                are_spines=True,
             )
 
-        error_spine = scipy.optimize.check_grad(
-            objective_wrapper_spine, gradient_wrapper_spine, params
-        )
-        assert error_spine < 1e-5, (
-            f"Wrapper spine gradient error {error_spine} exceeds tolerance"
+        relative_error_spine = torch.abs(
+            autograd_grads_spine - analytical_grads_spine
+        ) / (torch.abs(analytical_grads_spine) + 1e-10)
+        assert torch.all(relative_error_spine < 1e-5), (
+            f"Wrapper spine gradient error {relative_error_spine.max().item():.2e} exceeds tolerance"
         )
 
 
