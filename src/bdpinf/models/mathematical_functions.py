@@ -9,6 +9,8 @@ main BirthDeathProcess class for better testability and modularity.
 import scipy
 import torch
 
+from ..utils import ensure_1d_tensor
+
 
 def calculate_populations_log_lik(
     lambda_params: torch.Tensor | float,
@@ -51,14 +53,10 @@ def calculate_populations_log_lik(
     matching lengths. Returns -inf tensor for numerical issues.
     """
     # Convert scalar inputs to tensors and ensure 1D arrays
-    lambda_params = torch.atleast_1d(
-        torch.as_tensor(lambda_params, dtype=torch.float64)
-    ).ravel()
-    mu_params = torch.atleast_1d(
-        torch.as_tensor(mu_params, dtype=torch.float64)
-    ).ravel()
-    times = torch.atleast_1d(torch.as_tensor(times, dtype=torch.float64)).ravel()
-    ns = torch.atleast_1d(torch.as_tensor(ns, dtype=torch.float64)).ravel()
+    lambda_params = ensure_1d_tensor(lambda_params)
+    mu_params = ensure_1d_tensor(mu_params)
+    times = ensure_1d_tensor(times)
+    ns = ensure_1d_tensor(ns)
 
     # Input validation
     if torch.any(ns < 0):
@@ -197,12 +195,10 @@ def calculate_populations_log_lik_derivatives(
     Vectorized over `ns`. Handles λ ≈ μ limiting case for numerical stability.
     """
     # Convert inputs to tensors
-    lambda_val = torch.atleast_1d(
-        torch.as_tensor(lambda_param, dtype=torch.float64)
-    ).ravel()
-    mu_val = torch.atleast_1d(torch.as_tensor(mu_param, dtype=torch.float64)).ravel()
-    time_t = torch.atleast_1d(torch.as_tensor(time, dtype=torch.float64)).ravel()
-    ns = torch.atleast_1d(torch.as_tensor(ns, dtype=torch.float64)).ravel()
+    lambda_val = ensure_1d_tensor(lambda_param)
+    mu_val = ensure_1d_tensor(mu_param)
+    time_t = ensure_1d_tensor(time)
+    ns = ensure_1d_tensor(ns)
 
     d_lambda = torch.zeros_like(ns, dtype=torch.float64)
     d_mu = torch.zeros_like(ns, dtype=torch.float64)
@@ -376,14 +372,10 @@ def calculate_non_spine_ages_log_lik(
     >>> log_lik.backward()  # Compute gradients w.r.t. lambda_val and mu_val
     """
     # Normalize to 1D arrays so scalar inputs still support indexing
-    lambda_params = torch.atleast_1d(
-        torch.as_tensor(lambda_params, dtype=torch.float64)
-    ).ravel()
-    mu_params = torch.atleast_1d(
-        torch.as_tensor(mu_params, dtype=torch.float64)
-    ).ravel()
-    times = torch.atleast_1d(torch.as_tensor(times, dtype=torch.float64)).ravel()
-    ages_t = torch.atleast_1d(torch.as_tensor(ages_t, dtype=torch.float64)).ravel()
+    lambda_params = ensure_1d_tensor(lambda_params)
+    mu_params = ensure_1d_tensor(mu_params)
+    times = ensure_1d_tensor(times)
+    ages_t = ensure_1d_tensor(ages_t)
 
     if not (lambda_params.shape == mu_params.shape == times.shape):
         raise ValueError(
@@ -531,14 +523,10 @@ def calculate_spine_ages_log_lik(
     """
 
     # Normalize to 1D arrays so scalar inputs still support indexing
-    lambda_params = torch.atleast_1d(
-        torch.as_tensor(lambda_params, dtype=torch.float64)
-    ).ravel()
-    mu_params = torch.atleast_1d(
-        torch.as_tensor(mu_params, dtype=torch.float64)
-    ).ravel()
-    times = torch.atleast_1d(torch.as_tensor(times, dtype=torch.float64)).ravel()
-    ages_t = torch.atleast_1d(torch.as_tensor(ages_t, dtype=torch.float64)).ravel()
+    lambda_params = ensure_1d_tensor(lambda_params)
+    mu_params = ensure_1d_tensor(mu_params)
+    times = ensure_1d_tensor(times)
+    ages_t = ensure_1d_tensor(ages_t)
 
     if not (lambda_params.shape == mu_params.shape == times.shape):
         raise ValueError(
@@ -769,12 +757,10 @@ def calculate_non_spine_ages_log_lik_derivatives(
     """
 
     # Convert to tensors for consistent torch operations
-    lambda_val = torch.atleast_1d(
-        torch.as_tensor(lambda_param, dtype=torch.float64)
-    ).ravel()
-    mu_val = torch.atleast_1d(torch.as_tensor(mu_param, dtype=torch.float64)).ravel()
-    ages_t_t = torch.atleast_1d(torch.as_tensor(ages_t, dtype=torch.float64)).ravel()
-    T_t = torch.atleast_1d(torch.as_tensor(T, dtype=torch.float64)).ravel()
+    lambda_val = ensure_1d_tensor(lambda_param)
+    mu_val = ensure_1d_tensor(mu_param)
+    ages_t_t = ensure_1d_tensor(ages_t)
+    T_t = ensure_1d_tensor(T)
 
     # Pre-compute isclose check once (avoids repeated calls in vectorized operations)
     is_critical = torch.isclose(lambda_val, mu_val, rtol=1e-14)
@@ -861,12 +847,10 @@ def calculate_spine_ages_log_lik_derivatives(
     Vectorized over ages. Handles λ ≈ μ limiting case for numerical stability.
     """
     # Convert to tensors for consistent torch operations
-    lambda_val = torch.atleast_1d(
-        torch.as_tensor(lambda_param, dtype=torch.float64)
-    ).ravel()
-    mu_val = torch.atleast_1d(torch.as_tensor(mu_param, dtype=torch.float64)).ravel()
-    ages_t_t = torch.atleast_1d(torch.as_tensor(ages_t, dtype=torch.float64)).ravel()
-    T_t = torch.atleast_1d(torch.as_tensor(T, dtype=torch.float64)).ravel()
+    lambda_val = ensure_1d_tensor(lambda_param)
+    mu_val = ensure_1d_tensor(mu_param)
+    ages_t_t = ensure_1d_tensor(ages_t)
+    T_t = ensure_1d_tensor(T)
 
     at_boundary = ages_t_t == T_t
     not_at_boundary = torch.logical_not(at_boundary)
@@ -1010,13 +994,9 @@ def calculate_extinction_pr(
     for full PyTorch autograd support. All computation is in PyTorch.
     """
     # Convert inputs to tensors
-    birth_rates_t = torch.atleast_1d(
-        torch.as_tensor(birth_rates, dtype=torch.float64)
-    ).ravel()
-    death_rates_t = torch.atleast_1d(
-        torch.as_tensor(death_rates, dtype=torch.float64)
-    ).ravel()
-    times_t = torch.atleast_1d(torch.as_tensor(times, dtype=torch.float64)).ravel()
+    birth_rates_t = ensure_1d_tensor(birth_rates)
+    death_rates_t = ensure_1d_tensor(death_rates)
+    times_t = ensure_1d_tensor(times)
 
     if torch.any(times_t < 0):
         raise ValueError(f"times must be non-negative. Got times: {times_t}")
@@ -1212,16 +1192,10 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     """
 
     # Convert inputs to tensors
-    lifetimes_t = torch.atleast_1d(
-        torch.as_tensor(lifetimes, dtype=torch.float64)
-    ).ravel()
-    birth_rates_t = torch.atleast_1d(
-        torch.as_tensor(birth_rates, dtype=torch.float64)
-    ).ravel()
-    death_rates_t = torch.atleast_1d(
-        torch.as_tensor(death_rates, dtype=torch.float64)
-    ).ravel()
-    times_t = torch.atleast_1d(torch.as_tensor(times, dtype=torch.float64)).ravel()
+    lifetimes_t = ensure_1d_tensor(lifetimes)
+    birth_rates_t = ensure_1d_tensor(birth_rates)
+    death_rates_t = ensure_1d_tensor(death_rates)
+    times_t = ensure_1d_tensor(times)
 
     if len(birth_rates_t) != len(death_rates_t) or len(birth_rates_t) != len(times_t):
         raise ValueError("Length of birth_rates, death_rates, and times must be equal.")
@@ -1264,10 +1238,10 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
             a = interval_starts[idx].item()
             b = interval_ends[idx].item()
             result, _ = scipy.integrate.quad(
-                _integrand_surv_from_weighted_birth_time_vectorized,
+                _integrand_surv_from_weighted_birth_time_vectorized,  # type: ignore[arg-type]
                 a,
                 b,
-                args=(birth_rates_t, death_rates_t, times_t),
+                args=(birth_rates_t, death_rates_t, times_t),  # type: ignore[arg-type]
             )
             interval_integrals.append(result)
 
@@ -1284,7 +1258,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     for i, lifetime in enumerate(sorted_lifetimes):
         # Find epochs that end before this lifetime
         epoch_mask = times_t < lifetime
-        num_full_epochs = torch.sum(epoch_mask).item()
+        num_full_epochs = int(torch.sum(epoch_mask).item())
 
         # Build lifetime epochs
         full_epochs = times_t[epoch_mask]
@@ -1518,16 +1492,10 @@ def _integrand_surv_from_weighted_birth_time_vectorized(
         dtype: torch.float64. Supports automatic differentiation.
     """
     # Convert inputs to tensors
-    birth_times_t = torch.atleast_1d(
-        torch.as_tensor(birth_times, dtype=torch.float64)
-    ).ravel()
-    birth_rates_t = torch.atleast_1d(
-        torch.as_tensor(birth_rates, dtype=torch.float64)
-    ).ravel()
-    death_rates_t = torch.atleast_1d(
-        torch.as_tensor(death_rates, dtype=torch.float64)
-    ).ravel()
-    times_t = torch.atleast_1d(torch.as_tensor(times, dtype=torch.float64)).ravel()
+    birth_times_t = ensure_1d_tensor(birth_times)
+    birth_rates_t = ensure_1d_tensor(birth_rates)
+    death_rates_t = ensure_1d_tensor(death_rates)
+    times_t = ensure_1d_tensor(times)
 
     if not (birth_rates_t.shape == death_rates_t.shape == times_t.shape):
         raise ValueError(
