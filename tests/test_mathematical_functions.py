@@ -1768,13 +1768,11 @@ class TestIntegration:
         # Test for populations log likelihood derivatives
 
         # Create parameters as separate tensors with requires_grad
-        lambda_param = torch.tensor(
-            standard_scalar_params["lambda_param"],
-            dtype=torch.float64,
-            requires_grad=True,
+        lambda_param = (
+            standard_scalar_params["lambda_param"].detach().clone().requires_grad_(True)
         )
-        mu_param = torch.tensor(
-            standard_scalar_params["mu_param"], dtype=torch.float64, requires_grad=True
+        mu_param = (
+            standard_scalar_params["mu_param"].detach().clone().requires_grad_(True)
         )
 
         # Compute objective with autograd tracking
