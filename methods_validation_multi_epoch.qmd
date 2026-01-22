@@ -2,23 +2,6 @@
 title: "Validate Inference on Multi-Epoch Birth-and-Death Process"
 author: "JC"
 date: today
-format:
-  html:
-    backgroundcolor: "#fff1e5"
-    toc: true
-    toc-depth: 3
-    code-fold: true
-    code-tools: true
-    fig-width: 10
-    fig-height: 6
-    html-math-method: mathjax
-    embed-resources: true
-    theme: cosmo
-    mainfont: Libertinus Sans, system-ui, sans-serif
-    monofont: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
-execute:
-  warning: false
-  message: false
 ---
 
 # Setup
@@ -177,7 +160,7 @@ print(list_of_ages[0][0:10])
 
 ```{python}
 # | label: try-single-fit
-%%prun -s cumulative -q -l 60 -T prof-multi-epoch-single-fit
+%%prun -s cumulative -q -l 60 -T prof-multi-epoch-single-fit.txt -D prof-multi-epoch-single-fit.prof
 
 # Debug: check the data structure
 print(f"Number of ages in first simulation: {len(list_of_ages[0])}")

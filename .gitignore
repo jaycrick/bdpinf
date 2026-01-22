@@ -2,9 +2,10 @@ manuscripts/
 
 # Quarto
 *_files/
-# *.html
+*.html
 *.pdf
-.quarto/
+/.quarto/
+_output/
 
 # Python.gitignore
 # Byte-compiled / optimized / DLL files
@@ -209,6 +210,11 @@ cython_debug/
 
 # Ruff stuff:
 .ruff_cache/
+
+# Profiling outputs
+*.prof
+*.pstats
+prof-*.txt
 
 # PyPI configuration file
 .pypirc

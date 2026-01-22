@@ -2,22 +2,6 @@
 title: "Validate Inference on Birth-and-Death Process with Ages"
 author: "JC"
 date: today
-format:
-  html:
-    theme: cosmo
-    backgroundcolor: "#fff1e5"
-    toc: true
-    toc-depth: 3
-    code-fold: true
-    fig-width: 10
-    fig-height: 6
-    html-math-method: mathjax
-    embed-resources: true
-    mainfont: Libertinus Sans, system-ui, sans-serif
-    monofont: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
-execute:
-  warning: false
-  message: false
 ---
 
 # Setup
@@ -187,7 +171,7 @@ print(f"   Success rate: {(successful_fits / len(simulated_processes) * 100):.1f
 ```{python}
 # | eval: true
 # | label: profile-single-fit
-%%prun -s cumulative -q -l 30 -T prof-single-fit
+%%prun -s cumulative -q -l 30 -T prof-single-fit.txt -D prof-single-fit.prof
 
 
 print("🔍 Profiling a single model fit...")
@@ -518,7 +502,7 @@ save_figure(fig_box, "mv_parameter_boxplots", width=397, height=250)
 ```{python}
 # | label: use-multiple-processes
 
-%%prun -s cumulative -q -l 30 -T prof-use-multiple-processes
+%%prun -s cumulative -q -l 30 -T prof-use-multiple-processes.txt -D prof-use-multiple-processes.prof
 
 best_estimate = fit_birth_death_processes(
     list_of_ages=list_of_ages,

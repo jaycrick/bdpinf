@@ -1,0 +1,36 @@
+project:
+  type: website
+  output-dir: _output
+
+website:
+  title: "Inference on Birth-Death Processes for Texts"
+  navbar:
+    left:
+      - text: "Data Exploration"
+        file: manuscript_data_exploration.qmd
+      - text: "Methods Validation"
+        file: methods_validation.qmd
+      - text: "Multi-Epoch Validation"
+        file: methods_validation_multi_epoch.qmd
+      - text: "Birth-Death Inference"
+        file: birth_death_inference.qmd
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-tools: true
+    embed-resources: false
+    html-math-method: mathjax
+    backgroundcolor: "#fff1e5"
+    fig-width: 10
+    fig-height: 6
+    mainfont: "Libertinus Sans, system-ui, sans-serif"
+    monofont: "ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace"
+
+execute:
+  warning: false
+  message: false
+  cache: false
