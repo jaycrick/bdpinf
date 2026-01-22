@@ -6,8 +6,10 @@ process probabilities and densities. These functions are isolated from the
 main BirthDeathProcess class for better testability and modularity.
 """
 
+import numpy as np
 import scipy
 import torch
+from numpy.typing import NDArray
 
 from ..utils import ensure_1d_tensor
 
@@ -1233,15 +1235,23 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
 
     if len(active_indices) > 0:
         # Use scipy's adaptive quadrature for integration
+        # Detach tensors and convert to numpy for scipy
+        birth_rates_np = birth_rates_t.detach().cpu().numpy()
+        death_rates_np = death_rates_t.detach().cpu().numpy()
+        times_np = times_t.detach().cpu().numpy()
+
         interval_integrals = []
         for idx in active_indices:
-            a = interval_starts[idx].item()
-            b = interval_ends[idx].item()
+            a = float(interval_starts[idx].item())
+            b = float(interval_ends[idx].item())
             result, _ = scipy.integrate.quad(
-                _integrand_surv_from_weighted_birth_time_vectorized,  # type: ignore[arg-type]
+                lambda t: float(
+                    _integrand_surv_from_weighted_birth_time_scalar(
+                        t, birth_rates_np, death_rates_np, times_np
+                    )
+                ),
                 a,
                 b,
-                args=(birth_rates_t, death_rates_t, times_t),  # type: ignore[arg-type]
             )
             interval_integrals.append(result)
 
@@ -1461,6 +1471,54 @@ def _integrand_surv_from_weighted_birth_time(
     )
 
     return ext_prob * trunc_birth_rates[0]
+
+
+def _integrand_surv_from_weighted_birth_time_scalar(
+    birth_time: float,
+    birth_rates_np: NDArray[np.float64],
+    death_rates_np: NDArray[np.float64],
+    times_np: NDArray[np.float64],
+) -> float:
+    """
+    Scalar integrand for survival probability calculation (numpy version for scipy.integrate).
+
+    Parameters
+    ----------
+    birth_time : float
+        Time at which birth occurred (scalar).
+    birth_rates_np : np.ndarray
+        Birth rates λ for each epoch.
+    death_rates_np : np.ndarray
+        Death rates μ for each epoch.
+    times_np : np.ndarray
+        Epoch end times.
+
+    Returns
+    -------
+    float
+        Integrand value for this birth time.
+    """
+    import numpy as np
+
+    shifted_times = times_np - birth_time
+    valid_mask = shifted_times > 0
+    valid_indices = np.where(valid_mask)[0]
+
+    if len(valid_indices) == 0:
+        return 0.0
+
+    trunc_times = shifted_times[valid_indices]
+    trunc_birth_rates = birth_rates_np[valid_indices]
+    trunc_death_rates = death_rates_np[valid_indices]
+
+    # Convert back to torch for calculation, but without gradients
+    ext_prob = calculate_extinction_pr(
+        birth_rates=torch.from_numpy(trunc_birth_rates),
+        death_rates=torch.from_numpy(trunc_death_rates),
+        times=torch.from_numpy(trunc_times),
+    )
+
+    return float(ext_prob.item() * trunc_birth_rates[0])
 
 
 def _integrand_surv_from_weighted_birth_time_vectorized(

@@ -35,18 +35,19 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
+import torch
 from numpy.typing import NDArray
-from scipy import optimize
 
+from ..utils import ensure_1d_tensor
 from .likelihood import negative_log_likelihood
 
 
 def get_crude_parameter_estimates(
-    ages: NDArray[np.float64],
-    times: NDArray[np.float64] | float,
-    birth_rates: NDArray[np.float64] | float | None = None,
-    death_rates: NDArray[np.float64] | float | None = None,
-) -> Tuple[NDArray[np.float64], NDArray[np.float64]]:
+    ages: torch.Tensor | float,
+    times: torch.Tensor | float,
+    birth_rates: torch.Tensor | float | None = None,
+    death_rates: torch.Tensor | float | None = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Get crude initial parameter estimates based on manuscript age data.
 
@@ -63,7 +64,9 @@ def get_crude_parameter_estimates(
     """
     if birth_rates is not None and death_rates is not None:
         raise ValueError("Cannot provide both birth_rates and death_rates")
-    times = np.atleast_1d(times)
+
+    times = ensure_1d_tensor(times)
+    ages = ensure_1d_tensor(ages)
 
     observation_time = times[-1]
     n_manuscripts = len(ages)
@@ -75,17 +78,19 @@ def get_crude_parameter_estimates(
     # Simple heuristic: death rate inversely related to max survival age
     # birth rate related to total observed manuscripts
     if birth_rates is None:
-        est_birth_rates = np.ones_like(times, dtype=np.float64) / mean_age
+        est_birth_rates = torch.ones_like(times, dtype=torch.float64) / mean_age
     else:
-        est_birth_rates = np.atleast_1d(birth_rates)
+        est_birth_rates = ensure_1d_tensor(birth_rates)
 
     if death_rates is None:
-        est_death_rates = np.maximum(
-            est_birth_rates - np.log(n_manuscripts) / observation_time,
-            1e-8 * np.ones_like(times, dtype=np.float64),
+        est_death_rates = torch.maximum(
+            est_birth_rates
+            - torch.log(torch.tensor(float(n_manuscripts), dtype=torch.float64))
+            / observation_time,
+            torch.full_like(times, 1e-8, dtype=torch.float64),
         )
     else:
-        est_death_rates = np.atleast_1d(death_rates)
+        est_death_rates = ensure_1d_tensor(death_rates)
 
     # Validate that all arrays have consistent sizes
     if len(times) != len(est_birth_rates) or len(times) != len(est_death_rates):
@@ -99,59 +104,56 @@ def get_crude_parameter_estimates(
 
 
 def fit_birth_death_processes(
-    list_of_ages: List[NDArray[np.float64]],
-    times: float | NDArray[np.float64],
+    list_of_ages: List[torch.Tensor],
+    times: torch.Tensor | float,
     is_ordered: bool = False,
-    initial_birth_rates: NDArray[np.float64] | None = None,
-    initial_death_rates: NDArray[np.float64] | None = None,
-    spine_ages: NDArray[np.float64] | None = None,
-    population_sizes: NDArray[np.int64] | None = None,
+    initial_birth_rates: torch.Tensor | None = None,
+    initial_death_rates: torch.Tensor | None = None,
+    spine_ages: torch.Tensor | None = None,
+    population_sizes: torch.Tensor | None = None,
 ) -> Dict[str, Any]:
     """
-    Fit birth-death process parameters to grouped manuscript-age data.
+    Fit birth–death process parameters to grouped manuscript-age data using PyTorch.
 
-    This function estimates birth (speciation/appearance) and death (extinction/disappearance)
-    rates for a simple birth-death process by minimizing the negative log-likelihood.
-    Optimization is performed in log-parameter space (i.e., the optimizer works on
-    log(birth_rate), log(death_rate)) for numerical stability and then converted back
-    to the original scale for the returned results.
+    This version performs optimization fully in PyTorch (LBFGS) on log-parameters to
+    maintain positivity. Gradients flow through the torch-native `negative_log_likelihood`
+    (with `log_scale_params=True`).
 
     Parameters
     ----------
-    list_of_ages : List[NDArray[np.float64]]
-        A list of numpy arrays, each containing observed ages for a single group
+    list_of_ages : List[torch.Tensor]
+        A list of torch tensors, each containing observed ages for a single group
         (e.g., manuscript family). Arrays may be empty; at least one non-empty array
         is required. For ordered data (is_ordered=True) each array is expected to
         have the spine observation as its first element (unless spine_ages is
         provided explicitly).
-    times : float | NDArray[np.float64]
-        Observation time(s) for the process. Can be a single float representing
-        the total observation time, or an array of time points. Must be positive.
-        This is used by the likelihood functions to compute probabilities over
-        the observation window.
+    times : torch.Tensor
+        Observation time(s) for the process. Must be positive and strictly increasing
+        for multi-epoch models. This is used by the likelihood functions to compute
+        probabilities over the observation window.
     is_ordered : bool, optional
         If True and spine_ages is not provided, the first element of every non-empty
         array in list_of_ages is treated as a spine observation and removed from the
         main ages used in the likelihood; collected spine ages are passed to the
         likelihood. Default is False.
-    initial_birth_rates : NDArray[np.float64] | None, optional
+    initial_birth_rates : torch.Tensor | None, optional
         Initial guess for birth rate(s) on the original scale. If None,
         a crude estimate is obtained. Can be a scalar or array matching the
         structure of times. Values are converted to log-space for the optimizer.
-    initial_death_rates : NDArray[np.float64] | None, optional
+    initial_death_rates : torch.Tensor | None, optional
         Initial guess for death rate(s) on the original scale. If None,
         a crude estimate is obtained. Can be a scalar or array matching the
         structure of times. Values are converted to log-space for the optimizer.
-    spine_ages : NDArray[np.float64] | None, optional
+    spine_ages : torch.Tensor | None, optional
         If provided, these are the spine ages to be used directly in the likelihood.
         If is_ordered is True and this argument is None, spine_ages will be inferred
         from the first element of each non-empty array in list_of_ages.
-    population_sizes : NDArray[np.int64] | None, optional
-        Array of integer counts, one per entry in list_of_ages, representing the
+    population_sizes : torch.Tensor | None, optional
+        1D tensor of integer counts, one per entry in list_of_ages, representing the
         number of observed lineages for that group. If provided, its length must
         equal len(list_of_ages). If None, a default is constructed as
-        np.array([len(ages) + int(spine_ages is not None) for ages in list_of_ages],
-        dtype=np.int64). Note: if you rely on automatic spine extraction
+        torch.tensor([len(ages) + int(spine_ages is not None) for ages in list_of_ages],
+        dtype=torch.int64). Note: if you rely on automatic spine extraction
         (is_ordered=True and spine_ages=None) you should supply population_sizes explicitly if
         you require it to count spines, because the default is computed before
         spine extraction in the current implementation.
@@ -160,34 +162,25 @@ def fit_birth_death_processes(
     -------
     Dict[str, Any]
         A dictionary summarizing the optimization outcome and parameter estimates.
-        Typical keys:
-          - "success" (bool): True if optimization reported success, False otherwise.
-          - If success is True:
-              - "birth_rate" (float): Estimated birth rate on the original scale.
-              - "death_rate" (float): Estimated death rate on the original scale.
-              - "log_likelihood" (float): The log-likelihood corresponding to the
-                returned parameters (computed as the negative of the minimized
-                negative-log-likelihood).
-              - "optimization_result": The raw scipy OptimizeResult object.
-          - If success is False:
-              - "message" (str): Optimizer message describing the failure (if available).
-              - "optimization_result": The raw scipy OptimizeResult object (if available).
-        If no optimization attempts succeed and no result is available, returns {"success": False}.
+                Typical keys:
+                    - "success" (bool)
+                    - "birth_rates" (np.ndarray): Estimated birth rates (original scale)
+                    - "death_rates" (np.ndarray): Estimated death rates (original scale)
+                    - "log_likelihood" (float)
+                    - "optimization_result": minimal torch optimizer metadata
+                Returns {"success": False} on failure.
 
     Raises
     ------
     ValueError
         - If all arrays in list_of_ages are empty (no valid data to fit).
         - If times <= 0 (when times is a float) or any element of times <= 0 (when array).
-        - If population_sizes is provided and sum(population_sizes) != len(list_of_ages) (i.e., length mismatch).
+                - If population_sizes is provided and sum(population_sizes) != len(list_of_ages) (i.e., length mismatch).
 
-    Notes
-    -----
-    - The optimization is performed in log-parameter space for numerical stability.
-    - The objective minimized is the negative log-likelihood computed by
-      negative_log_likelihood(...).
-    - Uses BFGS with scipy's internal numerical gradient approximation, which reuses
-      cached objective evaluations to minimize expensive integral computations.
+        Notes
+        -----
+        - Optimization is LBFGS in torch on log-parameters for stability and positivity.
+        - Objective is the torch-based negative_log_likelihood with log_scale_params=True.
 
     Examples
     --------
@@ -202,7 +195,7 @@ def fit_birth_death_processes(
     --------
     negative_log_likelihood, log_likelihood_gradient, get_crude_parameter_estimates
     """
-    # Input validation
+    # Input validation and tensor preparation
     non_empty_age = None
     for ages in list_of_ages:
         if len(ages) > 0:
@@ -212,245 +205,175 @@ def fit_birth_death_processes(
     if non_empty_age is None:
         raise ValueError("No valid data points for fitting")
 
-    # Validate times parameter
-    if isinstance(times, (int, float)):
-        observation_time = float(times)
-        if observation_time <= 0:
-            raise ValueError("times must be positive")
-    else:
-        # times is an array
-        if np.any(times <= 0):
-            raise ValueError("All elements of times must be positive")
-        # For now, use the last time point as observation_time for simple case
-        observation_time = float(np.max(times))
+    times_tensor = ensure_1d_tensor(times)
+    if torch.any(times_tensor <= 0):
+        raise ValueError("All elements of times must be positive")
 
-    # Set initial parameters with better estimates based on data
-    if initial_birth_rates is None or initial_death_rates is None:
-        initial_params = np.concatenate(
-            get_crude_parameter_estimates(
-                non_empty_age, times, initial_birth_rates, initial_death_rates
-            )
-        )
-    else:
-        # Both provided - combine them
-        initial_params = np.concatenate(
-            (np.atleast_1d(initial_birth_rates), np.atleast_1d(initial_death_rates))
-        )
-
-    if len(initial_params) != 2 * len(np.atleast_1d(times)):
-        raise ValueError(
-            "Initial parameters size mismatch with times: "
-            f"expected {2 * len(np.atleast_1d(times))}, got {len(initial_params)}"
-        )
-
-    # Convert initial parameters to log scale
-    log_initial_params = np.log(initial_params)
-
+    # Prepare population sizes
     if population_sizes is not None:
-        if sum(population_sizes) != len(list_of_ages):
+        population_sizes_tensor = ensure_1d_tensor(population_sizes).to(
+            dtype=torch.int64
+        )
+        if population_sizes_tensor.numel() != len(list_of_ages):
             raise ValueError(
                 "Length of population_sizes must match length of list_of_ages"
             )
     else:
-        population_sizes = np.array(
+        population_sizes_tensor = torch.as_tensor(
             [len(ages) + int(spine_ages is not None) for ages in list_of_ages],
-            dtype=np.int64,
+            dtype=torch.int64,
         )
+
+    # Handle spine extraction for ordered data
+    spine_ages_tensor: torch.Tensor | None = None
+    non_spine_ages: torch.Tensor = torch.tensor([], dtype=torch.float64)
 
     if is_ordered and (spine_ages is None):
         spine_list: List[float] = []
-        remaining: List[NDArray[np.float64]] = []
+        remaining: List[torch.Tensor] = []
         for arr in list_of_ages:
-            if arr.size == 0:
+            if len(arr) == 0:
                 continue
-            # collect first element as spine
-            spine_list.append(float(arr[0]))
-            # keep the rest for the main ages list
-            if arr.size > 1:
-                remaining.append(arr[1:])
+            arr_tensor = ensure_1d_tensor(arr)
+            spine_list.append(float(arr_tensor[0]))
+            if len(arr_tensor) > 1:
+                remaining.append(arr_tensor[1:])
 
-        spine_ages = np.array(spine_list, dtype=np.float64)
-
-        # If no remaining non-spine ages, ensure we have an empty array instead of failing on concatenate
-        if remaining:
-            non_spine_ages = np.atleast_1d(np.concatenate(remaining))
-        else:
-            non_spine_ages = np.array([], dtype=np.float64)
+        spine_ages_tensor = ensure_1d_tensor(
+            torch.tensor(spine_list, dtype=torch.float64)
+        )
+        non_spine_ages = (
+            torch.cat(remaining) if remaining else torch.tensor([], dtype=torch.float64)
+        )
     else:
-        # For unordered data, combine all non-empty age arrays into one array
-        non_spine_ages = np.concatenate([arr for arr in list_of_ages if arr.size > 0])
+        spine_ages_tensor = (
+            ensure_1d_tensor(spine_ages) if spine_ages is not None else None
+        )
+        non_spine_ages = torch.cat(
+            [ensure_1d_tensor(arr) for arr in list_of_ages if len(arr) > 0]
+        )
 
-    # Create objective function wrapper with caching
-    _objective_cache: Dict[Tuple[float, ...], float] = {}
-
-    def objective_func(log_params: NDArray[np.float64]) -> np.float64:
-        """Evaluate negative log-likelihood in log-parameter space."""
-        key = tuple(np.asarray(log_params, dtype=np.float64))
-        if key in _objective_cache:
-            return np.float64(_objective_cache[key])
-
-        # Apply soft constraints in log-space to prevent extreme parameter values
-        # that cause numerical instability (e.g., rates < 1e-20 or > 10)
-        # Use a strong penalty term that grows smoothly as parameters go out of bounds
-        MIN_LOG_PARAM = -40.0  # exp(-40) ≈ 4e-18
-        MAX_LOG_PARAM = 2.3  # exp(2.3) ≈ 10
-        penalty = 0.0
-
-        for log_p in log_params:
-            if log_p < MIN_LOG_PARAM:
-                # Strong quadratic penalty for going too low
-                penalty += 1000.0 * (MIN_LOG_PARAM - log_p) ** 2
-            elif log_p > MAX_LOG_PARAM:
-                # Strong quadratic penalty for going too high
-                penalty += 1000.0 * (log_p - MAX_LOG_PARAM) ** 2
-
-        params = np.exp(log_params)
-        n_epochs = len(params) // 2
-        birth_rates = params[:n_epochs]
-        death_rates = params[n_epochs:]
-
-        try:
-            nll = negative_log_likelihood(
-                birth_rates=birth_rates,
-                death_rates=death_rates,
-                ages=non_spine_ages,
-                times=times,
-                spine_ages=spine_ages,
-                ns=population_sizes,
-                is_ordered=False,
-                log_scale_params=False,
+    # Initial parameters in torch
+    if initial_birth_rates is None or initial_death_rates is None:
+        crude_birth, crude_death = get_crude_parameter_estimates(
+            non_empty_age, times_tensor, initial_birth_rates, initial_death_rates
+        )
+        initial_params = torch.cat((crude_birth, crude_death))
+    else:
+        initial_params = torch.cat(
+            (
+                ensure_1d_tensor(initial_birth_rates),
+                ensure_1d_tensor(initial_death_rates),
             )
+        )
 
-            # If likelihood returns inf or nan, return a large finite value
-            if not np.isfinite(nll):
-                nll = np.float64(1e10)
+    if torch.any(initial_params <= 0):
+        raise ValueError("Initial parameters must be positive before log transform")
 
-            # If nll is negative (which means log_likelihood is positive, indicating
-            # numerical issues or degenerate solutions), add a large penalty
-            if nll < 0:
-                penalty += 1e10 - nll
-                nll = np.float64(1e10)
+    n_epochs = len(times_tensor)
+    expected_len = 2 * n_epochs
+    if len(initial_params) != expected_len:
+        raise ValueError(
+            "Initial parameters size mismatch with times: "
+            f"expected {expected_len}, got {len(initial_params)}"
+        )
 
-            result_value = float(nll + penalty)
-        except Exception:
-            # If likelihood computation fails, return a large finite value
-            result_value = 1e10 + penalty
+    log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
+    optimizer = torch.optim.LBFGS(
+        [log_params], lr=0.8, max_iter=400, tolerance_grad=1e-6, tolerance_change=1e-9
+    )
 
-        _objective_cache[key] = result_value
-        return np.float64(result_value)
-
-    # Optimize with BFGS
-    x0 = np.array(log_initial_params, dtype=np.float64)
+    def closure() -> torch.Tensor:
+        optimizer.zero_grad()
+        nll = negative_log_likelihood(
+            birth_rates=log_params[:n_epochs],
+            death_rates=log_params[n_epochs:],
+            ages=non_spine_ages,
+            times=times_tensor,
+            spine_ages=spine_ages_tensor,
+            ns=population_sizes_tensor,
+            is_ordered=False,
+            log_scale_params=True,
+        )
+        # Ensure scalar and backprop
+        nll.backward()  # type: ignore[no-untyped-call]
+        return nll
 
     try:
-        result = optimize.minimize(
-            objective_func,
-            x0,
-            method="BFGS",
-            options={"maxiter": 3000, "gtol": 5e-5},
-        )
-        if result.success:
-            params = np.exp(result.x)
-            n_epochs = len(params) // 2
-            birth_rates = params[:n_epochs]
-            death_rates = params[n_epochs:]
-
-            # Recalculate the actual log-likelihood without penalty for reporting
-            actual_nll = negative_log_likelihood(
-                birth_rates=birth_rates,
-                death_rates=death_rates,
-                ages=non_spine_ages,
-                times=times,
-                spine_ages=spine_ages,
-                ns=population_sizes,
-                is_ordered=False,
-                log_scale_params=False,
-            )
-
-            return {
-                "success": True,
-                "birth_rates": birth_rates,
-                "death_rates": death_rates,
-                "log_likelihood": -actual_nll,
-                "optimization_result": result,
-            }
-    except Exception:
-        pass
-
-    # Fallback: try Powell if BFGS fails
-    try:
-        result = optimize.minimize(
-            objective_func,
-            x0,
-            method="Powell",
-            options={"maxiter": 2000, "ftol": 1e-8},
-        )
-        if result.success:
-            params = np.exp(result.x)
-            n_epochs = len(params) // 2
-            birth_rates = params[:n_epochs]
-            death_rates = params[n_epochs:]
-
-            # Recalculate the actual log-likelihood without penalty for reporting
-            actual_nll = negative_log_likelihood(
-                birth_rates=birth_rates,
-                death_rates=death_rates,
-                ages=non_spine_ages,
-                times=times,
-                spine_ages=spine_ages,
-                ns=population_sizes,
-                is_ordered=False,
-                log_scale_params=False,
-            )
-
-            return {
-                "success": True,
-                "birth_rates": birth_rates,
-                "death_rates": death_rates,
-                "log_likelihood": -actual_nll,
-                "optimization_result": result,
-            }
-        else:
-            return {
-                "success": False,
-                "message": result.message,
-                "optimization_result": result,
-            }
+        optimizer.step(closure)  # type: ignore[no-untyped-call]
     except Exception:
         return {"success": False}
+
+    with torch.no_grad():
+        final_nll = negative_log_likelihood(
+            birth_rates=log_params[:n_epochs],
+            death_rates=log_params[n_epochs:],
+            ages=non_spine_ages,
+            times=times_tensor,
+            spine_ages=spine_ages_tensor,
+            ns=population_sizes_tensor,
+            is_ordered=False,
+            log_scale_params=True,
+        )
+
+        if not torch.isfinite(final_nll):
+            return {"success": False}
+
+        birth_rates = torch.exp(log_params[:n_epochs]).detach().cpu().numpy()
+        death_rates = torch.exp(log_params[n_epochs:]).detach().cpu().numpy()
+        final_log_likelihood = -float(final_nll.item())
+
+    return {
+        "success": True,
+        "birth_rates": birth_rates,
+        "death_rates": death_rates,
+        "log_likelihood": final_log_likelihood,
+        "optimization_result": {
+            "optimizer": "torch.optim.LBFGS",
+            "iterations": optimizer.state_dict().get("state", {}),
+        },
+    }
 
 
 def fit_from_dataframe(
     df: pd.DataFrame,
     age_column: str,
-    times: float | NDArray[np.float64],
+    times: float | NDArray[np.float64] | torch.Tensor,
     is_ordered: bool = False,
-    initial_birth_rates: NDArray[np.float64] | None = None,
-    initial_death_rates: NDArray[np.float64] | None = None,
+    initial_birth_rates: NDArray[np.float64] | torch.Tensor | None = None,
+    initial_death_rates: NDArray[np.float64] | torch.Tensor | None = None,
 ) -> Dict[str, Any]:
     """
-    Fit birth-death process parameters from a pandas DataFrame.
+    Fit birth-death process parameters from a pandas DataFrame (torch-friendly).
 
-    Args:
-        df: DataFrame containing manuscript data
-        age_column: Name of the column with manuscript ages
-        times: Observation time(s) - can be float or array
-        is_ordered: Whether the ages are ordered
-        initial_birth_rates: Initial birth rate values
-        initial_death_rates: Initial death rate values
-    Returns:
-        Dictionary with fit results including parameters and statistics
+    Expects `age_column` to contain numeric ages; converts to torch via
+    `ensure_1d_tensor` before fitting. `times` may be float, numpy array, or
+    torch tensor; initial rates may be numpy arrays or torch tensors.
     """
 
     if age_column not in df.columns:
         raise ValueError(f"Column '{age_column}' not found in DataFrame")
 
-    ages = np.asarray(df[age_column], dtype=np.float64)
+    ages_tensor = ensure_1d_tensor(
+        torch.as_tensor(df[age_column].to_numpy(dtype=np.float64), dtype=torch.float64)
+    )
+    times_tensor = ensure_1d_tensor(torch.as_tensor(times, dtype=torch.float64))
+
+    init_birth_tensor = (
+        ensure_1d_tensor(torch.as_tensor(initial_birth_rates, dtype=torch.float64))
+        if initial_birth_rates is not None
+        else None
+    )
+    init_death_tensor = (
+        ensure_1d_tensor(torch.as_tensor(initial_death_rates, dtype=torch.float64))
+        if initial_death_rates is not None
+        else None
+    )
 
     return fit_birth_death_processes(
-        list_of_ages=[ages],
-        times=times,
+        list_of_ages=[ages_tensor],
+        times=times_tensor,
         is_ordered=is_ordered,
-        initial_birth_rates=initial_birth_rates,
-        initial_death_rates=initial_death_rates,
+        initial_birth_rates=init_birth_tensor,
+        initial_death_rates=init_death_tensor,
     )

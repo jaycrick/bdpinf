@@ -41,6 +41,7 @@ scipy-stubs = "^1.16.1.0"
 toml-sort = "^0.24.3"
 types-requests = "^2.32.4.20250913"
 types-torch = "^0.1.1"
+typing-extensions = "^4.15.0"
 
 [tool.black]
 include = '\.pyi?$'
@@ -54,7 +55,6 @@ multi_line_output = 3
 profile = "black"
 
 [tool.mypy]
-plugins = ['pydantic.mypy']
 pretty = true
 show_error_codes = true
 strict = true

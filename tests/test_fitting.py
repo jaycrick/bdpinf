@@ -13,7 +13,7 @@ from inf_bp_texts.models import BirthDeathProcess
 class TestFitting:
     """Test parameter fitting functionality using modular approach."""
 
-    def test_fit_birth_death_process_with_times_arrays(self):
+    def test_fit_birth_death_process_with_times_arrays(self) -> None:
         """Test fitting with times as array."""
         ages = np.array([100.0, 200.0, 300.0, 500.0, 700.0], dtype=np.float64)
         times = 1000.0
@@ -26,7 +26,7 @@ class TestFitting:
         assert isinstance(result, dict)
         assert "success" in result
 
-    def test_fit_birth_death_process_success(self):
+    def test_fit_birth_death_process_success(self) -> None:
         """Test successful fitting with ages array."""
         # Create some test ages
         ages = np.array([100.0, 200.0, 300.0, 500.0, 700.0], dtype=np.float64)
@@ -46,7 +46,7 @@ class TestFitting:
             assert result["birth_rates"] > 0
             assert result["death_rates"] > 0
 
-    def test_fit_birth_death_process_no_ages(self):
+    def test_fit_birth_death_process_no_ages(self) -> None:
         """Test fitting fails with no ages."""
         ages = np.array([], dtype=np.float64)
         times = 1000.0
@@ -54,7 +54,7 @@ class TestFitting:
         with pytest.raises(ValueError, match="No valid data points for fitting"):
             fit_birth_death_processes([ages], times)
 
-    def test_fit_birth_death_process_custom_initial_params(self):
+    def test_fit_birth_death_process_custom_initial_params(self) -> None:
         """Test fitting with custom initial parameters."""
         ages = np.array([100.0, 200.0, 300.0], dtype=np.float64)
         times = 1000.0
@@ -73,7 +73,7 @@ class TestFitting:
         assert result["success"]
         assert "success" in result
 
-    def test_fit_from_dataframe_success(self):
+    def test_fit_from_dataframe_success(self) -> None:
         """Test successful fitting with external DataFrame."""
         # Create test data
         np.random.seed(42)
@@ -93,7 +93,7 @@ class TestFitting:
             assert result["birth_rates"] > 0
             assert result["death_rates"] > 0
 
-    def test_fit_from_dataframe_individual_records(self):
+    def test_fit_from_dataframe_individual_records(self) -> None:
         """Test fitting with individual manuscript records."""
         # Create individual manuscript records instead of aggregated counts
         ages = []
@@ -109,7 +109,7 @@ class TestFitting:
         assert isinstance(result, dict)
         assert "success" in result
 
-    def test_fit_from_dataframe_no_valid_data_points(self):
+    def test_fit_from_dataframe_no_valid_data_points(self) -> None:
         """Test fitting fails with no valid data points."""
         # DataFrame with no data
         df = pd.DataFrame({"age": []})
@@ -117,14 +117,14 @@ class TestFitting:
         with pytest.raises(ValueError, match="No valid data points for fitting"):
             fit_from_dataframe(df, age_column="age", times=1000.0)
 
-    def test_fit_from_dataframe_missing_age_column(self):
+    def test_fit_from_dataframe_missing_age_column(self) -> None:
         """Test fitting fails when age column is missing."""
         df = pd.DataFrame({"wrong_column": [1, 2, 3]})
 
         with pytest.raises(ValueError, match="Column 'age' not found"):
             fit_from_dataframe(df, age_column="age", times=1000.0)
 
-    def test_fit_birth_death_process_different_methods(self):
+    def test_fit_birth_death_process_different_methods(self) -> None:
         """Test fitting with the default optimization strategy."""
         # Test that the function works with the default optimization strategy
         ages = np.array([100.0, 200.0, 300.0, 400.0], dtype=np.float64)
@@ -138,7 +138,7 @@ class TestFitting:
             assert result["birth_rates"] > 0
             assert result["death_rates"] > 0
 
-    def test_fit_results_structure(self):
+    def test_fit_results_structure(self) -> None:
         """Test that fit results have the expected structure."""
         ages = np.array([100.0, 200.0, 300.0, 400.0, 500.0], dtype=np.float64)
         times = 1000.0
@@ -162,7 +162,7 @@ class TestFitting:
         assert isinstance(result["death_rates"], (float, np.float64, np.ndarray))
         assert isinstance(result["log_likelihood"], (float, np.float64))
 
-    def test_process_integration_with_fitting(self):
+    def test_process_integration_with_fitting(self) -> None:
         """Test integration between BirthDeathProcess and fitting functions."""
         # Create process
         process = BirthDeathProcess(
@@ -183,7 +183,7 @@ class TestFitting:
         assert process.birth_rate == result["birth_rates"]
         assert process.death_rate == result["death_rates"]
 
-    def test_fit_from_dataframe_custom_age_column(self):
+    def test_fit_from_dataframe_custom_age_column(self) -> None:
         """Test fitting with custom age column name."""
         df = pd.DataFrame(
             {
@@ -198,7 +198,7 @@ class TestFitting:
         assert result["success"]
         assert "success" in result
 
-    def test_process_state_preservation(self):
+    def test_process_state_preservation(self) -> None:
         """Test that process state is preserved when using external fitting."""
         process = BirthDeathProcess(
             creation_times=[50.0, 150.0, 250.0], final_time=500.0
@@ -226,7 +226,7 @@ class TestFitting:
 class TestMultiEpochFitting:
     """Test multi-epoch parameter fitting functionality."""
 
-    def test_two_epoch_fitting_basic(self):
+    def test_two_epoch_fitting_basic(self) -> None:
         """Test basic two-epoch fitting."""
         # Create ages spanning two epochs
         ages = np.array([50.0, 150.0, 250.0, 350.0, 450.0], dtype=np.float64)
@@ -252,7 +252,7 @@ class TestMultiEpochFitting:
             assert all(result["birth_rates"] > 0)
             assert all(result["death_rates"] > 0)
 
-    def test_two_epoch_fitting_with_initial_params(self):
+    def test_two_epoch_fitting_with_initial_params(self) -> None:
         """Test two-epoch fitting with initial parameter guesses."""
         ages = np.array([100.0, 200.0, 400.0, 600.0], dtype=np.float64)
         times = np.array([300.0, 700.0])
@@ -274,7 +274,7 @@ class TestMultiEpochFitting:
             assert len(result["birth_rates"]) == 2
             assert len(result["death_rates"]) == 2
 
-    def test_three_epoch_fitting(self):
+    def test_three_epoch_fitting(self) -> None:
         """Test fitting with three epochs."""
         ages = np.array([30.0, 80.0, 130.0, 180.0, 230.0, 280.0], dtype=np.float64)
         times = np.array([100.0, 200.0, 300.0])  # Three epochs
@@ -291,7 +291,7 @@ class TestMultiEpochFitting:
             assert all(result["birth_rates"] > 0)
             assert all(result["death_rates"] > 0)
 
-    def test_multi_epoch_fitting_array_lengths_consistent(self):
+    def test_multi_epoch_fitting_array_lengths_consistent(self) -> None:
         """Test that array lengths match between times and rates."""
         ages = np.array([50.0, 150.0, 250.0], dtype=np.float64)
         times = np.array([100.0, 200.0])
@@ -304,7 +304,7 @@ class TestMultiEpochFitting:
             assert len(result["birth_rates"]) == n_epochs
             assert len(result["death_rates"]) == n_epochs
 
-    def test_multi_epoch_vs_single_epoch_different_results(self):
+    def test_multi_epoch_vs_single_epoch_different_results(self) -> None:
         """Test that multi-epoch and single-epoch fits give different results."""
         ages = np.array([100.0, 200.0, 300.0, 400.0], dtype=np.float64)
         total_time = 500.0
@@ -327,7 +327,7 @@ class TestMultiEpochFitting:
         # Note: Current implementation may return arrays even for single epoch
         # This test documents the expected behavior
 
-    def test_multi_epoch_no_ages_fails(self):
+    def test_multi_epoch_no_ages_fails(self) -> None:
         """Test that multi-epoch fitting fails with no ages."""
         ages = np.array([], dtype=np.float64)
         times = np.array([100.0, 200.0])
@@ -335,7 +335,7 @@ class TestMultiEpochFitting:
         with pytest.raises(ValueError, match="No valid data points for fitting"):
             fit_birth_death_processes([ages], times)
 
-    def test_multi_epoch_likelihood_finite(self):
+    def test_multi_epoch_likelihood_finite(self) -> None:
         """Test that multi-epoch fitting returns finite log-likelihood."""
         ages = np.array([50.0, 150.0, 250.0, 350.0], dtype=np.float64)
         times = np.array([200.0, 400.0])
@@ -347,7 +347,7 @@ class TestMultiEpochFitting:
             # Log-likelihood should be negative (log of probability < 1)
             assert result["log_likelihood"] < 0
 
-    def test_multi_epoch_from_dataframe(self):
+    def test_multi_epoch_from_dataframe(self) -> None:
         """Test multi-epoch fitting from DataFrame."""
         ages = [100.0, 200.0, 300.0, 400.0, 500.0]
         df = pd.DataFrame({"age": ages})

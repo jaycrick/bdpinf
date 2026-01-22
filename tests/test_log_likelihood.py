@@ -12,7 +12,7 @@ from inf_bp_texts.models import BirthDeathProcess
 class TestLogLikelihood:
     """Test log-likelihood calculations."""
 
-    def test_log_likelihood_empty_ages(self):
+    def test_log_likelihood_empty_ages(self) -> None:
         """Test log-likelihood with no ages raises ValueError."""
         process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.01)
 
@@ -23,7 +23,7 @@ class TestLogLikelihood:
         assert result < 0
         assert np.isfinite(result)
 
-    def test_basic_log_likelihood(self):
+    def test_basic_log_likelihood(self) -> None:
         """Test basic log-likelihood functionality."""
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0], final_time=1000.0
@@ -38,7 +38,7 @@ class TestLogLikelihood:
         assert np.isfinite(result)
         assert result < 0
 
-    def test_log_likelihood_critical_case(self):
+    def test_log_likelihood_critical_case(self) -> None:
         """Test log-likelihood when birth_rate ≈ death_rate."""
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0], final_time=1000.0
@@ -60,7 +60,7 @@ class TestLogLikelihood:
         assert np.isfinite(result)
         assert result < 0
 
-    def test_log_likelihood_with_explicit_parameters(self):
+    def test_log_likelihood_with_explicit_parameters(self) -> None:
         """Test log-likelihood with explicit parameters."""
         process = BirthDeathProcess(
             birth_rate=0.01,
@@ -77,7 +77,7 @@ class TestLogLikelihood:
         assert np.isfinite(result)
         assert result < 0
 
-    def test_log_likelihood_parameter_consistency(self):
+    def test_log_likelihood_parameter_consistency(self) -> None:
         """Test that same parameters give same results."""
         process = BirthDeathProcess(
             birth_rate=0.01,
@@ -99,7 +99,7 @@ class TestLogLikelihood:
         assert result1 < 0
         assert result2 < 0
 
-    def test_log_likelihood_negative_parameters(self):
+    def test_log_likelihood_negative_parameters(self) -> None:
         """Test log-likelihood with invalid (negative) parameters."""
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0], final_time=1000.0
@@ -121,7 +121,7 @@ class TestLogLikelihood:
         )
         assert result == -np.inf or not np.isfinite(result)
 
-    def test_negative_log_likelihood_call_context(self):
+    def test_negative_log_likelihood_call_context(self) -> None:
         """Test negative log-likelihood in optimization context."""
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0], final_time=1000.0
@@ -137,7 +137,7 @@ class TestLogLikelihood:
         assert np.isfinite(result)
         assert result > 0
 
-    def test_negative_log_likelihood_empty_ages(self):
+    def test_negative_log_likelihood_empty_ages(self) -> None:
         """Test negative log-likelihood with no ages."""
         process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.01)
 
@@ -152,7 +152,7 @@ class TestLogLikelihood:
         assert np.isfinite(result)
         assert result > 0
 
-    def test_external_log_likelihood_helper(self):
+    def test_external_log_likelihood_helper(self) -> None:
         """Test the external log-likelihood helper method via public interface."""
         ages_data = [100.0, 200.0, 300.0]
         process = BirthDeathProcess(ages_data, 500.0)
@@ -165,7 +165,7 @@ class TestLogLikelihood:
         assert np.isfinite(result)
         assert result < 0
 
-    def test_external_log_likelihood_invalid_params(self):
+    def test_external_log_likelihood_invalid_params(self) -> None:
         """Test external log-likelihood with invalid parameters."""
         creation_times = [100.0, 200.0, 300.0]
         process = BirthDeathProcess(creation_times, 500.0)
@@ -181,7 +181,7 @@ class TestLogLikelihood:
         )
         assert result == -np.inf
 
-    def test_log_likelihood_numerical_stability(self):
+    def test_log_likelihood_numerical_stability(self) -> None:
         """Test numerical stability with extreme parameters."""
         process = BirthDeathProcess(
             creation_times=[10.0, 20.0, 30.0], final_time=1000.0
@@ -218,7 +218,7 @@ class TestLogLikelihood:
         assert np.isfinite(result3) or result3 == -np.inf
         assert result3 < 0
 
-    def test_multi_epoch_identical_rates_matches_single_epoch(self):
+    def test_multi_epoch_identical_rates_matches_single_epoch(self) -> None:
         """Test that multi-epoch with identical rates equals single-epoch."""
         # Create test data
         ages = np.array([100.0, 200.0, 300.0, 400.0])
@@ -253,7 +253,7 @@ class TestLogLikelihood:
         # For now, just verify they're reasonably close (within 5%)
         assert_allclose(result_single, result_multi, rtol=1e-8)
 
-    def test_multi_epoch_identical_rates_with_spine_ages(self):
+    def test_multi_epoch_identical_rates_with_spine_ages(self) -> None:
         """Test multi-epoch equals single-epoch with spine ages.
 
         NOTE: See test_multi_epoch_identical_rates_matches_single_epoch for
@@ -291,7 +291,7 @@ class TestLogLikelihood:
         assert np.isfinite(result_multi)
         assert_allclose(result_single, result_multi, rtol=1e-8)
 
-    def test_multi_epoch_identical_rates_with_populations(self):
+    def test_multi_epoch_identical_rates_with_populations(self) -> None:
         """Test multi-epoch equals single-epoch with population counts.
 
         NOTE: See test_multi_epoch_identical_rates_matches_single_epoch for
@@ -331,7 +331,7 @@ class TestLogLikelihood:
         # This case shows larger discrepancy (~10%) possibly due to multiple population groups
         assert_allclose(result_single, result_multi, rtol=1e-8)
 
-    def test_multi_epoch_identical_rates_ordered(self):
+    def test_multi_epoch_identical_rates_ordered(self) -> None:
         """Test multi-epoch equals single-epoch with ordered ages.
 
         NOTE: See test_multi_epoch_identical_rates_matches_single_epoch for
@@ -369,7 +369,7 @@ class TestLogLikelihood:
         # Relaxed tolerance due to known multi-epoch numerical differences
         assert_allclose(result_single, result_multi, rtol=1e-8)
 
-    def test_multi_epoch_identical_rates_log_scale(self):
+    def test_multi_epoch_identical_rates_log_scale(self) -> None:
         """Test multi-epoch equals single-epoch with log-scale parameters.
 
         NOTE: See test_multi_epoch_identical_rates_matches_single_epoch for
@@ -407,7 +407,7 @@ class TestLogLikelihood:
         # Relaxed tolerance due to known multi-epoch numerical differences
         assert_allclose(result_single, result_multi, rtol=1e-8)
 
-    def test_multi_epoch_identical_rates_critical_case(self):
+    def test_multi_epoch_identical_rates_critical_case(self) -> None:
         """Test multi-epoch equals single-epoch when birth ≈ death.
 
         NOTE: See test_multi_epoch_identical_rates_matches_single_epoch for
@@ -443,7 +443,7 @@ class TestLogLikelihood:
         # Relaxed tolerance due to known multi-epoch numerical differences
         assert_allclose(result_single, result_multi, rtol=1e-8)
 
-    def test_negative_log_likelihood_multi_epoch_matches_single(self):
+    def test_negative_log_likelihood_multi_epoch_matches_single(self) -> None:
         """Test negative_log_likelihood multi-epoch equals single-epoch.
 
         NOTE: See test_multi_epoch_identical_rates_matches_single_epoch for

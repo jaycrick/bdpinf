@@ -12,7 +12,7 @@ from inf_bp_texts.simulation import simulate_birth_death_process
 class TestSimulation:
     """Test simulation functionality."""
 
-    def test_simulation_basic(self):
+    def test_simulation_basic(self) -> None:
         """Test basic simulation functionality using modular approach."""
         # Run simulation using modular function
         df = simulate_birth_death_process(
@@ -38,7 +38,7 @@ class TestSimulation:
         ages = process.get_manuscript_ages()
         assert len(ages) == len(process.creation_times)
 
-    def test_simulation_with_seed_reproducible(self):
+    def test_simulation_with_seed_reproducible(self) -> None:
         """Test that simulation with same seed is reproducible."""
         # Run simulations using modular function with same seed
         df1 = simulate_birth_death_process(
@@ -59,7 +59,7 @@ class TestSimulation:
 
         assert len(creation_times1) == len(creation_times2)
 
-    def test_simulation_different_seeds_different_results(self):
+    def test_simulation_different_seeds_different_results(self) -> None:
         """Test that different seeds give different results."""
         # Run simulations using modular function with different seeds
         df1 = simulate_birth_death_process(
@@ -79,7 +79,7 @@ class TestSimulation:
             creation_times2 = surviving2["creation_time"].tolist()
             assert not df1.equals(df2) or len(creation_times1) != len(creation_times2)
 
-    def test_simulation_dataframe_structure(self):
+    def test_simulation_dataframe_structure(self) -> None:
         """Test that simulation returns properly structured DataFrame."""
         # Run simulation using modular function
         df = simulate_birth_death_process(
@@ -119,7 +119,7 @@ class TestSimulation:
                 assert all(dead["lifespan"] >= 0)
                 assert all(~dead["survived"])
 
-    def test_simulation_ages_consistency(self):
+    def test_simulation_ages_consistency(self) -> None:
         """Test that ages are calculated correctly after simulation."""
         # Run simulation using modular function
         df = simulate_birth_death_process(
@@ -147,7 +147,7 @@ class TestSimulation:
                 sorted(df_ages), sorted(process.get_manuscript_ages())
             )
 
-    def test_simulation_empty_result(self):
+    def test_simulation_empty_result(self) -> None:
         """Test simulation that might produce no manuscripts."""
         # Very low birth rate, high death rate, short time
         df = simulate_birth_death_process(
@@ -174,7 +174,7 @@ class TestSimulation:
         assert isinstance(process.creation_times, list)
         assert isinstance(process.get_manuscript_ages(), np.ndarray)
 
-    def test_simulation_resets_process(self):
+    def test_simulation_resets_process(self) -> None:
         """Test that creating new process with simulation results gives proper state."""
         # Create initial process with some state
         initial_creation_times = [10.0, 20.0, 30.0]
@@ -207,7 +207,7 @@ class TestSimulation:
         if len(new_process.get_manuscript_ages()) > 0:
             assert not np.array_equal(new_process.get_manuscript_ages(), initial_ages)
 
-    def test_simulation_parameter_effects(self):
+    def test_simulation_parameter_effects(self) -> None:
         """Test that birth/death rates affect simulation results as expected."""
         max_time = 10.0
         random_seed = 42
@@ -236,7 +236,7 @@ class TestSimulation:
         assert isinstance(surviving_high, int)
         assert isinstance(surviving_low, int)
 
-    def test_simulation_time_bounds(self):
+    def test_simulation_time_bounds(self) -> None:
         """Test that all creation times are within the specified bounds."""
         max_time = 75.0
         df = simulate_birth_death_process(
@@ -253,7 +253,7 @@ class TestSimulation:
         if len(df) > 0:
             assert all(0 <= ct <= max_time for ct in df["creation_time"])
 
-    def test_simulation_ages_non_negative(self):
+    def test_simulation_ages_non_negative(self) -> None:
         """Test that all calculated ages are non-negative."""
         df = simulate_birth_death_process(
             birth_rates=0.1, death_rates=0.02, times=60.0, random_seed=42
@@ -278,7 +278,7 @@ class TestSimulation:
 class TestMultiEpochSimulation:
     """Test multi-epoch simulation functionality."""
 
-    def test_two_epoch_simulation_basic(self):
+    def test_two_epoch_simulation_basic(self) -> None:
         """Test basic two-epoch simulation."""
         birth_rates = np.array([0.1, 0.05])
         death_rates = np.array([0.02, 0.01])
@@ -298,7 +298,7 @@ class TestMultiEpochSimulation:
         if len(df) > 0:
             assert all(df["creation_time"] <= times[-1])
 
-    def test_two_epoch_simulation_reproducible(self):
+    def test_two_epoch_simulation_reproducible(self) -> None:
         """Test that two-epoch simulation with same seed is reproducible."""
         birth_rates = np.array([0.08, 0.12])
         death_rates = np.array([0.03, 0.02])
@@ -326,7 +326,7 @@ class TestMultiEpochSimulation:
                 sorted(df1["creation_time"]), sorted(df2["creation_time"])
             )
 
-    def test_three_epoch_simulation(self):
+    def test_three_epoch_simulation(self) -> None:
         """Test simulation with three epochs."""
         birth_rates = np.array([0.15, 0.1, 0.12])
         death_rates = np.array([0.02, 0.04, 0.03])
@@ -345,7 +345,7 @@ class TestMultiEpochSimulation:
             assert all(df["creation_time"] >= 0)
             assert all(df["creation_time"] <= times[-1])
 
-    def test_multi_epoch_dataframe_structure(self):
+    def test_multi_epoch_dataframe_structure(self) -> None:
         """Test that multi-epoch simulation returns properly structured DataFrame."""
         birth_rates = np.array([0.2, 0.15])
         death_rates = np.array([0.01, 0.02])
@@ -369,7 +369,7 @@ class TestMultiEpochSimulation:
                 assert all(surviving["creation_time"] <= times[-1])
                 assert all(surviving["age"] >= 0)
 
-    def test_multi_epoch_different_epochs_affect_results(self):
+    def test_multi_epoch_different_epochs_affect_results(self) -> None:
         """Test that changing epoch parameters affects simulation outcomes."""
         # Two epochs with moderately different rates (avoid extreme values)
         birth_rates1 = np.array([0.15, 0.05])  # Higher then lower birth rate
@@ -402,7 +402,7 @@ class TestMultiEpochSimulation:
             # At least one simulation produced manuscripts
             assert True
 
-    def test_multi_epoch_scalar_compatibility(self):
+    def test_multi_epoch_scalar_compatibility(self) -> None:
         """Test that single-epoch as array matches scalar input."""
         birth_rate = 0.1
         death_rate = 0.02

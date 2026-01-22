@@ -17,7 +17,7 @@ from inf_bp_texts.models.birth_death_process import BirthDeathProcess
 class TestArchitecturalIntegration:
     """Test that architectural components work together."""
 
-    def test_error_handling_integration(self):
+    def test_error_handling_integration(self) -> None:
         """Test that error handling works across modules."""
         # Test validation in model creation
         with pytest.raises(ValidationError):
@@ -28,7 +28,7 @@ class TestArchitecturalIntegration:
         ages = model.get_manuscript_ages()
         assert len(ages) == 0, "Empty model should return empty ages array"
 
-    def test_modular_workflow_integration(self):
+    def test_modular_workflow_integration(self) -> None:
         """Test complete workflow using modular components."""
         # 1. Create model with configuration
         config = DEFAULT_MODEL
@@ -64,7 +64,7 @@ class TestArchitecturalIntegration:
             assert model.birth_rate is not None
             assert model.death_rate is not None
 
-    def test_configuration_validation(self):
+    def test_configuration_validation(self) -> None:
         """Test that configuration provides valid defaults."""
         opt_config = DEFAULT_OPTIMIZATION
         model_config = DEFAULT_MODEL
@@ -81,7 +81,7 @@ class TestArchitecturalIntegration:
         assert model_config.bootstrap_samples > 0
         assert 0 < model_config.confidence_level < 1
 
-    def test_error_propagation_through_modules(self):
+    def test_error_propagation_through_modules(self) -> None:
         """Test that errors propagate correctly through the module hierarchy."""
         # Create invalid data
         invalid_data = pd.DataFrame({"wrong_column": [1, 2, 3]})
@@ -94,7 +94,7 @@ class TestArchitecturalIntegration:
                 times=100.0,
             )
 
-    def test_configuration_customization(self):
+    def test_configuration_customization(self) -> None:
         """Test that configurations can be customized for different use cases."""
         from inf_bp_texts.config import ModelConfig, OptimizationConfig
 
@@ -118,7 +118,7 @@ class TestArchitecturalIntegration:
 class TestModularImportStructure:
     """Test that the modular import structure is clean and consistent."""
 
-    def test_core_imports(self):
+    def test_core_imports(self) -> None:
         """Test that core imports work as expected."""
         # Test main package import
         from inf_bp_texts import BirthDeathProcess
@@ -141,7 +141,7 @@ class TestModularImportStructure:
         assert DEFAULT_OPTIMIZATION is not None
         assert ValidationError is not None
 
-    def test_no_circular_imports(self):
+    def test_no_circular_imports(self) -> None:
         """Test that there are no circular import dependencies."""
         # This test simply tries to import all main modules
         # If there are circular dependencies, this will fail
@@ -149,7 +149,7 @@ class TestModularImportStructure:
         # If we get here, no circular imports detected
         assert True
 
-    def test_backward_compatibility_removed(self):
+    def test_backward_compatibility_removed(self) -> None:
         """Test that backward compatibility has been properly removed."""
         from inf_bp_texts import BirthDeathProcess
 
@@ -172,7 +172,7 @@ class TestModularImportStructure:
 class TestPerformanceAndValidation:
     """Test performance characteristics and validation."""
 
-    def test_configuration_performance(self):
+    def test_configuration_performance(self) -> None:
         """Test that configuration access is efficient."""
         import time
 
@@ -187,7 +187,7 @@ class TestPerformanceAndValidation:
         # Should be very fast (< 1 second for 1000 accesses)
         assert (end_time - start_time) < 1.0
 
-    def test_validation_error_messages(self):
+    def test_validation_error_messages(self) -> None:
         """Test that validation provides helpful error messages."""
         with pytest.raises(ValidationError) as exc_info:
             validate_positive_number(-5.0, "test_parameter")
@@ -198,7 +198,7 @@ class TestPerformanceAndValidation:
         assert error.field_name == "test_parameter"
         assert error.received_value == -5.0
 
-    def test_memory_usage_reasonable(self):
+    def test_memory_usage_reasonable(self) -> None:
         """Test that importing modules doesn't use excessive memory."""
         import sys
 
