@@ -813,7 +813,8 @@ class TestNumericalAccuracy:
             calculate_populations_log_lik_derivatives(lambda_val, mu_val, T, n)
             for n in ns
         ]
-        result_separate = torch.sum(derivs_separate, axis=0)
+        # Stack then sum along rows to handle list of tensors
+        result_separate = torch.stack(derivs_separate, dim=0).sum(dim=0)
 
         assert_allclose(result_together, result_separate, rtol=1e-8)
 
