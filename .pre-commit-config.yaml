@@ -1,7 +1,7 @@
 repos:
   # Built-in hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
         exclude_types: [html]
@@ -16,7 +16,7 @@ repos:
 
   # Ruff linting
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.7
+    rev: v0.14.13
     hooks:
       - id: ruff-check
         args: [--fix]
@@ -25,17 +25,18 @@ repos:
 
   # isort import sorting
   - repo: https://github.com/pycqa/isort
-    rev: 6.0.1
+    rev: 7.0.0
     hooks:
       - id: isort
 
   # MyPy type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.17.1
+    rev: v1.19.1
     hooks:
       - id: mypy
         args: [--strict]
         additional_dependencies:
+          - torch
           - pydantic
           - types-requests
           - joblib-stubs
@@ -43,6 +44,7 @@ repos:
           - scipy-stubs
           - plotly-stubs
           - lxml-stubs
+          - types-torch
         files: ^src/
 
   # toml-sort

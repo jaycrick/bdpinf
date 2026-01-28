@@ -7,8 +7,7 @@ birth-death process models, used in parameter fitting and model evaluation.
 
 import warnings
 
-import numpy as np
-from numpy.typing import NDArray
+import torch
 
 from ..models.mathematical_functions import (
     calculate_ages_log_lik,
@@ -16,18 +15,19 @@ from ..models.mathematical_functions import (
     calculate_populations_log_lik,
     calculate_populations_log_lik_derivatives,
 )
+from ..utils import ensure_1d_tensor
 
 
 def log_likelihood(
-    birth_rates: NDArray[np.float64] | float,
-    death_rates: NDArray[np.float64] | float,
-    ages: NDArray[np.float64] | float,
-    times: NDArray[np.float64] | float,
-    spine_ages: NDArray[np.float64] | None = None,
-    ns: NDArray[np.int64] | None = None,
+    birth_rates: torch.Tensor | float,
+    death_rates: torch.Tensor | float,
+    ages: torch.Tensor | float,
+    times: torch.Tensor | float,
+    spine_ages: torch.Tensor | None = None,
+    ns: torch.Tensor | None = None,
     is_ordered: bool = False,
     log_scale_params: bool = False,
-) -> np.float64:
+) -> torch.Tensor:
     """
     Compute the log-likelihood of observed manuscript ages under a birth–death process.
 
@@ -57,20 +57,20 @@ def log_likelihood(
 
     Parameters
     ----------
-    birth_rate : float
+    birth_rate : float | torch.Tensor
         Birth rate parameter λ > 0, or log(λ) if log_scale_params is True.
-    death_rate : float
+    death_rate : float | torch.Tensor
         Death rate parameter μ > 0, or log(μ) if log_scale_params is True.
-    ages : ndarray[np.float64] | float
-        Observed ages of manuscripts. A scalar is treated as a single-element array.
+    ages : torch.Tensor | float
+        Observed ages of manuscripts. A scalar is treated as a single-element tensor.
         All ages must satisfy 0 <= age <= observation_time.
-    observation_time : float
-        Observation time T (> 0) at which the population/ages are observed.
-    spine_ages : ndarray[np.float64] | None, optional
+    times : torch.Tensor | float
+        Observation times (> 0) at which the population/ages are observed.
+    spine_ages : torch.Tensor | None, optional
         Ages to be treated as spines (special conditional observations). If provided,
         these ages must also satisfy 0 <= age <= observation_time. Mutually exclusive
         with is_ordered=True.
-    ns : ndarray[np.int64] | None, optional
+    ns : torch.Tensor | None, optional
         Counts per population/class that sum to the total number of ages. If None,
         a single population with one count per provided age is assumed.
     is_ordered : bool, optional
@@ -81,7 +81,7 @@ def log_likelihood(
 
     Returns
     -------
-    np.float64
+    torch.Tensor
         The computed total log-likelihood (log P_n(T) + Σ log f(t_i)).
         Returns -inf for numerical issues (non-positive rates, overflow, invalid domains).
 
@@ -97,10 +97,10 @@ def log_likelihood(
     See also:
         calculate_populations_log_likelihood, calculate_ages_log_likelihood
     """
-    birth_rates = np.atleast_1d(birth_rates).ravel()
-    death_rates = np.atleast_1d(death_rates).ravel()
-    ages = np.atleast_1d(ages).ravel()
-    times = np.atleast_1d(times).ravel()
+    birth_rates = ensure_1d_tensor(birth_rates)
+    death_rates = ensure_1d_tensor(death_rates)
+    ages = ensure_1d_tensor(ages)
+    times = ensure_1d_tensor(times)
 
     if not (birth_rates.shape == death_rates.shape == times.shape):
         raise ValueError(
@@ -110,14 +110,14 @@ def log_likelihood(
 
     # Handle parameter conversion if in log scale
     if log_scale_params:
-        birth_rates = np.exp(birth_rates)
-        death_rates = np.exp(death_rates)
+        birth_rates = torch.exp(birth_rates)
+        death_rates = torch.exp(death_rates)
     else:
-        if np.any(birth_rates <= 0) or np.any(death_rates <= 0):
-            return np.float64(-np.inf)
+        if torch.any(birth_rates <= 0) or torch.any(death_rates <= 0):
+            return torch.tensor(-torch.inf, dtype=torch.float64)
 
     if spine_ages is not None:
-        spine_ages = np.atleast_1d(spine_ages)
+        spine_ages = ensure_1d_tensor(spine_ages)
         if len(spine_ages) == 0:
             spine_ages = None
         else:
@@ -132,17 +132,17 @@ def log_likelihood(
                         "population sizes (ns) must also be provided."
                     )
                 else:
-                    ns = np.array([len(ages) + len(spine_ages)], dtype=np.int64)
-            if np.any(spine_ages < 0) or np.any(spine_ages > times[-1]):
+                    ns = torch.tensor([len(ages) + len(spine_ages)], dtype=torch.int64)
+            if torch.any(spine_ages < 0) or torch.any(spine_ages > times[-1]):
                 raise ValueError(f"Spine ages must be in the range [0, {times[-1]}].")
 
     if times[0] <= 0:
         raise ValueError("Observation times must be positive.")
 
-    if np.any(np.diff(times) < 0):
+    if torch.any(torch.diff(times) < 0):
         raise ValueError("Observation times must be non-decreasing.")
 
-    if np.any(ages < 0) or np.any(ages > times[-1]):
+    if torch.any(ages < 0) or torch.any(ages > times[-1]):
         raise ValueError(f"Ages must be in the range [0, {times[-1]}].")
 
     # Total number of observed manuscripts
@@ -160,12 +160,15 @@ def log_likelihood(
                 UserWarning,
             )
     else:
-        ns = np.array([num_ages], dtype=np.int64)
+        ns = torch.tensor([num_ages], dtype=torch.int64)
         total_pop_size = num_ages
 
     # Input validation
-    if not (np.all(np.isfinite(birth_rates)) and np.all(np.isfinite(death_rates))):
-        return np.float64(-np.inf)
+    if not (
+        torch.all(torch.isfinite(birth_rates))
+        and torch.all(torch.isfinite(death_rates))
+    ):
+        return torch.tensor(-torch.inf, dtype=torch.float64)
     # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
     log_P_n_T = calculate_populations_log_lik(
         lambda_params=birth_rates,
@@ -175,17 +178,17 @@ def log_likelihood(
     )
 
     # Check if population probability calculation succeeded
-    if not np.isfinite(log_P_n_T):
-        return np.float64(-np.inf)
+    if not torch.isfinite(log_P_n_T):
+        return torch.tensor(-torch.inf, dtype=torch.float64)
     if total_pop_size == 0:
-        return np.float64(log_P_n_T)
+        return log_P_n_T
 
-    ages_log_lik = 0.0
+    ages_log_lik = torch.tensor(0.0, dtype=torch.float64)
 
     if is_ordered or (spine_ages is not None):
         if is_ordered:
-            ages = np.array(ages, dtype=np.float64)
-            spine_ages = np.array([ages[0]], dtype=np.float64)
+            ages = torch.as_tensor(ages, dtype=torch.float64)
+            spine_ages = torch.tensor([ages[0]], dtype=torch.float64)
             ages = ages[1:]
         # Calculate log age density
         assert spine_ages is not None
@@ -206,27 +209,27 @@ def log_likelihood(
         )
 
     # Check if age density calculation succeeded
-    if not np.isfinite(ages_log_lik):
-        return np.float64(-np.inf)
+    if not torch.isfinite(torch.as_tensor(ages_log_lik)):
+        return torch.tensor(-torch.inf, dtype=torch.float64)
 
     total_log_likelihood = log_P_n_T + ages_log_lik
 
     # Final numerical validation
-    if not np.isfinite(total_log_likelihood):
-        return np.float64(-np.inf)
+    if not torch.isfinite(total_log_likelihood):
+        return torch.tensor(-torch.inf, dtype=torch.float64)
 
-    return np.float64(total_log_likelihood)
+    return total_log_likelihood
 
 
 def log_likelihood_gradient(
-    params: NDArray[np.float64],
-    ages: NDArray[np.float64] | float,
+    params: torch.Tensor | float,
+    ages: torch.Tensor | float,
     observation_time: float,
-    spine_ages: NDArray[np.float64] | float | None = None,
-    ns: NDArray[np.int64] | None = None,
+    spine_ages: torch.Tensor | float | None = None,
+    ns: torch.Tensor | None = None,
     is_ordered: bool = False,
     log_scale_params: bool = False,
-) -> NDArray[np.float64]:
+) -> torch.Tensor:
     """
     Compute the gradient of the model log-likelihood with respect to the birth and
     death parameters.
@@ -244,24 +247,24 @@ def log_likelihood_gradient(
 
     Parameters
     ----------
-    params : NDArray[np.float64]
-        Length-2 array containing the birth and death parameters in the order
+    params : torch.Tensor | float
+        Length-2 tensor containing the birth and death parameters in the order
         [birth_rate, death_rate]. If `log_scale_params` is True these are the
         log-parameters (log(birth), log(death)); otherwise they are in the
         natural scale.
-    ages : NDArray[np.float64] | float
-        Observed manuscript ages (can be a scalar or a 1-D array). All ages
+    ages : torch.Tensor | float
+        Observed manuscript ages (can be a scalar or a 1-D tensor). All ages
         must lie in [0, observation_time].
     observation_time : float
         Positive scalar giving the observation time T. Ages must be in
         the interval [0, T].
-    spine_ages : NDArray[np.float64] | float | None, optional
+    spine_ages : torch.Tensor | float | None, optional
         Optional ages that are treated as spine observations. Cannot be
         provided if `is_ordered` is True. If provided, must lie in [0, T].
-    ns : NDArray[np.int64] | None, optional
-        Optional array of population counts per grouping. If omitted the total
-        population is assumed to be len(np.atleast_1d(ages)). When provided, the sum(ns) must
-        equal len(np.atleast_1d(ages)).
+    ns : torch.Tensor | None, optional
+        Optional tensor of population counts per grouping. If omitted the total
+        population is assumed to be len(ensure_1d_tensor(ages)). When provided, the sum(ns) must
+        equal len(ensure_1d_tensor(ages)).
     is_ordered : bool, optional
         If True, the input `ages` array is interpreted as ordered and the first
         entry is used as a spine age; `spine_ages` must then be None.
@@ -273,14 +276,14 @@ def log_likelihood_gradient(
 
     Returns
     -------
-    NDArray[np.float64]
-        A length-2 numpy array of dtype float64 giving the gradient of the
+    torch.Tensor
+        A length-2 tensor of dtype float64 giving the gradient of the
         log-likelihood with respect to the birth and death parameters in the
         same ordering as `params`. If `log_scale_params` is True the gradient
         is with respect to the log-parameters.
 
         When `log_scale_params` is False and either `birth_rate` <= 0 or
-        `death_rate` <= 0 the function returns np.array([np.nan, np.nan])
+        `death_rate` <= 0 the function returns torch.tensor([nan, nan])
         to indicate an invalid original-scale input.
 
     Raises
@@ -291,57 +294,59 @@ def log_likelihood_gradient(
         - if `is_ordered` is True and `spine_ages` is also provided,
         - if `observation_time` is not positive,
         - if any value in `ages` or `spine_ages` lies outside [0, observation_time],
-        - if `ns` is provided and sum(ns) != len(np.atleast_1d(ages)).
+        - if `ns` is provided and sum(ns) != len(ensure_1d_tensor(ages)).
     TypeError, IndexError, etc.
         Programming errors raise exceptions for easier debugging.
 
     Example:
         >>> # params as log-parameters
         >>> grad = log_likelihood_gradient(
-                np.log([1.2, 0.3]), ages=[0.1, 0.4], observation_time=1.0, log_scale_params=True
+                torch.log(torch.tensor([1.2, 0.3])), ages=[0.1, 0.4], observation_time=1.0, log_scale_params=True
             )
     """
-    if len(params) != 2:
+    params_tensor = ensure_1d_tensor(params)
+    if len(params_tensor) != 2:
         raise ValueError("params must have length 2")
     if is_ordered and (spine_ages is not None):
         raise ValueError("Cannot have both is_ordered=True and spine_ages provided.")
 
-    birth_rate, death_rate = params
+    birth_rate, death_rate = params_tensor
     # Input validation
-    if not (np.isfinite(birth_rate) and np.isfinite(death_rate)):
+    if not (torch.isfinite(birth_rate) and torch.isfinite(death_rate)):
         raise ValueError("Parameters must be finite.")
 
     if not log_scale_params:
         # Parameters are in original scale, validate directly
         if birth_rate <= 0 or death_rate <= 0:
-            return np.array([np.nan, np.nan], dtype=np.float64)
+            return torch.tensor([torch.nan, torch.nan], dtype=torch.float64)
 
     # Check age range
     if observation_time <= 0:
         raise ValueError("Observation time must be positive.")
 
-    # Normalize ages and spine_ages to numpy arrays so len() and vectorized ops are valid
-    ages = np.atleast_1d(np.array(ages, dtype=np.float64))
+    # Normalize ages and spine_ages to tensors so len() and vectorized ops are valid
+    ages = ensure_1d_tensor(ages)
     if spine_ages is not None:
-        spine_ages = np.atleast_1d(np.array(spine_ages, dtype=np.float64))
+        spine_ages = ensure_1d_tensor(spine_ages)
 
-    if np.any(ages < 0) or np.any(ages > observation_time):
+    if torch.any(ages < 0) or torch.any(ages > observation_time):
         raise ValueError("Ages must be in the range [0, observation_time].")
 
     if spine_ages is not None and (
-        np.any(spine_ages < 0) or np.any(spine_ages > observation_time)
+        torch.any(spine_ages < 0) or torch.any(spine_ages > observation_time)
     ):
         raise ValueError("Spine ages must be in the range [0, observation_time].")
 
     # Total number of observed manuscripts
     if ns is None:
-        total_pop_size = len(np.atleast_1d(ages))
-        ns = np.array([total_pop_size], dtype=np.int64)
+        total_pop_size = len(ages)
+        ns = torch.tensor([total_pop_size], dtype=torch.int64)
     else:
-        total_pop_size = sum(ns)
+        total_pop_size = int(torch.as_tensor(ns, dtype=torch.int64).sum().item())
+        ns = torch.as_tensor(ns, dtype=torch.int64)
 
-    if not total_pop_size == len(np.atleast_1d(ages)) + (
-        len(np.atleast_1d(spine_ages)) if spine_ages is not None else 0
+    if not total_pop_size == len(ages) + (
+        len(spine_ages) if spine_ages is not None else 0
     ):
         raise ValueError(
             "Sum of the populations must equal the number of ages provided."
@@ -359,11 +364,11 @@ def log_likelihood_gradient(
         return grad_log_P_n_T
 
     # Sequential computation for small datasets
-    grad_ages = np.zeros(2, dtype=np.float64)
+    grad_ages = torch.zeros(2, dtype=torch.float64)
     if is_ordered or (spine_ages is not None):
         if is_ordered:
-            ages = np.array(ages, dtype=np.float64)
-            spine_ages = np.array([ages[0]], dtype=np.float64)
+            ages = torch.as_tensor(ages, dtype=torch.float64)
+            spine_ages = torch.tensor([ages[0]], dtype=torch.float64)
             ages = ages[1:]
         assert spine_ages is not None
         grad_ages += calculate_ages_log_lik_derivatives(
@@ -374,7 +379,7 @@ def log_likelihood_gradient(
             are_spines=True,
         )
 
-    if len(np.atleast_1d(ages)) > 0:
+    if len(ages) > 0:
         grad_ages += calculate_ages_log_lik_derivatives(
             birth_rate,
             death_rate,
@@ -387,64 +392,60 @@ def log_likelihood_gradient(
 
 
 def negative_log_likelihood(
-    birth_rates: NDArray[np.float64] | float,
-    death_rates: NDArray[np.float64] | float,
-    ages: NDArray[np.float64] | float,
-    times: NDArray[np.float64] | float,
-    spine_ages: NDArray[np.float64] | None = None,
-    ns: NDArray[np.int64] | None = None,
+    birth_rates: torch.Tensor | float,
+    death_rates: torch.Tensor | float,
+    ages: torch.Tensor | float,
+    times: torch.Tensor | float,
+    spine_ages: torch.Tensor | None = None,
+    ns: torch.Tensor | None = None,
     is_ordered: bool = False,
     log_scale_params: bool = False,
-) -> np.float64:
+) -> torch.Tensor:
     """
     Compute the negative log-likelihood for use with numerical optimizers.
 
     This function is a thin wrapper around log_likelihood that negates its
-    value so it can be minimized by optimizers such as scipy.optimize.
-    It expects a two-element parameter vector representing the model's
-    birth and death rates (or their logarithms, see log_scale_params).
+    value so it can be minimized by optimizers.
+    It expects the model's birth and death rates (or their logarithms, see log_scale_params).
 
     Parameters
     ----------
-    params : numpy.ndarray[np.float64]
-        Parameter vector of length 2 containing [birth_rate, death_rate].
-        If `log_scale_params` is True then these are the logarithms of the
-        original parameters; otherwise they are interpreted on their natural scale.
-        If `params` has length != 2 the function returns np.inf.
-    ages : numpy.ndarray[np.float64] | float
-        Ages of observed manuscripts (or a single age). May be a 1-D array
+    birth_rates : torch.Tensor | float
+        Birth rate parameter(s) λ > 0, or log(λ) if log_scale_params is True.
+    death_rates : torch.Tensor | float
+        Death rate parameter(s) μ > 0, or log(μ) if log_scale_params is True.
+    ages : torch.Tensor | float
+        Ages of observed manuscripts (or a single age). May be a 1-D tensor
         of observation ages used by the likelihood computation.
-    observation_time : float
-        The observation time T (end of the observation window) used by the model.
-    spine_ages : numpy.ndarray[np.float64] | None, optional
+    times : torch.Tensor | float
+        Observation times (> 0) at which the population/ages are observed.
+    spine_ages : torch.Tensor | None, optional
         Optional spine ages required by some likelihood formulations. If not
         provided, a default or simplified likelihood is computed (depending on
         the underlying log_likelihood implementation).
-    ns : numpy.ndarray[np.int64] | None, optional
+    ns : torch.Tensor | None, optional
         Optional counts/weights associated with each age. If omitted, each
         observation is treated as a single count.
     is_ordered : bool, default False
         If True, interpret `ages` (and `ns` when provided) as ordered-event data
         and use the ordered-data likelihood branch in the underlying function.
     log_scale_params : bool, default False
-        If True, indicates that `params` are provided in log-space and the
+        If True, indicates that parameters are provided in log-space and the
         underlying log_likelihood should convert them back to the original scale
         before evaluating the likelihood.
 
     Returns
     -------
-    numpy.float64
+    torch.Tensor
         The negative log-likelihood (i.e. -log_likelihood). This is returned
-        as a numpy.float64 scalar suitable for use with scipy optimizers.
-        If `params` does not have length 2, returns numpy.inf.
+        as a torch.Tensor scalar suitable for use with optimizers.
 
     Notes
     -----
-    - This wrapper does not validate parameter bounds beyond checking length;
+    - This wrapper does not validate parameter bounds beyond checking for validity;
       any additional constraints (e.g. non-negativity) should be enforced by the
       optimizer or by inspecting the returned value.
-    - Returns -inf (as np.inf when negated) for numerical issues in the underlying
-      log_likelihood computation.
+    - Returns inf for numerical issues in the underlying log_likelihood computation.
     - Programming errors in underlying functions will raise exceptions.
     - Designed to be cheap to call repeatedly by optimization routines.
     """

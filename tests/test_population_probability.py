@@ -17,11 +17,11 @@ from src.inf_bp_texts.models import BirthDeathProcess, calculate_populations_log
 class TestPopulationProbability:
     """Test suite for population probability calculations."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.model = BirthDeathProcess([100.0, 200.0, 300.0], 1000.0)
 
-    def test_input_validation(self):
+    def test_input_validation(self) -> None:
         """Test that invalid inputs return -inf."""
         # Negative birth rate
         result = calculate_populations_log_lik(-0.1, 0.05, 100.0, 10)
@@ -47,7 +47,7 @@ class TestPopulationProbability:
         result = calculate_populations_log_lik(0.1, 0.05, 0.0, 10)
         assert result == -np.inf
 
-    def test_zero_birth_rate_n_zero(self):
+    def test_zero_birth_rate_n_zero(self) -> None:
         """Zero birth rate with n=0 stays finite."""
         result = calculate_populations_log_lik(0.0, 0.05, 100.0, 0)
         assert np.isfinite(result)
@@ -55,18 +55,18 @@ class TestPopulationProbability:
             result, calculate_extinction_pr(0.0, 0.05, 100.0, return_log_prob=True)
         )
 
-    def test_zero_birth_rate_n_one(self):
+    def test_zero_birth_rate_n_one(self) -> None:
         """Zero birth rate with n=1 stays finite."""
         result = calculate_populations_log_lik(0.0, 0.05, 100.0, 1)
         assert np.isfinite(result)
         assert_allclose(result, np.log1p(-calculate_extinction_pr(0.0, 0.05, 100.0)))
 
-    def test_zero_birth_rate_high_n(self):
+    def test_zero_birth_rate_high_n(self) -> None:
         """Zero birth rate with n>1 returns -inf."""
         result = calculate_populations_log_lik(0.0, 0.05, 100.0, 10)
         assert result == -np.inf
 
-    def test_finite_results(self):
+    def test_finite_results(self) -> None:
         """Test that valid inputs produce finite results."""
         test_cases = [
             # Removed cases that lead to β_t = 1 (mathematical boundary)
@@ -82,7 +82,7 @@ class TestPopulationProbability:
                 f"Non-finite result for λ={lambda_param}, μ={mu_param}, T={time}, n={n}"
             )
 
-    def test_nearly_equal_rates(self):
+    def test_nearly_equal_rates(self) -> None:
         """Test the special case where λ ≈ μ."""
         # Test case where rates are very close
         lambda_param = 1.0
@@ -97,7 +97,7 @@ class TestPopulationProbability:
             "Nearly equal rates should be handled with perturbation"
         )
 
-    def test_population_size_effect(self):
+    def test_population_size_effect(self) -> None:
         """Test that larger populations generally have lower probabilities."""
         lambda_param, mu_param, time = 0.1, 0.05, 100.0
 
@@ -116,7 +116,7 @@ class TestPopulationProbability:
                 f"Probability should decrease: P_{n1}={prob1}, P_{n2}={prob2}"
             )
 
-    def test_time_effect(self):
+    def test_time_effect(self) -> None:
         """Test the effect of different observation times."""
         lambda_param, mu_param, n = 0.1, 0.05, 10
 
@@ -130,7 +130,7 @@ class TestPopulationProbability:
         # Results should be finite for all times
         assert all(np.isfinite(prob) for _, prob in results)
 
-    def test_alpha_beta_bounds(self):
+    def test_alpha_beta_bounds(self) -> None:
         """Test that α_t and β_t stay within valid bounds [0, 1]."""
         # We'll test this indirectly by ensuring the function doesn't return -inf
         # when it should produce valid results
@@ -151,7 +151,7 @@ class TestPopulationProbability:
                 f"T={time}, n={n}, got {result}"
             )
 
-    def test_formula_consistency(self):
+    def test_formula_consistency(self) -> None:
         """Test that our implementation matches manual calculation."""
         lambda_param, mu_param, time, n = 0.1, 0.05, 100.0, 5
 
@@ -174,7 +174,7 @@ class TestPopulationProbability:
             f"manual={manual_result}, function={function_result}"
         )
 
-    def test_extreme_parameters(self):
+    def test_extreme_parameters(self) -> None:
         """Test behavior with extreme but valid parameters."""
         # Very small rates
         result = calculate_populations_log_lik(1e-6, 1e-7, 1000.0, 5)
@@ -193,7 +193,7 @@ class TestPopulationProbability:
             "Large n should either be very small or finite"
         )
 
-    def test_n_equals_one_special_case(self):
+    def test_n_equals_one_special_case(self) -> None:
         """Test the special case where n=1."""
         # When n=1, the (n-1)*log(β_t) term becomes 0
         lambda_param, mu_param, time = 0.1, 0.05, 100.0
@@ -239,7 +239,7 @@ class TestPopulationProbability:
         # For birth-death processes, log probabilities should be negative
         assert result <= 0, f"Log probability should be non-positive, got {result}"
 
-    def test_numerical_stability(self):
+    def test_numerical_stability(self) -> None:
         """Test numerical stability edge cases."""
         # Case where exp_term might be very large
         lambda_param, mu_param = 1.0, 0.1  # λ >> μ
@@ -254,7 +254,7 @@ class TestPopulationProbability:
         )
         assert not np.isnan(result), "Result should not be NaN"
 
-    def test_boundary_conditions(self):
+    def test_boundary_conditions(self) -> None:
         """Test conditions that might cause boundary issues."""
         # Test case where α_t or β_t might approach 1
         # This is a challenging case numerically
@@ -272,7 +272,7 @@ class TestPopulationProbability:
             "Boundary case should be handled gracefully"
         )
 
-    def test_beta_equals_one_cases(self):
+    def test_beta_equals_one_cases(self) -> None:
         """Test cases where β_t = 1 (should return -inf)."""
         # These are mathematically valid cases that lead to β_t = 1
         # They should return -inf because log(1 - β_t) = log(0) = -∞
@@ -293,7 +293,7 @@ class TestPopulationProbability:
 class TestPopulationProbabilityIntegration:
     """Integration tests with the full BirthDeathProcess class."""
 
-    def test_integration_with_log_likelihood(self):
+    def test_integration_with_log_likelihood(self) -> None:
         """Test that population probability works correctly in log-likelihood calculation."""
         model = BirthDeathProcess([100.0, 200.0, 300.0], 1000.0)
 
@@ -311,7 +311,7 @@ class TestPopulationProbabilityIntegration:
         # Should be finite or -inf, but not NaN
         assert not np.isnan(log_likelihood_value), "Log-likelihood should not be NaN"
 
-    def test_population_probability_in_context(self):
+    def test_population_probability_in_context(self) -> None:
         """Test population probability calculation in realistic manuscript context."""
         # Realistic medieval manuscript parameters
         lambda_param = 0.01  # 1 manuscript per 100 years

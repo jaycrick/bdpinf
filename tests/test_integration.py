@@ -16,7 +16,7 @@ from inf_bp_texts.simulation import simulate_birth_death_process
 class TestIntegration:
     """Integration tests for complete workflows."""
 
-    def test_full_workflow_simulation_and_fitting(self):
+    def test_full_workflow_simulation_and_fitting(self) -> None:
         """Test complete workflow: simulate data, then fit parameters."""
         # Step 1: Create a process with known parameters for simulation
         true_birth_rate = 0.05
@@ -42,7 +42,7 @@ class TestIntegration:
                     assert np.isfinite(fitted_birth)
                     assert np.isfinite(fitted_death)
 
-    def test_manuscript_lifecycle_workflow(self):
+    def test_manuscript_lifecycle_workflow(self) -> None:
         """Test workflow for tracking manuscript lifecycle."""
         # Create with initial data
         creation_times = [
@@ -89,7 +89,7 @@ class TestIntegration:
         assert all(np.isfinite(pred) for pred in predictions)
         assert all(pred <= 0 for pred in predictions)
 
-    def test_external_data_processing_workflow(self):
+    def test_external_data_processing_workflow(self) -> None:
         """Test workflow for processing external manuscript data."""
         # Create realistic manuscript data
         manuscript_dates = np.array(
@@ -133,7 +133,7 @@ class TestIntegration:
         assert len(predictions) == 10
         assert all(np.isfinite(pred) for pred in predictions)
 
-    def test_model_comparison_workflow(self):
+    def test_model_comparison_workflow(self) -> None:
         """Test workflow for comparing different models manually."""
         # Create test data with more realistic parameters
         np.random.seed(42)  # For reproducibility
@@ -189,7 +189,7 @@ class TestIntegration:
             )
             assert True  # Test passes even if no models fit
 
-    def test_parameter_sensitivity_analysis(self):
+    def test_parameter_sensitivity_analysis(self) -> None:
         """Test how parameter changes affect results."""
         creation_times = [100.0, 200.0, 300.0, 400.0, 500.0]
         final_time = 1000.0
@@ -224,7 +224,7 @@ class TestIntegration:
         unique_values = len(set(likelihoods))
         assert unique_values == 5  # All different
 
-    def test_data_quality_robustness(self):
+    def test_data_quality_robustness(self) -> None:
         """Test robustness to different data quality scenarios."""
         # Scenario 1: Very few data points
         sparse_ages = np.array([1000.0 - t for t in [500.0, 600.0]], dtype=np.float64)
@@ -250,7 +250,7 @@ class TestIntegration:
         assert isinstance(irregular_result, dict)
         assert "success" in irregular_result
 
-    def test_numerical_edge_cases(self):
+    def test_numerical_edge_cases(self) -> None:
         """Test numerical edge cases that might cause problems."""
         # Very small parameters
         final_time_small = 1000.0
@@ -295,7 +295,7 @@ class TestIntegration:
         )
         assert np.isfinite(large_ll) or large_ll == -np.inf
 
-    def test_state_consistency_throughout_workflow(self):
+    def test_state_consistency_throughout_workflow(self) -> None:
         """Test that object state remains consistent throughout operations."""
         creation_times = []
         final_time = 1000.0

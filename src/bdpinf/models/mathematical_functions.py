@@ -8,59 +8,62 @@ main BirthDeathProcess class for better testability and modularity.
 
 import numpy as np
 import scipy
+import torch
 from numpy.typing import NDArray
+
+from ..utils import ensure_1d_tensor
 
 
 def calculate_populations_log_lik(
-    lambda_params: NDArray[np.float64] | float,
-    mu_params: NDArray[np.float64] | float,
-    times: NDArray[np.float64] | float,
-    ns: NDArray[np.integer] | int,
-) -> np.float64:
+    lambda_params: torch.Tensor | float,
+    mu_params: torch.Tensor | float,
+    times: torch.Tensor | float,
+    ns: torch.Tensor | int,
+) -> torch.Tensor:
     """
     Calculate the log-probability (log-likelihood) of observing given population counts
     under a birth-and-death process, with support for piecewise-constant rate epochs.
 
     This function computes log p_n(T) for each count n in `ns` using closed-form
     expressions for the birth-and-death process probabilities. The computed log-probabilities
-    are summed and returned as a single np.float64 value. Invalid or numerically
-    unstable inputs return -inf (np.float64(-np.inf)).
+    are summed and returned as a single torch.Tensor. Invalid or numerically
+    unstable inputs return -inf tensor.
+
+    Uses only PyTorch operations to preserve autograd support.
 
     Parameters
     ----------
-    lambda_params : float or NDArray[np.float64]
-        Birth rate(s) λ. Scalar for constant rate, array for piecewise-constant rates.
-        If `log_scale_params` is True, interpreted as log(λ).
-    mu_params : float or NDArray[np.float64]
-        Death rate(s) μ. Scalar for constant rate, array for piecewise-constant rates.
-        If `log_scale_params` is True, interpreted as log(μ).
-    times : float or NDArray[np.float64]
-        Time(s) T at which to evaluate the distribution. Scalar for single time point,
-        array for epoch end times in piecewise-constant model. Must be ≥ 0 and increasing.
-    ns : int or NDArray[np.integer]
+    lambda_params : torch.Tensor | float
+        Birth rate(s) λ. Scalar for constant rate, 1D tensor for piecewise-constant rates.
+    mu_params : torch.Tensor | float
+        Death rate(s) μ. Scalar for constant rate, 1D tensor for piecewise-constant rates.
+    times : torch.Tensor | float
+        Time(s) T. Scalar for single time point, 1D tensor of epoch end times.
+        Must be ≥ 0 and strictly increasing.
+    ns : torch.Tensor | int
         Non-negative population count(s) for which to evaluate log-probabilities.
 
     Returns
     -------
-    np.float64
-        Sum of log p_n(T) across provided `ns`. Returns -inf for invalid inputs.
+    torch.Tensor
+        Scalar tensor (shape ()) containing sum of log p_n(T) across provided `ns`.
+        dtype: torch.float64. Fully differentiable via PyTorch autograd.
 
     Notes
     -----
     Handles λ ≈ μ limiting case for numerical stability. Array inputs must have
-    matching lengths. Returns -inf for numerical issues, raises exceptions for
-    programming errors.
+    matching lengths. Returns -inf tensor for numerical issues.
     """
-    # Convert scalar inputs to arrays for consistent handling
-    lambda_params = np.atleast_1d(lambda_params).ravel()
-    mu_params = np.atleast_1d(mu_params).ravel()
-    times = np.atleast_1d(times).ravel()
-    ns = np.atleast_1d(ns).ravel()
+    # Convert scalar inputs to tensors and ensure 1D arrays
+    lambda_params = ensure_1d_tensor(lambda_params)
+    mu_params = ensure_1d_tensor(mu_params)
+    times = ensure_1d_tensor(times)
+    ns = ensure_1d_tensor(ns)
 
     # Input validation
-    if np.any(ns < 0):
+    if torch.any(ns < 0):
         raise ValueError(f"Population counts ns must be non-negative. Got ns: {ns}")
-    if np.any(times < 0):
+    if torch.any(times < 0):
         raise ValueError(f"Times must be non-negative. Got times: {times}")
     if not (len(lambda_params) == len(mu_params) == len(times)):
         raise ValueError(
@@ -70,169 +73,173 @@ def calculate_populations_log_lik(
         )
 
     if len(times) > 1:
-        if np.any(lambda_params < 0) or np.any(mu_params < 0):
-            return np.float64(-np.inf)
-        lambda_val_array = lambda_params
-        mu_val_array = mu_params
-        if not np.all(np.diff(times) > 0):
+        # Multi-epoch case
+        if torch.any(lambda_params < 0) or torch.any(mu_params < 0):
+            return torch.tensor(float("-inf"), dtype=torch.float64)
+
+        if not torch.all(torch.diff(times) > 0):
             raise ValueError(
                 f"Epoch times must be strictly monotonically increasing. "
                 f"Got time array: {times}"
             )
 
-        alpha_t = calculate_extinction_pr(lambda_val_array, mu_val_array, times)
-
-        beta_t = 1 - _population_geometric_parameter(
-            lambda_val_array, mu_val_array, times
-        )
+        alpha_t = calculate_extinction_pr(lambda_params, mu_params, times)
+        beta_t = 1 - _population_geometric_parameter(lambda_params, mu_params, times)
     else:
-        lambda_params = lambda_params[0]
-        mu_params = mu_params[0]
-        times = times[0]
-        # Handle parameter scaling and validation
-        if np.any(lambda_params < 0) or np.any(mu_params < 0):
-            return np.float64(-np.inf)
-        lambda_val = lambda_params
-        mu_val = mu_params
+        # Single-epoch case
+        lambda_val = lambda_params[0]
+        mu_val = mu_params[0]
+        time_val = times[0]
 
-        if np.isclose(lambda_val, mu_val, rtol=1e-12):
-            # Limiting case: λ ≈ μ (includes λ = μ = 0)
-            rate_time_product = lambda_val * times
-            alpha_t = beta_t = np.float64(rate_time_product / (1 + rate_time_product))
+        # Validate positive parameters
+        if lambda_val < 0 or mu_val < 0:
+            return torch.tensor(float("-inf"), dtype=torch.float64)
+
+        if torch.isclose(lambda_val, mu_val, rtol=1e-12):
+            # Limiting case: λ ≈ μ
+            avg_rate = (lambda_val + mu_val) / 2
+            rate_time_product = avg_rate * time_val
+            alpha_t = beta_t = rate_time_product / (1 + rate_time_product)
         else:
             # General case: λ ≠ μ
             growth_rate = lambda_val - mu_val
-            exponent = growth_rate * times
-            exp_term = np.exp(exponent)
-            if not np.isfinite(exp_term):
-                return np.float64(-np.inf)
+            exponent = growth_rate * time_val
+            exp_term = torch.exp(exponent)
+
+            if not torch.isfinite(exp_term):
+                return torch.tensor(float("-inf"), dtype=torch.float64)
+
             denominator = lambda_val * exp_term - mu_val
+
             # Guard against division by zero
             if mu_val == 0.0:
-                alpha_t = np.float64(0.0)
-                beta_t = np.float64(lambda_val * (exp_term - 1) / denominator)
+                alpha_t = torch.tensor(0.0, dtype=torch.float64)
+                beta_t = lambda_val * (exp_term - 1) / denominator
             else:
-                alpha_t = np.float64(mu_val * (exp_term - 1) / denominator)
+                alpha_t = mu_val * (exp_term - 1) / denominator
+                beta_t = (lambda_val / mu_val) * alpha_t
 
-                # Calculate β_t = (λ/μ) * α_t
-                beta_t = np.float64((lambda_val / mu_val) * alpha_t)
-
-    # Validate α_t and β_t are in valid range (allow β_t = 0 when n ≤ 1)
+    # Validate α_t and β_t are in valid range
     if not (0 <= alpha_t <= 1):
         raise ValueError(f"Computed α_t out of bounds [0, 1]: α_t={alpha_t}")
     if not (0 <= beta_t <= 1):
         raise ValueError(f"Computed β_t out of bounds [0, 1]: β_t={beta_t}")
-    if beta_t == 0.0 and np.any(ns > 1):
-        return np.float64(-np.inf)
+    if beta_t == 0.0 and torch.any(ns > 1):
+        return torch.tensor(float("-inf"), dtype=torch.float64)
 
     # Initialize log probability array
-    log_pr = np.zeros_like(ns, dtype=np.float64)
+    log_pr = torch.zeros_like(ns, dtype=torch.float64)
 
     # Handle n == 0 case
     zero_mask = ns == 0
-    if np.any(zero_mask):
-        log_pr[zero_mask] = np.log(alpha_t)
+    if torch.any(zero_mask):
+        log_pr[zero_mask] = torch.log(alpha_t)
 
     # Handle n > 0 case
-    nonzero_mask = np.invert(zero_mask)
-    if np.any(nonzero_mask):
-        log_term1 = np.log1p(-alpha_t)
-        log_term2 = np.log1p(-beta_t)
-        log_term3 = np.where(ns == 1, 0.0, (ns - 1) * np.log(beta_t))
+    nonzero_mask = ~zero_mask
+    if torch.any(nonzero_mask):
+        log_term1 = torch.log1p(-alpha_t)
+        log_term2 = torch.log1p(-beta_t)
+        log_term3 = torch.where(
+            ns == 1,
+            torch.tensor(0.0, dtype=torch.float64),
+            (ns - 1) * torch.log(beta_t),
+        )
 
         # Check all terms are finite
         if not (
-            np.isfinite(log_term1)
-            and np.isfinite(log_term2)
-            and np.all(np.isfinite(log_term3[nonzero_mask]))
+            torch.isfinite(log_term1)
+            and torch.isfinite(log_term2)
+            and torch.all(torch.isfinite(log_term3[nonzero_mask]))
         ):
-            return np.float64(-np.inf)
+            return torch.tensor(float("-inf"), dtype=torch.float64)
 
         # Broadcast full expression then mask to preserve original shape
         log_pr[nonzero_mask] = (log_term1 + log_term2 + log_term3)[nonzero_mask]
 
     # Final numerical check
-    if not np.all(np.isfinite(log_pr)):
-        return np.float64(-np.inf)
+    if not torch.all(torch.isfinite(log_pr)):
+        return torch.tensor(float("-inf"), dtype=torch.float64)
 
-    return np.float64(np.sum(log_pr))
+    return torch.sum(log_pr)
 
 
 def calculate_populations_log_lik_derivatives(
-    lambda_param: float,
-    mu_param: float,
-    time: float,
-    ns: NDArray[np.int64] | int,
-) -> NDArray[np.float64]:
+    lambda_param: torch.Tensor | float,
+    mu_param: torch.Tensor | float,
+    time: torch.Tensor | float,
+    ns: torch.Tensor | int,
+) -> torch.Tensor:
     """
     Calculate derivatives of log population probabilities with respect to λ and μ.
 
+    Uses only PyTorch operations to preserve autograd support.
+
     Parameters
     ----------
-    lambda_param : float
+    lambda_param : torch.Tensor | float
         Birth rate λ.
-    mu_param : float
+    mu_param : torch.Tensor | float
         Death rate μ.
-    time : float
+    time : torch.Tensor | float
         Time t at which to evaluate (t ≥ 0).
-    ns : int or NDArray[np.int64]
+    ns : torch.Tensor | int
         Population count(s) to evaluate.
 
     Returns
     -------
-    NDArray[np.float64]
-        Array [∂/∂λ, ∂/∂μ] containing summed derivatives across all `ns`.
+    torch.Tensor
+        Tensor [∂/∂λ, ∂/∂μ] containing summed derivatives across all `ns`.
+        Shape: (2,), dtype: torch.float64. Supports automatic differentiation.
 
     Notes
     -----
     Vectorized over `ns`. Handles λ ≈ μ limiting case for numerical stability.
     """
+    # Convert inputs to tensors
+    lambda_val = ensure_1d_tensor(lambda_param)
+    mu_val = ensure_1d_tensor(mu_param)
+    time_t = ensure_1d_tensor(time)
+    ns = ensure_1d_tensor(ns)
 
-    # Handle parameter scaling
-    lambda_val = lambda_param
-    mu_val = mu_param
-
-    # Ensure ns is an array for consistent masking
-    ns = np.atleast_1d(ns)
-
-    d_lambda = np.zeros_like(ns, dtype=np.float64)
-    d_mu = np.zeros_like(ns, dtype=np.float64)
+    d_lambda = torch.zeros_like(ns, dtype=torch.float64)
+    d_mu = torch.zeros_like(ns, dtype=torch.float64)
 
     zero_mask = ns == 0
-    non_zero_mask = np.invert(zero_mask)
+    non_zero_mask = ~zero_mask
 
     # Pre-compute isclose check once (avoids repeated calls in vectorized operations)
-    is_critical = np.isclose(lambda_val, mu_val, rtol=1e-14)
+    is_critical = torch.isclose(lambda_val, mu_val, rtol=1e-14).item()
 
     if is_critical:
         # Limiting case: λ ≈ μ
         # α_t = β_t = λT/(1 + λT)
 
-        if np.any(zero_mask):
+        if torch.any(zero_mask):
             # For n=0: log p_0 = log(α_t) = log(λT) - log(1 + λT)
             # ∂/∂λ = 1/λ - T/(1 + λT) = 1/(λ(1 + λT))
-            d_lambda[zero_mask] = 1 / (lambda_val * (1 + lambda_val * time))
+            d_lambda[zero_mask] = 1 / (lambda_val * (1 + lambda_val * time_t))
             # When λ = μ, both derivatives are the same
             d_mu[zero_mask] = d_lambda[zero_mask]
 
-        if np.any(non_zero_mask):
+        if torch.any(non_zero_mask):
             # Extract only non-zero n values
             ns_nonzero = ns[non_zero_mask]
             # For n>0: log p_n = (n-1)log(λT) - (n+1)log(1+λT)
             # ∂/∂λ = (n-1)/λ - (n+1)T/(1+λT) = [n - 1 - 2λT]/(λ(1+λT))
-            numerator = ns_nonzero - 1 - 2 * lambda_val * time
-            denominator = lambda_val * (1 + lambda_val * time)
+            numerator = ns_nonzero - 1 - 2 * lambda_val * time_t
+            denominator = lambda_val * (1 + lambda_val * time_t)
             d_lambda[non_zero_mask] = numerator / denominator
             # When λ = μ, both derivatives are the same
             d_mu[non_zero_mask] = d_lambda[non_zero_mask]
 
-        return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
+        return torch.stack([torch.sum(d_lambda), torch.sum(d_mu)])
 
     # General case: λ ≠ μ
     growth_rate = lambda_val - mu_val
-    exp_rT = np.exp(growth_rate * time)
+    exp_rT = torch.exp(growth_rate * time_t)
 
-    if np.any(zero_mask):
+    if torch.any(zero_mask):
         # For n=0: d log(α_t) / d param = (1/α_t) * dα_t/d param
 
         # α_t = μ(e^{rT} - 1) / (λe^{rT} - μ)
@@ -242,20 +249,21 @@ def calculate_populations_log_lik_derivatives(
         d_alpha_d_lambda = (
             mu_val
             * exp_rT
-            * (growth_rate * time - exp_rT + 1)
+            * (growth_rate * time_t - exp_rT + 1)
             / (lambda_val * exp_rT - mu_val) ** 2
         )
 
         # ∂α_t/∂μ = e^{rT}[λ(e^{rT} - 1) - μT(λ - μ)] / (λe^{rT} - μ)²
         d_alpha_d_mu = (
             exp_rT
-            * (lambda_val * (exp_rT - 1) - mu_val * time * growth_rate)
+            * (lambda_val * (exp_rT - 1) - mu_val * time_t * growth_rate)
             / (lambda_val * exp_rT - mu_val) ** 2
         )
 
         d_lambda[zero_mask] = d_alpha_d_lambda / alpha_t
         d_mu[zero_mask] = d_alpha_d_mu / alpha_t
-    if np.any(non_zero_mask):
+
+    if torch.any(non_zero_mask):
         # Extract only non-zero n values for computation
         ns_nonzero = ns[non_zero_mask]
 
@@ -269,12 +277,12 @@ def calculate_populations_log_lik_derivatives(
         d_alpha_d_lambda = (
             mu_val
             * exp_rT
-            * (growth_rate * time - exp_rT + 1)
+            * (growth_rate * time_t - exp_rT + 1)
             / (lambda_val * exp_rT - mu_val) ** 2
         )
         d_alpha_d_mu = (
             exp_rT
-            * (lambda_val * (exp_rT - 1) - mu_val * time * growth_rate)
+            * (lambda_val * (exp_rT - 1) - mu_val * time_t * growth_rate)
             / (lambda_val * exp_rT - mu_val) ** 2
         )
 
@@ -306,44 +314,70 @@ def calculate_populations_log_lik_derivatives(
         d_lambda[non_zero_mask] = d_lambda_nonzero
         d_mu[non_zero_mask] = d_mu_nonzero
 
-    return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
+    return torch.stack([torch.sum(d_lambda), torch.sum(d_mu)])
 
 
 def calculate_non_spine_ages_log_lik(
-    lambda_params: NDArray[np.float64] | float,
-    mu_params: NDArray[np.float64] | float,
-    ages_t: NDArray[np.float64] | float,
-    times: NDArray[np.float64] | float,
-) -> np.float64:
+    lambda_params: torch.Tensor | float,
+    mu_params: torch.Tensor | float,
+    ages_t: torch.Tensor | float,
+    times: torch.Tensor | float,
+) -> torch.Tensor:
     """
     Calculate log-likelihood of manuscript ages for non-spine individuals.
 
+    Uses only PyTorch operations to preserve autograd support.
+
     Parameters
     ----------
-    lambda_params : float or NDArray[np.float64]
-        Birth rate(s) λ.
-    mu_params : float or NDArray[np.float64]
-        Death rate(s) μ.
-    ages_t : float or NDArray[np.float64]
-        Manuscript age(s) t (t ≥ 0).
-    times : float or NDArray[np.float64]
-        Observation time(s) T. Must satisfy T ≥ t for all ages.
+    lambda_params : torch.Tensor | float
+        Birth rate(s) λ. Scalar for single epoch, 1D tensor for piecewise-constant rates.
+        All values must be positive.
+    mu_params : torch.Tensor | float
+        Death rate(s) μ. Scalar for single epoch, 1D tensor for piecewise-constant rates.
+        All values must be positive.
+    ages_t : torch.Tensor | float
+        Manuscript age(s) t. Scalar or 1D tensor of ages (t ≥ 0).
+        All ages must satisfy 0 ≤ t ≤ T.
+    times : torch.Tensor | float
+        Observation time(s) T. Scalar for single epoch, 1D tensor of strictly increasing
+        epoch end times for piecewise-constant model.
 
     Returns
     -------
-    np.float64
-        Summed log-likelihood across ages. Returns -inf for invalid inputs.
+    torch.Tensor
+        Scalar tensor (shape ()) containing summed log-likelihood across ages.
+        dtype: torch.float64. Fully differentiable via PyTorch autograd.
+        Returns -inf for numerically invalid inputs.
+
+    Raises
+    ------
+    ValueError
+        If array inputs have mismatched lengths, times are not strictly increasing,
+        or ages fall outside [0, T].
 
     Notes
     -----
-    Handles λ ≈ μ limiting case for numerical stability. Supports piecewise-constant
-    rates via array inputs.
+    - Handles λ ≈ μ limiting case for numerical stability using log1p and expm1.
+    - Supports single-epoch (scalar) or multi-epoch (array) piecewise-constant rates.
+    - Multi-epoch case uses time-reversal transformation to reduce to extinction likelihood.
+    - All operations preserve PyTorch's computational graph for gradient computation.
+
+    Examples
+    --------
+    Single-epoch case:
+    >>> lambda_val = torch.tensor(0.1, requires_grad=True)
+    >>> mu_val = torch.tensor(0.05, requires_grad=True)
+    >>> ages = torch.tensor([10.0, 20.0, 30.0])
+    >>> T = 100.0
+    >>> log_lik = calculate_non_spine_ages_log_lik(lambda_val, mu_val, ages, T)
+    >>> log_lik.backward()  # Compute gradients w.r.t. lambda_val and mu_val
     """
     # Normalize to 1D arrays so scalar inputs still support indexing
-    lambda_params = np.atleast_1d(np.asarray(lambda_params, dtype=np.float64)).ravel()
-    mu_params = np.atleast_1d(np.asarray(mu_params, dtype=np.float64)).ravel()
-    times = np.atleast_1d(np.asarray(times, dtype=np.float64)).ravel()
-    ages_t = np.atleast_1d(np.asarray(ages_t, dtype=np.float64)).ravel()
+    lambda_params = ensure_1d_tensor(lambda_params)
+    mu_params = ensure_1d_tensor(mu_params)
+    times = ensure_1d_tensor(times)
+    ages_t = ensure_1d_tensor(ages_t)
 
     if not (lambda_params.shape == mu_params.shape == times.shape):
         raise ValueError(
@@ -354,10 +388,12 @@ def calculate_non_spine_ages_log_lik(
 
     end_time = times[-1]
 
-    if np.any(np.diff(np.insert(times, 0, 0.0)) <= 0):
+    if torch.any(
+        torch.diff(torch.cat([torch.tensor([0.0], dtype=torch.float64), times])) <= 0
+    ):
         raise ValueError(f"times must be strictly increasing. Got times: {times}")
     # Input validation
-    if np.any(ages_t < 0) or np.any(ages_t > end_time):
+    if torch.any(ages_t < 0) or torch.any(ages_t > end_time):
         raise ValueError(f"ages_t must be in [0, {end_time}]. Got ages_t: {ages_t}")
 
     if len(lambda_params) != len(mu_params):
@@ -374,49 +410,14 @@ def calculate_non_spine_ages_log_lik(
         )
 
     if len(times) > 1:
-        # # Multi-epoch case with piecewise-constant rates.
-        # # Generalized closed-form using cumulative integrals of λ and μ.
-        # epoch_starts = np.insert(times, 0, 0.0)[:-1]
-        # epoch_durations = times - epoch_starts
-
-        # cum_lambda_epochs = np.cumsum(lambda_params * epoch_durations)
-        # cum_mu_epochs = np.cumsum(mu_params * epoch_durations)
-        # cum_growth_T = np.sum((lambda_params - mu_params) * epoch_durations)
-
-        # denom = 1 - np.exp(-cum_growth_T)
-        # if denom == 0.0:
-        #     return np.float64(-np.inf)
-        # log_denominator = np.log(np.abs(denom))
-
-        # log_numerators = np.zeros_like(ages_t, dtype=np.float64)
-
-        # for i, t in enumerate(ages_t):
-        #     # Find epoch index j with epoch_starts[j] < t <= times[j]
-        #     j = int(np.searchsorted(times, t, side="left"))
-        #     # Accumulated integrals up to start of epoch j
-        #     cum_lambda_before = cum_lambda_epochs[j - 1] if j > 0 else 0.0
-        #     cum_mu_before = cum_mu_epochs[j - 1] if j > 0 else 0.0
-
-        #     # Add contribution within current epoch up to t
-        #     cum_lambda_t = cum_lambda_before + lambda_params[j] * (t - epoch_starts[j])
-        #     cum_mu_t = cum_mu_before + mu_params[j] * (t - epoch_starts[j])
-
-        #     lam_t = lambda_params[j]
-        #     mu_t = mu_params[j]
-
-        #     term1 = lam_t * np.exp(-cum_lambda_t)
-        #     term2 = mu_t * np.exp(-cum_growth_T) * np.exp(-cum_mu_t)
-        #     numer = term1 - term2
-
-        #     # Ensure consistent sign with denominator; otherwise invalid
-        #     if np.sign(numer) != np.sign(denom):
-        #         return np.float64(-np.inf)
-        #     log_numerators[i] = np.log(np.abs(numer))
-
-        # return np.float64(np.sum(log_numerators) - len(ages_t) * log_denominator)
-        inverted_times = np.flip(end_time - np.insert(times, 0, 0.0)[:-1])
-        reflected_birth_rates = np.flip(mu_params)
-        reflected_death_rates = np.flip(lambda_params)
+        # Multi-epoch case: use time-reversal transformation
+        inverted_times = torch.flip(
+            end_time
+            - torch.cat([torch.tensor([0.0], dtype=torch.float64), times])[:-1],
+            dims=[0],
+        )
+        reflected_birth_rates = torch.flip(mu_params, dims=[0])
+        reflected_death_rates = torch.flip(lambda_params, dims=[0])
         return calculate_log_lik_initial_lifetimes_given_extinction(
             ages_t,
             reflected_birth_rates,
@@ -424,32 +425,33 @@ def calculate_non_spine_ages_log_lik(
             inverted_times,
         )
 
-    # Handle parameter scaling
-    # Extract scalar values from single-element arrays (atleast_1d guarantees arrays)
-    lambda_scalar = float(lambda_params[0])
-    mu_scalar = float(mu_params[0])
+    # Single-epoch case
+    # Extract scalar tensors from single-element arrays (atleast_1d guarantees arrays)
+    lambda_val = lambda_params[0]
+    mu_val = mu_params[0]
 
     # Validate positive parameters
-    if lambda_scalar < 0 or mu_scalar <= 0:
-        return np.float64(-np.inf)
-    lambda_val = lambda_scalar
-    mu_val = mu_scalar
+    if lambda_val <= 0 or mu_val <= 0:
+        return torch.tensor(float("-inf"), dtype=torch.float64)
 
     # Pre-compute isclose check once (avoids repeated calls in vectorized operations)
-    is_critical = np.isclose(lambda_val, mu_val, rtol=1e-12)
+    is_critical = torch.isclose(lambda_val, mu_val, rtol=1e-12).item()
 
     # Check for numerical stability in parameter space
     if is_critical:
-        # Limiting case: λ ≈ μ
-
-        log_numerator = -lambda_val * ages_t + np.log(
-            1 + lambda_val * (end_time - ages_t)
-        )
-        log_denominator = np.log(end_time)
+        # Limiting case: λ ≈ μ - use average to preserve gradient for both parameters
+        # f(t) = [1 + λ(T-t)] / T * e^{-λt}
+        # log f(t) = log(1 + λ(T-t)) - log(T) - λt
+        # Using average ensures both lambda_val and mu_val are in the computation graph
+        avg_rate = (lambda_val + mu_val) / 2
+        log_numerator = -avg_rate * ages_t + torch.log1p(avg_rate * (end_time - ages_t))
+        log_denominator = torch.log(end_time)
 
         # Check for numerical validity
-        if not (np.all(np.isfinite(log_numerator)) and np.isfinite(log_denominator)):
-            return np.float64(-np.inf)
+        if not (
+            torch.all(torch.isfinite(log_numerator)) and torch.isfinite(log_denominator)
+        ):
+            return torch.tensor(float("-inf"), dtype=torch.float64)
 
     else:
         # General case: λ ≠ μ
@@ -457,56 +459,64 @@ def calculate_non_spine_ages_log_lik(
         growth_rate_T = growth_rate * end_time
 
         # Calculate numerator terms
-        numerator_term1 = lambda_val * np.exp(-lambda_val * ages_t)
-        numerator_term2 = mu_val * np.exp(-growth_rate_T) * np.exp(-mu_val * ages_t)
+        numerator_term1 = lambda_val * torch.exp(-lambda_val * ages_t)
+        numerator_term2 = (
+            mu_val * torch.exp(-growth_rate_T) * torch.exp(-mu_val * ages_t)
+        )
 
         numerator = numerator_term1 - numerator_term2
-        denominator = 1 - np.exp(-growth_rate_T)
+        denominator = 1 - torch.exp(-growth_rate_T)
 
-        if not np.any(np.sign(numerator) == np.sign(denominator)):
-            return np.float64(-np.inf)
+        # Check sign consistency
+        if not torch.all(torch.sign(numerator) == torch.sign(denominator)):
+            return torch.tensor(float("-inf"), dtype=torch.float64)
 
-        log_numerator = np.log(abs(numerator))
-        log_denominator = np.log(abs(denominator))
+        log_numerator = torch.log(torch.abs(numerator))
+        log_denominator = torch.log(torch.abs(denominator))
 
         # Check for numerical validity
-        if not (np.isfinite(log_numerator).all() and np.isfinite(log_denominator)):
-            return np.float64(-np.inf)
+        if not (
+            torch.all(torch.isfinite(log_numerator)) and torch.isfinite(log_denominator)
+        ):
+            return torch.tensor(float("-inf"), dtype=torch.float64)
 
     # Calculate final log density
-    log_density = np.sum(log_numerator - log_denominator)
+    log_density = torch.sum(log_numerator - log_denominator)
 
     # Final numerical check
-    if not np.isfinite(log_density):
-        return np.float64(-np.inf)
+    if not torch.isfinite(log_density):
+        return torch.tensor(float("-inf"), dtype=torch.float64)
 
-    return np.float64(log_density)
+    return log_density
 
 
 def calculate_spine_ages_log_lik(
-    lambda_params: NDArray[np.float64] | float,
-    mu_params: NDArray[np.float64] | float,
-    ages_t: NDArray[np.float64] | float,
-    times: NDArray[np.float64] | float,
-) -> np.float64:
+    lambda_params: torch.Tensor | float,
+    mu_params: torch.Tensor | float,
+    ages_t: torch.Tensor | float,
+    times: torch.Tensor | float,
+) -> torch.Tensor:
     """
     Calculate log-likelihood of manuscript ages for the "spine" individual.
 
+    Uses only PyTorch operations to preserve autograd support.
+
     Parameters
     ----------
-    lambda_params : float or NDArray[np.float64]
+    lambda_params : torch.Tensor | float
         Birth rate(s) λ.
-    mu_params : float or NDArray[np.float64]
+    mu_params : torch.Tensor | float
         Death rate(s) μ.
-    ages_t : float or NDArray[np.float64]
+    ages_t : torch.Tensor | float
         Manuscript age(s) t (0 ≤ t ≤ T).
-    times : float or NDArray[np.float64]
+    times : torch.Tensor | float
         Observation time(s) T.
 
     Returns
     -------
-    np.float64
-        Summed log-likelihood across ages. Returns -inf for invalid inputs.
+    torch.Tensor
+        Scalar tensor (shape ()) containing summed log-likelihood across ages.
+        dtype: torch.float64. Supports automatic differentiation.
 
     Notes
     -----
@@ -515,10 +525,10 @@ def calculate_spine_ages_log_lik(
     """
 
     # Normalize to 1D arrays so scalar inputs still support indexing
-    lambda_params = np.atleast_1d(np.asarray(lambda_params, dtype=np.float64)).ravel()
-    mu_params = np.atleast_1d(np.asarray(mu_params, dtype=np.float64)).ravel()
-    times = np.atleast_1d(np.asarray(times, dtype=np.float64)).ravel()
-    ages_t = np.atleast_1d(np.asarray(ages_t, dtype=np.float64)).ravel()
+    lambda_params = ensure_1d_tensor(lambda_params)
+    mu_params = ensure_1d_tensor(mu_params)
+    times = ensure_1d_tensor(times)
+    ages_t = ensure_1d_tensor(ages_t)
 
     if not (lambda_params.shape == mu_params.shape == times.shape):
         raise ValueError(
@@ -529,10 +539,12 @@ def calculate_spine_ages_log_lik(
 
     end_time = times[-1]
 
-    if np.any(np.diff(np.insert(times, 0, 0.0)) <= 0):
+    if torch.any(
+        torch.diff(torch.cat([torch.tensor([0.0], dtype=torch.float64), times])) <= 0
+    ):
         raise ValueError(f"times must be strictly increasing. Got times: {times}")
     # Input validation
-    if np.any(ages_t < 0) or np.any(ages_t > end_time):
+    if torch.any(ages_t < 0) or torch.any(ages_t > end_time):
         raise ValueError(f"ages_t must be in [0, {end_time}]. Got ages_t: {ages_t}")
 
     if len(lambda_params) != len(mu_params):
@@ -549,9 +561,13 @@ def calculate_spine_ages_log_lik(
         )
 
     if len(times) > 1:
-        inverted_times = np.flip(end_time - np.insert(times, 0, 0.0)[:-1])
-        reflected_birth_rates = np.flip(mu_params)
-        reflected_death_rates = np.flip(lambda_params)
+        inverted_times = torch.flip(
+            end_time
+            - torch.cat([torch.tensor([0.0], dtype=torch.float64), times])[:-1],
+            dims=[0],
+        )
+        reflected_birth_rates = torch.flip(mu_params, dims=[0])
+        reflected_death_rates = torch.flip(lambda_params, dims=[0])
         return calculate_log_lik_initial_lifetimes_given_non_extinction(
             lifetimes=ages_t,
             birth_rates=reflected_birth_rates,
@@ -560,101 +576,141 @@ def calculate_spine_ages_log_lik(
         )
 
     # Handle parameter scaling
-    # Extract scalar values from single-element arrays (atleast_1d guarantees arrays)
-    lambda_scalar = float(lambda_params[0])
-    mu_scalar = float(mu_params[0])
+    # Extract scalar tensors from single-element arrays (atleast_1d guarantees arrays)
+    lambda_t = lambda_params[0]
+    mu_t = mu_params[0]
 
     # Validate positive parameters
-    if lambda_scalar <= 0 or mu_scalar < 0:
-        return np.float64(-np.inf)
-    lambda_val = lambda_scalar
-    mu_val = mu_scalar
+    if lambda_t <= 0 or mu_t < 0:
+        return torch.tensor(float("-inf"), dtype=torch.float64)
 
     # Pre-compute isclose check once (avoids repeated calls in vectorized operations)
-    is_critical = np.isclose(lambda_val, mu_val, rtol=1e-12)
+    is_critical = torch.isclose(lambda_t, mu_t, rtol=1e-12).item()
 
     at_boundary = ages_t == end_time
-    not_at_boundary = np.invert(at_boundary)
+    not_at_boundary = torch.logical_not(at_boundary)
 
     if is_critical:
-        # Limiting case: λ ≈ μ
-        boundary_val = np.log1p(lambda_val * end_time) - lambda_val * end_time
-        log_density = np.where(
+        # Limiting case: λ ≈ μ - use average to preserve gradient for both parameters
+        # When λ ≈ μ, f(t) ≈ [1 + λ(T-t)]/T * e^{-λt}
+        # Using average ensures both lambda_t and mu_t are in the computation graph
+        avg_rate = (lambda_t + mu_t) / 2
+        boundary_val = torch.log1p(avg_rate * end_time) - avg_rate * end_time
+        log_density = torch.where(
             at_boundary,
             boundary_val,
-            2 * np.log(lambda_val) + np.log(ages_t) - lambda_val * ages_t,
+            2 * torch.log(avg_rate) + torch.log(ages_t) - avg_rate * ages_t,
         )
-        return np.sum(log_density, dtype=np.float64)
+        return torch.sum(log_density)
 
     # General case: λ ≠ μ
 
     # Initialize arrays for numerator and denominator
-    log_numerator = np.zeros_like(ages_t, dtype=np.float64)
-    denominator = lambda_val - mu_val
-    sign_denominator = np.sign(denominator)
-    log_denominator = np.log(np.abs(denominator))
+    log_numerator = torch.zeros_like(ages_t, dtype=torch.float64)
+    denom_t = lambda_t - mu_t
+    sign_denominator = torch.sign(denom_t)
+    log_denominator = torch.log(torch.abs(denom_t))
 
-    if np.any(at_boundary):
-        numerator_boundary = lambda_val * np.exp(-mu_val * end_time) - mu_val * np.exp(
-            -lambda_val * end_time
+    if torch.any(at_boundary):
+        numerator_boundary = lambda_t * torch.exp(-mu_t * end_time) - mu_t * torch.exp(
+            -lambda_t * end_time
         )
 
-        if not np.all(np.sign(numerator_boundary) == sign_denominator):
-            return np.float64(-np.inf)
+        if not torch.all(torch.sign(numerator_boundary) == sign_denominator):
+            return torch.tensor(float("-inf"), dtype=torch.float64)
 
-        log_numerator[at_boundary] = np.log(np.abs(numerator_boundary))
+        log_numerator[at_boundary] = torch.log(torch.abs(numerator_boundary))
 
-    if np.any(not_at_boundary):
-        numerator_1 = np.exp(-mu_val * end_time) - np.exp(-lambda_val * end_time)
+    if torch.any(not_at_boundary):
+        numerator_1 = torch.exp(-mu_t * end_time) - torch.exp(-lambda_t * end_time)
 
-        if not np.all(np.sign(numerator_1) == sign_denominator):
-            return np.float64(-np.inf)
+        if not torch.all(torch.sign(numerator_1) == sign_denominator):
+            return torch.tensor(float("-inf"), dtype=torch.float64)
 
         log_numerator[not_at_boundary] = (
-            np.log(lambda_val) + np.log(mu_val) + np.log(np.abs(numerator_1))
+            torch.log(lambda_t) + torch.log(mu_t) + torch.log(torch.abs(numerator_1))
         )
 
     # Check for numerical validity
-    if not (np.all(np.isfinite(log_numerator)) and np.isfinite(log_denominator)):
-        return np.float64(-np.inf)
+    if not (
+        torch.all(torch.isfinite(log_numerator)) and torch.isfinite(log_denominator)
+    ):
+        return torch.tensor(float("-inf"), dtype=torch.float64)
 
     # Calculate final log density (sum across all ages)
-    log_density = np.sum(log_numerator - log_denominator)
+    log_density = torch.sum(log_numerator - log_denominator)
 
     # Final numerical check
-    if not np.isfinite(log_density):
-        return np.float64(-np.inf)
+    if not torch.isfinite(log_density):
+        return torch.tensor(float("-inf"), dtype=torch.float64)
 
-    return np.float64(log_density)
+    return log_density
 
 
 def calculate_ages_log_lik(
-    lambda_params: NDArray[np.float64] | float,
-    mu_params: NDArray[np.float64] | float,
-    ages_t: NDArray[np.float64] | float,
-    times: NDArray[np.float64] | float,
+    lambda_params: torch.Tensor | float,
+    mu_params: torch.Tensor | float,
+    ages_t: torch.Tensor | float,
+    times: torch.Tensor | float,
     are_spines: bool = False,
-) -> np.float64:
+) -> torch.Tensor:
     """
     Compute log-likelihood of manuscript ages under a birth-death model.
 
+    Dispatches to spine or non-spine likelihood calculation based on ``are_spines``.
+    All operations preserve PyTorch's computational graph for automatic differentiation.
+
     Parameters
     ----------
-    lambda_params : float or NDArray[np.float64]
-        Birth rate(s) λ.
-    mu_params : float or NDArray[np.float64]
-        Death rate(s) μ.
-    ages_t : float or NDArray[np.float64]
-        Manuscript age(s) t (0 ≤ t ≤ T).
-    times : float or NDArray[np.float64]
-        Observation time(s) T.
+    lambda_params : torch.Tensor | float
+        Birth rate(s) λ. Scalar for single epoch, 1D tensor for piecewise-constant rates.
+        All values must be positive. Will be converted to torch.float64.
+    mu_params : torch.Tensor | float
+        Death rate(s) μ. Scalar for single epoch, 1D tensor for piecewise-constant rates.
+        All values must be positive. Will be converted to torch.float64.
+    ages_t : torch.Tensor | float
+        Manuscript age(s) t. Scalar or 1D tensor. All ages must satisfy 0 ≤ t ≤ T.
+        Will be converted to torch.float64.
+    times : torch.Tensor | float
+        Observation time(s) T. Scalar for single epoch, 1D tensor of strictly increasing
+        epoch end times for piecewise-constant model. Will be converted to torch.float64.
     are_spines : bool, optional
-        If True, use spine calculation; otherwise non-spine. Default False.
+        If True, computes spine likelihood (discrete mass at T, continuous for t < T).
+        If False, computes non-spine likelihood. Default False.
 
     Returns
     -------
-    np.float64
-        Summed log-likelihood across ages. Returns -inf for invalid inputs.
+    torch.Tensor
+        Scalar tensor (shape ()) containing summed log-likelihood across all ages.
+        dtype: torch.float64. Fully differentiable via PyTorch autograd.
+        Returns -inf tensor for numerically invalid inputs.
+
+    Raises
+    ------
+    ValueError
+        If array inputs have mismatched lengths, times are not strictly increasing,
+        or ages fall outside [0, T].
+
+    Notes
+    -----
+    - Handles λ ≈ μ limiting case for numerical stability using log1p/expm1.
+    - Supports both single-epoch (scalar) and multi-epoch (array) piecewise-constant rates.
+    - Multi-epoch cases use time-reversal transformation internally.
+    - All operations maintain PyTorch's computational graph for gradient computation.
+    - Internally delegates to ``calculate_spine_ages_log_lik`` or
+      ``calculate_non_spine_ages_log_lik`` depending on ``are_spines`` flag.
+
+    Examples
+    --------
+    Single-epoch case with gradient computation:
+
+    >>> lambda_val = torch.tensor(0.1, requires_grad=True)
+    >>> mu_val = torch.tensor(0.05, requires_grad=True)
+    >>> ages = torch.tensor([10.0, 20.0, 30.0])
+    >>> T = 100.0
+    >>> log_lik = calculate_ages_log_lik(lambda_val, mu_val, ages, T, are_spines=False)
+    >>> log_lik.backward()  # Compute gradients w.r.t. lambda_val and mu_val
+    >>> print(lambda_val.grad, mu_val.grad)
     """
     if are_spines:
         return calculate_spine_ages_log_lik(lambda_params, mu_params, ages_t, times)
@@ -670,41 +726,46 @@ def calculate_ages_log_lik(
 
 
 def calculate_non_spine_ages_log_lik_derivatives(
-    lambda_param: float,
-    mu_param: float,
-    ages_t: NDArray[np.float64] | float,
-    T: float,
-) -> NDArray[np.float64]:
+    lambda_param: torch.Tensor | float,
+    mu_param: torch.Tensor | float,
+    ages_t: torch.Tensor | float,
+    T: torch.Tensor | float,
+) -> torch.Tensor:
     """
     Calculate derivatives of log age-density for non-spine manuscripts.
 
+    Uses only PyTorch operations to preserve autograd support.
+
     Parameters
     ----------
-    lambda_param : float
+    lambda_param : torch.Tensor | float
         Birth rate λ.
-    mu_param : float
+    mu_param : torch.Tensor | float
         Death rate μ.
-    ages_t : float or NDArray[np.float64]
+    ages_t : torch.Tensor | float
         Manuscript age(s) t (0 ≤ t ≤ T).
-    T : float
+    T : torch.Tensor | float
         Observation time T.
 
     Returns
     -------
-    NDArray[np.float64]
-        Array [∂/∂λ, ∂/∂μ] containing summed derivatives across all ages.
+    torch.Tensor
+        Tensor [∂/∂λ, ∂/∂μ] containing summed derivatives across all ages.
+        Shape: (2,), dtype: torch.float64. Supports automatic differentiation.
 
     Notes
     -----
     Handles λ ≈ μ limiting case for numerical stability.
     """
 
-    # Handle parameter scaling
-    lambda_val = lambda_param
-    mu_val = mu_param
+    # Convert to tensors for consistent torch operations
+    lambda_val = ensure_1d_tensor(lambda_param)
+    mu_val = ensure_1d_tensor(mu_param)
+    ages_t_t = ensure_1d_tensor(ages_t)
+    T_t = ensure_1d_tensor(T)
 
     # Pre-compute isclose check once (avoids repeated calls in vectorized operations)
-    is_critical = np.isclose(lambda_val, mu_val, rtol=1e-14)
+    is_critical = torch.isclose(lambda_val, mu_val, rtol=1e-14)
 
     # Check for numerical stability in parameter space
     if is_critical:
@@ -712,7 +773,9 @@ def calculate_non_spine_ages_log_lik_derivatives(
         # f(t) = [1 + λ(T-t)] / T * e^{-λt}
         # log f(t) = log(1 + λ(T-t)) - log(T) - λt
         # ∂ log f(t)/∂λ = (T-t)/(1 + λ(T-t)) - t
-        d_mu = d_lambda = (T - ages_t) / (1 + lambda_val * (T - ages_t)) - ages_t
+        d_mu = d_lambda = (T_t - ages_t_t) / (
+            1 + lambda_val * (T_t - ages_t_t)
+        ) - ages_t_t
     else:
         # General case: λ ≠ μ
         # log f(t) = log(λe^{-λt} - μe^{-(λ-μ)T}e^{-μt}) - log(1 - e^{-(λ-μ)T})
@@ -722,77 +785,82 @@ def calculate_non_spine_ages_log_lik_derivatives(
         growth_rate = lambda_val - mu_val
 
         # Calculate N and D
-        exp_lambda_t = np.exp(-lambda_val * ages_t)
-        exp_mu_t = np.exp(-mu_val * ages_t)
-        exp_growth_T = np.exp(-growth_rate * T)
+        exp_lambda_t = torch.exp(-lambda_val * ages_t_t)
+        exp_mu_t = torch.exp(-mu_val * ages_t_t)
+        exp_growth_T = torch.exp(-growth_rate * T_t)
 
         N = lambda_val * exp_lambda_t - mu_val * exp_growth_T * exp_mu_t
         D = 1 - exp_growth_T
 
         # ∂N/∂λ = e^{-λt}(1 - λt) + μT·e^{-(λ-μ)T}e^{-μt}
         dN_dlambda = (
-            exp_lambda_t * (1 - lambda_val * ages_t)
-            + mu_val * T * exp_growth_T * exp_mu_t
+            exp_lambda_t * (1 - lambda_val * ages_t_t)
+            + mu_val * T_t * exp_growth_T * exp_mu_t
         )
 
         # ∂D/∂λ = T·e^{-(λ-μ)T}
-        dD_dlambda = T * exp_growth_T
+        dD_dlambda = T_t * exp_growth_T
 
         # ∂ log f(t)/∂λ = (1/N)·∂N/∂λ - (1/D)·∂D/∂λ
         d_lambda = dN_dlambda / N - dD_dlambda / D
 
         # ∂N/∂μ = -e^{-(λ-μ)T}e^{-μt}[1 + μ(T - t)]
-        dN_dmu = -exp_growth_T * exp_mu_t * (1 + mu_val * (T - ages_t))
+        dN_dmu = -exp_growth_T * exp_mu_t * (1 + mu_val * (T_t - ages_t_t))
 
         # ∂D/∂μ = -T·e^{-(λ-μ)T}
-        dD_dmu = -T * exp_growth_T
+        dD_dmu = -T_t * exp_growth_T
 
         # ∂ log f(t)/∂μ = (1/N)·∂N/∂μ - (1/D)·∂D/∂μ
         d_mu = dN_dmu / N - dD_dmu / D
 
-    return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
+    return torch.stack((torch.sum(d_lambda), torch.sum(d_mu)))
 
 
 def calculate_spine_ages_log_lik_derivatives(
-    lambda_param: float,
-    mu_param: float,
-    ages_t: NDArray[np.float64] | float,
-    T: float,
-) -> NDArray[np.float64]:
+    lambda_param: torch.Tensor | float,
+    mu_param: torch.Tensor | float,
+    ages_t: torch.Tensor | float,
+    T: torch.Tensor | float,
+) -> torch.Tensor:
     """
     Calculate derivatives of log age-density for spine manuscripts.
 
+    Uses only PyTorch operations to preserve autograd support.
+
     Parameters
     ----------
-    lambda_param : float
+    lambda_param : torch.Tensor | float
         Birth rate λ.
-    mu_param : float
+    mu_param : torch.Tensor | float
         Death rate μ.
-    ages_t : float or NDArray[np.float64]
+    ages_t : torch.Tensor | float
         Manuscript age(s) t (0 ≤ t ≤ T). Values at T use boundary formula.
-    T : float
+    T : torch.Tensor | float
         Observation time T.
 
     Returns
     -------
-    NDArray[np.float64]
-        Array [∂/∂λ, ∂/∂μ] containing summed derivatives across all ages.
+    torch.Tensor
+        Tensor [∂/∂λ, ∂/∂μ] containing summed derivatives across all ages.
+        Shape: (2,), dtype: torch.float64. Supports automatic differentiation.
 
     Notes
     -----
     Vectorized over ages. Handles λ ≈ μ limiting case for numerical stability.
     """
-    # Handle parameter scaling
-    lambda_val = lambda_param
-    mu_val = mu_param
+    # Convert to tensors for consistent torch operations
+    lambda_val = ensure_1d_tensor(lambda_param)
+    mu_val = ensure_1d_tensor(mu_param)
+    ages_t_t = ensure_1d_tensor(ages_t)
+    T_t = ensure_1d_tensor(T)
 
-    at_boundary = ages_t == T
-    not_at_boundary = np.invert(at_boundary)
-    d_lambda = np.zeros_like(ages_t, dtype=np.float64)
-    d_mu = np.zeros_like(ages_t, dtype=np.float64)
+    at_boundary = ages_t_t == T_t
+    not_at_boundary = torch.logical_not(at_boundary)
+    d_lambda = torch.zeros_like(ages_t_t, dtype=torch.float64)
+    d_mu = torch.zeros_like(ages_t_t, dtype=torch.float64)
 
     # Pre-compute isclose check once (avoids repeated calls in vectorized operations)
-    is_critical = np.isclose(lambda_val, mu_val, rtol=1e-14)
+    is_critical = torch.isclose(lambda_val, mu_val, rtol=1e-14)
 
     # Check for numerical stability in parameter space
     if is_critical:
@@ -800,69 +868,68 @@ def calculate_spine_ages_log_lik_derivatives(
         # At boundary: log f(T) = 2log(λ) + log(T) - λT, so ∂/∂λ = 2/λ - T
         # Interior: log f(t) = 2log(λ) + log(t) - λt, so ∂/∂λ = 2/λ - t
 
-        if np.any(at_boundary):
+        if torch.any(at_boundary):
             # d/dλ = 2/λ - T
-            d_mu[at_boundary] = d_lambda[at_boundary] = 2 / lambda_val - T
+            d_mu[at_boundary] = d_lambda[at_boundary] = 2 / lambda_val - T_t
 
-        if np.any(not_at_boundary):
+        if torch.any(not_at_boundary):
             # d/dλ = 2/λ - t
-            ages_interior = (
-                ages_t[not_at_boundary] if isinstance(ages_t, np.ndarray) else ages_t
-            )
+            ages_interior = ages_t_t[not_at_boundary]
             d_mu[not_at_boundary] = d_lambda[not_at_boundary] = (
                 2 / lambda_val - ages_interior
             )
     else:
         # General case: λ ≠ μ
-        if np.any(at_boundary):
+        if torch.any(at_boundary):
             # d/dλ = (μ (e^(μ T) (T (λ - μ) + 1) - e^(λ T)))/((λ - μ) (λ e^(λ T) - μ e^(μ T)))
             lambda_numerator = mu_val * (
-                np.exp(mu_val * T) * (T * (lambda_val - mu_val) + 1)
-                - np.exp(lambda_val * T)
+                torch.exp(mu_val * T_t) * (T_t * (lambda_val - mu_val) + 1)
+                - torch.exp(lambda_val * T_t)
             )
             denominator = (lambda_val - mu_val) * (
-                lambda_val * np.exp(lambda_val * T) - mu_val * np.exp(mu_val * T)
+                lambda_val * torch.exp(lambda_val * T_t)
+                - mu_val * torch.exp(mu_val * T_t)
             )
             d_lambda[at_boundary] = lambda_numerator / denominator
             # d/dμ = -(λ (e^(λ T) (T (λ - μ) - 1) + e^(μ T)))/((λ - μ) (λ e^(λ T) - μ e^(μ T)))
             mu_numerator = -lambda_val * (
-                np.exp(lambda_val * T) * (T * (lambda_val - mu_val) - 1)
-                + np.exp(mu_val * T)
+                torch.exp(lambda_val * T_t) * (T_t * (lambda_val - mu_val) - 1)
+                + torch.exp(mu_val * T_t)
             )
             d_mu[at_boundary] = mu_numerator / denominator
-        if np.any(not_at_boundary):
+        if torch.any(not_at_boundary):
             # Extract ages not at boundary for computation
-            ages_interior = (
-                ages_t[not_at_boundary] if isinstance(ages_t, np.ndarray) else ages_t
-            )
+            ages_interior = ages_t_t[not_at_boundary]
 
             # Interior: log f(t) = log(λ) + log(μ) + log(e^{-μT} - e^{-λT}) - log(λ - μ)
             # Let B = e^{-μT} - e^{-λT}
 
-            B = np.exp(-mu_val * T) - np.exp(-lambda_val * T)
+            B = torch.exp(-mu_val * T_t) - torch.exp(-lambda_val * T_t)
 
             # ∂ log f(t)/∂λ = 1/λ + T·e^{-λT}/B - 1/(λ-μ)
             d_lambda[not_at_boundary] = (
                 1 / lambda_val
-                + T * np.exp(-lambda_val * T) / B
+                + T_t * torch.exp(-lambda_val * T_t) / B
                 - 1 / (lambda_val - mu_val)
             )
 
             # ∂ log f(t)/∂μ = 1/μ - T·e^{-μT}/B + 1/(λ-μ)
             d_mu[not_at_boundary] = (
-                1 / mu_val - T * np.exp(-mu_val * T) / B + 1 / (lambda_val - mu_val)
+                1 / mu_val
+                - T_t * torch.exp(-mu_val * T_t) / B
+                + 1 / (lambda_val - mu_val)
             )
 
-    return np.array([np.sum(d_lambda), np.sum(d_mu)], dtype=np.float64)
+    return torch.stack((torch.sum(d_lambda), torch.sum(d_mu)))
 
 
 def calculate_ages_log_lik_derivatives(
-    lambda_param: float,
-    mu_param: float,
-    ages_t: NDArray[np.float64] | float,
-    T: float,
+    lambda_param: torch.Tensor | float,
+    mu_param: torch.Tensor | float,
+    ages_t: torch.Tensor | float,
+    T: torch.Tensor | float,
     are_spines: bool = False,
-) -> NDArray[np.float64]:
+) -> torch.Tensor:
     """
     Compute derivatives of log age-density with respect to λ and μ.
 
@@ -872,7 +939,7 @@ def calculate_ages_log_lik_derivatives(
         Birth rate λ.
     mu_param : float
         Death rate μ.
-    ages_t : float or NDArray[np.float64]
+    ages_t : float | NDArray[np.float64]
         Manuscript age(s) t (0 ≤ t ≤ T).
     T : float
         Observation time T.
@@ -881,8 +948,9 @@ def calculate_ages_log_lik_derivatives(
 
     Returns
     -------
-    NDArray[np.float64]
-        Array [∂/∂λ, ∂/∂μ] containing summed derivatives across all ages.
+    torch.Tensor
+        Tensor [∂/∂λ, ∂/∂μ] containing summed derivatives across all ages.
+        Shape: (2,), dtype: torch.float64. Supports automatic differentiation.
     """
     if are_spines:
         return calculate_spine_ages_log_lik_derivatives(
@@ -895,54 +963,62 @@ def calculate_ages_log_lik_derivatives(
 
 
 def calculate_extinction_pr(
-    birth_rates: NDArray[np.float64] | float,
-    death_rates: NDArray[np.float64] | float,
-    times: NDArray[np.float64] | float,
+    birth_rates: torch.Tensor | float,
+    death_rates: torch.Tensor | float,
+    times: torch.Tensor | float,
     return_log_prob: bool = False,
-) -> np.float64:
+) -> torch.Tensor:
     """
     Calculate extinction probability for a birth-death process.
 
     Parameters
     ----------
-    birth_rates : float or NDArray[np.float64]
-        Birth rate(s) λ.
-    death_rates : float or NDArray[np.float64]
-        Death rate(s) μ.
-    times : float or NDArray[np.float64]
-        Observation time(s) T. For arrays, must be monotonically increasing.
+    birth_rates : torch.Tensor or float
+        Birth rate(s) λ. Scalar or 1D tensor for piecewise-constant rates.
+    death_rates : torch.Tensor or float
+        Death rate(s) μ. Scalar or 1D tensor for piecewise-constant rates.
+    times : torch.Tensor or float
+        Observation time(s) T. Scalar for single time, 1D tensor for epoch end times.
+        For arrays, must be monotonically increasing.
     return_log_prob : bool, optional
         If True, return log(α_t) instead of α_t. Default False.
 
     Returns
     -------
-    np.float64
-        Extinction probability α_t (or log(α_t) if return_log_prob=True).
+    torch.Tensor
+        Scalar tensor (shape ()) containing extinction probability α_t
+        (or log(α_t) if return_log_prob=True). dtype: torch.float64.
+        Supports automatic differentiation.
 
     Notes
     -----
-    Handles λ ≈ μ limiting case for numerical stability.
+    Handles λ ≈ μ limiting case for numerical stability. Returns tensor
+    for full PyTorch autograd support. All computation is in PyTorch.
     """
-    # Normalize to 1D arrays so scalar inputs still support indexing
-    birth_rates = np.atleast_1d(birth_rates).ravel()
-    death_rates = np.atleast_1d(death_rates).ravel()
-    times = np.atleast_1d(times).ravel()
+    # Convert inputs to tensors
+    birth_rates_t = ensure_1d_tensor(birth_rates)
+    death_rates_t = ensure_1d_tensor(death_rates)
+    times_t = ensure_1d_tensor(times)
 
-    if np.any(times < 0):
-        raise ValueError(f"times must be non-negative. Got times: {times}")
-    if np.any(np.diff(np.insert(np.atleast_1d(times), 0, 0.0)) <= 0):
-        raise ValueError(f"times must be strictly increasing. Got times: {times}")
+    if torch.any(times_t < 0):
+        raise ValueError(f"times must be non-negative. Got times: {times_t}")
+
+    # Check monotonically increasing
+    times_padded = torch.cat([torch.tensor([0.0], dtype=torch.float64), times_t])
+    time_diffs = torch.diff(times_padded)
+    if torch.any(time_diffs <= 0):
+        raise ValueError(f"times must be strictly increasing. Got times: {times_t}")
 
     pr_extinction_numerator = _pr_extinction_numerator(
-        birth_rates=birth_rates,
-        death_rates=death_rates,
-        times=times,
+        birth_rates=birth_rates_t,
+        death_rates=death_rates_t,
+        times=times_t,
     )
     if return_log_prob:
-        log_alpha_t = np.log(pr_extinction_numerator) - np.log1p(
+        log_alpha_t = torch.log(pr_extinction_numerator) - torch.log1p(
             pr_extinction_numerator
         )
-        return np.float64(log_alpha_t)
+        return log_alpha_t
 
     alpha_t = 1 - 1 / (1 + pr_extinction_numerator)
 
@@ -950,29 +1026,32 @@ def calculate_extinction_pr(
 
 
 def calculate_log_lik_initial_lifetimes_given_extinction(
-    lifetimes: NDArray[np.float64],
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-) -> np.float64:
+    lifetimes: torch.Tensor,
+    birth_rates: torch.Tensor,
+    death_rates: torch.Tensor,
+    times: torch.Tensor,
+) -> torch.Tensor:
     """
     Calculate log-likelihood of initial lifetime(s) given extinction.
 
+    Uses only PyTorch operations to maintain autograd support.
+
     Parameters
     ----------
-    lifetimes : NDArray[np.float64]
-        1D array of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times matching rate arrays.
+    lifetimes : torch.Tensor
+        1D tensor of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,)).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch; same length as ``birth_rates``.
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times matching rate arrays.
 
     Returns
     -------
-    np.float64
-        Summed log-likelihood values.
+    torch.Tensor
+        Scalar tensor (shape ()) containing summed log-likelihood values.
+        dtype: torch.float64. Supports automatic differentiation.
     """
 
     n = len(lifetimes)
@@ -999,7 +1078,7 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
 
     # Compute conditional log likelihood
     result = (
-        np.sum(log_prs_extinction_given_lifetimes)
+        torch.sum(log_prs_extinction_given_lifetimes)
         + log_liks_lifetimes
         - n * log_extinction_prob
     )
@@ -1007,29 +1086,33 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
 
 
 def calculate_log_lik_initial_lifetimes_given_non_extinction(
-    lifetimes: NDArray[np.float64],
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-) -> np.float64:
+    lifetimes: torch.Tensor,
+    birth_rates: torch.Tensor,
+    death_rates: torch.Tensor,
+    times: torch.Tensor,
+) -> torch.Tensor:
     """
     Calculate log-likelihood of initial lifetime(s) given non-extinction.
 
+    This implementation uses only PyTorch operations to preserve
+    autograd support end-to-end.
+
     Parameters
     ----------
-    lifetimes : NDArray[np.float64]
-        1D array of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times matching rate arrays.
+    lifetimes : torch.Tensor
+        1D tensor of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,)).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch; same length as ``birth_rates``.
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times matching rate arrays.
 
     Returns
     -------
-    np.float64
-        Summed log-likelihood values.
+    torch.Tensor
+        Scalar tensor (shape ()) containing summed log-likelihood values
+        in torch.float64. Supports automatic differentiation.
     """
 
     n = len(lifetimes)
@@ -1055,130 +1138,151 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
         return_log_prob=True,
     )
 
-    log_prs_non_extinction_given_lifetimes = np.log(
-        -np.expm1(log_prs_extinction_given_lifetimes)
+    log_prs_non_extinction_given_lifetimes = torch.log(
+        -torch.expm1(log_prs_extinction_given_lifetimes)
     )
 
     # Compute conditional log likelihood
     result = (
-        np.sum(log_prs_non_extinction_given_lifetimes)
+        torch.sum(log_prs_non_extinction_given_lifetimes)
         + log_liks_lifetimes
-        - n * np.log(-np.expm1(log_extinction_prob))
+        - n * torch.log(-torch.expm1(log_extinction_prob))
     )
-    return np.float64(result)
+    return result
 
 
 def calculate_log_pr_extinction_given_initial_lifetimes(
-    lifetimes: NDArray[np.float64],
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
+    lifetimes: torch.Tensor | float,
+    birth_rates: torch.Tensor,
+    death_rates: torch.Tensor,
+    times: torch.Tensor,
     as_array: bool = False,
-) -> NDArray[np.float64] | np.float64:
+) -> torch.Tensor:
     """
     Calculate log probability of extinction given initial lifetime(s).
 
     Parameters
     ----------
-    lifetimes : NDArray[np.float64]
-        1D array of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times matching rate arrays.
+    lifetimes : torch.Tensor
+        1D tensor of manuscript lifetimes (shape: (n,), dtype: torch.float64).
+        Each lifetime must be ≤ times[-1].
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch. Same shape as ``birth_rates``
+        (dtype: torch.float64).
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,),
+        dtype: torch.float64). Must have same length as ``birth_rates``.
     as_array : bool, optional
         If True, return log probabilities per lifetime (aligned to the original
         ordering); if False, return their sum. Default False.
 
     Returns
     -------
-    np.float64 or NDArray[np.float64]
-        If ``as_array`` is False, the summed log extinction probability.
-        If ``as_array`` is True, a 1D array of log extinction probabilities
-        aligned with ``lifetimes``.
+    torch.Tensor
+        If ``as_array`` is False, scalar tensor (shape ()) containing summed
+        log extinction probability. If ``as_array`` is True, 1D tensor of log
+        extinction probabilities aligned with ``lifetimes``. dtype: torch.float64.
+        Supports automatic differentiation.
+
+    Notes
+    -----
+    Uses adaptive quadrature (scipy.integrate.quad) for numerical integration.
+    Handles multi-epoch piecewise-constant rates with cumulative integral caching
+    for efficiency.
     """
 
-    if len(birth_rates) != len(death_rates) or len(birth_rates) != len(times):
+    # Convert inputs to tensors
+    lifetimes_t = ensure_1d_tensor(lifetimes)
+    birth_rates_t = ensure_1d_tensor(birth_rates)
+    death_rates_t = ensure_1d_tensor(death_rates)
+    times_t = ensure_1d_tensor(times)
+
+    if len(birth_rates_t) != len(death_rates_t) or len(birth_rates_t) != len(times_t):
         raise ValueError("Length of birth_rates, death_rates, and times must be equal.")
 
-    birth_rates_array = birth_rates
+    birth_rates_array = birth_rates_t
 
     # Sort lifetimes to enable cumulative integral caching
-    sorted_lifetimes = np.sort(lifetimes)
+    sorted_lifetimes, sort_indices = torch.sort(lifetimes_t)
 
-    if sorted_lifetimes[-1] > times[-1]:
+    if sorted_lifetimes[-1] > times_t[-1]:
         raise ValueError(
             "All lifetimes must be less than or equal to the final time point."
-            + f" Got max lifetime: {sorted_lifetimes[-1]}, final time: {times[-1]}"
+            + f" Got max lifetime: {sorted_lifetimes[-1]}, final time: {times_t[-1]}"
         )
 
-    log_probs = np.zeros_like(sorted_lifetimes, dtype=np.float64)
+    log_probs = torch.zeros_like(sorted_lifetimes, dtype=torch.float64)
 
     # Build integration intervals from sorted lifetimes
-    # Intervals are [0, lifetime[0]], [lifetime[0], lifetime[1]], ...
     n_lifetimes = len(sorted_lifetimes)
 
     # Create interval boundaries: [0, sorted_lifetimes[0], sorted_lifetimes[1], ...]
-    interval_boundaries = np.insert(sorted_lifetimes, 0, 0.0)
-
-    # Create intervals: each row is [start, end]
-    intervals = np.column_stack(
-        [
-            interval_boundaries[
-                :-1
-            ],  # Start points: [0, lifetime[0], lifetime[1], ...]
-            interval_boundaries[1:],  # End points: [lifetime[0], lifetime[1], ...]
-        ]
+    interval_boundaries = torch.cat(
+        [torch.tensor([0.0], dtype=torch.float64), sorted_lifetimes]
     )
 
-    # Remove zero-width intervals (can occur with duplicate lifetimes)
-    nonzero_mask = intervals[:, 1] > intervals[:, 0]
-    active_intervals = intervals[nonzero_mask]
+    # Create intervals: each row is [start, end]
+    interval_starts = interval_boundaries[:-1]
+    interval_ends = interval_boundaries[1:]
 
-    if len(active_intervals) > 0:
-        # Use scipy's fixed_quad for 15-point Gauss-Legendre quadrature
-        interval_integrals = np.zeros(len(active_intervals), dtype=np.float64)
+    # Identify non-zero width intervals
+    nonzero_mask = interval_ends > interval_starts
+    active_indices = torch.where(nonzero_mask)[0]
 
-        for i, (a, b) in enumerate(active_intervals):
-            result, _ = scipy.integrate.fixed_quad(
-                _integrand_surv_from_weighted_birth_time_vectorized,
+    cumulative_integrals = torch.zeros(n_lifetimes, dtype=torch.float64)
+
+    if len(active_indices) > 0:
+        # Use scipy's adaptive quadrature for integration
+        # Detach tensors and convert to numpy for scipy
+        birth_rates_np = birth_rates_t.detach().cpu().numpy()
+        death_rates_np = death_rates_t.detach().cpu().numpy()
+        times_np = times_t.detach().cpu().numpy()
+
+        interval_integrals = []
+        for idx in active_indices:
+            a = float(interval_starts[idx].item())
+            b = float(interval_ends[idx].item())
+            result, _ = scipy.integrate.quad(
+                lambda t: float(
+                    _integrand_surv_from_weighted_birth_time_scalar(
+                        t, birth_rates_np, death_rates_np, times_np
+                    )
+                ),
                 a,
                 b,
-                args=(birth_rates, death_rates, times),
-                n=5,
             )
-            interval_integrals[i] = result
+            interval_integrals.append(result)
 
-        # Map integrals back to full intervals array (including zero-width ones)
-        full_interval_integrals = np.zeros(len(intervals), dtype=np.float64)
-        full_interval_integrals[nonzero_mask] = interval_integrals
+        # Build cumulative integrals
+        interval_integral_full = torch.zeros(n_lifetimes, dtype=torch.float64)
+        for i, idx in enumerate(active_indices):
+            interval_integral_full[idx] = torch.tensor(
+                interval_integrals[i], dtype=torch.float64
+            )
 
-        # Compute cumulative integrals for each lifetime
-        # The cumulative integral at lifetime[i] is the sum of all intervals up to and including i
-        cumulative_integrals = np.cumsum(full_interval_integrals)
-    else:
-        cumulative_integrals = np.zeros(n_lifetimes, dtype=np.float64)
+        cumulative_integrals = torch.cumsum(interval_integral_full, dim=0)
 
-    # Compute cumulative birth rates for each lifetime (vectorized)
+    # Compute cumulative birth rates for each lifetime
     for i, lifetime in enumerate(sorted_lifetimes):
-        full_epochs = times[np.where(times < lifetime)[0]]
-        num_full_epochs = len(full_epochs)
-        lifetime_epochs = np.append(full_epochs, lifetime)
-        if len(birth_rates_array[0 : num_full_epochs + 1]) != len(
-            np.diff(np.insert(lifetime_epochs, 0, 0.0))
-        ):
-            raise ValueError(
-                "Mismatch in lengths when computing cumulative birth rates."
-                + " birth_rates_array length: "
-                + f"{len(birth_rates_array[0 : num_full_epochs + 1])}, "
-                + f" lifetime: {lifetime}, times: {times}.\n"
-                + f" lifetime_epochs: {lifetime_epochs}"
-            )
-        cum_birth_rate = np.sum(
-            birth_rates_array[0 : num_full_epochs + 1]
-            * np.diff(np.insert(lifetime_epochs, 0, 0.0))
+        # Find epochs that end before this lifetime
+        epoch_mask = times_t < lifetime
+        num_full_epochs = int(torch.sum(epoch_mask).item())
+
+        # Build lifetime epochs
+        full_epochs = times_t[epoch_mask]
+        lifetime_epochs = torch.cat([full_epochs, lifetime.unsqueeze(0)])
+
+        # Compute epoch durations
+        lifetime_epochs_padded = torch.cat(
+            [torch.tensor([0.0], dtype=torch.float64), lifetime_epochs]
+        )
+        epoch_durs = torch.diff(lifetime_epochs_padded)
+
+        # Compute cumulative birth rate
+        cum_birth_rate = torch.sum(
+            birth_rates_array[: num_full_epochs + 1] * epoch_durs
         )
 
         log_probs[i] = cumulative_integrals[i] - cum_birth_rate
@@ -1186,68 +1290,84 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     if as_array:
         return log_probs
 
-    return np.sum(log_probs)
+    return torch.sum(log_probs)
 
 
 def calculate_log_lik_lifetimes(
-    lifetimes: NDArray[np.float64],
-    birth_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-) -> np.float64:
+    lifetimes: torch.Tensor,
+    birth_rates: torch.Tensor,
+    times: torch.Tensor,
+) -> torch.Tensor:
     """
     Calculate log-likelihood of manuscript lifetime(s).
 
     Parameters
     ----------
-    lifetimes : NDArray[np.float64]
-        1D array of lifetimes (shape: (n,)), each ≤ times[-1].
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times matching ``birth_rates``.
+    lifetimes : torch.Tensor
+        1D tensor of lifetimes (shape: (n,), dtype: torch.float64). Each lifetime ≤ times[-1].
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,), dtype: torch.float64).
 
     Returns
     -------
-    np.float64
-        Sum of log-likelihood values.
+    torch.Tensor
+        Scalar tensor containing sum of log-likelihood values.
+        Shape: (), dtype: torch.float64. Supports automatic differentiation.
     """
 
-    lambda_val_array = birth_rates
+    # Convert inputs to tensors
+    lifetimes_t = torch.as_tensor(lifetimes, dtype=torch.float64)
+    birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
+    times_t = torch.as_tensor(times, dtype=torch.float64)
 
-    epoch_starts = np.insert(times, 0, 0.0)[:-1]
-    epoch_durations = times - epoch_starts
+    lambda_val_array = birth_rates_t
 
-    cum_growth_at_epochs = np.cumsum(lambda_val_array * epoch_durations)
+    # Compute epoch starts and durations
+    times_padded = torch.cat([torch.tensor([0.0], dtype=torch.float64), times_t])
+    epoch_starts = times_padded[:-1]
+    epoch_durations = times_t - epoch_starts
 
-    log_liks = np.zeros_like(lifetimes, dtype=np.float64)
+    # Compute cumulative growth at each epoch
+    cum_growth_at_epochs = torch.cumsum(lambda_val_array * epoch_durations, dim=0)
 
-    for i, lifetime in enumerate(lifetimes):
-        if lifetime == times[-1]:
+    log_liks = torch.zeros_like(lifetimes_t, dtype=torch.float64)
+
+    for i, lifetime in enumerate(lifetimes_t):
+        if torch.isclose(lifetime, times_t[-1]):
             # Boundary case
             log_liks[i] = -cum_growth_at_epochs[-1]
             continue
 
-        valid_indices = np.where(epoch_starts < lifetime)[0]
+        # Find valid epoch indices where epoch_starts < lifetime
+        valid_mask = epoch_starts < lifetime
+        valid_indices = torch.where(valid_mask)[0]
 
-        # # The current epoch index is valid_indices[-1], but we need to cap it
-        # # at len(lambda_val_array)-1 since epoch_starts has one extra element
+        if len(valid_indices) == 0:
+            continue
+
+        # The current epoch index is the last valid index
         current_epoch_idx = valid_indices[-1]
         current_lambda = lambda_val_array[current_epoch_idx]
 
+        # Compute cumulative growth up to current lifetime
         cum_growth = (
-            cum_growth_at_epochs[current_epoch_idx] if current_epoch_idx > 0 else 0.0
+            cum_growth_at_epochs[current_epoch_idx - 1]
+            if current_epoch_idx > 0
+            else torch.tensor(0.0, dtype=torch.float64)
         ) + (lifetime - epoch_starts[current_epoch_idx]) * current_lambda
 
-        log_liks[i] = np.log(current_lambda) - cum_growth
+        log_liks[i] = torch.log(current_lambda) - cum_growth
 
-    return np.sum(log_liks)
+    return torch.sum(log_liks)
 
 
 def _population_geometric_parameter(
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-) -> np.float64:
+    birth_rates: torch.Tensor,
+    death_rates: torch.Tensor,
+    times: torch.Tensor,
+) -> torch.Tensor:
     """
     Calculate geometric parameter (1 - β_t) for offspring distribution.
 
@@ -1256,75 +1376,93 @@ def _population_geometric_parameter(
 
     Parameters
     ----------
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times (shape: (n_epochs,)).
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch; same shape as ``birth_rates`` (dtype: torch.float64).
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,), dtype: torch.float64).
 
     Returns
     -------
-    np.float64
-        Geometric parameter 1 - β_t ∈ (0, 1).
+    torch.Tensor
+        Scalar tensor containing geometric parameter 1 - β_t ∈ (0, 1).
+        Shape: (), dtype: torch.float64. Supports automatic differentiation.
 
     Notes
     -----
-    Handles λ ≈ μ limiting case for numerical stability.
+    Handles λ ≈ μ limiting case for numerical stability. Full support for
+    PyTorch's autograd differentiation.
     """
-    epoch_durations = np.diff(np.insert(times, 0, 0.0))
-    if np.any(epoch_durations < 0):
+    # Convert inputs to tensors
+    birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
+    death_rates_t = torch.as_tensor(death_rates, dtype=torch.float64)
+    times_t = torch.as_tensor(times, dtype=torch.float64)
+
+    # Compute epoch durations
+    times_padded = torch.cat([torch.tensor([0.0], dtype=torch.float64), times_t])
+    epoch_durations = torch.diff(times_padded)
+
+    if torch.any(epoch_durations < 0):
         raise ValueError("times array must be strictly increasing.")
-    lambda_val_array = birth_rates
-    mu_val_array = death_rates
+
+    lambda_val_array = birth_rates_t
+    mu_val_array = death_rates_t
 
     growth_rates = lambda_val_array - mu_val_array
-    cum_growth = np.cumsum(growth_rates * epoch_durations)
+    cum_growth = torch.cumsum(growth_rates * epoch_durations, dim=0)
 
-    geom_sum = _pr_extinction_numerator(birth_rates, death_rates, times)
+    geom_sum = _pr_extinction_numerator(birth_rates_t, death_rates_t, times_t)
     # Compute in log-domain to avoid overflow: cond = exp(-C) / (1 + geom_sum)
     # => log(cond) = -C - log1p(geom_sum)
-    log_cond = -cum_growth[-1] - np.log1p(geom_sum)
-    cond_geom_prob = np.exp(log_cond)
-    return np.float64(cond_geom_prob)
+    log_cond = -cum_growth[-1] - torch.log1p(geom_sum)
+    cond_geom_prob = torch.exp(log_cond)
+    return cond_geom_prob
 
 
 def _integrand_surv_from_weighted_birth_time(
-    birth_time: float,
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-) -> np.float64:
+    birth_time: torch.Tensor | float,
+    birth_rates: torch.Tensor,
+    death_rates: torch.Tensor,
+    times: torch.Tensor,
+) -> torch.Tensor:
     """
     Integrand for survival probability calculation (scalar version).
 
     Parameters
     ----------
-    birth_time : float
-        Time at which birth occurred.
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times (shape: (n_epochs,)).
+    birth_time : torch.Tensor | float
+        Scalar time at which birth occurred.
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch; same shape as ``birth_rates`` (dtype: torch.float64).
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,), dtype: torch.float64).
 
     Returns
     -------
-    np.float64
-        Integrand value.
+    torch.Tensor
+        Scalar tensor containing integrand value. Shape: (),
+        dtype: torch.float64. Supports automatic differentiation.
     """
-    # Find the index of the last epoch that starts before or at start_time
+    # Convert inputs to tensors
+    birth_time_t = torch.as_tensor(birth_time, dtype=torch.float64)
+    birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
+    death_rates_t = torch.as_tensor(death_rates, dtype=torch.float64)
+    times_t = torch.as_tensor(times, dtype=torch.float64)
 
-    times = times - birth_time
-    valid_indices = np.where(times > 0)[0]
+    # Find the index of the last epoch that starts before or at start_time
+    times_shifted = times_t - birth_time_t
+    valid_mask = times_shifted > 0
+    valid_indices = torch.where(valid_mask)[0]
 
     if len(valid_indices) == 0:
         raise ValueError("birth_time exceeds all epoch end times.")
 
-    trunc_times = times[valid_indices]
-    trunc_birth_rates = birth_rates[valid_indices]
-    trunc_death_rates = death_rates[valid_indices]
+    trunc_times = times_shifted[valid_indices]
+    trunc_birth_rates = birth_rates_t[valid_indices]
+    trunc_death_rates = death_rates_t[valid_indices]
 
     ext_prob = calculate_extinction_pr(
         birth_rates=trunc_birth_rates,
@@ -1332,15 +1470,63 @@ def _integrand_surv_from_weighted_birth_time(
         times=trunc_times,
     )
 
-    return np.float64(ext_prob * trunc_birth_rates[0])
+    return ext_prob * trunc_birth_rates[0]
+
+
+def _integrand_surv_from_weighted_birth_time_scalar(
+    birth_time: float,
+    birth_rates_np: NDArray[np.float64],
+    death_rates_np: NDArray[np.float64],
+    times_np: NDArray[np.float64],
+) -> float:
+    """
+    Scalar integrand for survival probability calculation (numpy version for scipy.integrate).
+
+    Parameters
+    ----------
+    birth_time : float
+        Time at which birth occurred (scalar).
+    birth_rates_np : np.ndarray
+        Birth rates λ for each epoch.
+    death_rates_np : np.ndarray
+        Death rates μ for each epoch.
+    times_np : np.ndarray
+        Epoch end times.
+
+    Returns
+    -------
+    float
+        Integrand value for this birth time.
+    """
+    import numpy as np
+
+    shifted_times = times_np - birth_time
+    valid_mask = shifted_times > 0
+    valid_indices = np.where(valid_mask)[0]
+
+    if len(valid_indices) == 0:
+        return 0.0
+
+    trunc_times = shifted_times[valid_indices]
+    trunc_birth_rates = birth_rates_np[valid_indices]
+    trunc_death_rates = death_rates_np[valid_indices]
+
+    # Convert back to torch for calculation, but without gradients
+    ext_prob = calculate_extinction_pr(
+        birth_rates=torch.from_numpy(trunc_birth_rates),
+        death_rates=torch.from_numpy(trunc_death_rates),
+        times=torch.from_numpy(trunc_times),
+    )
+
+    return float(ext_prob.item() * trunc_birth_rates[0])
 
 
 def _integrand_surv_from_weighted_birth_time_vectorized(
-    birth_times: NDArray[np.float64],
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-) -> NDArray[np.float64]:
+    birth_times: torch.Tensor,
+    birth_rates: torch.Tensor,
+    death_rates: torch.Tensor,
+    times: torch.Tensor,
+) -> torch.Tensor:
     """
     Vectorized integrand for survival probability calculation.
 
@@ -1348,43 +1534,52 @@ def _integrand_surv_from_weighted_birth_time_vectorized(
 
     Parameters
     ----------
-    birth_times : NDArray[np.float64]
-        Array of times at which births occurred. Shape: (n_points,)
-    birth_rates : NDArray[np.float64]
-        Birth rate(s) λ for each epoch. Shape: (n_epochs,)
-    death_rates : NDArray[np.float64]
-        Death rate(s) μ for each epoch. Shape: (n_epochs,)
-    times : NDArray[np.float64]
-        Epoch end time(s). Shape: (n_epochs,)
+    birth_times : torch.Tensor
+        1D tensor of times at which births occurred. Shape: (n_points,), dtype: torch.float64.
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ for each epoch. Shape: (n_epochs,), dtype: torch.float64.
+    death_rates : torch.Tensor
+        1D tensor of death rates μ for each epoch. Shape: (n_epochs,), dtype: torch.float64.
+    times : torch.Tensor
+        1D tensor of epoch end times. Shape: (n_epochs,), dtype: torch.float64.
 
     Returns
     -------
-    NDArray[np.float64]
-        Integrand values for each birth time. Shape: (n_points,)
+    torch.Tensor
+        1D tensor of integrand values for each birth time. Shape: (n_points,),
+        dtype: torch.float64. Supports automatic differentiation.
     """
+    # Convert inputs to tensors
+    birth_times_t = ensure_1d_tensor(birth_times)
+    birth_rates_t = ensure_1d_tensor(birth_rates)
+    death_rates_t = ensure_1d_tensor(death_rates)
+    times_t = ensure_1d_tensor(times)
 
-    if not (birth_rates.shape == death_rates.shape == times.shape):
+    if not (birth_rates_t.shape == death_rates_t.shape == times_t.shape):
         raise ValueError(
             "Length of birth_rates, death_rates, and times must be equal. "
-            f"Got shapes {birth_rates.shape}, {death_rates.shape}, {times.shape}."
+            f"Got shapes {birth_rates_t.shape}, {death_rates_t.shape}, {times_t.shape}."
         )
-    n_points = len(birth_times)
-    results = np.zeros(n_points, dtype=np.float64)
+    n_points = len(birth_times_t)
+    results = torch.zeros(n_points, dtype=torch.float64)
 
     # For each birth time, compute the extinction probability
     # This is the main computational bottleneck - we compute extinction probabilities
     # for different time-shifted parameter sets
-    for i, birth_time in enumerate(birth_times):
-        shifted_times = times - birth_time
-        valid_indices = np.where(shifted_times > 0)[0]
+    has_valid_indices = False
+    for i, birth_time in enumerate(birth_times_t):
+        shifted_times = times_t - birth_time
+        valid_mask = shifted_times > 0
+        valid_indices = torch.where(valid_mask)[0]
 
         if len(valid_indices) == 0:
-            results[i] = 0.0
+            results[i] = torch.tensor(0.0, dtype=torch.float64)
             continue
 
+        has_valid_indices = True
         trunc_times = shifted_times[valid_indices]
-        trunc_birth_rates = birth_rates[valid_indices]
-        trunc_death_rates = death_rates[valid_indices]
+        trunc_birth_rates = birth_rates_t[valid_indices]
+        trunc_death_rates = death_rates_t[valid_indices]
 
         ext_prob = calculate_extinction_pr(
             birth_rates=trunc_birth_rates,
@@ -1394,14 +1589,20 @@ def _integrand_surv_from_weighted_birth_time_vectorized(
 
         results[i] = ext_prob * trunc_birth_rates[0]
 
+    if not has_valid_indices:
+        raise ValueError(
+            "All birth times exceed all epoch end times. "
+            f"Max birth_time: {torch.max(birth_times_t)}, final epoch time: {times_t[-1]}"
+        )
+
     return results
 
 
 def _pr_extinction_numerator(
-    birth_rates: NDArray[np.float64],
-    death_rates: NDArray[np.float64],
-    times: NDArray[np.float64],
-) -> np.float64:
+    birth_rates: torch.Tensor,
+    death_rates: torch.Tensor,
+    times: torch.Tensor,
+) -> torch.Tensor:
     """
     Calculate numerator of extinction probability integral.
 
@@ -1409,21 +1610,23 @@ def _pr_extinction_numerator(
 
     Parameters
     ----------
-    birth_rates : NDArray[np.float64]
-        1D array of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : NDArray[np.float64]
-        1D array of death rates μ per epoch; same length as ``birth_rates``.
-    times : NDArray[np.float64]
-        1D, strictly increasing array of epoch end times (shape: (n_epochs,)).
+    birth_rates : torch.Tensor
+        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch; same shape as ``birth_rates`` (dtype: torch.float64).
+    times : torch.Tensor
+        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,), dtype: torch.float64).
 
     Returns
     -------
-    np.float64
-        Numerator value for extinction probability.
+    torch.Tensor
+        Scalar tensor containing numerator value for extinction probability.
+        Shape: (), dtype: torch.float64. Supports automatic differentiation.
 
     Notes
     -----
-    Handles λ ≈ μ limiting case for numerical stability.
+    Handles λ ≈ μ limiting case for numerical stability. Full support for
+    PyTorch's autograd differentiation.
     """
 
     if not (birth_rates.shape == death_rates.shape == times.shape):
@@ -1432,16 +1635,46 @@ def _pr_extinction_numerator(
             f"Got shapes {birth_rates.shape}, {death_rates.shape}, {times.shape}."
         )
 
-    epoch_durations = np.diff(np.insert(times, 0, 0.0))
-    critical_mask = np.isclose(birth_rates, death_rates, rtol=1e-12)
-    growth_rates = birth_rates - death_rates
-    cum_growth = np.cumsum(growth_rates * epoch_durations)
-    trunc_cum_growth = np.insert(cum_growth, 0, 0.0)[:-1]
+    # Convert to PyTorch tensors (inputs should already be tensors, but ensure dtype)
+    birth_rates_t = (
+        birth_rates.to(dtype=torch.float64)
+        if birth_rates.dtype != torch.float64
+        else birth_rates
+    )
+    death_rates_t = (
+        death_rates.to(dtype=torch.float64)
+        if death_rates.dtype != torch.float64
+        else death_rates
+    )
+    times_t = times.to(dtype=torch.float64) if times.dtype != torch.float64 else times
 
-    # Stable evaluation of (1 - exp(-x)) / x via expm1 to avoid overflow/underflow
+    # Compute epoch durations: prepend 0 to times, then take differences
+    # Optimize: use F.pad instead of cat for single element prepend
+    epoch_durations = torch.diff(
+        times_t, prepend=torch.zeros(1, dtype=torch.float64, device=times_t.device)
+    )
+
+    # Compute growth rates and determine critical regions
+    growth_rates = birth_rates_t - death_rates_t
     x = growth_rates * epoch_durations
-    stable_frac = -np.expm1(-x) / np.where(growth_rates == 0.0, 1.0, growth_rates)
-    kernel = np.where(critical_mask, epoch_durations, stable_frac)
-    pr_extinction_numerator_summand = death_rates * np.exp(-trunc_cum_growth) * kernel
+    critical_mask = torch.abs(x) < 1e-10  # More direct check than isclose on rates
 
-    return np.sum(pr_extinction_numerator_summand, dtype=np.float64)
+    # Compute cumulative growth (shift by prepending 0)
+    cum_growth = torch.cumsum(x, dim=0)
+    trunc_cum_growth = torch.cat(
+        [torch.zeros(1, dtype=torch.float64, device=cum_growth.device), cum_growth[:-1]]
+    )
+
+    # Stable evaluation of (1 - exp(-x)) / x via expm1
+    # For critical case: kernel = epoch_duration
+    # For normal case: kernel = -expm1(-x) / growth_rate
+    kernel = torch.where(
+        critical_mask, epoch_durations, -torch.expm1(-x) / growth_rates
+    )
+
+    # Compute summand: μ * exp(-cum_growth) * kernel
+    pr_extinction_numerator_summand = (
+        death_rates_t * torch.exp(-trunc_cum_growth) * kernel
+    )
+
+    return pr_extinction_numerator_summand.sum()

@@ -11,7 +11,7 @@ from inf_bp_texts.models import BirthDeathProcess
 class TestBirthDeathProcessInit:
     """Test BirthDeathProcess initialization and basic methods."""
 
-    def test_default_initialization(self):
+    def test_default_initialization(self) -> None:
         """Test default parameter initialization."""
         creation_times = []
         final_time = 1000.0
@@ -27,7 +27,7 @@ class TestBirthDeathProcessInit:
         assert process.fit_results is None
         assert len(process.get_manuscript_ages()) == 0
 
-    def test_custom_initialization(self):
+    def test_custom_initialization(self) -> None:
         """Test initialization with custom parameters."""
         creation_times = [100.0, 200.0, 300.0]
         final_time = 500.0
@@ -46,7 +46,7 @@ class TestBirthDeathProcessInit:
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
         assert_array_equal(process.get_manuscript_ages(), expected_ages)
 
-    def test_add_manuscript(self):
+    def test_add_manuscript(self) -> None:
         """Test adding manuscripts."""
         process = BirthDeathProcess([], 1000.0)
 
@@ -59,7 +59,7 @@ class TestBirthDeathProcessInit:
         expected_ages = np.array([900, 700, 300], dtype=np.float64)
         assert_array_equal(process.get_manuscript_ages(), expected_ages)
 
-    def test_set_final_time(self):
+    def test_set_final_time(self) -> None:
         """Test setting final time."""
         process = BirthDeathProcess([], 1000.0)
         process.creation_times = [100, 200, 300]
@@ -75,7 +75,7 @@ class TestBirthDeathProcessInit:
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
         assert_array_equal(process.get_manuscript_ages(), expected_ages)
 
-    def test_ages_calculated_on_demand(self):
+    def test_ages_calculated_on_demand(self) -> None:
         """Test that ages are calculated correctly on-demand when creation_times or final_time change."""
         process = BirthDeathProcess([], 1000.0)
 
@@ -90,7 +90,7 @@ class TestBirthDeathProcessInit:
         process.set_final_time(1200)
         assert_array_equal(process.get_manuscript_ages(), [1100, 900])
 
-    def test_get_manuscript_ages(self):
+    def test_get_manuscript_ages(self) -> None:
         """Test get_manuscript_ages method."""
         process = BirthDeathProcess(creation_times=[100, 200, 300], final_time=500)
 
@@ -102,7 +102,7 @@ class TestBirthDeathProcessInit:
         ages2 = process.get_manuscript_ages()
         assert_array_equal(ages, ages2)
 
-    def test_get_process_summary(self):
+    def test_get_process_summary(self) -> None:
         """Test process summary generation."""
         process = BirthDeathProcess(
             creation_times=[100, 200, 300, 500],
@@ -123,7 +123,7 @@ class TestBirthDeathProcessInit:
             summary["mean_age"] == 725.0
         )  # Mean of [900, 800, 700, 500] = 2900/4 = 725
 
-    def test_empty_process_summary(self):
+    def test_empty_process_summary(self) -> None:
         """Test summary with no manuscripts."""
         process = BirthDeathProcess([], 1000.0, birth_rate=0.01, death_rate=0.002)
 
@@ -137,7 +137,7 @@ class TestBirthDeathProcessInit:
         assert "max_age" not in summary
         assert "mean_age" not in summary
 
-    def test_type_consistency(self):
+    def test_type_consistency(self) -> None:
         """Test that attributes maintain correct types."""
         process = BirthDeathProcess([], 1000.0, birth_rate=0.02, death_rate=0.005)
 
@@ -150,7 +150,7 @@ class TestBirthDeathProcessInit:
         assert isinstance(ages, np.ndarray)
         assert ages.dtype == np.float64
 
-    def test_manuscript_filtering_on_final_time_update(self):
+    def test_manuscript_filtering_on_final_time_update(self) -> None:
         """Test that manuscripts after final_time are removed when final_time is updated."""
         # Start with manuscripts that span before and after a future final_time
         creation_times = [100.0, 200.0, 300.0, 600.0, 800.0]
