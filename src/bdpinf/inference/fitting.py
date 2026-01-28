@@ -113,6 +113,8 @@ def fit_birth_death_processes(
     population_sizes: torch.Tensor | None = None,
     optimizers: Sequence[str] | str = ("Adam", "SGD", "LBFGS"),
     optimizer_kwargs: Dict[str, Dict[str, Any]] | None = None,
+    perturb_initial_params_std: float = 0.0,
+    random_seed: int | None = None,
 ) -> Dict[str, Any]:
     """
     Fit birth–death process parameters to grouped manuscript-age data using PyTorch.
@@ -167,6 +169,15 @@ def fit_birth_death_processes(
         (lowercase: 'lbfgs', 'adam', 'sgd') and values are dicts of kwargs to pass
         to the optimizer constructor. These will override the default kwargs.
         Example: {"lbfgs": {"lr": 0.5, "max_iter": 200}, "adam": {"lr": 0.001}}
+    perturb_initial_params_std : float, optional
+        If > 0, adds normally distributed noise to initial parameters with standard
+        deviation equal to this fraction of each parameter value. For example, 0.1
+        adds noise with std = 10% of the parameter value. The perturbed parameters
+        are clamped to be positive (min=1e-6). Default is 0.0 (no perturbation).
+    random_seed : int | None, optional
+        Random seed for reproducible parameter perturbation. Only used when
+        perturb_initial_params_std > 0. If None, noise will not be reproducible.
+        Default is None.
 
     Returns
     -------
@@ -290,6 +301,16 @@ def fit_birth_death_processes(
             "Initial parameters size mismatch with times: "
             f"expected {expected_len}, got {len(initial_params)}"
         )
+
+    # Apply perturbation if requested
+    if perturb_initial_params_std > 0:
+        if random_seed is not None:
+            torch.manual_seed(random_seed)
+        noise = torch.normal(
+            mean=0.0,
+            std=perturb_initial_params_std * initial_params,
+        )
+        initial_params = torch.clamp(initial_params + noise, min=1e-6)
 
     log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
 
