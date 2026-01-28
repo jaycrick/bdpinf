@@ -1635,30 +1635,46 @@ def _pr_extinction_numerator(
             f"Got shapes {birth_rates.shape}, {death_rates.shape}, {times.shape}."
         )
 
-    # Convert to PyTorch tensors
-    birth_rates_t = torch.as_tensor(birth_rates, dtype=torch.float64)
-    death_rates_t = torch.as_tensor(death_rates, dtype=torch.float64)
-    times_t = torch.as_tensor(times, dtype=torch.float64)
+    # Convert to PyTorch tensors (inputs should already be tensors, but ensure dtype)
+    birth_rates_t = (
+        birth_rates.to(dtype=torch.float64)
+        if birth_rates.dtype != torch.float64
+        else birth_rates
+    )
+    death_rates_t = (
+        death_rates.to(dtype=torch.float64)
+        if death_rates.dtype != torch.float64
+        else death_rates
+    )
+    times_t = times.to(dtype=torch.float64) if times.dtype != torch.float64 else times
 
     # Compute epoch durations: prepend 0 to times, then take differences
-    times_padded = torch.cat([torch.tensor([0.0], dtype=torch.float64), times_t])
-    epoch_durations = torch.diff(times_padded)
+    # Optimize: use F.pad instead of cat for single element prepend
+    epoch_durations = torch.diff(
+        times_t, prepend=torch.zeros(1, dtype=torch.float64, device=times_t.device)
+    )
 
-    critical_mask = torch.isclose(birth_rates_t, death_rates_t, rtol=1e-12)
+    # Compute growth rates and determine critical regions
     growth_rates = birth_rates_t - death_rates_t
-    cum_growth = torch.cumsum(growth_rates * epoch_durations, dim=0)
+    x = growth_rates * epoch_durations
+    critical_mask = torch.abs(x) < 1e-10  # More direct check than isclose on rates
+
+    # Compute cumulative growth (shift by prepending 0)
+    cum_growth = torch.cumsum(x, dim=0)
     trunc_cum_growth = torch.cat(
-        [torch.tensor([0.0], dtype=torch.float64), cum_growth[:-1]]
+        [torch.zeros(1, dtype=torch.float64, device=cum_growth.device), cum_growth[:-1]]
     )
 
-    # Stable evaluation of (1 - exp(-x)) / x via expm1 to avoid overflow/underflow
-    x = growth_rates * epoch_durations
-    stable_frac = -torch.expm1(-x) / torch.where(
-        growth_rates == 0.0, torch.ones_like(growth_rates), growth_rates
+    # Stable evaluation of (1 - exp(-x)) / x via expm1
+    # For critical case: kernel = epoch_duration
+    # For normal case: kernel = -expm1(-x) / growth_rate
+    kernel = torch.where(
+        critical_mask, epoch_durations, -torch.expm1(-x) / growth_rates
     )
-    kernel = torch.where(critical_mask, epoch_durations, stable_frac)
+
+    # Compute summand: μ * exp(-cum_growth) * kernel
     pr_extinction_numerator_summand = (
         death_rates_t * torch.exp(-trunc_cum_growth) * kernel
     )
 
-    return torch.sum(pr_extinction_numerator_summand)
+    return pr_extinction_numerator_summand.sum()

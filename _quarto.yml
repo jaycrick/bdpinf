@@ -7,13 +7,15 @@ website:
   navbar:
     left:
       - text: "Data Exploration"
-        file: manuscript_data_exploration.qmd
-      - text: "Methods Validation"
-        file: methods_validation.qmd
-      - text: "Multi-Epoch Validation"
-        file: methods_validation_multi_epoch.qmd
+        file: qmd_scripts/manuscript_data_exploration.qmd
       - text: "Birth-Death Inference"
-        file: birth_death_inference.qmd
+        file: qmd_scripts/birth_death_inference.qmd
+      - text: "Methods Validation"
+        file: qmd_scripts/methods_validation.qmd
+      - text: "Multi-Epoch Validation"
+        file: qmd_scripts/methods_validation_multi_epoch.qmd
+      - text: "Optimiser Comparison"
+        file: qmd_scripts/optimiser_comparison.qmd
 
 format:
   html:
