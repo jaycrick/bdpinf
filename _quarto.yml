@@ -4,6 +4,10 @@ project:
 
 website:
   title: "Inference on Birth-Death Processes for Texts"
+  repo-url: https://github.com/jaycrick/inf-bp-texts
+  repo-actions: [edit, issue]
+  bread-crumbs: true
+  page-navigation: true
   navbar:
     left:
       - text: "Data Exploration"
@@ -19,6 +23,8 @@ website:
 
 format:
   html:
+    respect-user-color-scheme: true
+    code-overflow: wrap
     theme: cosmo
     toc: true
     toc-depth: 3
@@ -33,6 +39,6 @@ format:
     monofont: "ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace"
 
 execute:
-  warning: false
-  message: false
-  cache: false
+  warning: true
+  message: true
+  cache: true

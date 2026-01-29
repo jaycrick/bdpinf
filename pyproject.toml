@@ -28,6 +28,7 @@ torchvision = "^0.24.1"
 [tool.poetry.group.dev.dependencies]
 isort = "^6.0.1"
 joblib-stubs = "^1.5.2.0.20250831"
+jupyter-cache = "^1.0.1"
 lintquarto = "^0.7.0"
 lxml-stubs = "^0.5.1"
 mypy = "^1.17.1"
