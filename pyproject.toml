@@ -10,6 +10,7 @@ version = "0.1.0"
 inf-bp-texts = "inf_bp_texts.cli:main"
 
 [tool.poetry.dependencies]
+itables = "^2.6.2"
 joblib = "^1.5.2"
 jupyter = "^1.0.0"
 kaleido = "^1.1.0"
