@@ -10,6 +10,7 @@ version = "0.1.0"
 inf-bp-texts = "inf_bp_texts.cli:main"
 
 [tool.poetry.dependencies]
+itables = "^2.6.2"
 joblib = "^1.5.2"
 jupyter = "^1.0.0"
 kaleido = "^1.1.0"
@@ -28,6 +29,8 @@ torchvision = "^0.24.1"
 [tool.poetry.group.dev.dependencies]
 isort = "^6.0.1"
 joblib-stubs = "^1.5.2.0.20250831"
+jupyter-cache = "^1.0.1"
+lintquarto = "^0.7.0"
 lxml-stubs = "^0.5.1"
 mypy = "^1.17.1"
 plotly-stubs = "^0.0.6"

@@ -39,8 +39,8 @@ from numpy.typing import NDArray
 # Professional plotting style configuration
 # Configure professional font family for all plots
 FONT_FAMILY = "Libertinus Serif, Latin Modern Roman, Times New Roman, Times, serif"
-FONT_SIZE = 11
-TITLE_FONT_SIZE = 13
+FONT_SIZE = 13
+TITLE_FONT_SIZE = 15
 
 # Global font configuration for plotly
 font_config = dict(family=FONT_FAMILY, size=FONT_SIZE, color="black")
@@ -96,7 +96,12 @@ layout_config = dict(
 
 
 def apply_professional_styling(
-    fig: Any, title: str, xaxis_title: str, yaxis_title: str, height: int = 400
+    fig: Any,
+    title: str,
+    xaxis_title: str,
+    yaxis_title: str,
+    height: int = 400,
+    autosize: bool = True,
 ) -> Any:
     """
     Apply consistent professional styling to all figures.
@@ -148,7 +153,7 @@ def apply_professional_styling(
             traceorder="normal",
         ),
         margin=dict(l=50, r=15, t=15 if title else 8, b=40, pad=4),
-        autosize=False,
+        autosize=autosize,
     )
     return fig
 
