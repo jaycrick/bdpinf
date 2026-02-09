@@ -39,16 +39,12 @@ $$
 For constant rates and $0 \le t \le T$, the non-spine age density is calculated as
 
 $$
-\rho = \lambda - \mu
-$$
-$$
-N = \lambda e^{-\lambda t} - \mu e^{-\rho T} e^{-\mu t}
-$$
-$$
-D = 1 - e^{-\rho T}
-$$
-$$
-f(t)=\frac{N}{D}
+\begin{align}
+\rho &= \lambda - \mu \\
+N &= \lambda e^{-\lambda t} - \mu e^{-\rho T} e^{-\mu t} \\
+D &= 1 - e^{-\rho T} \\
+f(t) &= \frac{N}{D}
+\end{align}
 $$
 
 For a vector of times $\mathbf{t} = (t_1, \dots, t_n)$,
@@ -59,8 +55,57 @@ $$
 
 Expanding this, we get the same formula as in [@kuck_age_2018, (3.6)].
 $$
-f(t)=\frac{\lambda e^{-\lambda t}-\mu e^{-(\lambda-\mu)T}e^{-\mu t}}{1-e^{-(\lambda-\mu)T}}.
+f(t)
+= \frac{
+    \lambda e^{-\lambda t}-\mu e^{-(\lambda-\mu)T}e^{-\mu t}
+}{
+    1-e^{-(\lambda-\mu)T}
+}.
 $$
+
+### Multi-epoch formula
+
+$$
+\begin{align}
+\mathbf{t}^\text{shift} &:= (t_1 - b, \dots, t_n - b) \\
+\mathbf{t}^\text{trunc} &:= (t_j^\text{shift} - b, \dots, t_n^\text{shift} - b) \\
+\boldsymbol{\lambda}^\text{trunc} &:= (\lambda_j, \dots, \lambda_n) \\
+\boldsymbol{\mu}^\text{trunc} &:= (\mu_j, \dots, \mu_n)
+\end{align}
+$$
+where $j = \min\{i: t_i > b\}$
+
+$$
+\operatorname{ISWBT}(b, \boldsymbol{\lambda}, \boldsymbol{\mu}, \mathbf{t})
+= \mu_j P_0(
+    \boldsymbol{\lambda}^\text{trunc},
+    \boldsymbol{\mu}^\text{trunc},
+    \mathbf{t}^\text{trunc}
+)
+$$
+where
+$$
+P_0(
+    \boldsymbol{\lambda}^\text{trunc},
+    \boldsymbol{\mu}^\text{trunc},
+    \mathbf{t}^\text{trunc}
+)
+= 1 - \frac{1}{1 + \operatorname{PEN}(
+    \boldsymbol{\lambda}^\text{trunc},
+    \boldsymbol{\mu}^\text{trunc},
+    \mathbf{t}^\text{trunc}
+)}
+$$
+and
+$$
+\operatorname{PEN}(
+    \boldsymbol{\lambda}^\text{trunc},
+    \boldsymbol{\mu}^\text{trunc},
+    \mathbf{t}^\text{trunc}
+) =
+$$
+
+Then
 
 ### Limiting case ($\lambda \approx \mu$)
 
@@ -80,7 +125,8 @@ For $K$ epochs with end times $T_1 < T_2 < \dots < T_K$, the function uses a
 extinction-conditioned likelihood of initial lifetimes:
 
 $$
-\log L(\{t_i\}) = \log L_{\text{ext}}(\{t_i\}; \tilde{\lambda}, \tilde{\mu}, \tilde{T}).
+\log L(\{t_i\})
+= \log L_{\text{ext}}(\{t_i\}; \tilde{\lambda}, \tilde{\mu}, \tilde{T}).
 $$
 
 The reversed parameters are constructed as
