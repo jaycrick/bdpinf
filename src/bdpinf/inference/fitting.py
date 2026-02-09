@@ -276,6 +276,7 @@ def _run_optimizer_strategies(
     nll_history: List[float] = []
 
     for key in requested_keys:
+        non_finite_objective = False
         opt_name, OptimClass, max_iters, opt_kwargs = strategies_map[key]
         try:
             with torch.no_grad():
@@ -289,6 +290,7 @@ def _run_optimizer_strategies(
 
                 def closure() -> torch.Tensor:
                     nonlocal iterations
+                    nonlocal non_finite_objective
                     optimizer.zero_grad()
                     nll = negative_log_likelihood(
                         birth_rates=log_params[:n_epochs],
@@ -305,12 +307,15 @@ def _run_optimizer_strategies(
                         nll_history.append(float(nll.item()))
                         iterations += 1
                     else:
+                        non_finite_objective = True
                         return torch.tensor(
                             1e10, dtype=torch.float64, requires_grad=False
                         )
                     return nll
 
                 optimizer.step(closure)
+                if non_finite_objective:
+                    continue
             else:
                 best_nll = float("inf")
                 iterations_without_improvement = 0
@@ -365,7 +370,11 @@ def _run_optimizer_strategies(
                         if iterations_without_improvement >= patience:
                             break
                     else:
+                        non_finite_objective = True
                         break
+
+                if non_finite_objective:
+                    continue
 
             if best_log_params is not None:
                 with torch.no_grad():
