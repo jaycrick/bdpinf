@@ -6,10 +6,8 @@ process probabilities and densities. These functions are isolated from the
 main BirthDeathProcess class for better testability and modularity.
 """
 
-import numpy as np
 import scipy
 import torch
-from numpy.typing import NDArray
 
 from ..utils import (
     ensure_1d_tensors,
@@ -877,10 +875,10 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
 
     if len(active_indices) > 0:
         # Use scipy's adaptive quadrature for integration
-        # Detach tensors and convert to numpy for scipy
-        birth_rates_np = birth_rates_t.detach().cpu().numpy()
-        death_rates_np = death_rates_t.detach().cpu().numpy()
-        times_np = times_t.detach().cpu().numpy()
+        # Detach tensors and move to CPU for scipy
+        birth_rates_cpu = birth_rates_t.detach().cpu()
+        death_rates_cpu = death_rates_t.detach().cpu()
+        times_cpu = times_t.detach().cpu()
 
         interval_integrals = []
         for idx in active_indices:
@@ -889,7 +887,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
             result, _ = scipy.integrate.quad(
                 lambda t: float(
                     _integrand_surv_from_weighted_birth_time_scalar(
-                        t, birth_rates_np, death_rates_np, times_np
+                        t, birth_rates_cpu, death_rates_cpu, times_cpu
                     )
                 ),
                 a,
@@ -1119,22 +1117,22 @@ def _integrand_surv_from_weighted_birth_time(
 
 def _integrand_surv_from_weighted_birth_time_scalar(
     birth_time: float,
-    birth_rates_np: NDArray[np.float64],
-    death_rates_np: NDArray[np.float64],
-    times_np: NDArray[np.float64],
+    birth_rates: torch.Tensor,
+    death_rates: torch.Tensor,
+    times: torch.Tensor,
 ) -> float:
     """
-    Scalar integrand for survival probability calculation (numpy version for scipy.integrate).
+    Scalar integrand for survival probability calculation.
 
     Parameters
     ----------
     birth_time : float
         Time at which birth occurred (scalar).
-    birth_rates_np : np.ndarray
+    birth_rates : torch.Tensor
         Birth rates λ for each epoch.
-    death_rates_np : np.ndarray
+    death_rates : torch.Tensor
         Death rates μ for each epoch.
-    times_np : np.ndarray
+    times : torch.Tensor
         Epoch end times.
 
     Returns
@@ -1142,104 +1140,20 @@ def _integrand_surv_from_weighted_birth_time_scalar(
     float
         Integrand value for this birth time.
     """
-    import numpy as np
-
-    shifted_times = times_np - birth_time
+    shifted_times = times - birth_time
     valid_mask = shifted_times > 0
-    valid_indices = np.where(valid_mask)[0]
-
-    if len(valid_indices) == 0:
+    valid_indices = torch.where(valid_mask)[0]
+    if valid_indices.numel() == 0:
         return 0.0
-
     trunc_times = shifted_times[valid_indices]
-    trunc_birth_rates = birth_rates_np[valid_indices]
-    trunc_death_rates = death_rates_np[valid_indices]
-
-    # Convert back to torch for calculation, but without gradients
+    trunc_birth_rates = birth_rates[valid_indices]
+    trunc_death_rates = death_rates[valid_indices]
     ext_prob = calculate_extinction_pr(
-        birth_rates=torch.from_numpy(trunc_birth_rates),
-        death_rates=torch.from_numpy(trunc_death_rates),
-        times=torch.from_numpy(trunc_times),
+        birth_rates=trunc_birth_rates,
+        death_rates=trunc_death_rates,
+        times=trunc_times,
     )
-
-    return float(ext_prob.item() * trunc_birth_rates[0])
-
-
-def _integrand_surv_from_weighted_birth_time_vectorized(
-    birth_times: torch.Tensor,
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
-) -> torch.Tensor:
-    """
-    Vectorized integrand for survival probability calculation.
-
-    Computes integrand values for multiple birth times simultaneously.
-
-    Parameters
-    ----------
-    birth_times : torch.Tensor
-        1D tensor of times at which births occurred. Shape: (n_points,), dtype: torch.float64.
-    birth_rates : torch.Tensor
-        1D tensor of birth rates λ for each epoch. Shape: (n_epochs,), dtype: torch.float64.
-    death_rates : torch.Tensor
-        1D tensor of death rates μ for each epoch. Shape: (n_epochs,), dtype: torch.float64.
-    times : torch.Tensor
-        1D tensor of epoch end times. Shape: (n_epochs,), dtype: torch.float64.
-
-    Returns
-    -------
-    torch.Tensor
-        1D tensor of integrand values for each birth time. Shape: (n_points,),
-        dtype: torch.float64. Supports automatic differentiation.
-    """
-    # Convert inputs to tensors
-    birth_times_t, birth_rates_t, death_rates_t, times_t = ensure_1d_tensors(
-        birth_times, birth_rates, death_rates, times
-    )
-
-    validate_matching_shapes(
-        birth_rates_t,
-        death_rates_t,
-        times_t,
-        names=("birth_rates", "death_rates", "times"),
-    )
-    n_points = len(birth_times_t)
-    results = torch.zeros(n_points, dtype=torch.float64)
-
-    # For each birth time, compute the extinction probability
-    # This is the main computational bottleneck - we compute extinction probabilities
-    # for different time-shifted parameter sets
-    has_valid_indices = False
-    for i, birth_time in enumerate(birth_times_t):
-        shifted_times = times_t - birth_time
-        valid_mask = shifted_times > 0
-        valid_indices = torch.where(valid_mask)[0]
-
-        if len(valid_indices) == 0:
-            results[i] = torch.tensor(0.0, dtype=torch.float64)
-            continue
-
-        has_valid_indices = True
-        trunc_times = shifted_times[valid_indices]
-        trunc_birth_rates = birth_rates_t[valid_indices]
-        trunc_death_rates = death_rates_t[valid_indices]
-
-        ext_prob = calculate_extinction_pr(
-            birth_rates=trunc_birth_rates,
-            death_rates=trunc_death_rates,
-            times=trunc_times,
-        )
-
-        results[i] = ext_prob * trunc_birth_rates[0]
-
-    if not has_valid_indices:
-        raise ValueError(
-            "All birth times exceed all epoch end times. "
-            f"Max birth_time: {torch.max(birth_times_t)}, final epoch time: {times_t[-1]}"
-        )
-
-    return results
+    return float(ext_prob * trunc_birth_rates[0])
 
 
 def _pr_extinction_numerator(
