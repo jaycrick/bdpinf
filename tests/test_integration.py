@@ -7,6 +7,7 @@ and test realistic end-to-end workflows.
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from inf_bp_texts.inference.fitting import fit_birth_death_processes, fit_from_dataframe
 from inf_bp_texts.inference.likelihood import log_likelihood
@@ -41,6 +42,54 @@ class TestIntegration:
                     assert fitted_death >= 0
                     assert np.isfinite(fitted_birth)
                     assert np.isfinite(fitted_death)
+
+    @pytest.mark.slow
+    def test_multi_epoch_convergence_rate(self) -> None:
+        """Test multi-epoch convergence rate on simulated datasets."""
+        rng = np.random.default_rng(12345)
+        n_trials = 12
+        min_survivors = 10
+        n_datasets = 0
+        n_success = 0
+        consecutive_successes = 0
+        times = np.array([150.0, 300.0, 450.0])
+
+        for _ in range(n_trials):
+            birth_rates = rng.uniform(0.005, 0.01, size=3)
+            death_rates = birth_rates * rng.uniform(0.0025, 0.005, size=3)
+            base_seed = int(rng.integers(0, 2**31 - 1))
+
+            df = simulate_birth_death_process(
+                birth_rates=birth_rates,
+                death_rates=death_rates,
+                times=times,
+                random_seed=base_seed,
+            )
+            surviving = df[df["survived"]]
+            ages = None
+            if len(surviving) >= min_survivors:
+                ages = surviving["age"].to_numpy(dtype=np.float64)
+
+            if ages is None:
+                continue
+
+            n_datasets += 1
+            try:
+                result = fit_birth_death_processes([ages], times)
+            except ValueError:
+                consecutive_successes = 0
+                continue
+
+            if result["success"] and np.isfinite(result.get("log_likelihood", np.nan)):
+                n_success += 1
+                consecutive_successes += 1
+                if consecutive_successes >= 9:
+                    break
+            else:
+                consecutive_successes = 0
+
+        assert n_datasets >= int(n_trials * 0.75)
+        assert n_success / n_datasets >= 0.9
 
     def test_manuscript_lifecycle_workflow(self) -> None:
         """Test workflow for tracking manuscript lifecycle."""
