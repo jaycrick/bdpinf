@@ -5,9 +5,82 @@ Test suite for modular fitting functionality.
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
-from inf_bp_texts.inference.fitting import fit_birth_death_processes, fit_from_dataframe
+from inf_bp_texts.inference.fitting import (
+    _apply_param_perturbation,
+    _build_initial_params,
+    _build_optimizer_strategies,
+    _extract_spine_and_ages,
+    _find_non_empty_age,
+    _normalize_requested_optimizers,
+    _prepare_population_sizes,
+    _validate_times,
+    fit_birth_death_processes,
+    fit_from_dataframe,
+)
 from inf_bp_texts.models import BirthDeathProcess
+
+
+class TestFittingHelpers:
+    def test_find_non_empty_age_returns_first(self) -> None:
+        ages_list = [torch.tensor([]), torch.tensor([1.0, 2.0])]
+        result = _find_non_empty_age(ages_list)
+        assert torch.equal(result, ages_list[1])
+
+    def test_validate_times_rejects_non_positive(self) -> None:
+        with pytest.raises(ValueError, match="must be positive"):
+            _validate_times(torch.tensor([1.0, 0.0]))
+
+    def test_prepare_population_sizes_length_mismatch(self) -> None:
+        ages_list = [torch.tensor([1.0]), torch.tensor([2.0])]
+        with pytest.raises(ValueError, match="Length of population_sizes"):
+            _prepare_population_sizes(
+                ages_list, torch.tensor([1], dtype=torch.int64), None
+            )
+
+    def test_extract_spine_and_ages_ordered(self) -> None:
+        ages_list = [torch.tensor([10.0, 20.0]), torch.tensor([30.0])]
+        spine_ages, non_spine = _extract_spine_and_ages(
+            ages_list, is_ordered=True, spine_ages=None
+        )
+
+        assert spine_ages is not None
+        expected_spine = torch.tensor([10.0, 30.0], dtype=spine_ages.dtype)
+        expected_non_spine = torch.tensor([20.0], dtype=non_spine.dtype)
+        assert torch.allclose(spine_ages, expected_spine)
+        assert torch.allclose(non_spine, expected_non_spine)
+
+    def test_apply_param_perturbation_is_deterministic(self) -> None:
+        params = torch.tensor([1.0, 2.0], dtype=torch.float64)
+        perturbed_first = _apply_param_perturbation(params, 0.1, random_seed=7)
+        perturbed_second = _apply_param_perturbation(params, 0.1, random_seed=7)
+
+        assert torch.allclose(perturbed_first, perturbed_second)
+        assert torch.all(perturbed_first > 0)
+
+    def test_build_optimizer_strategies_merges_kwargs(self) -> None:
+        strategies = _build_optimizer_strategies({"adam": {"lr": 0.01}})
+        assert strategies["adam"][3]["lr"] == 0.01
+
+    def test_normalize_requested_optimizers_rejects_unknown(self) -> None:
+        strategies = _build_optimizer_strategies(None)
+        with pytest.raises(ValueError, match="Unsupported optimizer"):
+            _normalize_requested_optimizers(["Adam", "Bogus"], strategies)
+
+    def test_build_initial_params_with_custom_rates(self) -> None:
+        birth_rates = torch.tensor([0.1, 0.2])
+        death_rates = torch.tensor([0.03, 0.04])
+        non_empty_age = torch.tensor([10.0])
+        times_tensor = torch.tensor([100.0, 200.0])
+
+        initial_params = _build_initial_params(
+            birth_rates, death_rates, non_empty_age, times_tensor
+        )
+        expected_params = torch.tensor(
+            [0.1, 0.2, 0.03, 0.04], dtype=initial_params.dtype
+        )
+        assert torch.allclose(initial_params, expected_params)
 
 
 class TestFitting:
@@ -361,4 +434,5 @@ class TestMultiEpochFitting:
         if result["success"]:
             # Should have multi-epoch parameters
             assert len(result["birth_rates"]) == 2
+            assert len(result["death_rates"]) == 2
             assert len(result["death_rates"]) == 2
