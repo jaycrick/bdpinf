@@ -14,6 +14,12 @@ from inf_bp_texts.inference.likelihood import log_likelihood
 from inf_bp_texts.simulation import simulate_birth_death_process
 
 
+def _as_float(value: object) -> float:
+    if hasattr(value, "item"):
+        return float(value.item())
+    return float(value)
+
+
 class TestIntegration:
     """Integration tests for complete workflows."""
 
@@ -40,8 +46,8 @@ class TestIntegration:
                     fitted_death = result["death_rates"]
                     assert fitted_birth > 0
                     assert fitted_death >= 0
-                    assert np.isfinite(fitted_birth)
-                    assert np.isfinite(fitted_death)
+                    assert np.isfinite(_as_float(fitted_birth))
+                    assert np.isfinite(_as_float(fitted_death))
 
     @pytest.mark.slow
     def test_multi_epoch_convergence_rate(self) -> None:
@@ -80,7 +86,9 @@ class TestIntegration:
                 consecutive_successes = 0
                 continue
 
-            if result["success"] and np.isfinite(result.get("log_likelihood", np.nan)):
+            if result["success"] and np.isfinite(
+                _as_float(result.get("log_likelihood", np.nan))
+            ):
                 n_success += 1
                 consecutive_successes += 1
                 if consecutive_successes >= 9:
@@ -135,7 +143,7 @@ class TestIntegration:
             for age in test_ages
         ]
         assert len(predictions) == 5
-        assert all(np.isfinite(pred) for pred in predictions)
+        assert all(np.isfinite(_as_float(pred)) for pred in predictions)
         assert all(pred <= 0 for pred in predictions)
 
     def test_external_data_processing_workflow(self) -> None:
@@ -180,7 +188,7 @@ class TestIntegration:
             for age in age_range
         ]
         assert len(predictions) == 10
-        assert all(np.isfinite(pred) for pred in predictions)
+        assert all(np.isfinite(_as_float(pred)) for pred in predictions)
 
     def test_model_comparison_workflow(self) -> None:
         """Test workflow for comparing different models manually."""
@@ -230,7 +238,7 @@ class TestIntegration:
         if successful_results:
             # Check that we can find the best model by log-likelihood
             best_result = max(successful_results, key=lambda x: x["log_likelihood"])
-            assert np.isfinite(best_result["log_likelihood"])
+            assert np.isfinite(_as_float(best_result["log_likelihood"]))
         else:
             # If no models succeeded, that's also a valid outcome for difficult data
             print(
@@ -252,17 +260,17 @@ class TestIntegration:
         lower_birth_ll = log_likelihood(
             birth_rates=0.01, death_rates=0.005, ages=ages, times=final_time
         )
-        assert np.isfinite(base_ll)
-        assert np.isfinite(higher_birth_ll)
-        assert np.isfinite(lower_birth_ll)
+        assert np.isfinite(_as_float(base_ll))
+        assert np.isfinite(_as_float(higher_birth_ll))
+        assert np.isfinite(_as_float(lower_birth_ll))
         higher_death_ll = log_likelihood(
             birth_rates=0.02, death_rates=0.01, ages=ages, times=final_time
         )
         lower_death_ll = log_likelihood(
             birth_rates=0.02, death_rates=0.002, ages=ages, times=final_time
         )
-        assert np.isfinite(higher_death_ll)
-        assert np.isfinite(lower_death_ll)
+        assert np.isfinite(_as_float(higher_death_ll))
+        assert np.isfinite(_as_float(lower_death_ll))
         likelihoods = [
             base_ll,
             higher_birth_ll,
@@ -313,7 +321,7 @@ class TestIntegration:
             ages=ages_small,
             times=final_time_small,
         )
-        assert np.isfinite(small_ll) or small_ll == -np.inf
+        assert np.isfinite(_as_float(small_ll)) or small_ll == -np.inf
 
         creation_times_critical = [100.0, 200.0, 300.0]
         final_time_critical = 1000.0
@@ -329,7 +337,7 @@ class TestIntegration:
             ages=ages_critical,
             times=final_time_critical,
         )
-        assert np.isfinite(critical_ll) or critical_ll == -np.inf
+        assert np.isfinite(_as_float(critical_ll)) or critical_ll == -np.inf
 
         creation_times_large = [1.0, 2.0, 3.0]
         final_time_large = 50000.0
@@ -342,7 +350,7 @@ class TestIntegration:
             ages=ages_large,
             times=final_time_large,
         )
-        assert np.isfinite(large_ll) or large_ll == -np.inf
+        assert np.isfinite(_as_float(large_ll)) or large_ll == -np.inf
 
     def test_state_consistency_throughout_workflow(self) -> None:
         """Test that object state remains consistent throughout operations."""
