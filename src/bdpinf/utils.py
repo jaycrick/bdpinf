@@ -70,3 +70,69 @@ def ensure_1d_tensor(x: torch.Tensor | float | int) -> torch.Tensor:
     tensor([1., 2., 3., 4.], dtype=torch.float64)
     """
     return torch.as_tensor(x, dtype=torch.float64).reshape(-1)
+
+
+def ensure_1d_tensors(*values: torch.Tensor | float | int) -> tuple[torch.Tensor, ...]:
+    return tuple(ensure_1d_tensor(value) for value in values)
+
+
+def validate_matching_shapes(
+    *tensors: torch.Tensor, names: tuple[str, ...] | None = None
+) -> None:
+    if len(tensors) < 2:
+        return
+    if names is not None and len(names) != len(tensors):
+        raise ValueError(
+            "names must be the same length as tensors when provided. "
+            f"Got names={len(names)}, tensors={len(tensors)}"
+        )
+
+    reference_shape = tensors[0].shape
+    mismatches = [
+        (idx, tensor.shape)
+        for idx, tensor in enumerate(tensors)
+        if tensor.shape != reference_shape
+    ]
+    if mismatches:
+        parts = []
+        for idx, shape in mismatches:
+            label = names[idx] if names is not None else f"tensor_{idx}"
+            parts.append(f"{label} shape={shape}")
+        reference_label = names[0] if names is not None else "tensor_0"
+        message = (
+            "Tensors must have matching shapes. "
+            f"Reference {reference_label} shape={reference_shape}. "
+            "Mismatches: " + ", ".join(parts)
+        )
+        raise ValueError(message)
+
+
+def validate_matching_lengths(
+    *tensors: torch.Tensor, names: tuple[str, ...] | None = None
+) -> None:
+    if len(tensors) < 2:
+        return
+    if names is not None and len(names) != len(tensors):
+        raise ValueError(
+            "names must be the same length as tensors when provided. "
+            f"Got names={len(names)}, tensors={len(tensors)}"
+        )
+
+    reference_len = len(tensors[0])
+    mismatches = [
+        (idx, len(tensor))
+        for idx, tensor in enumerate(tensors)
+        if len(tensor) != reference_len
+    ]
+    if mismatches:
+        parts = []
+        for idx, length in mismatches:
+            label = names[idx] if names is not None else f"tensor_{idx}"
+            parts.append(f"{label} length={length}")
+        reference_label = names[0] if names is not None else "tensor_0"
+        message = (
+            "Tensors must have matching lengths. "
+            f"Reference {reference_label} length={reference_len}. "
+            "Mismatches: " + ", ".join(parts)
+        )
+        raise ValueError(message)

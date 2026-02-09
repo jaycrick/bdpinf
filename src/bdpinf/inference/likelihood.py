@@ -9,13 +9,15 @@ import warnings
 
 import torch
 
-from ..models.mathematical_functions import (
-    calculate_ages_log_lik,
+from ..models.mathematical_derivatives import (
     calculate_ages_log_lik_derivatives,
-    calculate_populations_log_lik,
     calculate_populations_log_lik_derivatives,
 )
-from ..utils import ensure_1d_tensor
+from ..models.mathematical_functions import (
+    calculate_ages_log_lik,
+    calculate_populations_log_lik,
+)
+from ..utils import ensure_1d_tensor, ensure_1d_tensors
 
 
 def log_likelihood(
@@ -97,10 +99,9 @@ def log_likelihood(
     See also:
         calculate_populations_log_likelihood, calculate_ages_log_likelihood
     """
-    birth_rates = ensure_1d_tensor(birth_rates)
-    death_rates = ensure_1d_tensor(death_rates)
-    ages = ensure_1d_tensor(ages)
-    times = ensure_1d_tensor(times)
+    birth_rates, death_rates, ages, times = ensure_1d_tensors(
+        birth_rates, death_rates, ages, times
+    )
 
     if not (birth_rates.shape == death_rates.shape == times.shape):
         raise ValueError(
@@ -304,7 +305,7 @@ def log_likelihood_gradient(
                 torch.log(torch.tensor([1.2, 0.3])), ages=[0.1, 0.4], observation_time=1.0, log_scale_params=True
             )
     """
-    params_tensor = ensure_1d_tensor(params)
+    params_tensor, ages = ensure_1d_tensors(params, ages)
     if len(params_tensor) != 2:
         raise ValueError("params must have length 2")
     if is_ordered and (spine_ages is not None):
@@ -324,11 +325,8 @@ def log_likelihood_gradient(
     if observation_time <= 0:
         raise ValueError("Observation time must be positive.")
 
-    # Normalize ages and spine_ages to tensors so len() and vectorized ops are valid
-    ages = ensure_1d_tensor(ages)
     if spine_ages is not None:
         spine_ages = ensure_1d_tensor(spine_ages)
-
     if torch.any(ages < 0) or torch.any(ages > observation_time):
         raise ValueError("Ages must be in the range [0, observation_time].")
 
@@ -460,5 +458,7 @@ def negative_log_likelihood(
         is_ordered=is_ordered,
         log_scale_params=log_scale_params,
     )
+
+    return result
 
     return result
