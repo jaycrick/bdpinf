@@ -22,9 +22,7 @@ def _validate_times_non_negative(times: torch.Tensor, *, error_message: str) -> 
 
 
 def _validate_times_strictly_increasing(
-    times: torch.Tensor,
-    *,
-    all_positive: bool = False,
+    times: torch.Tensor, *, all_positive: bool = False
 ) -> None:
     error_message = f"times must be strictly increasing. Got times: {times}"
     if all_positive:
@@ -36,13 +34,23 @@ def _validate_times_strictly_increasing(
 
 
 def _validate_ages_in_range(
-    ages_t: torch.Tensor,
-    end_time: torch.Tensor,
-    *,
-    error_message: str,
+    ages_t: torch.Tensor, end_time: torch.Tensor, *, error_message: str
 ) -> None:
     if torch.any(ages_t < 0) or torch.any(ages_t > end_time):
         raise ValueError(error_message)
+
+
+def _reverse_time(
+    lambda_params: torch.Tensor, mu_params: torch.Tensor, times: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    end_time = times[-1]
+    inverted_times = torch.flip(
+        end_time - torch.cat([torch.tensor([0.0], dtype=torch.float64), times])[:-1],
+        dims=[0],
+    )
+    reflected_birth_rates = torch.flip(mu_params, dims=[0])
+    reflected_death_rates = torch.flip(lambda_params, dims=[0])
+    return inverted_times, reflected_birth_rates, reflected_death_rates
 
 
 def calculate_populations_log_lik(
@@ -97,10 +105,7 @@ def calculate_populations_log_lik(
         times, error_message=f"Times must be non-negative. Got times: {times}"
     )
     validate_matching_lengths(
-        lambda_params,
-        mu_params,
-        times,
-        names=("lambda_params", "mu_params", "times"),
+        lambda_params, mu_params, times, names=("lambda_params", "mu_params", "times")
     )
 
     if len(times) > 1:
@@ -108,10 +113,7 @@ def calculate_populations_log_lik(
         if torch.any(lambda_params < 0) or torch.any(mu_params < 0):
             return torch.tensor(float("-inf"), dtype=torch.float64)
 
-        _validate_times_strictly_increasing(
-            times,
-            all_positive=True,
-        )
+        _validate_times_strictly_increasing(times, all_positive=True)
 
         alpha_t = calculate_extinction_pr(lambda_params, mu_params, times)
         beta_t = 1 - _population_geometric_parameter(lambda_params, mu_params, times)
@@ -240,10 +242,7 @@ def calculate_non_spine_ages_log_lik(
         lambda_params, mu_params, times, ages_t
     )
     validate_matching_shapes(
-        lambda_params,
-        mu_params,
-        times,
-        names=("lambda_params", "mu_params", "times"),
+        lambda_params, mu_params, times, names=("lambda_params", "mu_params", "times")
     )
     end_time = times[-1]
     _validate_times_strictly_increasing(times, all_positive=True)
@@ -253,26 +252,15 @@ def calculate_non_spine_ages_log_lik(
         error_message=f"ages_t must be in [0, {end_time}]. Got ages_t: {ages_t}",
     )
     validate_matching_lengths(
-        lambda_params,
-        mu_params,
-        times,
-        names=("lambda_params", "mu_params", "times"),
+        lambda_params, mu_params, times, names=("lambda_params", "mu_params", "times")
     )
 
     if len(times) > 1:
-        # Multi-epoch case: use time-reversal transformation
-        inverted_times = torch.flip(
-            end_time
-            - torch.cat([torch.tensor([0.0], dtype=torch.float64), times])[:-1],
-            dims=[0],
+        inverted_times, reflected_birth_rates, reflected_death_rates = _reverse_time(
+            lambda_params=lambda_params, mu_params=mu_params, times=times
         )
-        reflected_birth_rates = torch.flip(mu_params, dims=[0])
-        reflected_death_rates = torch.flip(lambda_params, dims=[0])
         return calculate_log_lik_initial_lifetimes_given_extinction(
-            ages_t,
-            reflected_birth_rates,
-            reflected_death_rates,
-            inverted_times,
+            ages_t, reflected_birth_rates, reflected_death_rates, inverted_times
         )
 
     lambda_val = lambda_params[0]
@@ -377,36 +365,23 @@ def calculate_spine_ages_log_lik(
         lambda_params, mu_params, times, ages_t
     )
     validate_matching_shapes(
-        lambda_params,
-        mu_params,
-        times,
-        names=("lambda_params", "mu_params", "times"),
+        lambda_params, mu_params, times, names=("lambda_params", "mu_params", "times")
     )
     end_time = times[-1]
-    _validate_times_strictly_increasing(
-        times,
-        all_positive=True,
-    )
+    _validate_times_strictly_increasing(times, all_positive=True)
     _validate_ages_in_range(
         ages_t,
         end_time,
         error_message=f"ages_t must be in [0, {end_time}]. Got ages_t: {ages_t}",
     )
     validate_matching_lengths(
-        lambda_params,
-        mu_params,
-        times,
-        names=("lambda_params", "mu_params", "times"),
+        lambda_params, mu_params, times, names=("lambda_params", "mu_params", "times")
     )
 
     if len(times) > 1:
-        inverted_times = torch.flip(
-            end_time
-            - torch.cat([torch.tensor([0.0], dtype=torch.float64), times])[:-1],
-            dims=[0],
+        inverted_times, reflected_birth_rates, reflected_death_rates = _reverse_time(
+            lambda_params=lambda_params, mu_params=mu_params, times=times
         )
-        reflected_birth_rates = torch.flip(mu_params, dims=[0])
-        reflected_death_rates = torch.flip(lambda_params, dims=[0])
         return calculate_log_lik_initial_lifetimes_given_non_extinction(
             lifetimes=ages_t,
             birth_rates=reflected_birth_rates,
@@ -547,12 +522,7 @@ def calculate_ages_log_lik(
     else:
         # calculate_non_spine_ages_log_lik requires array inputs
         # Wrap scalar parameters in single-element arrays for single-epoch case
-        return calculate_non_spine_ages_log_lik(
-            lambda_params,
-            mu_params,
-            ages_t,
-            times,
-        )
+        return calculate_non_spine_ages_log_lik(lambda_params, mu_params, ages_t, times)
 
 
 def calculate_extinction_pr(
@@ -601,9 +571,7 @@ def calculate_extinction_pr(
     _validate_times_strictly_increasing(times_t, all_positive=True)
 
     pr_extinction_numerator = _pr_extinction_numerator(
-        birth_rates=birth_rates_t,
-        death_rates=death_rates_t,
-        times=times_t,
+        birth_rates=birth_rates_t, death_rates=death_rates_t, times=times_t
     )
     if return_log_prob:
         log_alpha_t = torch.log(pr_extinction_numerator) - torch.log1p(
@@ -656,9 +624,7 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
         )
     )
     log_liks_lifetimes = calculate_log_lik_lifetimes(
-        lifetimes=lifetimes,
-        death_rates=death_rates,
-        times=times,
+        lifetimes=lifetimes, death_rates=death_rates, times=times
     )
     log_extinction_prob = calculate_extinction_pr(
         birth_rates=birth_rates,
@@ -718,9 +684,7 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
         )
     )
     log_liks_lifetimes = calculate_log_lik_lifetimes(
-        lifetimes=lifetimes,
-        death_rates=death_rates,
-        times=times,
+        lifetimes=lifetimes, death_rates=death_rates, times=times
     )
     log_extinction_prob = calculate_extinction_pr(
         birth_rates=birth_rates,
@@ -888,9 +852,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
 
 
 def calculate_log_lik_lifetimes(
-    lifetimes: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
+    lifetimes: torch.Tensor, death_rates: torch.Tensor, times: torch.Tensor
 ) -> torch.Tensor:
     """
     Calculate log-likelihood of manuscript lifetime(s).
@@ -959,9 +921,7 @@ def calculate_log_lik_lifetimes(
 
 
 def _population_geometric_parameter(
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
+    birth_rates: torch.Tensor, death_rates: torch.Tensor, times: torch.Tensor
 ) -> torch.Tensor:
     """
     Calculate geometric parameter (1 - β_t) for offspring distribution.
@@ -1058,9 +1018,7 @@ def _integrand_surv_from_weighted_birth_time(
     trunc_death_rates = death_rates_t[valid_indices]
 
     ext_prob = calculate_extinction_pr(
-        birth_rates=trunc_birth_rates,
-        death_rates=trunc_death_rates,
-        times=trunc_times,
+        birth_rates=trunc_birth_rates, death_rates=trunc_death_rates, times=trunc_times
     )
 
     return ext_prob * trunc_birth_rates[0]
@@ -1100,17 +1058,13 @@ def _integrand_surv_from_weighted_birth_time_scalar(
     trunc_birth_rates = birth_rates[valid_indices]
     trunc_death_rates = death_rates[valid_indices]
     ext_prob = calculate_extinction_pr(
-        birth_rates=trunc_birth_rates,
-        death_rates=trunc_death_rates,
-        times=trunc_times,
+        birth_rates=trunc_birth_rates, death_rates=trunc_death_rates, times=trunc_times
     )
     return float(ext_prob * trunc_birth_rates[0])
 
 
 def _pr_extinction_numerator(
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
+    birth_rates: torch.Tensor, death_rates: torch.Tensor, times: torch.Tensor
 ) -> torch.Tensor:
     """
     Calculate numerator of extinction probability integral.
@@ -1141,10 +1095,7 @@ def _pr_extinction_numerator(
     birth_rates, death_rates, times = ensure_1d_tensors(birth_rates, death_rates, times)
 
     validate_matching_shapes(
-        birth_rates,
-        death_rates,
-        times,
-        names=("birth_rates", "death_rates", "times"),
+        birth_rates, death_rates, times, names=("birth_rates", "death_rates", "times")
     )
 
     epoch_durations = torch.diff(times, prepend=times.new_zeros(1))
