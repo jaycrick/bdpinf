@@ -16,8 +16,8 @@ from ..utils import (
 )
 
 
-def _validate_times_non_negative(times: torch.Tensor, *, error_message: str) -> None:
-    if torch.any(times < 0):
+def _validate_times_positive(times: torch.Tensor, *, error_message: str) -> None:
+    if torch.any(times <= 0):
         raise ValueError(error_message)
 
 
@@ -38,6 +38,79 @@ def _validate_ages_in_range(
 ) -> None:
     if torch.any(ages_t < 0) or torch.any(ages_t > end_time):
         raise ValueError(error_message)
+
+
+def _normalize_and_validate_inputs(
+    birth_rates: torch.Tensor | float | None = None,
+    death_rates: torch.Tensor | float | None = None,
+    times: torch.Tensor | float | None = None,
+    ages: torch.Tensor | float | None = None,
+    *,
+    validate_shapes: bool = True,
+    validate_lengths: bool = True,
+    require_times_positive: bool = True,
+    require_times_increasing: bool = True,
+    require_ages_in_range: bool = True,
+) -> tuple[torch.Tensor, ...]:
+    inputs = []
+    labels = []
+    if birth_rates is not None:
+        inputs.append(birth_rates)
+        labels.append("birth_rates")
+    if death_rates is not None:
+        inputs.append(death_rates)
+        labels.append("death_rates")
+    if times is not None:
+        inputs.append(times)
+        labels.append("times")
+    if ages is not None:
+        inputs.append(ages)
+        labels.append("ages")
+
+    normalized = ensure_1d_tensors(*inputs) if inputs else ()
+    tensor_map = {label: value for label, value in zip(labels, normalized)}
+
+    rate_time_labels = [
+        label
+        for label in ("birth_rates", "death_rates", "times")
+        if label in tensor_map
+    ]
+    if validate_lengths and len(rate_time_labels) > 1:
+        validate_matching_lengths(
+            *(tensor_map[label] for label in rate_time_labels),
+            names=tuple(rate_time_labels),
+        )
+    if validate_shapes and len(rate_time_labels) > 1:
+        validate_matching_shapes(
+            *(tensor_map[label] for label in rate_time_labels),
+            names=tuple(rate_time_labels),
+        )
+
+    if times is not None:
+        times_t = tensor_map["times"]
+        if require_times_positive:
+            _validate_times_positive(
+                times_t,
+                error_message=f"times must be positive. Got times: {times_t}",
+            )
+        if require_times_increasing:
+            _validate_times_strictly_increasing(
+                times_t,
+                all_positive=require_times_positive,
+            )
+
+    if require_ages_in_range and (ages is not None):
+        if times is None:
+            raise ValueError("times is required for age range validation.")
+        end_time = tensor_map["times"][-1]
+        ages_t = tensor_map["ages"]
+        _validate_ages_in_range(
+            ages_t,
+            end_time,
+            error_message=(f"ages must be in [0, {end_time}]. Got ages: {ages_t}"),
+        )
+
+    return tuple(tensor_map[label] for label in labels)
 
 
 def _reverse_time(
@@ -68,8 +141,6 @@ def calculate_populations_log_lik(
     are summed and returned as a single torch.Tensor. Invalid or numerically
     unstable inputs return -inf tensor.
 
-    Uses only PyTorch operations to preserve autograd support.
-
     Parameters
     ----------
     lambda_params : torch.Tensor | float
@@ -94,26 +165,19 @@ def calculate_populations_log_lik(
     matching lengths. Returns -inf tensor for numerical issues.
     """
     # Convert scalar inputs to tensors and ensure 1D arrays
-    lambda_params, mu_params, times, ns = ensure_1d_tensors(
-        lambda_params, mu_params, times, ns
+    lambda_params, mu_params, times = _normalize_and_validate_inputs(
+        birth_rates=lambda_params, death_rates=mu_params, times=times
     )
+    (ns,) = ensure_1d_tensors(ns)
 
     # Input validation
     if torch.any(ns < 0):
         raise ValueError(f"Population counts ns must be non-negative. Got ns: {ns}")
-    _validate_times_non_negative(
-        times, error_message=f"Times must be non-negative. Got times: {times}"
-    )
-    validate_matching_lengths(
-        lambda_params, mu_params, times, names=("lambda_params", "mu_params", "times")
-    )
 
     if len(times) > 1:
         # Multi-epoch case
         if torch.any(lambda_params < 0) or torch.any(mu_params < 0):
             return torch.tensor(float("-inf"), dtype=torch.float64)
-
-        _validate_times_strictly_increasing(times, all_positive=True)
 
         alpha_t = calculate_extinction_pr(lambda_params, mu_params, times)
         beta_t = 1 - _population_geometric_parameter(lambda_params, mu_params, times)
@@ -123,7 +187,6 @@ def calculate_populations_log_lik(
         mu_val = mu_params[0]
         time_val = times[0]
 
-        # Validate positive parameters
         if lambda_val < 0 or mu_val < 0:
             return torch.tensor(float("-inf"), dtype=torch.float64)
 
@@ -204,7 +267,7 @@ def calculate_non_spine_ages_log_lik(
 ) -> torch.Tensor:
     """
     Calculate log-likelihood of the ages of the "non-spine" individual(s).
-    In the constant rate case, the density for the age a is:
+    In the constant rate case, the density for the age *a* is:
 
         (λ * exp(-λa) - μ * exp(-(λ - μ)T) * exp(-μa))
         / (1 - exp(-(λ - μ)T))
@@ -216,13 +279,13 @@ def calculate_non_spine_ages_log_lik(
     Parameters
     ----------
     lambda_params : torch.Tensor | float
-        (Non-negative) birth rate(s) λ.
+        (Non-negative) birth rate(s) *λ*.
     mu_params : torch.Tensor | float
-        (Non-negative) death rate(s) μ.
+        (Non-negative) death rate(s) *μ*.
     ages_t : torch.Tensor | float
-        Age(s) a. All ages must satisfy 0 ≤ a ≤ T.
+        Age(s) *a*. All ages must satisfy 0 ≤ *a* ≤ *T*.
     times : torch.Tensor | float
-        Observation time(s) T. For multi-epoch case, the end of each epoch.
+        Observation time(s) *T*. For multi-epoch case, the end of each epoch.
 
 
     Returns
@@ -238,22 +301,10 @@ def calculate_non_spine_ages_log_lik(
         On the age of a randomly picked individual in a linear birth-and-death process.
         *Journal of Applied Probability, 55*(1), 82–93. doi:10.1017/jpr.2018.7
     """
-    lambda_params, mu_params, times, ages_t = ensure_1d_tensors(
-        lambda_params, mu_params, times, ages_t
-    )
-    validate_matching_shapes(
-        lambda_params, mu_params, times, names=("lambda_params", "mu_params", "times")
+    lambda_params, mu_params, times, ages_t = _normalize_and_validate_inputs(
+        birth_rates=lambda_params, death_rates=mu_params, times=times, ages=ages_t
     )
     end_time = times[-1]
-    _validate_times_strictly_increasing(times, all_positive=True)
-    _validate_ages_in_range(
-        ages_t,
-        end_time,
-        error_message=f"ages_t must be in [0, {end_time}]. Got ages_t: {ages_t}",
-    )
-    validate_matching_lengths(
-        lambda_params, mu_params, times, names=("lambda_params", "mu_params", "times")
-    )
 
     if len(times) > 1:
         inverted_times, reflected_birth_rates, reflected_death_rates = _reverse_time(
@@ -361,22 +412,10 @@ def calculate_spine_ages_log_lik(
         On the age of a randomly picked individual in a linear birth-and-death process.
         *Journal of Applied Probability, 55*(1), 82–93. doi:10.1017/jpr.2018.7
     """
-    lambda_params, mu_params, times, ages_t = ensure_1d_tensors(
-        lambda_params, mu_params, times, ages_t
-    )
-    validate_matching_shapes(
-        lambda_params, mu_params, times, names=("lambda_params", "mu_params", "times")
+    lambda_params, mu_params, times, ages_t = _normalize_and_validate_inputs(
+        birth_rates=lambda_params, death_rates=mu_params, times=times, ages=ages_t
     )
     end_time = times[-1]
-    _validate_times_strictly_increasing(times, all_positive=True)
-    _validate_ages_in_range(
-        ages_t,
-        end_time,
-        error_message=f"ages_t must be in [0, {end_time}]. Got ages_t: {ages_t}",
-    )
-    validate_matching_lengths(
-        lambda_params, mu_params, times, names=("lambda_params", "mu_params", "times")
-    )
 
     if len(times) > 1:
         inverted_times, reflected_birth_rates, reflected_death_rates = _reverse_time(
@@ -433,7 +472,9 @@ def calculate_spine_ages_log_lik(
             return torch.tensor(float("-inf"), dtype=torch.float64)
 
         log_numerator[not_at_boundary] = (
-            torch.log(lambda_t) + torch.log(mu_t) + torch.log(torch.abs(numerator_1))
+            torch.log(lambda_t)
+            + torch.log(mu_t)
+            + torch.log(torch.abs(numerator_1[not_at_boundary]))
         )
 
     # Check for numerical validity
@@ -494,7 +535,7 @@ def calculate_ages_log_lik(
     ------
     ValueError
         If array inputs have mismatched lengths, times are not strictly increasing,
-        or ages fall outside [0, T].
+        or ages fall outside [0, *T*].
 
     Notes
     -----
@@ -520,8 +561,6 @@ def calculate_ages_log_lik(
     if are_spines:
         return calculate_spine_ages_log_lik(lambda_params, mu_params, ages_t, times)
     else:
-        # calculate_non_spine_ages_log_lik requires array inputs
-        # Wrap scalar parameters in single-element arrays for single-epoch case
         return calculate_non_spine_ages_log_lik(lambda_params, mu_params, ages_t, times)
 
 
@@ -532,8 +571,9 @@ def calculate_extinction_pr(
     return_log_prob: bool = False,
 ) -> torch.Tensor:
     """
-    Calculate extinction probability for a birth-death process Z at time T.
-    Pr(Z(T) = 0)
+    Calculate extinction probability for a birth-death process *Z* at time *T*:
+
+        Pr(Z(T) = 0)
 
     Parameters
     ----------
@@ -552,23 +592,11 @@ def calculate_extinction_pr(
     torch.Tensor
         Scalar tensor (shape ()) containing extinction probability α_t
         (or log(α_t) if return_log_prob=True). dtype: torch.float64.
-
-
-    Notes
-    -----
-    Handles λ ≈ μ limiting case for numerical stability. Returns tensor
-    for full PyTorch autograd support. All computation is in PyTorch.
     """
     # Convert inputs to tensors
-    birth_rates_t, death_rates_t, times_t = ensure_1d_tensors(
-        birth_rates, death_rates, times
+    birth_rates_t, death_rates_t, times_t = _normalize_and_validate_inputs(
+        birth_rates=birth_rates, death_rates=death_rates, times=times
     )
-
-    _validate_times_non_negative(
-        times_t, error_message=f"times must be non-negative. Got times: {times_t}"
-    )
-
-    _validate_times_strictly_increasing(times_t, all_positive=True)
 
     pr_extinction_numerator = _pr_extinction_numerator(
         birth_rates=birth_rates_t, death_rates=death_rates_t, times=times_t
@@ -749,15 +777,8 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     """
 
     # Convert inputs to tensors
-    lifetimes_t, birth_rates_t, death_rates_t, times_t = ensure_1d_tensors(
-        lifetimes, birth_rates, death_rates, times
-    )
-
-    validate_matching_lengths(
-        birth_rates_t,
-        death_rates_t,
-        times_t,
-        names=("birth_rates", "death_rates", "times"),
+    birth_rates_t, death_rates_t, times_t, lifetimes_t = _normalize_and_validate_inputs(
+        birth_rates=birth_rates, death_rates=death_rates, times=times, ages=lifetimes
     )
 
     birth_rates_array = birth_rates_t
@@ -950,11 +971,9 @@ def _population_geometric_parameter(
     PyTorch's autograd differentiation.
     """
     # Convert inputs to tensors
-    birth_rates_t, death_rates_t, times_t = ensure_1d_tensors(
-        birth_rates, death_rates, times
+    birth_rates_t, death_rates_t, times_t = _normalize_and_validate_inputs(
+        birth_rates=birth_rates, death_rates=death_rates, times=times
     )
-
-    _validate_times_strictly_increasing(times_t, all_positive=True)
 
     # Compute epoch durations
     times_padded = torch.cat([torch.tensor([0.0], dtype=torch.float64), times_t])
@@ -967,8 +986,6 @@ def _population_geometric_parameter(
     cum_growth = torch.cumsum(growth_rates * epoch_durations, dim=0)
 
     geom_sum = _pr_extinction_numerator(birth_rates_t, death_rates_t, times_t)
-    # Compute in log-domain to avoid overflow: cond = exp(-C) / (1 + geom_sum)
-    # => log(cond) = -C - log1p(geom_sum)
     log_cond = -cum_growth[-1] - torch.log1p(geom_sum)
     cond_geom_prob = torch.exp(log_cond)
     return cond_geom_prob
@@ -1092,10 +1109,8 @@ def _pr_extinction_numerator(
     PyTorch's autograd differentiation.
     """
 
-    birth_rates, death_rates, times = ensure_1d_tensors(birth_rates, death_rates, times)
-
-    validate_matching_shapes(
-        birth_rates, death_rates, times, names=("birth_rates", "death_rates", "times")
+    birth_rates, death_rates, times = _normalize_and_validate_inputs(
+        birth_rates=birth_rates, death_rates=death_rates, times=times
     )
 
     epoch_durations = torch.diff(times, prepend=times.new_zeros(1))
@@ -1113,5 +1128,4 @@ def _pr_extinction_numerator(
         death_rates * torch.exp(-trunc_cum_growth) * kernel
     )
 
-    return pr_extinction_numerator_summand.sum()
     return pr_extinction_numerator_summand.sum()

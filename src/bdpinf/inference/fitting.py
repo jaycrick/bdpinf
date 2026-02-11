@@ -213,7 +213,7 @@ def _build_optimizer_strategies(
     optimizer_kwargs: Dict[str, Dict[str, Any]] | None,
 ) -> dict[str, tuple[str, type, int, dict[str, Any]]]:
     strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]] = {
-        "adam": ("Adam", torch.optim.Adam, 500, {"lr": 0.001}),
+        "adam": ("Adam", torch.optim.Adam, 500, {"lr": 0.01}),
         "lbfgs": (
             "LBFGS",
             torch.optim.LBFGS,
@@ -483,7 +483,7 @@ def fit_birth_death_processes(
         Custom keyword arguments for optimizers. Keys should be optimizer names
         (lowercase: 'lbfgs', 'adam', 'sgd') and values are dicts of kwargs to pass
         to the optimizer constructor. These will override the default kwargs.
-        Example: {"lbfgs": {"lr": 0.5, "max_iter": 200}, "adam": {"lr": 0.001}}
+        Example: {"lbfgs": {"lr": 0.5, "max_iter": 200}, "adam": {"lr": 0.01}}
     perturb_initial_params_std : float, optional
         If > 0, adds normally distributed noise to initial parameters with standard
         deviation equal to this fraction of each parameter value. For example, 0.1

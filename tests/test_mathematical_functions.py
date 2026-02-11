@@ -1143,7 +1143,7 @@ class TestPopulationsLogLikelihood:
 
     def test_array_length_mismatch_raises_error(self) -> None:
         """Test that mismatched array lengths raise ValueError."""
-        with pytest.raises(ValueError, match="matching lengths"):
+        with pytest.raises(ValueError, match="Tensors must have matching lengths."):
             calculate_populations_log_lik(
                 lambda_params=torch.tensor([0.1, 0.15], dtype=torch.float64),
                 mu_params=torch.tensor(
@@ -1228,7 +1228,7 @@ class TestSpineAgesLogLikelihood:
     ) -> None:
         """Test that age > T returns -inf."""
         with pytest.raises(
-            ValueError, match=r"ages_t must be in \[0, .*\]. Got ages_t:"
+            ValueError, match=r"ages must be in \[0, .*\]. Got ages:"
         ):  # age > T
             calculate_spine_ages_log_lik(
                 standard_scalar_params["lambda_param"],
@@ -1242,7 +1242,7 @@ class TestSpineAgesLogLikelihood:
     ) -> None:
         """Test that negative age returns -inf."""
         with pytest.raises(
-            ValueError, match=r"ages_t must be in \[0, .*\]. Got ages_t:"
+            ValueError, match=r"ages must be in \[0, .*\]. Got ages:"
         ):  # Negative age
             calculate_spine_ages_log_lik(
                 standard_scalar_params["lambda_param"],
@@ -1325,9 +1325,7 @@ class TestNonSpineAgesLogLikelihood:
     def test_invalid_age_returns_minus_inf(self) -> None:
         """Test that invalid ages return -inf."""
         # Age > T
-        with pytest.raises(
-            ValueError, match=r"ages_t must be in \[0, .*\]. Got ages_t:"
-        ):
+        with pytest.raises(ValueError, match=r"ages must be in \[0, .*\]. Got ages:"):
             calculate_non_spine_ages_log_lik(
                 lambda_params=torch.tensor([0.1], dtype=torch.float64),
                 mu_params=torch.tensor([0.05], dtype=torch.float64),
@@ -2013,9 +2011,7 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        with pytest.raises(
-            ValueError, match="lifetimes must be less than or equal to the final time"
-        ):
+        with pytest.raises(ValueError, match="ages must be in"):
             calculate_log_pr_extinction_given_initial_lifetimes(
                 lifetime,
                 birth_rates,
@@ -2032,9 +2028,7 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        with pytest.raises(
-            ValueError, match="lifetimes must be less than or equal to the final time"
-        ):
+        with pytest.raises(ValueError, match="ages must be in"):
             calculate_log_pr_extinction_given_initial_lifetimes(
                 lifetimes,
                 birth_rates,
@@ -2066,9 +2060,7 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
         times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
 
         # Should now work: uses all epoch rates plus last rate for [150-200]
-        with pytest.raises(
-            ValueError, match="lifetimes must be less than or equal to the final time"
-        ):
+        with pytest.raises(ValueError, match="ages must be in"):
             calculate_log_pr_extinction_given_initial_lifetimes(
                 lifetime,
                 birth_rates,
@@ -2084,9 +2076,7 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
         # Should handle extrapolation using last birth rate
-        with pytest.raises(
-            ValueError, match="lifetimes must be less than or equal to the final time"
-        ):
+        with pytest.raises(ValueError, match="ages must be in"):
             calculate_log_pr_extinction_given_initial_lifetimes(
                 lifetime,
                 birth_rates,
