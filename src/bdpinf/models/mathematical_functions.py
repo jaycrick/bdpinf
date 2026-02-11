@@ -330,12 +330,10 @@ def calculate_non_spine_ages_log_lik(
         ):
             return torch.tensor(float("-inf"), dtype=torch.float64)
 
-    else:
-        # General case: λ ≠ μ
+    else:  # λ ≠ μ
         growth_rate = lambda_val - mu_val
         growth_rate_T = growth_rate * end_time
 
-        # Calculate numerator terms
         numerator_term1 = lambda_val * torch.exp(-lambda_val * ages_t)
         numerator_term2 = (
             mu_val * torch.exp(-growth_rate_T) * torch.exp(-mu_val * ages_t)
@@ -344,7 +342,6 @@ def calculate_non_spine_ages_log_lik(
         numerator = numerator_term1 - numerator_term2
         denominator = 1 - torch.exp(-growth_rate_T)
 
-        # Check sign consistency
         if not torch.all(torch.sign(numerator) == torch.sign(denominator)):
             return torch.tensor(float("-inf"), dtype=torch.float64)
 
@@ -605,7 +602,8 @@ def calculate_extinction_pr(
     return_log_prob: bool = False,
 ) -> torch.Tensor:
     """
-    Calculate extinction probability for a birth-death process.
+    Calculate extinction probability for a birth-death process Z at time T.
+    Pr(Z(T) = 0)
 
     Parameters
     ----------
@@ -703,7 +701,7 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
     )
     log_liks_lifetimes = calculate_log_lik_lifetimes(
         lifetimes=lifetimes,
-        birth_rates=birth_rates,
+        death_rates=death_rates,
         times=times,
     )
     log_extinction_prob = calculate_extinction_pr(
@@ -765,7 +763,7 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     )
     log_liks_lifetimes = calculate_log_lik_lifetimes(
         lifetimes=lifetimes,
-        birth_rates=birth_rates,
+        death_rates=death_rates,
         times=times,
     )
     log_extinction_prob = calculate_extinction_pr(
@@ -845,7 +843,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     birth_rates_array = birth_rates_t
 
     # Sort lifetimes to enable cumulative integral caching
-    sorted_lifetimes, sort_indices = torch.sort(lifetimes_t)
+    sorted_lifetimes, _ = torch.sort(lifetimes_t)
 
     if sorted_lifetimes[-1] > times_t[-1]:
         raise ValueError(
@@ -935,18 +933,19 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
 
 def calculate_log_lik_lifetimes(
     lifetimes: torch.Tensor,
-    birth_rates: torch.Tensor,
+    death_rates: torch.Tensor,
     times: torch.Tensor,
 ) -> torch.Tensor:
     """
     Calculate log-likelihood of manuscript lifetime(s).
+    Pr(lifetime)
 
     Parameters
     ----------
     lifetimes : torch.Tensor
         1D tensor of lifetimes (shape: (n,), dtype: torch.float64). Each lifetime ≤ times[-1].
-    birth_rates : torch.Tensor
-        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+    death_rates : torch.Tensor
+        1D tensor of death rates μ per epoch (shape: (n_epochs,), dtype: torch.float64).
     times : torch.Tensor
         1D, strictly increasing tensor of epoch end times (shape: (n_epochs,), dtype: torch.float64).
 
@@ -958,11 +957,11 @@ def calculate_log_lik_lifetimes(
     """
 
     # Convert inputs to tensors
-    lifetimes_t, birth_rates_t, times_t = ensure_1d_tensors(
-        lifetimes, birth_rates, times
+    lifetimes_t, death_rates_t, times_t = ensure_1d_tensors(
+        lifetimes, death_rates, times
     )
 
-    lambda_val_array = birth_rates_t
+    mu_val_array = death_rates_t
 
     # Compute epoch starts and durations
     times_padded = torch.cat([torch.tensor([0.0], dtype=torch.float64), times_t])
@@ -970,7 +969,7 @@ def calculate_log_lik_lifetimes(
     epoch_durations = times_t - epoch_starts
 
     # Compute cumulative growth at each epoch
-    cum_growth_at_epochs = torch.cumsum(lambda_val_array * epoch_durations, dim=0)
+    cum_growth_at_epochs = torch.cumsum(mu_val_array * epoch_durations, dim=0)
 
     log_liks = torch.zeros_like(lifetimes_t, dtype=torch.float64)
 
@@ -989,16 +988,16 @@ def calculate_log_lik_lifetimes(
 
         # The current epoch index is the last valid index
         current_epoch_idx = valid_indices[-1]
-        current_lambda = lambda_val_array[current_epoch_idx]
+        current_mu = mu_val_array[current_epoch_idx]
 
         # Compute cumulative growth up to current lifetime
         cum_growth = (
             cum_growth_at_epochs[current_epoch_idx - 1]
             if current_epoch_idx > 0
             else torch.tensor(0.0, dtype=torch.float64)
-        ) + (lifetime - epoch_starts[current_epoch_idx]) * current_lambda
+        ) + (lifetime - epoch_starts[current_epoch_idx]) * current_mu
 
-        log_liks[i] = torch.log(current_lambda) - cum_growth
+        log_liks[i] = torch.log(current_mu) - cum_growth
 
     return torch.sum(log_liks)
 

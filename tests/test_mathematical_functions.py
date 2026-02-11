@@ -307,7 +307,7 @@ class TestMultiEpochEqualsSingleEpoch:
         mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = calculate_extinction_pr(lambdas, mus, times)
 
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
         assert 0 < single < 1
 
     def test_population_geometric_parameter_multi_equals_single(self) -> None:
@@ -321,7 +321,7 @@ class TestMultiEpochEqualsSingleEpoch:
         lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
         mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
         multi = _population_geometric_parameter(lambdas, mus, times)
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
 
     def test_pr_extinction_numerator_multi_equals_single(self) -> None:
         lambda_val, mu_val, T = (
@@ -334,20 +334,19 @@ class TestMultiEpochEqualsSingleEpoch:
         lambdas = torch.full((4,), lambda_val.item(), dtype=lambda_val.dtype)
         mus = torch.full((4,), mu_val.item(), dtype=mu_val.dtype)
         multi = _pr_extinction_numerator(lambdas, mus, times)
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
 
     def test_log_lik_lifetimes_multi_equals_single(self) -> None:
         lifetimes = torch.tensor([10.0, 30.0, 60.0, 90.0], dtype=torch.float64)
-        lambda_val, T = (
+        mu_val, T = (
             torch.tensor([0.02], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
         )
-        single = calculate_log_lik_lifetimes(lifetimes, lambda_val, T)
+        single = calculate_log_lik_lifetimes(lifetimes, mu_val, T)
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        lambdas = torch.full((3,), lambda_val.item(), dtype=lambda_val.dtype)
-        multi = calculate_log_lik_lifetimes(lifetimes, lambdas, times)
-        # Multi-epoch lifetimes uses piecewise handling; allow relaxed tolerance
-        assert_close(single, multi)
+        mus = torch.full((3,), mu_val.item(), dtype=mu_val.dtype)
+        multi = calculate_log_lik_lifetimes(lifetimes, mus, times)
+        assert_close(actual=multi, expected=single)
 
     def test_log_pr_extinction_given_initial_lifetimes_multi_equals_single(
         self,
@@ -367,7 +366,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetimes, lambdas, mus, times
         )
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
 
     def test_log_lik_initial_lifetimes_given_extinction_multi_equals_single(
         self,
@@ -387,7 +386,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_log_lik_initial_lifetimes_given_extinction(
             lifetimes, lambdas, mus, times
         )
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
 
     def test_log_lik_initial_lifetimes_given_non_extinction_multi_equals_single(
         self,
@@ -407,7 +406,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_log_lik_initial_lifetimes_given_non_extinction(
             lifetimes, lambdas, mus, times
         )
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
 
     def test_non_spine_ages_log_lik_multi_equals_single(self) -> None:
         ages = torch.tensor([15.0, 60.0, 95.0], dtype=torch.float64)
@@ -425,7 +424,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_non_spine_ages_log_lik(lambdas, mus, ages, times)
         assert torch.isfinite(single)
         assert torch.isfinite(multi)
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
 
     def test_spine_ages_log_lik_multi_equals_single(self) -> None:
         ages = torch.tensor([20.0, 40.0, 110.0], dtype=torch.float64)
@@ -441,7 +440,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_spine_ages_log_lik(lambdas, mus, ages, times)
         assert torch.isfinite(single)
         assert torch.isfinite(multi)
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
 
     def test_ages_log_lik_multi_equals_single_non_spine(self) -> None:
         ages = torch.tensor([10.0, 55.0, 90.0], dtype=torch.float64)
@@ -457,7 +456,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_ages_log_lik(lambdas, mus, ages, times, are_spines=False)
         assert torch.isfinite(single)
         assert torch.isfinite(multi)
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
 
     def test_ages_log_lik_multi_equals_single_spine(self) -> None:
         ages = torch.tensor([15.0, 120.0], dtype=torch.float64)
@@ -473,7 +472,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = calculate_ages_log_lik(lambdas, mus, ages, times, are_spines=True)
         assert torch.isfinite(single)
         assert torch.isfinite(multi)
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
 
     def test_integrand_surv_from_weighted_birth_time_scalar_multi_equals_single(
         self,
@@ -493,7 +492,7 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = _integrand_surv_from_weighted_birth_time_scalar(
             birth_time, lambdas, mus, times
         )
-        assert_close(single, multi)
+        assert_close(actual=multi, expected=single)
 
 
 # ============================================================================
@@ -747,7 +746,7 @@ class TestNumericalAccuracy:
 
         Private function test: log density involves birth rate and growth.
         """
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
+        mu_val = torch.tensor([0.1], dtype=torch.float64)
         age = torch.tensor([20.0], dtype=torch.float64)
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -755,7 +754,7 @@ class TestNumericalAccuracy:
         # (This is simplified; actual formula may differ)
         result = calculate_log_lik_lifetimes(
             age,
-            lambda_val,
+            mu_val,
             T,
         )
 
@@ -768,14 +767,14 @@ class TestNumericalAccuracy:
 
         Private function test: should sum log likelihoods across ages.
         """
-        lambda_val = torch.tensor([0.1], dtype=torch.float64)
+        mu_val = torch.tensor([0.1], dtype=torch.float64)
         ages = torch.tensor([10.0, 30.0, 50.0], dtype=torch.float64)
         T = torch.tensor([100.0], dtype=torch.float64)
 
         # Compute for array
         result_array = calculate_log_lik_lifetimes(
             ages,
-            lambda_val,
+            mu_val,
             T,
         )
 
@@ -783,7 +782,7 @@ class TestNumericalAccuracy:
         result_sum = sum(
             calculate_log_lik_lifetimes(
                 torch.tensor([age], dtype=torch.float64),
-                lambda_val,
+                mu_val,
                 T,
             )
             for age in ages
