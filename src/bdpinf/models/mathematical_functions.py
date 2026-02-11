@@ -24,10 +24,10 @@ def _validate_times_non_negative(times: torch.Tensor, *, error_message: str) -> 
 def _validate_times_strictly_increasing(
     times: torch.Tensor,
     *,
-    error_message: str,
-    require_positive_start: bool = False,
+    all_positive: bool = False,
 ) -> None:
-    if require_positive_start:
+    error_message = f"times must be strictly increasing. Got times: {times}"
+    if all_positive:
         diffs = torch.diff(torch.cat([torch.tensor([0.0], dtype=torch.float64), times]))
     else:
         diffs = torch.diff(times)
@@ -110,11 +110,7 @@ def calculate_populations_log_lik(
 
         _validate_times_strictly_increasing(
             times,
-            error_message=(
-                "Epoch times must be strictly monotonically increasing. "
-                f"Got time array: {times}"
-            ),
-            require_positive_start=False,
+            all_positive=True,
         )
 
         alpha_t = calculate_extinction_pr(lambda_params, mu_params, times)
@@ -205,80 +201,57 @@ def calculate_non_spine_ages_log_lik(
     times: torch.Tensor | float,
 ) -> torch.Tensor:
     """
-    Calculate log-likelihood of manuscript ages for non-spine individuals.
+    Calculate log-likelihood of the ages of the "non-spine" individual(s).
+    In the constant rate case, the density for the age a is:
 
-    Uses only PyTorch operations to preserve autograd support.
+        (λ * exp(-λa) - μ * exp(-(λ - μ)T) * exp(-μa))
+        / (1 - exp(-(λ - μ)T))
+
+    given λ ≠ μ, otherwise the "critical" case is:
+
+        exp(-λa) * (1 + λ(T-a)) / T
 
     Parameters
     ----------
     lambda_params : torch.Tensor | float
-        Birth rate(s) λ. Scalar for single epoch, 1D tensor for piecewise-constant rates.
-        All values must be positive.
+        (Non-negative) birth rate(s) λ.
     mu_params : torch.Tensor | float
-        Death rate(s) μ. Scalar for single epoch, 1D tensor for piecewise-constant rates.
-        All values must be positive.
+        (Non-negative) death rate(s) μ.
     ages_t : torch.Tensor | float
-        Manuscript age(s) t. Scalar or 1D tensor of ages (t ≥ 0).
-        All ages must satisfy 0 ≤ t ≤ T.
+        Age(s) a. All ages must satisfy 0 ≤ a ≤ T.
     times : torch.Tensor | float
-        Observation time(s) T. Scalar for single epoch, 1D tensor of strictly increasing
-        epoch end times for piecewise-constant model.
+        Observation time(s) T. For multi-epoch case, the end of each epoch.
+
 
     Returns
     -------
     torch.Tensor
         Scalar tensor (shape ()) containing summed log-likelihood across ages.
-        dtype: torch.float64. Fully differentiable via PyTorch autograd.
-        Returns -inf for numerically invalid inputs.
-
-    Raises
-    ------
-    ValueError
-        If array inputs have mismatched lengths, times are not strictly increasing,
-        or ages fall outside [0, T].
+        dtype: torch.float64.
 
     Notes
     -----
-    - Handles λ ≈ μ limiting case for numerical stability using log1p and expm1.
-    - Supports single-epoch (scalar) or multi-epoch (array) piecewise-constant rates.
-    - Multi-epoch case uses time-reversal transformation to reduce to extinction likelihood.
-    - All operations preserve PyTorch's computational graph for gradient computation.
-
-    Examples
-    --------
-    Single-epoch case:
-    >>> lambda_val = torch.tensor(0.1, requires_grad=True)
-    >>> mu_val = torch.tensor(0.05, requires_grad=True)
-    >>> ages = torch.tensor([10.0, 20.0, 30.0])
-    >>> T = 100.0
-    >>> log_lik = calculate_non_spine_ages_log_lik(lambda_val, mu_val, ages, T)
-    >>> log_lik.backward()  # Compute gradients w.r.t. lambda_val and mu_val
+    For the constant rate case see equation (3.6) from:
+        Kück, F., & Schuhmacher, D. (2018).
+        On the age of a randomly picked individual in a linear birth-and-death process.
+        *Journal of Applied Probability, 55*(1), 82–93. doi:10.1017/jpr.2018.7
     """
-    # Normalize to 1D arrays so scalar inputs still support indexing
     lambda_params, mu_params, times, ages_t = ensure_1d_tensors(
         lambda_params, mu_params, times, ages_t
     )
-
     validate_matching_shapes(
         lambda_params,
         mu_params,
         times,
         names=("lambda_params", "mu_params", "times"),
     )
-
     end_time = times[-1]
-
-    _validate_times_strictly_increasing(
-        times,
-        error_message=f"times must be strictly increasing. Got times: {times}",
-        require_positive_start=True,
-    )
+    _validate_times_strictly_increasing(times, all_positive=True)
     _validate_ages_in_range(
         ages_t,
         end_time,
         error_message=f"ages_t must be in [0, {end_time}]. Got ages_t: {ages_t}",
     )
-
     validate_matching_lengths(
         lambda_params,
         mu_params,
@@ -302,23 +275,17 @@ def calculate_non_spine_ages_log_lik(
             inverted_times,
         )
 
-    # Single-epoch case
-    # Extract scalar tensors from single-element arrays (atleast_1d guarantees arrays)
     lambda_val = lambda_params[0]
     mu_val = mu_params[0]
 
-    # Validate positive parameters
     if lambda_val <= 0 or mu_val <= 0:
         return torch.tensor(float("-inf"), dtype=torch.float64)
 
-    # Pre-compute isclose check once (avoids repeated calls in vectorized operations)
     is_critical = torch.isclose(lambda_val, mu_val, rtol=1e-12).item()
 
     # Check for numerical stability in parameter space
-    if is_critical:
-        # Limiting case: λ ≈ μ - use average to preserve gradient for both parameters
-        # f(t) = [1 + λ(T-t)] / T * e^{-λt}
-        # log f(t) = log(1 + λ(T-t)) - log(T) - λt
+    if is_critical:  # λ ≈ μ
+        # f(t) = [1 + λ(T-t)] / T * e^{-λt}t
         # Using average ensures both lambda_val and mu_val are in the computation graph
         avg_rate = (lambda_val + mu_val) / 2
         log_numerator = -avg_rate * ages_t + torch.log1p(avg_rate * (end_time - ages_t))
@@ -371,58 +338,60 @@ def calculate_spine_ages_log_lik(
     times: torch.Tensor | float,
 ) -> torch.Tensor:
     """
-    Calculate log-likelihood of manuscript ages for the "spine" individual.
+    Calculate log-likelihood of the age(s) of the special "spine" individual(s).
+    In the constant rate case, the density for the age a is:
 
-    Uses only PyTorch operations to preserve autograd support.
+        λμ(exp(-λa) - exp(-μa)) / (λ - μ) for a < T, and
+        (λ * exp(-μT) - μ * exp(-λT)) / (λ - μ) for a = T.
+
+    given λ ≠ μ, otherwise the "critical" case is:
+
+        λ^2 * a * exp(-λa) for a < T, and
+        (1 + λT) * exp(-λT) for a = T.
 
     Parameters
     ----------
     lambda_params : torch.Tensor | float
-        Birth rate(s) λ.
+        (Non-negative) birth rate(s) λ.
     mu_params : torch.Tensor | float
-        Death rate(s) μ.
+        (Non-negative) death rate(s) μ.
     ages_t : torch.Tensor | float
-        Manuscript age(s) t (0 ≤ t ≤ T).
+        Age(s) a. All ages must satisfy 0 ≤ a ≤ T.
     times : torch.Tensor | float
-        Observation time(s) T.
+        Observation time(s) T. For multi-epoch case, the end of each epoch.
 
     Returns
     -------
     torch.Tensor
         Scalar tensor (shape ()) containing summed log-likelihood across ages.
-        dtype: torch.float64. Supports automatic differentiation.
+        dtype: torch.float64.
 
     Notes
     -----
-    Ages at T use discrete mass; ages < T use continuous density. Handles λ ≈ μ
-    limiting case. Supports piecewise-constant rates via array inputs.
+    For the constant rate case see equation (3.8) from:
+        Kück, F., & Schuhmacher, D. (2018).
+        On the age of a randomly picked individual in a linear birth-and-death process.
+        *Journal of Applied Probability, 55*(1), 82–93. doi:10.1017/jpr.2018.7
     """
-
-    # Normalize to 1D arrays so scalar inputs still support indexing
     lambda_params, mu_params, times, ages_t = ensure_1d_tensors(
         lambda_params, mu_params, times, ages_t
     )
-
     validate_matching_shapes(
         lambda_params,
         mu_params,
         times,
         names=("lambda_params", "mu_params", "times"),
     )
-
     end_time = times[-1]
-
     _validate_times_strictly_increasing(
         times,
-        error_message=f"times must be strictly increasing. Got times: {times}",
-        require_positive_start=True,
+        all_positive=True,
     )
     _validate_ages_in_range(
         ages_t,
         end_time,
         error_message=f"ages_t must be in [0, {end_time}]. Got ages_t: {ages_t}",
     )
-
     validate_matching_lengths(
         lambda_params,
         mu_params,
@@ -445,24 +414,18 @@ def calculate_spine_ages_log_lik(
             times=inverted_times,
         )
 
-    # Handle parameter scaling
-    # Extract scalar tensors from single-element arrays (atleast_1d guarantees arrays)
     lambda_t = lambda_params[0]
     mu_t = mu_params[0]
 
-    # Validate positive parameters
-    if lambda_t <= 0 or mu_t < 0:
+    if lambda_t < 0 or mu_t < 0:
         return torch.tensor(float("-inf"), dtype=torch.float64)
 
-    # Pre-compute isclose check once (avoids repeated calls in vectorized operations)
     is_critical = torch.isclose(lambda_t, mu_t, rtol=1e-12).item()
-
     at_boundary = ages_t == end_time
     not_at_boundary = torch.logical_not(at_boundary)
 
-    if is_critical:
-        # Limiting case: λ ≈ μ - use average to preserve gradient for both parameters
-        # When λ ≈ μ, f(t) ≈ [1 + λ(T-t)]/T * e^{-λt}
+    if is_critical:  # λ ≈ μ
+        # f(t) ≈ [1 + λ(T-t)]/T * e^{-λt}
         # Using average ensures both lambda_t and mu_t are in the computation graph
         avg_rate = (lambda_t + mu_t) / 2
         boundary_val = torch.log1p(avg_rate * end_time) - avg_rate * end_time
@@ -472,10 +435,7 @@ def calculate_spine_ages_log_lik(
             2 * torch.log(avg_rate) + torch.log(ages_t) - avg_rate * ages_t,
         )
         return torch.sum(log_density)
-
     # General case: λ ≠ μ
-
-    # Initialize arrays for numerator and denominator
     log_numerator = torch.zeros_like(ages_t, dtype=torch.float64)
     denom_t = lambda_t - mu_t
     sign_denominator = torch.sign(denom_t)
@@ -492,7 +452,7 @@ def calculate_spine_ages_log_lik(
         log_numerator[at_boundary] = torch.log(torch.abs(numerator_boundary))
 
     if torch.any(not_at_boundary):
-        numerator_1 = torch.exp(-mu_t * end_time) - torch.exp(-lambda_t * end_time)
+        numerator_1 = torch.exp(-mu_t * ages_t) - torch.exp(-lambda_t * ages_t)
 
         if not torch.all(torch.sign(numerator_1) == sign_denominator):
             return torch.tensor(float("-inf"), dtype=torch.float64)
@@ -622,7 +582,7 @@ def calculate_extinction_pr(
     torch.Tensor
         Scalar tensor (shape ()) containing extinction probability α_t
         (or log(α_t) if return_log_prob=True). dtype: torch.float64.
-        Supports automatic differentiation.
+
 
     Notes
     -----
@@ -638,11 +598,7 @@ def calculate_extinction_pr(
         times_t, error_message=f"times must be non-negative. Got times: {times_t}"
     )
 
-    _validate_times_strictly_increasing(
-        times_t,
-        error_message=f"times must be strictly increasing. Got times: {times_t}",
-        require_positive_start=True,
-    )
+    _validate_times_strictly_increasing(times_t, all_positive=True)
 
     pr_extinction_numerator = _pr_extinction_numerator(
         birth_rates=birth_rates_t,
@@ -686,7 +642,7 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
     -------
     torch.Tensor
         Scalar tensor (shape ()) containing summed log-likelihood values.
-        dtype: torch.float64. Supports automatic differentiation.
+        dtype: torch.float64.
     """
 
     n = len(lifetimes)
@@ -747,7 +703,7 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     -------
     torch.Tensor
         Scalar tensor (shape ()) containing summed log-likelihood values
-        in torch.float64. Supports automatic differentiation.
+        in torch.float64.
     """
 
     n = len(lifetimes)
@@ -819,7 +775,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
         If ``as_array`` is False, scalar tensor (shape ()) containing summed
         log extinction probability. If ``as_array`` is True, 1D tensor of log
         extinction probabilities aligned with ``lifetimes``. dtype: torch.float64.
-        Supports automatic differentiation.
+
 
     Notes
     -----
@@ -953,7 +909,7 @@ def calculate_log_lik_lifetimes(
     -------
     torch.Tensor
         Scalar tensor containing sum of log-likelihood values.
-        Shape: (), dtype: torch.float64. Supports automatic differentiation.
+        Shape: (), dtype: torch.float64.
     """
 
     # Convert inputs to tensors
@@ -1026,7 +982,7 @@ def _population_geometric_parameter(
     -------
     torch.Tensor
         Scalar tensor containing geometric parameter 1 - β_t ∈ (0, 1).
-        Shape: (), dtype: torch.float64. Supports automatic differentiation.
+        Shape: (), dtype: torch.float64.
 
     Notes
     -----
@@ -1038,11 +994,7 @@ def _population_geometric_parameter(
         birth_rates, death_rates, times
     )
 
-    _validate_times_strictly_increasing(
-        times_t,
-        error_message="times array must be strictly increasing.",
-        require_positive_start=True,
-    )
+    _validate_times_strictly_increasing(times_t, all_positive=True)
 
     # Compute epoch durations
     times_padded = torch.cat([torch.tensor([0.0], dtype=torch.float64), times_t])
@@ -1086,7 +1038,7 @@ def _integrand_surv_from_weighted_birth_time(
     -------
     torch.Tensor
         Scalar tensor containing integrand value. Shape: (),
-        dtype: torch.float64. Supports automatic differentiation.
+        dtype: torch.float64.
     """
     # Convert inputs to tensors
     birth_time_t, birth_rates_t, death_rates_t, times_t = ensure_1d_tensors(
@@ -1178,7 +1130,7 @@ def _pr_extinction_numerator(
     -------
     torch.Tensor
         Scalar tensor containing numerator value for extinction probability.
-        Shape: (), dtype: torch.float64. Supports automatic differentiation.
+        Shape: (), dtype: torch.float64.
 
     Notes
     -----
@@ -1210,4 +1162,5 @@ def _pr_extinction_numerator(
         death_rates * torch.exp(-trunc_cum_growth) * kernel
     )
 
+    return pr_extinction_numerator_summand.sum()
     return pr_extinction_numerator_summand.sum()
