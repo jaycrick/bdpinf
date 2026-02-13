@@ -164,11 +164,16 @@ def _apply_param_perturbation(
         return initial_params
     if random_seed is not None:
         torch.manual_seed(random_seed)
-    noise = torch.normal(
-        mean=0.0,
-        std=perturb_initial_params_std * initial_params,
+    noise = torch.clamp(
+        torch.normal(
+            mean=1.0,
+            std=perturb_initial_params_std,
+            size=initial_params.shape,
+            dtype=initial_params.dtype,
+        ),
+        min=0.1,
     )
-    return torch.clamp(initial_params + noise, min=1e-6)
+    return initial_params * noise
 
 
 def _build_optimizer_strategies(
@@ -176,7 +181,7 @@ def _build_optimizer_strategies(
 ) -> dict[str, tuple[str, type, int, dict[str, Any]]]:
     """Build optimizer config dict"""
     strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]] = {
-        "adam": ("Adam", torch.optim.Adam, 500, {"lr": 0.01}),
+        "adam": ("Adam", torch.optim.Adam, 1000, {"lr": 0.5}),
         "lbfgs": (
             "LBFGS",
             torch.optim.LBFGS,
@@ -192,13 +197,15 @@ def _build_optimizer_strategies(
     for key, custom_kwargs in optimizer_kwargs.items():
         key_lower = key.lower()
         if key_lower in strategies_map:
-            opt_name, OptimClass, max_iters, default_kwargs = strategies_map[key_lower]
-            merged_kwargs = {**default_kwargs, **custom_kwargs}
+            opt_name, optimizer_cls, max_iters, default_opt_kwargs = strategies_map[
+                key_lower
+            ]
+            merged_opt_kwargs = {**default_opt_kwargs, **custom_kwargs}
             strategies_map[key_lower] = (
                 opt_name,
-                OptimClass,
+                optimizer_cls,
                 max_iters,
-                merged_kwargs,
+                merged_opt_kwargs,
             )
     return strategies_map
 
@@ -214,7 +221,8 @@ def _normalize_requested_optimizers(
     for key in requested_keys:
         if key not in strategies_map:
             raise ValueError(
-                f"Unsupported optimizer '{key}'. Choose from {list(strategies_map.keys())}."
+                f"Unsupported optimizer '{key}'. "
+                f"Choose from {list(strategies_map.keys())}."
             )
     return requested_keys
 
@@ -233,7 +241,7 @@ def _run_optimizer_strategies(
     absolute_tolerance: float,
     patience: int,
     gradient_threshold: float,
-) -> tuple[torch.nn.Parameter, List[float], str, int, bool]:
+) -> tuple[torch.nn.Parameter, List[float], str, int, bool, Exception | None]:
     """Run optimizers sequentially until convergence; return params, history, metadata.
 
     Args:
@@ -249,12 +257,27 @@ def _run_optimizer_strategies(
         (optimized_log_params, nll_history, optimizer_name, iterations, converged, exception).
     """
     converged = False
-    iterations = 0
+    iterations: int = 0
     optimizer_used = "Unknown"
     nll_history: List[float] = []
+    last_exception: Exception | None = None
+
+    def _compute_nll() -> torch.Tensor:
+        """Compute negative log likelihood for current log_params."""
+        return negative_log_likelihood(
+            birth_rates=log_params[:n_epochs],
+            death_rates=log_params[n_epochs:],
+            ages=non_spine_ages,
+            times=times_tensor,
+            spine_ages=spine_ages_tensor,
+            ns=population_sizes_tensor,
+            is_ordered=False,
+            log_scale_params=True,
+        )
 
     for key in requested_keys:
         non_finite_objective = False
+        did_converge = False
         opt_name, OptimClass, max_iters, opt_kwargs = strategies_map[key]
         try:
             with torch.no_grad():
@@ -263,67 +286,89 @@ def _run_optimizer_strategies(
             iterations = 0
             optimizer_used = opt_name
             best_log_params: torch.Tensor | None = None
+            first_nll: float | None = None
+            improved_once = False
 
             if opt_name == "LBFGS":
+                last_nll_value: float | None = None
 
                 def closure() -> torch.Tensor:
-                    nonlocal iterations
                     nonlocal non_finite_objective
+                    nonlocal last_nll_value
+                    nonlocal iterations
+                    nonlocal nll_history
+                    nonlocal first_nll
+                    nonlocal improved_once
                     optimizer.zero_grad()
-                    nll = negative_log_likelihood(
-                        birth_rates=log_params[:n_epochs],
-                        death_rates=log_params[n_epochs:],
-                        ages=non_spine_ages,
-                        times=times_tensor,
-                        spine_ages=spine_ages_tensor,
-                        ns=population_sizes_tensor,
-                        is_ordered=False,
-                        log_scale_params=True,
-                    )
-                    if torch.isfinite(nll):
-                        nll.backward()  # type: ignore[no-untyped-call]
-                        nll_history.append(float(nll.item()))
-                        iterations += 1
-                    else:
+                    nll = _compute_nll()
+                    iterations += 1
+                    if not torch.isfinite(nll):
                         non_finite_objective = True
-                        return torch.tensor(
-                            1e10, dtype=torch.float64, requires_grad=False
+                        inf_with_grad = (log_params * 0).sum() + torch.tensor(
+                            float("inf"),
+                            device=log_params.device,
+                            dtype=log_params.dtype,
                         )
+                        return inf_with_grad
+                    nll.backward()  # type: ignore[no-untyped-call]
+                    nll_value = float(nll.item())
+                    nll_history.append(nll_value)
+                    last_nll_value = nll_value
+                    if first_nll is None:
+                        first_nll = nll_value
+                    elif nll_value < first_nll - absolute_tolerance:
+                        improved_once = True
                     return nll
 
                 optimizer.step(closure)
                 if non_finite_objective:
+                    last_exception = RuntimeError(
+                        f"Non-finite objective encountered "
+                        f"during optimization with {opt_name}."
+                    )
                     continue
+
+                if last_nll_value is None:
+                    last_exception = RuntimeError(
+                        f"Optimizer {opt_name} did not produce a valid objective value."
+                    )
+                    continue
+
+                # Check convergence: gradient norm below threshold
+                grad_norm = 0.0
+                if log_params.grad is not None:
+                    grad_norm = float(torch.norm(log_params.grad).item())
+
+                if not improved_once:
+                    last_exception = RuntimeError(
+                        f"Objective did not improve from initial value with {opt_name}."
+                    )
+                    continue
+
+                best_log_params = log_params.detach().clone()
+                did_converge = grad_norm < gradient_threshold
             else:
                 best_nll = float("inf")
                 iterations_without_improvement = 0
+                iterations = 0
 
                 for _ in range(max_iters):
                     optimizer.zero_grad()
-                    nll = negative_log_likelihood(
-                        birth_rates=log_params[:n_epochs],
-                        death_rates=log_params[n_epochs:],
-                        ages=non_spine_ages,
-                        times=times_tensor,
-                        spine_ages=spine_ages_tensor,
-                        ns=population_sizes_tensor,
-                        is_ordered=False,
-                        log_scale_params=True,
-                    )
+                    nll = _compute_nll()
                     if torch.isfinite(nll):
                         nll.backward()  # type: ignore[no-untyped-call]
 
                         grad_norm = 0.0
-                        for param in [log_params]:
-                            if param.grad is not None:
-                                grad_norm = max(
-                                    grad_norm, float(torch.norm(param.grad).item())
-                                )
-
+                        if log_params.grad is not None:
+                            grad_norm = float(torch.norm(log_params.grad).item())
                         optimizer.step()
+                        iterations += 1
                         nll_value = float(nll.item())
                         nll_history.append(nll_value)
-                        iterations += 1
+                        if first_nll is None:
+                            first_nll = nll_value
+                        elif nll_value < first_nll - absolute_tolerance:
+                            improved_once = True
 
                         if nll_value < best_nll:
                             improvement = best_nll - nll_value
@@ -343,27 +388,47 @@ def _run_optimizer_strategies(
                             iterations_without_improvement += 1
 
                         if grad_norm < gradient_threshold:
+                            did_converge = True
                             break
 
-                        if iterations_without_improvement >= patience:
+                        if iterations_without_improvement >= patience and improved_once:
+                            did_converge = True
                             break
                     else:
                         non_finite_objective = True
                         break
 
                 if non_finite_objective:
+                    last_exception = RuntimeError(
+                        f"Non-finite objective encountered during optimization with {opt_name}."
+                    )
+                    continue
+
+                if not improved_once:
+                    last_exception = RuntimeError(
+                        f"Objective did not improve from initial value with {opt_name}."
+                    )
                     continue
 
             if best_log_params is not None:
                 with torch.no_grad():
                     log_params.copy_(best_log_params)
 
-            converged = True
-            break
-        except Exception:
+            if did_converge:
+                converged = True
+                break
+        except (RuntimeError, ValueError) as exc:
+            last_exception = exc
             continue
 
-    return log_params, nll_history, optimizer_used, iterations, converged
+    return (
+        log_params,
+        nll_history,
+        optimizer_used,
+        iterations,
+        converged,
+        last_exception,
+    )
 
 
 def _finalize_fit(
@@ -374,6 +439,7 @@ def _finalize_fit(
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
 ) -> tuple[np.ndarray, np.ndarray, float, float] | None:
+    """Convert log params to original scale; compute final NLL; return rates + likelihoods."""
     with torch.no_grad():
         final_nll = negative_log_likelihood(
             birth_rates=log_params[:n_epochs],
@@ -473,26 +539,35 @@ def fit_birth_death_processes(
     strategies_map = _build_optimizer_strategies(optimizer_kwargs)
     requested_keys = _normalize_requested_optimizers(optimizers, strategies_map)
 
-    log_params, nll_history, optimizer_used, iterations, converged = (
-        _run_optimizer_strategies(
-            strategies_map,
-            requested_keys,
-            log_params,
-            initial_params,
-            n_epochs,
-            non_spine_ages,
-            times_tensor,
-            spine_ages_tensor,
-            population_sizes_tensor,
-            convergence_tolerance=1e-7,
-            absolute_tolerance=1e-6,
-            patience=20,
-            gradient_threshold=1e-5,
-        )
+    (
+        log_params,
+        nll_history,
+        optimizer_used,
+        iterations,
+        converged,
+        last_exception,
+    ) = _run_optimizer_strategies(
+        strategies_map,
+        requested_keys,
+        log_params,
+        initial_params,
+        n_epochs,
+        non_spine_ages,
+        times_tensor,
+        spine_ages_tensor,
+        population_sizes_tensor,
+        convergence_tolerance=1e-7,
+        absolute_tolerance=1e-6,
+        patience=20,
+        gradient_threshold=1e-5,
     )
 
     if not converged:
-        return {"success": False}
+        error_message = str(last_exception) if last_exception is not None else None
+        error_type = (
+            type(last_exception).__name__ if last_exception is not None else None
+        )
+        return {"success": False, "error": error_message, "error_type": error_type}
 
     finalized = _finalize_fit(
         log_params,
