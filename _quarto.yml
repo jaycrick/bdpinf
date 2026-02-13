@@ -1,8 +1,15 @@
 project:
   type: website
   output-dir: _output
+  render:
+    - qmd_scripts/*.qmd
+    - docs/*.qmd
+    - reference/*.qmd
 
-bibliography: references.bib
+metadata-files:
+  - reference/_sidebar.yml
+
+bibliography: bibliography.bib
 cite-method: biblatex
 link-citations: true
 
@@ -14,16 +21,20 @@ website:
   page-navigation: true
   navbar:
     left:
-      - text: "Data Exploration"
-        file: qmd_scripts/manuscript_data_exploration.qmd
-      - text: "Birth-Death Inference"
-        file: qmd_scripts/birth_death_inference.qmd
-      - text: "Methods Validation"
-        file: qmd_scripts/methods_validation.qmd
-      - text: "Multi-Epoch Validation"
-        file: qmd_scripts/methods_validation_multi_epoch.qmd
-      - text: "Optimiser Comparison"
-        file: qmd_scripts/optimiser_comparison.qmd
+      - text: "Reference"
+        file: reference/index.qmd
+      - text: "Analysis Scripts"
+        menu:
+          - text: "Data Exploration"
+            file: qmd_scripts/manuscript_data_exploration.qmd
+          - text: "Birth-Death Inference"
+            file: qmd_scripts/birth_death_inference.qmd
+          - text: "Methods Validation"
+            file: qmd_scripts/methods_validation.qmd
+          - text: "Multi-Epoch Validation"
+            file: qmd_scripts/methods_validation_multi_epoch.qmd
+          - text: "Optimiser Comparison"
+            file: qmd_scripts/optimiser_comparison.qmd
       - text: "Docs"
         menu:
           - text: "Likelihoods"
@@ -31,6 +42,8 @@ website:
 
 format:
   html:
+    css:
+      - reference/_styles-quartodoc.css
     respect-user-color-scheme: true
     code-overflow: wrap
     theme: cosmo
@@ -50,3 +63,21 @@ execute:
   warning: true
   message: true
   cache: true
+
+quartodoc:
+  # the name used to import the package you want to create reference docs for
+  package: inf_bp_texts
+  sidebar: reference/_sidebar.yml
+  css: reference/_styles-quartodoc.css
+  parser: numpy
+  sections:
+    - title: Mathematical functions
+      desc: Core mathematical routines for the birth-death process models.
+      contents:
+        - models.mathematical_functions
+        - models.mathematical_functions.calculate_populations_log_lik
+        - models.mathematical_functions.calculate_non_spine_ages_log_lik
+        - models.mathematical_functions.calculate_spine_ages_log_lik
+        - models.mathematical_functions.calculate_ages_log_lik
+        - models.mathematical_functions.calculate_extinction_pr
+        - models.mathematical_functions.calculate_log_lik_lifetimes
