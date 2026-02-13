@@ -240,7 +240,7 @@ def _run_optimizer_strategies(
     convergence_tolerance: float,
     absolute_tolerance: float,
     patience: int,
-    gradient_threshold: float,
+    gradient_threshold: float = 1e-5,
 ) -> tuple[torch.nn.Parameter, List[float], str, int, bool, Exception | None]:
     """Run optimizers sequentially until convergence; return params, history, metadata.
 
@@ -387,7 +387,7 @@ def _run_optimizer_strategies(
                         else:
                             iterations_without_improvement += 1
 
-                        if grad_norm < gradient_threshold:
+                        if grad_norm < gradient_threshold and improved_once:
                             did_converge = True
                             break
 
