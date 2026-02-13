@@ -1,35 +1,4 @@
-"""
-Parameter fitting and estimation functions for birth-death process models.
-
-This module contains functions for fitting birth-death process parameters
-to manuscript data using maximum likelihood estimation and various optimization
-strategies.
-
-Examples:
-    Basic parameter fitting:
-
-    >>> import numpy as np
-    >>> from inf_bp_texts.inference import fit_birth_death_process
-    >>>
-    >>> # Simulate some manuscript ages
-    >>> ages = np.array([50, 100, 150, 200, 250])
-    >>> observation_time = 300
-    >>>
-    >>> # Fit the model
-    >>> result = fit_birth_death_process(ages, observation_time)
-    >>> if result['success']:
-    ...     print(f"Birth rate: {result['birth_rate']:.3f}")
-    ...     print(f"Death rate: {result['death_rate']:.3f}")
-
-    Advanced usage with custom options:
-
-    >>> # Fit with initial parameter guess and bounds
-    >>> result = fit_birth_death_process(
-    ...     ages, observation_time,
-    ...     initial_params=(0.5, 0.3),
-    ...     bounds=[(0.1, 2.0), (0.1, 1.0)]
-    ... )
-"""
+"""Maximum likelihood estimation for birth-death process parameters using PyTorch."""
 
 from typing import Any, Dict, List, Sequence, Tuple
 
@@ -48,20 +17,7 @@ def get_crude_parameter_estimates(
     birth_rates: torch.Tensor | float | None = None,
     death_rates: torch.Tensor | float | None = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Get crude initial parameter estimates based on manuscript age data.
-
-    Uses simple heuristics to estimate birth and death rates:
-    - Death rate inversely related to max survival age
-    - Birth rate related to total observed manuscripts
-
-    Args:
-        ages: Array of manuscript ages
-        observation_time: Total observation time
-
-    Returns:
-        Tuple of (estimated_birth_rate, estimated_death_rate)
-    """
+    """Get crude initial parameter estimates from age data."""
     if birth_rates is not None and death_rates is not None:
         raise ValueError("Cannot provide both birth_rates and death_rates")
 
@@ -104,6 +60,7 @@ def get_crude_parameter_estimates(
 
 
 def _find_non_empty_age(list_of_ages: List[torch.Tensor]) -> torch.Tensor:
+    """Return first non-empty age array; raise ValueError if all empty." """
     for ages in list_of_ages:
         if len(ages) > 0:
             return ages
@@ -111,6 +68,7 @@ def _find_non_empty_age(list_of_ages: List[torch.Tensor]) -> torch.Tensor:
 
 
 def _validate_times(times: torch.Tensor | float) -> torch.Tensor:
+    """Convert and validate times; raise ValueError if not positive."""
     times_tensor = ensure_1d_tensor(times)
     if torch.any(times_tensor <= 0):
         raise ValueError("All elements of times must be positive")
@@ -122,6 +80,7 @@ def _prepare_population_sizes(
     population_sizes: torch.Tensor | None,
     spine_ages: torch.Tensor | None,
 ) -> torch.Tensor:
+    """Return population_sizes or auto-compute from list_of_ages + spine_ages."""
     if population_sizes is not None:
         population_sizes_tensor = ensure_1d_tensor(population_sizes).to(
             dtype=torch.int64
@@ -143,6 +102,7 @@ def _extract_spine_and_ages(
     is_ordered: bool,
     spine_ages: torch.Tensor | None,
 ) -> tuple[torch.Tensor | None, torch.Tensor]:
+    """Extract/auto-extract spine ages and return (spine_ages, non_spine_ages)."""
     spine_ages_tensor: torch.Tensor | None
     if is_ordered and (spine_ages is None):
         spine_list: List[float] = []
@@ -179,6 +139,7 @@ def _build_initial_params(
     non_empty_age: torch.Tensor,
     times_tensor: torch.Tensor,
 ) -> torch.Tensor:
+    """Build initial param vector [birth_rates, death_rates]; auto-estimate if needed."""
     if initial_birth_rates is None or initial_death_rates is None:
         crude_birth, crude_death = get_crude_parameter_estimates(
             non_empty_age, times_tensor, initial_birth_rates, initial_death_rates
@@ -198,6 +159,7 @@ def _apply_param_perturbation(
     perturb_initial_params_std: float,
     random_seed: int | None,
 ) -> torch.Tensor:
+    """Add Gaussian noise to params"""
     if perturb_initial_params_std <= 0:
         return initial_params
     if random_seed is not None:
@@ -212,6 +174,7 @@ def _apply_param_perturbation(
 def _build_optimizer_strategies(
     optimizer_kwargs: Dict[str, Dict[str, Any]] | None,
 ) -> dict[str, tuple[str, type, int, dict[str, Any]]]:
+    """Build optimizer config dict"""
     strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]] = {
         "adam": ("Adam", torch.optim.Adam, 500, {"lr": 0.01}),
         "lbfgs": (
@@ -244,6 +207,7 @@ def _normalize_requested_optimizers(
     optimizers: Sequence[str] | str,
     strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]],
 ) -> List[str]:
+    """Normalize optimizer names to lowercase list; validate against strategies_map."""
     requested_opts = [optimizers] if isinstance(optimizers, str) else list(optimizers)
     requested_keys = [opt.strip().lower() for opt in requested_opts]
 
@@ -270,6 +234,20 @@ def _run_optimizer_strategies(
     patience: int,
     gradient_threshold: float,
 ) -> tuple[torch.nn.Parameter, List[float], str, int, bool]:
+    """Run optimizers sequentially until convergence; return params, history, metadata.
+
+    Args:
+        strategies_map: Optimizer configs.
+        requested_keys: Optimizer names to try sequentially.
+        log_params: Parameter tensor (log-scale).
+        initial_params: Initial params on original scale.
+        n_epochs: Number of time epochs.
+        non_spine_ages, times_tensor, spine_ages_tensor, population_sizes_tensor: Data.
+        convergence_tolerance, absolute_tolerance, patience, gradient_threshold: Stopping criteria.
+
+    Returns:
+        (optimized_log_params, nll_history, optimizer_name, iterations, converged, exception).
+    """
     converged = False
     iterations = 0
     optimizer_used = "Unknown"
@@ -431,108 +409,38 @@ def fit_birth_death_processes(
     perturb_initial_params_std: float = 0.0,
     random_seed: int | None = None,
 ) -> Dict[str, Any]:
-    """
-    Fit birth–death process parameters to grouped manuscript-age data using PyTorch.
+    """Fit birth-death parameters to grouped age data via PyTorch.
 
-    This version performs optimization fully in PyTorch (LBFGS) on log-parameters to
-    maintain positivity. Gradients flow through the torch-native `negative_log_likelihood`
-    (with `log_scale_params=True`).
+    Optimizes log-parameters (LBFGS, Adam, SGD) until convergence.
 
     Parameters
     ----------
     list_of_ages : List[torch.Tensor]
-        A list of torch tensors, each containing observed ages for a single group
-        (e.g., manuscript family). Arrays may be empty; at least one non-empty array
-        is required. For ordered data (is_ordered=True) each array is expected to
-        have the spine observation as its first element (unless spine_ages is
-        provided explicitly).
-    times : torch.Tensor
-        Observation time(s) for the process. Must be positive and strictly increasing
-        for multi-epoch models. This is used by the likelihood functions to compute
-        probabilities over the observation window.
-    is_ordered : bool, optional
-        If True and spine_ages is not provided, the first element of every non-empty
-        array in list_of_ages is treated as a spine observation and removed from the
-        main ages used in the likelihood; collected spine ages are passed to the
-        likelihood. Default is False.
-    initial_birth_rates : torch.Tensor | None, optional
-        Initial guess for birth rate(s) on the original scale. If None,
-        a crude estimate is obtained. Can be a scalar or array matching the
-        structure of times. Values are converted to log-space for the optimizer.
-    initial_death_rates : torch.Tensor | None, optional
-        Initial guess for death rate(s) on the original scale. If None,
-        a crude estimate is obtained. Can be a scalar or array matching the
-        structure of times. Values are converted to log-space for the optimizer.
-    spine_ages : torch.Tensor | None, optional
-        If provided, these are the spine ages to be used directly in the likelihood.
-        If is_ordered is True and this argument is None, spine_ages will be inferred
-        from the first element of each non-empty array in list_of_ages.
-    population_sizes : torch.Tensor | None, optional
-        1D tensor of integer counts, one per entry in list_of_ages, representing the
-        number of observed lineages for that group. If provided, its length must
-        equal len(list_of_ages). If None, a default is constructed as
-        torch.tensor([len(ages) + int(spine_ages is not None) for ages in list_of_ages],
-        dtype=torch.int64). Note: if you rely on automatic spine extraction
-        (is_ordered=True and spine_ages=None) you should supply population_sizes explicitly if
-        you require it to count spines, because the default is computed before
-        spine extraction in the current implementation.
-    optimizers : Sequence[str] | str, optional
-        Ordered list (or single name) of optimizers to try. Supported values:
-        "Adam" (default first), "LBFGS", "SGD". Defaults to ("Adam", "LBFGS", "SGD").
-    optimizer_kwargs : Dict[str, Dict[str, Any]] | None, optional
-        Custom keyword arguments for optimizers. Keys should be optimizer names
-        (lowercase: 'lbfgs', 'adam', 'sgd') and values are dicts of kwargs to pass
-        to the optimizer constructor. These will override the default kwargs.
-        Example: {"lbfgs": {"lr": 0.5, "max_iter": 200}, "adam": {"lr": 0.01}}
-    perturb_initial_params_std : float, optional
-        If > 0, adds normally distributed noise to initial parameters with standard
-        deviation equal to this fraction of each parameter value. For example, 0.1
-        adds noise with std = 10% of the parameter value. The perturbed parameters
-        are clamped to be positive (min=1e-6). Default is 0.0 (no perturbation).
-    random_seed : int | None, optional
-        Random seed for reproducible parameter perturbation. Only used when
-        perturb_initial_params_std > 0. If None, noise will not be reproducible.
-        Default is None.
+        Age tensors per group; ≥1 non-empty array required.
+    times : torch.Tensor | float
+        Observation time(s), must be positive.
+    is_ordered : bool
+        If True, extract spine from first element per array.
+    initial_birth_rates, initial_death_rates : torch.Tensor | None
+        Initial guesses; auto-estimated if None.
+    spine_ages : torch.Tensor | None
+        Explicit spine ages (if not auto-extracted).
+    population_sizes : torch.Tensor | None
+        Counts per group; auto-computed if None.
+    optimizers : Sequence[str] | str
+        Optimizer names ('LBFGS', 'Adam', 'SGD') to try sequentially.
+    optimizer_kwargs : Dict[str, Dict[str, Any]] | None
+        Custom per-optimizer hyperparams (e.g. {'adam': {'lr': 0.01}}).
+    perturb_initial_params_std : float
+        Noise std as fraction of initial params; 0 = no noise.
+    random_seed : int | None
+        Seed for reproducible perturbation.
 
     Returns
     -------
-    Dict[str, Any]
-        A dictionary summarizing the optimization outcome and parameter estimates.
-                Typical keys:
-                    - "success" (bool)
-                    - "birth_rates" (np.ndarray): Estimated birth rates (original scale)
-                    - "death_rates" (np.ndarray): Estimated death rates (original scale)
-                    - "log_likelihood" (float)
-                    - "nll_history" (List[float]):
-                        History of negative log likelihood values during optimization
-                    - "optimization_result": minimal torch optimizer metadata
-                Returns {"success": False} on failure.
-
-    Raises
-    ------
-    ValueError
-        - If all arrays in list_of_ages are empty (no valid data to fit).
-        - If times <= 0 (when times is a float) or any element of times <= 0 (when array).
-        - If population_sizes is provided and
-            sum(population_sizes) != len(list_of_ages) (i.e., length mismatch).
-
-        Notes
-        -----
-        - Optimization is LBFGS in torch on log-parameters for stability and positivity.
-        - Objective is the torch-based negative_log_likelihood with log_scale_params=True.
-
-    Examples
-    --------
-    (Informal)
-    - To fit unordered data:
-        fit_birth_death_processes(list_of_ages, times=10.0)
-
-    - To fit ordered data with automatic spine extraction:
-        fit_birth_death_processes(list_of_ages, times=10.0, is_ordered=True)
-
-    See Also
-    --------
-    negative_log_likelihood, log_likelihood_gradient, get_crude_parameter_estimates
+    dict
+        {'success': bool, 'birth_rates': ndarray, 'death_rates': ndarray,
+         'log_likelihood': float, 'nll_history': list, 'optimization_result': dict}
     """
     non_empty_age = _find_non_empty_age(list_of_ages)
     times_tensor = _validate_times(times)
@@ -620,13 +528,7 @@ def fit_from_dataframe(
     initial_birth_rates: NDArray[np.float64] | torch.Tensor | None = None,
     initial_death_rates: NDArray[np.float64] | torch.Tensor | None = None,
 ) -> Dict[str, Any]:
-    """
-    Fit birth-death process parameters from a pandas DataFrame (torch-friendly).
-
-    Expects `age_column` to contain numeric ages; converts to torch via
-    `ensure_1d_tensor` before fitting. `times` may be float, numpy array, or
-    torch tensor; initial rates may be numpy arrays or torch tensors.
-    """
+    """Fit parameters from DataFrame age column."""
 
     if age_column not in df.columns:
         raise ValueError(f"Column '{age_column}' not found in DataFrame")
