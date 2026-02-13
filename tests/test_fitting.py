@@ -15,6 +15,7 @@ from inf_bp_texts.inference.fitting import (
     _find_non_empty_age,
     _normalize_requested_optimizers,
     _prepare_population_sizes,
+    _run_optimizer_strategies,
     _validate_times,
     fit_birth_death_processes,
     fit_from_dataframe,
@@ -436,3 +437,77 @@ class TestMultiEpochFitting:
             assert len(result["birth_rates"]) == 2
             assert len(result["death_rates"]) == 2
             assert len(result["death_rates"]) == 2
+
+
+class TestConvergenceFlags:
+    def test_max_iters_no_convergence(self) -> None:
+        ages = torch.tensor([100.0, 200.0], dtype=torch.float64)
+        times_tensor = torch.tensor([1000.0], dtype=torch.float64)
+        initial_params = _build_initial_params(None, None, ages, times_tensor)
+        log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
+        strategies_map = {
+            "sgd": ("SGD", torch.optim.SGD, 1, {"lr": 0.0001}),
+        }
+
+        _, nll_history, _, iterations, converged, _ = _run_optimizer_strategies(
+            strategies_map,
+            ["sgd"],
+            log_params,
+            initial_params,
+            n_epochs=len(times_tensor),
+            non_spine_ages=ages,
+            times_tensor=times_tensor,
+            spine_ages_tensor=None,
+            population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
+            convergence_tolerance=1e-12,
+            absolute_tolerance=1e-12,
+            patience=100,
+            gradient_threshold=-1.0,
+        )
+
+        assert not converged
+        assert iterations == 1
+        assert len(nll_history) == 1
+
+    @pytest.mark.parametrize(
+        "opt_key,opt_class,opt_kwargs",
+        [
+            ("sgd", torch.optim.SGD, {"lr": 0.0001}),
+            (
+                "lbfgs",
+                torch.optim.LBFGS,
+                {"lr": 1.0, "max_iter": 5, "line_search_fn": "strong_wolfe"},
+            ),
+        ],
+    )
+    def test_converged_on_gradient_threshold(
+        self,
+        opt_key: str,
+        opt_class: type,
+        opt_kwargs: dict[str, float | int | str],
+    ) -> None:
+        ages = torch.tensor([100.0, 200.0], dtype=torch.float64)
+        times_tensor = torch.tensor([1000.0], dtype=torch.float64)
+        initial_params = _build_initial_params(None, None, ages, times_tensor)
+        log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
+        strategies_map = {
+            opt_key: (opt_key.upper(), opt_class, 1, opt_kwargs),
+        }
+
+        _, _, _, _, converged, _ = _run_optimizer_strategies(
+            strategies_map,
+            [opt_key],
+            log_params,
+            initial_params,
+            n_epochs=len(times_tensor),
+            non_spine_ages=ages,
+            times_tensor=times_tensor,
+            spine_ages_tensor=None,
+            population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
+            convergence_tolerance=1e-12,
+            absolute_tolerance=1e-12,
+            patience=100,
+            gradient_threshold=1e9,
+        )
+
+        assert converged
