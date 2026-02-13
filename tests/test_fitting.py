@@ -490,9 +490,7 @@ class TestConvergenceFlags:
         times_tensor = torch.tensor([1000.0], dtype=torch.float64)
         initial_params = _build_initial_params(None, None, ages, times_tensor)
         log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
-        strategies_map = {
-            opt_key: (opt_key.upper(), opt_class, 1, opt_kwargs),
-        }
+        strategies_map = {opt_key: (opt_key.upper(), opt_class, 2, opt_kwargs)}
 
         _, _, _, _, converged, _ = _run_optimizer_strategies(
             strategies_map,
