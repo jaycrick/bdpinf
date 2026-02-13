@@ -172,8 +172,8 @@ def log_likelihood(
         return torch.tensor(-torch.inf, dtype=torch.float64)
     # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
     log_P_n_T = calculate_populations_log_lik(
-        lambda_params=birth_rates,
-        mu_params=death_rates,
+        birth_rates=birth_rates,
+        death_rates=death_rates,
         times=times,
         ns=ns,
     )

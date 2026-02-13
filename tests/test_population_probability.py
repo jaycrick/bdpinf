@@ -75,21 +75,21 @@ class TestPopulationProbability:
             (0.1, 0.05, 100.0, 25),  # Moderate case, shorter time
         ]
 
-        for lambda_param, mu_param, time, n in test_cases:
-            result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+        for birth_rate, death_rate, time, n in test_cases:
+            result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
             assert np.isfinite(result), (
-                f"Non-finite result for λ={lambda_param}, μ={mu_param}, T={time}, n={n}"
+                f"Non-finite result for λ={birth_rate}, μ={death_rate}, T={time}, n={n}"
             )
 
     def test_nearly_equal_rates(self) -> None:
         """Test the special case where λ ≈ μ."""
         # Test case where rates are very close
-        lambda_param = 1.0
-        mu_param = 0.9999999999  # Very close to λ
+        birth_rate = 1.0
+        death_rate = 0.9999999999  # Very close to λ
         time = 100.0
         n = 10
 
-        result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+        result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
 
         # Should not return -inf due to the perturbation handling
         assert np.isfinite(result), (
@@ -98,11 +98,11 @@ class TestPopulationProbability:
 
     def test_population_size_effect(self) -> None:
         """Test that larger populations generally have lower probabilities."""
-        lambda_param, mu_param, time = 0.1, 0.05, 100.0
+        birth_rate, death_rate, time = 0.1, 0.05, 100.0
 
         results = []
         for n in [1, 5, 10, 20, 50]:
-            result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+            result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
             results.append((n, result))
             assert np.isfinite(result), f"Non-finite result for n={n}"
 
@@ -117,12 +117,12 @@ class TestPopulationProbability:
 
     def test_time_effect(self) -> None:
         """Test the effect of different observation times."""
-        lambda_param, mu_param, n = 0.1, 0.05, 10
+        birth_rate, death_rate, n = 0.1, 0.05, 10
 
         results = []
         # Use shorter times to avoid β_t = 1 boundary issues
         for time in [50.0, 100.0, 200.0, 500.0]:  # Removed 1000 which causes β_t = 1
-            result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+            result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
             results.append((time, result))
             assert np.isfinite(result), f"Non-finite result for T={time}"
 
@@ -141,32 +141,32 @@ class TestPopulationProbability:
             (0.01, 0.005, 1000.0, 20),  # Small rates, long time
         ]
 
-        for lambda_param, mu_param, time, n in test_cases:
-            result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+        for birth_rate, death_rate, time, n in test_cases:
+            result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
             # If the function returns -inf, it means α_t or β_t went out of bounds
             # For these reasonable parameters, we expect finite results
             assert np.isfinite(result), (
-                f"Expected finite result for λ={lambda_param}, μ={mu_param}, "
+                f"Expected finite result for λ={birth_rate}, μ={death_rate}, "
                 f"T={time}, n={n}, got {result}"
             )
 
     def test_formula_consistency(self) -> None:
         """Test that our implementation matches manual calculation."""
-        lambda_param, mu_param, time, n = 0.1, 0.05, 100.0, 5
+        birth_rate, death_rate, time, n = 0.1, 0.05, 100.0, 5
 
         # Manual calculation following the same steps
-        lambda_minus_mu = lambda_param - mu_param
-        exp_term = np.exp(lambda_minus_mu * time)
-        denominator = lambda_param * exp_term - mu_param
-        alpha_t = mu_param * (exp_term - 1) / denominator
-        beta_t = (lambda_param / mu_param) * alpha_t
+        birth_rate_minus_death_rate = birth_rate - death_rate
+        exp_term = np.exp(birth_rate_minus_death_rate * time)
+        denominator = birth_rate * exp_term - death_rate
+        alpha_t = death_rate * (exp_term - 1) / denominator
+        beta_t = (birth_rate / death_rate) * alpha_t
 
         manual_result = (
             np.log(1 - alpha_t) + np.log(1 - beta_t) + (n - 1) * np.log(beta_t)
         )
 
         # Function result
-        function_result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+        function_result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
 
         assert abs(manual_result - function_result) < 1e-12, (
             f"Manual and function results should match: "
@@ -195,18 +195,18 @@ class TestPopulationProbability:
     def test_n_equals_one_special_case(self) -> None:
         """Test the special case where n=1."""
         # When n=1, the (n-1)*log(β_t) term becomes 0
-        lambda_param, mu_param, time = 0.1, 0.05, 100.0
+        birth_rate, death_rate, time = 0.1, 0.05, 100.0
 
-        result = calculate_populations_log_lik(lambda_param, mu_param, time, 1)
+        result = calculate_populations_log_lik(birth_rate, death_rate, time, 1)
 
         assert np.isfinite(result), "n=1 case should produce finite result"
 
         # Manual verification for n=1
-        lambda_minus_mu = lambda_param - mu_param
-        exp_term = np.exp(lambda_minus_mu * time)
-        denominator = lambda_param * exp_term - mu_param
-        alpha_t = mu_param * (exp_term - 1) / denominator
-        beta_t = (lambda_param / mu_param) * alpha_t
+        birth_rate_minus_death_rate = birth_rate - death_rate
+        exp_term = np.exp(birth_rate_minus_death_rate * time)
+        denominator = birth_rate * exp_term - death_rate
+        alpha_t = death_rate * (exp_term - 1) / denominator
+        beta_t = (birth_rate / death_rate) * alpha_t
 
         expected = np.log(1 - alpha_t) + np.log(
             1 - beta_t
@@ -217,7 +217,7 @@ class TestPopulationProbability:
         )
 
     @pytest.mark.parametrize(
-        "lambda_param,mu_param,time,n",
+        "birth_rate,death_rate,time,n",
         [
             (0.1, 0.05, 100.0, 5),
             # (0.5, 0.3, 200.0, 10),  # This leads to β_t = 1, excluded
@@ -226,12 +226,12 @@ class TestPopulationProbability:
             (2.0, 1.5, 30.0, 7),
         ],
     )
-    def test_parametrized_valid_cases(self, lambda_param, mu_param, time, n):
+    def test_parametrized_valid_cases(self, birth_rate, death_rate, time, n):
         """Test multiple valid parameter combinations."""
-        result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+        result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
 
         assert np.isfinite(result), (
-            f"Expected finite result for λ={lambda_param}, μ={mu_param}, "
+            f"Expected finite result for λ={birth_rate}, μ={death_rate}, "
             f"T={time}, n={n}"
         )
 
@@ -241,11 +241,11 @@ class TestPopulationProbability:
     def test_numerical_stability(self) -> None:
         """Test numerical stability edge cases."""
         # Case where exp_term might be very large
-        lambda_param, mu_param = 1.0, 0.1  # λ >> μ
+        birth_rate, death_rate = 1.0, 0.1  # λ >> μ
         time = 10.0  # Moderate time
         n = 5
 
-        result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+        result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
 
         # Should either be finite or -inf (due to overflow), but not NaN
         assert result == -np.inf or np.isfinite(result), (
@@ -259,12 +259,12 @@ class TestPopulationProbability:
         # This is a challenging case numerically
 
         # When μ is very small compared to λ, β_t approaches λ/λ = 1
-        lambda_param = 1.0
-        mu_param = 1e-10  # Very small
+        birth_rate = 1.0
+        death_rate = 1e-10  # Very small
         time = 1.0  # Small time to avoid other numerical issues
         n = 2
 
-        result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+        result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
 
         # This case might legitimately return -inf due to boundary conditions
         assert result == -np.inf or np.isfinite(result), (
@@ -282,8 +282,8 @@ class TestPopulationProbability:
             (0.5, 0.3, 200.0, 10, "Moderate ratio case"),
         ]
 
-        for lambda_param, mu_param, time, n, description in boundary_cases:
-            result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+        for birth_rate, death_rate, time, n, description in boundary_cases:
+            result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
             assert result == -np.inf, (
                 f"Case '{description}' should return -inf due to β_t = 1"
             )
@@ -313,12 +313,12 @@ class TestPopulationProbabilityIntegration:
     def test_population_probability_in_context(self) -> None:
         """Test population probability calculation in realistic manuscript context."""
         # Realistic medieval manuscript parameters
-        lambda_param = 0.01  # 1 manuscript per 100 years
-        mu_param = 0.001  # 0.1% death rate per year
+        birth_rate = 0.01  # 1 manuscript per 100 years
+        death_rate = 0.001  # 0.1% death rate per year
         time = 1000.0  # 1000 years of observation
         n = 50  # 50 surviving manuscripts
 
-        result = calculate_populations_log_lik(lambda_param, mu_param, time, n)
+        result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
 
         assert np.isfinite(result), (
             "Realistic manuscript parameters should give finite result"

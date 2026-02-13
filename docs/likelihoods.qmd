@@ -5,7 +5,7 @@ title: "Age Likelihoods (Non-Spine)"
 This page documents the non-spine age log-likelihood function used in the birth-death
 model:
 
-- `calculate_non_spine_ages_log_lik(lambda_params, mu_params, ages_t, times)`
+- `calculate_non_spine_ages_log_lik(birth_rates, death_rates, ages_t, times)`
 
 It covers the single-epoch closed form, the multi-epoch transformation, and the
 numerical-stability behavior.
@@ -163,11 +163,11 @@ import torch
 from inf_bp_texts.models.mathematical_functions import calculate_non_spine_ages_log_lik
 
 ages = torch.tensor([15.0, 60.0, 95.0], dtype=torch.float64)
-lambda_val = torch.tensor([0.02], dtype=torch.float64)
-mu_val = torch.tensor([0.01], dtype=torch.float64)
+birth_rate_val = torch.tensor([0.02], dtype=torch.float64)
+death_rate_val = torch.tensor([0.01], dtype=torch.float64)
 T = torch.tensor([120.0], dtype=torch.float64)
 
-log_lik = calculate_non_spine_ages_log_lik(lambda_val, mu_val, ages, T)
+log_lik = calculate_non_spine_ages_log_lik(birth_rate_val, death_rate_val, ages, T)
 ```
 
 ## Related functions
