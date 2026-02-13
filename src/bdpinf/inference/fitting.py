@@ -1,35 +1,4 @@
-"""
-Parameter fitting and estimation functions for birth-death process models.
-
-This module contains functions for fitting birth-death process parameters
-to manuscript data using maximum likelihood estimation and various optimization
-strategies.
-
-Examples:
-    Basic parameter fitting:
-
-    >>> import numpy as np
-    >>> from inf_bp_texts.inference import fit_birth_death_process
-    >>>
-    >>> # Simulate some manuscript ages
-    >>> ages = np.array([50, 100, 150, 200, 250])
-    >>> observation_time = 300
-    >>>
-    >>> # Fit the model
-    >>> result = fit_birth_death_process(ages, observation_time)
-    >>> if result['success']:
-    ...     print(f"Birth rate: {result['birth_rate']:.3f}")
-    ...     print(f"Death rate: {result['death_rate']:.3f}")
-
-    Advanced usage with custom options:
-
-    >>> # Fit with initial parameter guess and bounds
-    >>> result = fit_birth_death_process(
-    ...     ages, observation_time,
-    ...     initial_params=(0.5, 0.3),
-    ...     bounds=[(0.1, 2.0), (0.1, 1.0)]
-    ... )
-"""
+"""Maximum likelihood estimation for birth-death process parameters using PyTorch."""
 
 from typing import Any, Dict, List, Sequence, Tuple
 
@@ -48,20 +17,7 @@ def get_crude_parameter_estimates(
     birth_rates: torch.Tensor | float | None = None,
     death_rates: torch.Tensor | float | None = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Get crude initial parameter estimates based on manuscript age data.
-
-    Uses simple heuristics to estimate birth and death rates:
-    - Death rate inversely related to max survival age
-    - Birth rate related to total observed manuscripts
-
-    Args:
-        ages: Array of manuscript ages
-        observation_time: Total observation time
-
-    Returns:
-        Tuple of (estimated_birth_rate, estimated_death_rate)
-    """
+    """Get crude initial parameter estimates from age data."""
     if birth_rates is not None and death_rates is not None:
         raise ValueError("Cannot provide both birth_rates and death_rates")
 
@@ -104,6 +60,7 @@ def get_crude_parameter_estimates(
 
 
 def _find_non_empty_age(list_of_ages: List[torch.Tensor]) -> torch.Tensor:
+    """Return first non-empty age array; raise ValueError if all empty." """
     for ages in list_of_ages:
         if len(ages) > 0:
             return ages
@@ -111,6 +68,7 @@ def _find_non_empty_age(list_of_ages: List[torch.Tensor]) -> torch.Tensor:
 
 
 def _validate_times(times: torch.Tensor | float) -> torch.Tensor:
+    """Convert and validate times; raise ValueError if not positive."""
     times_tensor = ensure_1d_tensor(times)
     if torch.any(times_tensor <= 0):
         raise ValueError("All elements of times must be positive")
@@ -122,6 +80,7 @@ def _prepare_population_sizes(
     population_sizes: torch.Tensor | None,
     spine_ages: torch.Tensor | None,
 ) -> torch.Tensor:
+    """Return population_sizes or auto-compute from list_of_ages + spine_ages."""
     if population_sizes is not None:
         population_sizes_tensor = ensure_1d_tensor(population_sizes).to(
             dtype=torch.int64
@@ -143,6 +102,7 @@ def _extract_spine_and_ages(
     is_ordered: bool,
     spine_ages: torch.Tensor | None,
 ) -> tuple[torch.Tensor | None, torch.Tensor]:
+    """Extract/auto-extract spine ages and return (spine_ages, non_spine_ages)."""
     spine_ages_tensor: torch.Tensor | None
     if is_ordered and (spine_ages is None):
         spine_list: List[float] = []
@@ -179,6 +139,7 @@ def _build_initial_params(
     non_empty_age: torch.Tensor,
     times_tensor: torch.Tensor,
 ) -> torch.Tensor:
+    """Build initial param vector [birth_rates, death_rates]; auto-estimate if needed."""
     if initial_birth_rates is None or initial_death_rates is None:
         crude_birth, crude_death = get_crude_parameter_estimates(
             non_empty_age, times_tensor, initial_birth_rates, initial_death_rates
@@ -198,22 +159,29 @@ def _apply_param_perturbation(
     perturb_initial_params_std: float,
     random_seed: int | None,
 ) -> torch.Tensor:
+    """Add Gaussian noise to params"""
     if perturb_initial_params_std <= 0:
         return initial_params
     if random_seed is not None:
         torch.manual_seed(random_seed)
-    noise = torch.normal(
-        mean=0.0,
-        std=perturb_initial_params_std * initial_params,
+    noise = torch.clamp(
+        torch.normal(
+            mean=1.0,
+            std=perturb_initial_params_std,
+            size=initial_params.shape,
+            dtype=initial_params.dtype,
+        ),
+        min=0.1,
     )
-    return torch.clamp(initial_params + noise, min=1e-6)
+    return initial_params * noise
 
 
 def _build_optimizer_strategies(
     optimizer_kwargs: Dict[str, Dict[str, Any]] | None,
 ) -> dict[str, tuple[str, type, int, dict[str, Any]]]:
+    """Build optimizer config dict"""
     strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]] = {
-        "adam": ("Adam", torch.optim.Adam, 500, {"lr": 0.01}),
+        "adam": ("Adam", torch.optim.Adam, 1000, {"lr": 0.5}),
         "lbfgs": (
             "LBFGS",
             torch.optim.LBFGS,
@@ -229,13 +197,15 @@ def _build_optimizer_strategies(
     for key, custom_kwargs in optimizer_kwargs.items():
         key_lower = key.lower()
         if key_lower in strategies_map:
-            opt_name, OptimClass, max_iters, default_kwargs = strategies_map[key_lower]
-            merged_kwargs = {**default_kwargs, **custom_kwargs}
+            opt_name, optimizer_cls, max_iters, default_opt_kwargs = strategies_map[
+                key_lower
+            ]
+            merged_opt_kwargs = {**default_opt_kwargs, **custom_kwargs}
             strategies_map[key_lower] = (
                 opt_name,
-                OptimClass,
+                optimizer_cls,
                 max_iters,
-                merged_kwargs,
+                merged_opt_kwargs,
             )
     return strategies_map
 
@@ -244,13 +214,15 @@ def _normalize_requested_optimizers(
     optimizers: Sequence[str] | str,
     strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]],
 ) -> List[str]:
+    """Normalize optimizer names to lowercase list; validate against strategies_map."""
     requested_opts = [optimizers] if isinstance(optimizers, str) else list(optimizers)
     requested_keys = [opt.strip().lower() for opt in requested_opts]
 
     for key in requested_keys:
         if key not in strategies_map:
             raise ValueError(
-                f"Unsupported optimizer '{key}'. Choose from {list(strategies_map.keys())}."
+                f"Unsupported optimizer '{key}'. "
+                f"Choose from {list(strategies_map.keys())}."
             )
     return requested_keys
 
@@ -268,15 +240,44 @@ def _run_optimizer_strategies(
     convergence_tolerance: float,
     absolute_tolerance: float,
     patience: int,
-    gradient_threshold: float,
-) -> tuple[torch.nn.Parameter, List[float], str, int, bool]:
+    gradient_threshold: float = 1e-5,
+) -> tuple[torch.nn.Parameter, List[float], str, int, bool, Exception | None]:
+    """Run optimizers sequentially until convergence; return params, history, metadata.
+
+    Args:
+        strategies_map: Optimizer configs.
+        requested_keys: Optimizer names to try sequentially.
+        log_params: Parameter tensor (log-scale).
+        initial_params: Initial params on original scale.
+        n_epochs: Number of time epochs.
+        non_spine_ages, times_tensor, spine_ages_tensor, population_sizes_tensor: Data.
+        convergence_tolerance, absolute_tolerance, patience, gradient_threshold: Stopping criteria.
+
+    Returns:
+        (optimized_log_params, nll_history, optimizer_name, iterations, converged, exception).
+    """
     converged = False
-    iterations = 0
+    iterations: int = 0
     optimizer_used = "Unknown"
     nll_history: List[float] = []
+    last_exception: Exception | None = None
+
+    def _compute_nll() -> torch.Tensor:
+        """Compute negative log likelihood for current log_params."""
+        return negative_log_likelihood(
+            birth_rates=log_params[:n_epochs],
+            death_rates=log_params[n_epochs:],
+            ages=non_spine_ages,
+            times=times_tensor,
+            spine_ages=spine_ages_tensor,
+            ns=population_sizes_tensor,
+            is_ordered=False,
+            log_scale_params=True,
+        )
 
     for key in requested_keys:
         non_finite_objective = False
+        did_converge = False
         opt_name, OptimClass, max_iters, opt_kwargs = strategies_map[key]
         try:
             with torch.no_grad():
@@ -285,67 +286,89 @@ def _run_optimizer_strategies(
             iterations = 0
             optimizer_used = opt_name
             best_log_params: torch.Tensor | None = None
+            first_nll: float | None = None
+            improved_once = False
 
             if opt_name == "LBFGS":
+                last_nll_value: float | None = None
 
                 def closure() -> torch.Tensor:
-                    nonlocal iterations
                     nonlocal non_finite_objective
+                    nonlocal last_nll_value
+                    nonlocal iterations
+                    nonlocal nll_history
+                    nonlocal first_nll
+                    nonlocal improved_once
                     optimizer.zero_grad()
-                    nll = negative_log_likelihood(
-                        birth_rates=log_params[:n_epochs],
-                        death_rates=log_params[n_epochs:],
-                        ages=non_spine_ages,
-                        times=times_tensor,
-                        spine_ages=spine_ages_tensor,
-                        ns=population_sizes_tensor,
-                        is_ordered=False,
-                        log_scale_params=True,
-                    )
-                    if torch.isfinite(nll):
-                        nll.backward()  # type: ignore[no-untyped-call]
-                        nll_history.append(float(nll.item()))
-                        iterations += 1
-                    else:
+                    nll = _compute_nll()
+                    iterations += 1
+                    if not torch.isfinite(nll):
                         non_finite_objective = True
-                        return torch.tensor(
-                            1e10, dtype=torch.float64, requires_grad=False
+                        inf_with_grad = (log_params * 0).sum() + torch.tensor(
+                            float("inf"),
+                            device=log_params.device,
+                            dtype=log_params.dtype,
                         )
+                        return inf_with_grad
+                    nll.backward()  # type: ignore[no-untyped-call]
+                    nll_value = float(nll.item())
+                    nll_history.append(nll_value)
+                    last_nll_value = nll_value
+                    if first_nll is None:
+                        first_nll = nll_value
+                    elif nll_value < first_nll - absolute_tolerance:
+                        improved_once = True
                     return nll
 
                 optimizer.step(closure)
                 if non_finite_objective:
+                    last_exception = RuntimeError(
+                        f"Non-finite objective encountered "
+                        f"during optimization with {opt_name}."
+                    )
                     continue
+
+                if last_nll_value is None:
+                    last_exception = RuntimeError(
+                        f"Optimizer {opt_name} did not produce a valid objective value."
+                    )
+                    continue
+
+                # Check convergence: gradient norm below threshold
+                grad_norm = 0.0
+                if log_params.grad is not None:
+                    grad_norm = float(torch.norm(log_params.grad).item())
+
+                if not improved_once:
+                    last_exception = RuntimeError(
+                        f"Objective did not improve from initial value with {opt_name}."
+                    )
+                    continue
+
+                best_log_params = log_params.detach().clone()
+                did_converge = grad_norm < gradient_threshold
             else:
                 best_nll = float("inf")
                 iterations_without_improvement = 0
+                iterations = 0
 
                 for _ in range(max_iters):
                     optimizer.zero_grad()
-                    nll = negative_log_likelihood(
-                        birth_rates=log_params[:n_epochs],
-                        death_rates=log_params[n_epochs:],
-                        ages=non_spine_ages,
-                        times=times_tensor,
-                        spine_ages=spine_ages_tensor,
-                        ns=population_sizes_tensor,
-                        is_ordered=False,
-                        log_scale_params=True,
-                    )
+                    nll = _compute_nll()
                     if torch.isfinite(nll):
                         nll.backward()  # type: ignore[no-untyped-call]
 
                         grad_norm = 0.0
-                        for param in [log_params]:
-                            if param.grad is not None:
-                                grad_norm = max(
-                                    grad_norm, float(torch.norm(param.grad).item())
-                                )
-
+                        if log_params.grad is not None:
+                            grad_norm = float(torch.norm(log_params.grad).item())
                         optimizer.step()
+                        iterations += 1
                         nll_value = float(nll.item())
                         nll_history.append(nll_value)
-                        iterations += 1
+                        if first_nll is None:
+                            first_nll = nll_value
+                        elif nll_value < first_nll - absolute_tolerance:
+                            improved_once = True
 
                         if nll_value < best_nll:
                             improvement = best_nll - nll_value
@@ -364,28 +387,48 @@ def _run_optimizer_strategies(
                         else:
                             iterations_without_improvement += 1
 
-                        if grad_norm < gradient_threshold:
+                        if grad_norm < gradient_threshold and improved_once:
+                            did_converge = True
                             break
 
-                        if iterations_without_improvement >= patience:
+                        if iterations_without_improvement >= patience and improved_once:
+                            did_converge = True
                             break
                     else:
                         non_finite_objective = True
                         break
 
                 if non_finite_objective:
+                    last_exception = RuntimeError(
+                        f"Non-finite objective encountered during optimization with {opt_name}."
+                    )
+                    continue
+
+                if not improved_once:
+                    last_exception = RuntimeError(
+                        f"Objective did not improve from initial value with {opt_name}."
+                    )
                     continue
 
             if best_log_params is not None:
                 with torch.no_grad():
                     log_params.copy_(best_log_params)
 
-            converged = True
-            break
-        except Exception:
+            if did_converge:
+                converged = True
+                break
+        except (RuntimeError, ValueError) as exc:
+            last_exception = exc
             continue
 
-    return log_params, nll_history, optimizer_used, iterations, converged
+    return (
+        log_params,
+        nll_history,
+        optimizer_used,
+        iterations,
+        converged,
+        last_exception,
+    )
 
 
 def _finalize_fit(
@@ -396,6 +439,7 @@ def _finalize_fit(
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
 ) -> tuple[np.ndarray, np.ndarray, float, float] | None:
+    """Convert log params to original scale; compute final NLL; return rates + likelihoods."""
     with torch.no_grad():
         final_nll = negative_log_likelihood(
             birth_rates=log_params[:n_epochs],
@@ -431,108 +475,38 @@ def fit_birth_death_processes(
     perturb_initial_params_std: float = 0.0,
     random_seed: int | None = None,
 ) -> Dict[str, Any]:
-    """
-    Fit birth–death process parameters to grouped manuscript-age data using PyTorch.
+    """Fit birth-death parameters to grouped age data via PyTorch.
 
-    This version performs optimization fully in PyTorch (LBFGS) on log-parameters to
-    maintain positivity. Gradients flow through the torch-native `negative_log_likelihood`
-    (with `log_scale_params=True`).
+    Optimizes log-parameters (LBFGS, Adam, SGD) until convergence.
 
     Parameters
     ----------
     list_of_ages : List[torch.Tensor]
-        A list of torch tensors, each containing observed ages for a single group
-        (e.g., manuscript family). Arrays may be empty; at least one non-empty array
-        is required. For ordered data (is_ordered=True) each array is expected to
-        have the spine observation as its first element (unless spine_ages is
-        provided explicitly).
-    times : torch.Tensor
-        Observation time(s) for the process. Must be positive and strictly increasing
-        for multi-epoch models. This is used by the likelihood functions to compute
-        probabilities over the observation window.
-    is_ordered : bool, optional
-        If True and spine_ages is not provided, the first element of every non-empty
-        array in list_of_ages is treated as a spine observation and removed from the
-        main ages used in the likelihood; collected spine ages are passed to the
-        likelihood. Default is False.
-    initial_birth_rates : torch.Tensor | None, optional
-        Initial guess for birth rate(s) on the original scale. If None,
-        a crude estimate is obtained. Can be a scalar or array matching the
-        structure of times. Values are converted to log-space for the optimizer.
-    initial_death_rates : torch.Tensor | None, optional
-        Initial guess for death rate(s) on the original scale. If None,
-        a crude estimate is obtained. Can be a scalar or array matching the
-        structure of times. Values are converted to log-space for the optimizer.
-    spine_ages : torch.Tensor | None, optional
-        If provided, these are the spine ages to be used directly in the likelihood.
-        If is_ordered is True and this argument is None, spine_ages will be inferred
-        from the first element of each non-empty array in list_of_ages.
-    population_sizes : torch.Tensor | None, optional
-        1D tensor of integer counts, one per entry in list_of_ages, representing the
-        number of observed lineages for that group. If provided, its length must
-        equal len(list_of_ages). If None, a default is constructed as
-        torch.tensor([len(ages) + int(spine_ages is not None) for ages in list_of_ages],
-        dtype=torch.int64). Note: if you rely on automatic spine extraction
-        (is_ordered=True and spine_ages=None) you should supply population_sizes explicitly if
-        you require it to count spines, because the default is computed before
-        spine extraction in the current implementation.
-    optimizers : Sequence[str] | str, optional
-        Ordered list (or single name) of optimizers to try. Supported values:
-        "Adam" (default first), "LBFGS", "SGD". Defaults to ("Adam", "LBFGS", "SGD").
-    optimizer_kwargs : Dict[str, Dict[str, Any]] | None, optional
-        Custom keyword arguments for optimizers. Keys should be optimizer names
-        (lowercase: 'lbfgs', 'adam', 'sgd') and values are dicts of kwargs to pass
-        to the optimizer constructor. These will override the default kwargs.
-        Example: {"lbfgs": {"lr": 0.5, "max_iter": 200}, "adam": {"lr": 0.01}}
-    perturb_initial_params_std : float, optional
-        If > 0, adds normally distributed noise to initial parameters with standard
-        deviation equal to this fraction of each parameter value. For example, 0.1
-        adds noise with std = 10% of the parameter value. The perturbed parameters
-        are clamped to be positive (min=1e-6). Default is 0.0 (no perturbation).
-    random_seed : int | None, optional
-        Random seed for reproducible parameter perturbation. Only used when
-        perturb_initial_params_std > 0. If None, noise will not be reproducible.
-        Default is None.
+        Age tensors per group; ≥1 non-empty array required.
+    times : torch.Tensor | float
+        Observation time(s), must be positive.
+    is_ordered : bool
+        If True, extract spine from first element per array.
+    initial_birth_rates, initial_death_rates : torch.Tensor | None
+        Initial guesses; auto-estimated if None.
+    spine_ages : torch.Tensor | None
+        Explicit spine ages (if not auto-extracted).
+    population_sizes : torch.Tensor | None
+        Counts per group; auto-computed if None.
+    optimizers : Sequence[str] | str
+        Optimizer names ('LBFGS', 'Adam', 'SGD') to try sequentially.
+    optimizer_kwargs : Dict[str, Dict[str, Any]] | None
+        Custom per-optimizer hyperparams (e.g. {'adam': {'lr': 0.01}}).
+    perturb_initial_params_std : float
+        Noise std as fraction of initial params; 0 = no noise.
+    random_seed : int | None
+        Seed for reproducible perturbation.
 
     Returns
     -------
-    Dict[str, Any]
-        A dictionary summarizing the optimization outcome and parameter estimates.
-                Typical keys:
-                    - "success" (bool)
-                    - "birth_rates" (np.ndarray): Estimated birth rates (original scale)
-                    - "death_rates" (np.ndarray): Estimated death rates (original scale)
-                    - "log_likelihood" (float)
-                    - "nll_history" (List[float]):
-                        History of negative log likelihood values during optimization
-                    - "optimization_result": minimal torch optimizer metadata
-                Returns {"success": False} on failure.
-
-    Raises
-    ------
-    ValueError
-        - If all arrays in list_of_ages are empty (no valid data to fit).
-        - If times <= 0 (when times is a float) or any element of times <= 0 (when array).
-        - If population_sizes is provided and
-            sum(population_sizes) != len(list_of_ages) (i.e., length mismatch).
-
-        Notes
-        -----
-        - Optimization is LBFGS in torch on log-parameters for stability and positivity.
-        - Objective is the torch-based negative_log_likelihood with log_scale_params=True.
-
-    Examples
-    --------
-    (Informal)
-    - To fit unordered data:
-        fit_birth_death_processes(list_of_ages, times=10.0)
-
-    - To fit ordered data with automatic spine extraction:
-        fit_birth_death_processes(list_of_ages, times=10.0, is_ordered=True)
-
-    See Also
-    --------
-    negative_log_likelihood, log_likelihood_gradient, get_crude_parameter_estimates
+    dict
+        {'success': bool, 'birth_rates': ndarray, 'death_rates': ndarray,
+         'log_likelihood': float, 'nll_history': list, 'optimization_result': dict}
     """
     non_empty_age = _find_non_empty_age(list_of_ages)
     times_tensor = _validate_times(times)
@@ -565,26 +539,35 @@ def fit_birth_death_processes(
     strategies_map = _build_optimizer_strategies(optimizer_kwargs)
     requested_keys = _normalize_requested_optimizers(optimizers, strategies_map)
 
-    log_params, nll_history, optimizer_used, iterations, converged = (
-        _run_optimizer_strategies(
-            strategies_map,
-            requested_keys,
-            log_params,
-            initial_params,
-            n_epochs,
-            non_spine_ages,
-            times_tensor,
-            spine_ages_tensor,
-            population_sizes_tensor,
-            convergence_tolerance=1e-7,
-            absolute_tolerance=1e-6,
-            patience=20,
-            gradient_threshold=1e-5,
-        )
+    (
+        log_params,
+        nll_history,
+        optimizer_used,
+        iterations,
+        converged,
+        last_exception,
+    ) = _run_optimizer_strategies(
+        strategies_map,
+        requested_keys,
+        log_params,
+        initial_params,
+        n_epochs,
+        non_spine_ages,
+        times_tensor,
+        spine_ages_tensor,
+        population_sizes_tensor,
+        convergence_tolerance=1e-7,
+        absolute_tolerance=1e-6,
+        patience=20,
+        gradient_threshold=1e-5,
     )
 
     if not converged:
-        return {"success": False}
+        error_message = str(last_exception) if last_exception is not None else None
+        error_type = (
+            type(last_exception).__name__ if last_exception is not None else None
+        )
+        return {"success": False, "error": error_message, "error_type": error_type}
 
     finalized = _finalize_fit(
         log_params,
@@ -620,13 +603,7 @@ def fit_from_dataframe(
     initial_birth_rates: NDArray[np.float64] | torch.Tensor | None = None,
     initial_death_rates: NDArray[np.float64] | torch.Tensor | None = None,
 ) -> Dict[str, Any]:
-    """
-    Fit birth-death process parameters from a pandas DataFrame (torch-friendly).
-
-    Expects `age_column` to contain numeric ages; converts to torch via
-    `ensure_1d_tensor` before fitting. `times` may be float, numpy array, or
-    torch tensor; initial rates may be numpy arrays or torch tensors.
-    """
+    """Fit parameters from DataFrame age column."""
 
     if age_column not in df.columns:
         raise ValueError(f"Column '{age_column}' not found in DataFrame")

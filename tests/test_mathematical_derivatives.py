@@ -19,7 +19,7 @@ from inf_bp_texts.models.mathematical_functions import (
 
 
 @pytest.fixture
-def standard_scalar_params():
+def standard_scalar_params() -> Dict[str, torch.Tensor]:
     """Standard scalar parameters for testing."""
     return {
         "lambda_param": torch.tensor([0.1], dtype=torch.float64),
@@ -29,7 +29,7 @@ def standard_scalar_params():
 
 
 @pytest.fixture
-def nearly_equal_params():
+def nearly_equal_params() -> Dict[str, torch.Tensor]:
     """Parameters where lambda is approximately mu (numerical stability test)."""
     return {
         "lambda_param": torch.tensor([0.1], dtype=torch.float64),
@@ -39,19 +39,19 @@ def nearly_equal_params():
 
 
 @pytest.fixture
-def sample_ages_scalar():
+def sample_ages_scalar() -> float:
     """Single age value for testing."""
     return 50.0
 
 
 @pytest.fixture
-def sample_ages_array():
+def sample_ages_array() -> torch.Tensor:
     """Array of ages for vectorized testing."""
     return torch.tensor([10.0, 30.0, 50.0, 70.0, 90.0], dtype=torch.float64)
 
 
 @pytest.fixture
-def sample_population_counts():
+def sample_population_counts() -> torch.Tensor:
     """Sample population counts (n values)."""
     return torch.tensor([0, 1, 5, 10, 20], dtype=torch.int64)
 
@@ -59,7 +59,9 @@ def sample_population_counts():
 class TestPopulationsLogLikelihoodDerivatives:
     """Test derivatives of population log-likelihood."""
 
-    def test_basic_derivatives(self, standard_scalar_params: Dict[str, torch.Tensor]):
+    def test_basic_derivatives(
+        self, standard_scalar_params: Dict[str, torch.Tensor]
+    ) -> None:
         result = calculate_populations_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
@@ -72,7 +74,7 @@ class TestPopulationsLogLikelihoodDerivatives:
 
     def test_derivatives_with_n_zero(
         self, standard_scalar_params: Dict[str, torch.Tensor]
-    ):
+    ) -> None:
         result = calculate_populations_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
@@ -84,8 +86,10 @@ class TestPopulationsLogLikelihoodDerivatives:
         assert torch.all(torch.isfinite(result))
 
     def test_derivatives_array_ns(
-        self, standard_scalar_params, sample_population_counts
-    ):
+        self,
+        standard_scalar_params: Dict[str, torch.Tensor],
+        sample_population_counts: torch.Tensor,
+    ) -> None:
         result = calculate_populations_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
@@ -96,7 +100,9 @@ class TestPopulationsLogLikelihoodDerivatives:
         assert result.shape == (2,)
         assert torch.all(torch.isfinite(result))
 
-    def test_derivatives_critical_case(self, nearly_equal_params):
+    def test_derivatives_critical_case(
+        self, nearly_equal_params: Dict[str, torch.Tensor]
+    ) -> None:
         result = calculate_populations_log_lik_derivatives(
             nearly_equal_params["lambda_param"],
             nearly_equal_params["mu_param"],
@@ -110,7 +116,9 @@ class TestPopulationsLogLikelihoodDerivatives:
 class TestSpineAgesLogLikelihoodDerivatives:
     """Test derivatives for spine age log-likelihood."""
 
-    def test_scalar_age_derivatives(self, standard_scalar_params, sample_ages_scalar):
+    def test_scalar_age_derivatives(
+        self, standard_scalar_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+    ) -> None:
         result = calculate_spine_ages_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
@@ -121,7 +129,11 @@ class TestSpineAgesLogLikelihoodDerivatives:
         assert result.shape == (2,)
         assert torch.all(torch.isfinite(result))
 
-    def test_array_ages_derivatives(self, standard_scalar_params, sample_ages_array):
+    def test_array_ages_derivatives(
+        self,
+        standard_scalar_params: Dict[str, torch.Tensor],
+        sample_ages_array: torch.Tensor,
+    ) -> None:
         result = calculate_spine_ages_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
@@ -134,7 +146,7 @@ class TestSpineAgesLogLikelihoodDerivatives:
 
     def test_derivatives_at_boundary(
         self, standard_scalar_params: Dict[str, torch.Tensor]
-    ):
+    ) -> None:
         T = standard_scalar_params["time"]
         result = calculate_spine_ages_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
@@ -146,7 +158,9 @@ class TestSpineAgesLogLikelihoodDerivatives:
         assert result.shape == (2,)
         assert torch.all(torch.isfinite(result))
 
-    def test_derivatives_critical_case(self, nearly_equal_params, sample_ages_scalar):
+    def test_derivatives_critical_case(
+        self, nearly_equal_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+    ) -> None:
         result = calculate_spine_ages_log_lik_derivatives(
             nearly_equal_params["lambda_param"],
             nearly_equal_params["mu_param"],
@@ -160,7 +174,9 @@ class TestSpineAgesLogLikelihoodDerivatives:
 class TestNonSpineAgesLogLikelihoodDerivatives:
     """Test derivatives for non-spine age log-likelihood."""
 
-    def test_scalar_age_derivatives(self, standard_scalar_params, sample_ages_scalar):
+    def test_scalar_age_derivatives(
+        self, standard_scalar_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+    ) -> None:
         result = calculate_non_spine_ages_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
@@ -171,7 +187,11 @@ class TestNonSpineAgesLogLikelihoodDerivatives:
         assert result.shape == (2,)
         assert torch.all(torch.isfinite(result))
 
-    def test_array_ages_derivatives(self, standard_scalar_params, sample_ages_array):
+    def test_array_ages_derivatives(
+        self,
+        standard_scalar_params: Dict[str, torch.Tensor],
+        sample_ages_array: torch.Tensor,
+    ) -> None:
         result = calculate_non_spine_ages_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
@@ -182,7 +202,9 @@ class TestNonSpineAgesLogLikelihoodDerivatives:
         assert result.shape == (2,)
         assert torch.all(torch.isfinite(result))
 
-    def test_derivatives_critical_case(self, nearly_equal_params, sample_ages_scalar):
+    def test_derivatives_critical_case(
+        self, nearly_equal_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+    ) -> None:
         result = calculate_non_spine_ages_log_lik_derivatives(
             nearly_equal_params["lambda_param"],
             nearly_equal_params["mu_param"],
@@ -197,8 +219,8 @@ class TestAgesLogLikelihoodDerivatives:
     """Test unified age log-likelihood derivatives interface."""
 
     def test_spine_derivatives_routing(
-        self, standard_scalar_params, sample_ages_scalar
-    ):
+        self, standard_scalar_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+    ) -> None:
         result = calculate_ages_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
@@ -217,8 +239,8 @@ class TestAgesLogLikelihoodDerivatives:
         assert_allclose(result, expected)
 
     def test_non_spine_derivatives_routing(
-        self, standard_scalar_params, sample_ages_scalar
-    ):
+        self, standard_scalar_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+    ) -> None:
         result = calculate_ages_log_lik_derivatives(
             standard_scalar_params["lambda_param"],
             standard_scalar_params["mu_param"],
@@ -238,7 +260,7 @@ class TestAgesLogLikelihoodDerivatives:
 
 
 class TestDerivativeIntegration:
-    def test_derivatives_sum_over_array(self):
+    def test_derivatives_sum_over_array(self) -> None:
         lambda_val = torch.tensor([0.1], dtype=torch.float64)
         mu_val = 0.08
         T = torch.tensor([50.0], dtype=torch.float64)
@@ -258,7 +280,7 @@ class TestDerivativeIntegration:
 
     def test_derivatives_match_numerical_gradient(
         self, standard_scalar_params: Dict[str, torch.Tensor]
-    ):
+    ) -> None:
         lambda_param = (
             standard_scalar_params["lambda_param"].detach().clone().requires_grad_(True)
         )
@@ -271,8 +293,12 @@ class TestDerivativeIntegration:
         )
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -297,7 +323,7 @@ class TestGradientValidation:
     using PyTorch's native autograd.
     """
 
-    def test_populations_log_lik_derivatives_scalar_n(self):
+    def test_populations_log_lik_derivatives_scalar_n(self) -> None:
         time = 100.0
         n = 5
 
@@ -309,8 +335,12 @@ class TestGradientValidation:
         )
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -326,7 +356,7 @@ class TestGradientValidation:
             f"{relative_error.max().item():.2e} exceeds tolerance for scalar n"
         )
 
-    def test_populations_log_lik_derivatives_array_n(self):
+    def test_populations_log_lik_derivatives_array_n(self) -> None:
         time = 100.0
         ns = torch.tensor([0, 1, 2, 5, 10], dtype=torch.int64)
 
@@ -338,8 +368,12 @@ class TestGradientValidation:
         )
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -355,7 +389,7 @@ class TestGradientValidation:
             f"{relative_error.max().item():.2e} exceeds tolerance for array n"
         )
 
-    def test_populations_log_lik_derivatives_near_equal_rates(self):
+    def test_populations_log_lik_derivatives_near_equal_rates(self) -> None:
         time = 100.0
         n = 5
 
@@ -367,8 +401,12 @@ class TestGradientValidation:
         )
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -384,7 +422,7 @@ class TestGradientValidation:
             f"{relative_error.max().item():.2e} exceeds tolerance for lambda ~= mu"
         )
 
-    def test_non_spine_ages_derivatives_scalar_age(self):
+    def test_non_spine_ages_derivatives_scalar_age(self) -> None:
         age = 50.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -394,8 +432,12 @@ class TestGradientValidation:
         objective_val = calculate_non_spine_ages_log_lik(lambda_param, mu_param, age, T)
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -411,7 +453,7 @@ class TestGradientValidation:
             f"{relative_error.max().item():.2e} exceeds tolerance for scalar age"
         )
 
-    def test_non_spine_ages_derivatives_array_ages(self):
+    def test_non_spine_ages_derivatives_array_ages(self) -> None:
         ages = torch.tensor([10.0, 30.0, 50.0, 70.0, 90.0], dtype=torch.float64)
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -423,8 +465,12 @@ class TestGradientValidation:
         )
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -440,7 +486,7 @@ class TestGradientValidation:
             f"{relative_error.max().item():.2e} exceeds tolerance for array ages"
         )
 
-    def test_non_spine_ages_derivatives_near_equal_rates(self):
+    def test_non_spine_ages_derivatives_near_equal_rates(self) -> None:
         age = 50.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -450,8 +496,12 @@ class TestGradientValidation:
         objective_val = calculate_non_spine_ages_log_lik(lambda_param, mu_param, age, T)
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -467,7 +517,7 @@ class TestGradientValidation:
             f"{relative_error.max().item():.2e} exceeds tolerance for lambda ~= mu"
         )
 
-    def test_spine_ages_derivatives_interior_ages(self):
+    def test_spine_ages_derivatives_interior_ages(self) -> None:
         ages = torch.tensor([10.0, 30.0, 50.0, 70.0, 90.0], dtype=torch.float64)
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -482,8 +532,12 @@ class TestGradientValidation:
         )
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -502,7 +556,7 @@ class TestGradientValidation:
             f"{relative_error.max().item():.2e} exceeds tolerance for interior ages"
         )
 
-    def test_spine_ages_derivatives_boundary_age(self):
+    def test_spine_ages_derivatives_boundary_age(self) -> None:
         age = 100.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -512,8 +566,12 @@ class TestGradientValidation:
         objective_val = calculate_spine_ages_log_lik(lambda_param, mu_param, age, T)
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -529,7 +587,7 @@ class TestGradientValidation:
             f"{relative_error.max().item():.2e} exceeds tolerance at boundary"
         )
 
-    def test_spine_ages_derivatives_mixed_ages(self):
+    def test_spine_ages_derivatives_mixed_ages(self) -> None:
         ages = torch.tensor([10.0, 50.0, 90.0, 100.0, 100.0], dtype=torch.float64)
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -539,8 +597,12 @@ class TestGradientValidation:
         objective_val = calculate_spine_ages_log_lik(lambda_param, mu_param, ages, T)
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -556,7 +618,7 @@ class TestGradientValidation:
             f"{relative_error.max().item():.2e} exceeds tolerance for mixed ages"
         )
 
-    def test_spine_ages_derivatives_near_equal_rates(self):
+    def test_spine_ages_derivatives_near_equal_rates(self) -> None:
         age = 50.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -566,8 +628,12 @@ class TestGradientValidation:
         objective_val = calculate_spine_ages_log_lik(lambda_param, mu_param, age, T)
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -583,7 +649,7 @@ class TestGradientValidation:
             f"{relative_error.max().item():.2e} exceeds tolerance for lambda ~= mu"
         )
 
-    def test_derivatives_with_log_scale_params(self):
+    def test_derivatives_with_log_scale_params(self) -> None:
         log_lambda = torch.log(torch.tensor(0.1, dtype=torch.float64))
         log_mu = torch.log(torch.tensor(0.05, dtype=torch.float64))
         age = 50.0
@@ -614,7 +680,7 @@ class TestGradientValidation:
             f"Gradient error {relative_error} exceeds tolerance for log-scale params"
         )
 
-    def test_finite_difference_manual_check(self):
+    def test_finite_difference_manual_check(self) -> None:
         lambda_val = torch.tensor([0.1], dtype=torch.float64)
         mu_val = torch.tensor([0.05], dtype=torch.float64)
         age = 50.0
@@ -667,7 +733,7 @@ class TestGradientValidation:
             f"Relative error {relative_error} exceeds tolerance"
         )
 
-    def test_gradient_consistency_across_parameter_ranges(self):
+    def test_gradient_consistency_across_parameter_ranges(self) -> None:
         ages = torch.tensor([20.0, 50.0, 80.0], dtype=torch.float64)
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -685,13 +751,20 @@ class TestGradientValidation:
             )
             mu_param = torch.tensor(mu_val, dtype=torch.float64, requires_grad=True)
 
-            objective_val = calculate_non_spine_ages_log_lik(
-                lambda_param, mu_param, ages, T
+            objective_val = (
+                calculate_non_spine_ages_log_lik(lambda_param, mu_param, ages, T)
+                if lambda_param.grad is not None and mu_param.grad is not None
+                else None
             )
 
             objective_val.backward()
-            autograd_grads = torch.tensor(
-                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            autograd_grads = (
+                torch.tensor(
+                    [lambda_param.grad.item(), mu_param.grad.item()],
+                    dtype=torch.float64,
+                )
+                if lambda_param.grad is not None and mu_param.grad is not None
+                else None
             )
 
             with torch.no_grad():
@@ -707,7 +780,7 @@ class TestGradientValidation:
                 f"{relative_error.max().item():.2e} exceeds tolerance for {description}"
             )
 
-    def test_wrapper_function_derivatives(self):
+    def test_wrapper_function_derivatives(self) -> None:
         age = 50.0
         T = torch.tensor([100.0], dtype=torch.float64)
 
@@ -719,8 +792,12 @@ class TestGradientValidation:
         )
 
         objective_val.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param.grad.item(), mu_param.grad.item()], dtype=torch.float64
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():
@@ -743,9 +820,13 @@ class TestGradientValidation:
         )
 
         objective_val_spine.backward()
-        autograd_grads = torch.tensor(
-            [lambda_param_spine.grad.item(), mu_param_spine.grad.item()],
-            dtype=torch.float64,
+        autograd_grads = (
+            torch.tensor(
+                [lambda_param_spine.grad.item(), mu_param_spine.grad.item()],
+                dtype=torch.float64,
+            )
+            if lambda_param.grad is not None and mu_param.grad is not None
+            else None
         )
 
         with torch.no_grad():

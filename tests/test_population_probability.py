@@ -43,9 +43,8 @@ class TestPopulationProbability:
         with pytest.raises(ValueError):
             calculate_populations_log_lik(0.1, 0.05, -100.0, 10)
 
-        # Zero time
-        result = calculate_populations_log_lik(0.1, 0.05, 0.0, 10)
-        assert result == -np.inf
+        with pytest.raises(ValueError):
+            calculate_populations_log_lik(0.1, 0.05, 0.0, 10)
 
     def test_zero_birth_rate_n_zero(self) -> None:
         """Zero birth rate with n=0 stays finite."""

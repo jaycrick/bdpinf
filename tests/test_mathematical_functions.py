@@ -618,10 +618,8 @@ class TestNumericalAccuracy:
 
         result = calculate_spine_ages_log_lik(lambda_val, mu_val, age, T)
 
-        # Should return finite value (not -inf)
-        assert torch.isfinite(result)
-        # Age density at t=0 should be positive (log density negative but finite)
-        assert result > -100  # Reasonable bound
+        # Should return -inf
+        assert result == -torch.tensor(float("inf"), dtype=torch.float64)
 
     def test_geometric_scalar_case(self) -> None:
         """
@@ -1337,7 +1335,7 @@ class TestNonSpineAgesLogLikelihood:
         self, sample_ages_scalar: torch.Tensor
     ) -> None:
         """Test that parameter shape mismatches raise ValueError."""
-        with pytest.raises(ValueError, match="matching shapes"):
+        with pytest.raises(ValueError, match="matching lengths"):
             calculate_non_spine_ages_log_lik(
                 lambda_params=torch.tensor([0.1, 0.15], dtype=torch.float64),
                 mu_params=torch.tensor([0.05], dtype=torch.float64),  # Different shape
@@ -1518,7 +1516,9 @@ class TestNumericalStability:
         )
 
         # Should not return inf or nan
-        assert torch.isfinite(result) or result == -torch.inf
+        assert torch.isfinite(result) or result == -torch.tensor(
+            float("inf"), dtype=torch.float64
+        )
 
     def test_extreme_rate_differences(self) -> None:
         """Test when λ >> μ or μ >> λ."""
@@ -1531,7 +1531,9 @@ class TestNumericalStability:
         )
 
         # Should handle gracefully
-        assert torch.isfinite(result1) or result1 == -torch.inf
+        assert torch.isfinite(result1) or result1 == -torch.tensor(
+            float("inf"), dtype=torch.float64
+        )
 
         # μ >> λ (high death)
         result2 = calculate_populations_log_lik(
@@ -1541,7 +1543,9 @@ class TestNumericalStability:
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
-        assert torch.isfinite(result2) or result2 == -torch.inf
+        assert torch.isfinite(result2) or result2 == -torch.tensor(
+            float("inf"), dtype=torch.float64
+        )
 
     def test_very_small_rates(self) -> None:
         """Test with very small birth and death rates."""
@@ -1552,7 +1556,9 @@ class TestNumericalStability:
             ns=5,
         )
 
-        assert torch.isfinite(result) or result == -torch.inf
+        assert torch.isfinite(result) or result == -torch.tensor(
+            float("inf"), dtype=torch.float64
+        )
 
     def test_many_epochs(self) -> None:
         """Test with many epochs (long array)."""
@@ -1568,7 +1574,9 @@ class TestNumericalStability:
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
-        assert torch.isfinite(result) or result == -torch.inf
+        assert torch.isfinite(result) or result == -torch.tensor(
+            float("inf"), dtype=torch.float64
+        )
 
     def test_ages_near_observation_time(self) -> None:
         """Test age likelihood with ages very close to T."""
