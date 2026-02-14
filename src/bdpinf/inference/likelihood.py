@@ -196,7 +196,7 @@ def log_likelihood(
         ages_log_lik += calculate_ages_log_lik(
             birth_rates,
             death_rates,
-            ages_t=spine_ages,
+            ages=spine_ages,
             times=times,
             are_spines=True,
         )
