@@ -3,7 +3,7 @@ authors = ["JC <jcacademicresearch@gmail.com>"]
 description = "A Python platform for performing inference and analysis on various datasets downloaded from APIs"
 name = "inf-bp-texts"
 packages = [{from = "src", include = "inf_bp_texts"}]
-readme = "README.rst"
+readme = "README.md"
 version = "0.1.0"
 
 [tool.poetry.scripts]
@@ -27,6 +27,7 @@ torch = "^2.9.1"
 torchvision = "^0.24.1"
 
 [tool.poetry.group.dev.dependencies]
+griffe = "<2.0.0"
 isort = "^6.0.1"
 joblib-stubs = "^1.5.2.0.20250831"
 jupyter-cache = "^1.0.1"
@@ -39,6 +40,7 @@ pydantic = "^2.12.4"
 pytest = "^8.0.0"
 pytest-cov = "^7.0.0"
 quarto = "^0.1.0"
+quartodoc = "^0.11.1"
 ruff = "^0.12.7"
 scipy-stubs = "^1.16.1.0"
 toml-sort = "^0.24.3"

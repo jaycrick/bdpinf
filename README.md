@@ -63,3 +63,15 @@ Run tests:
 ```sh
 poetry run pytest
 ```
+
+Generate docs:
+
+```sh
+quartodoc build
+```
+
+Run analysis files:
+
+```sh
+quarto preview
+```

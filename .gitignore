@@ -1,4 +1,6 @@
 manuscripts/
+reference/
+objects.json
 
 # Quarto
 *_files/
