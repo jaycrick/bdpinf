@@ -1,52 +1,46 @@
-[tool.poetry]
-authors = ["JC <jcacademicresearch@gmail.com>"]
-description = "A Python platform for performing inference and analysis on various datasets downloaded from APIs"
+[project]
 name = "inf-bp-texts"
-packages = [{from = "src", include = "inf_bp_texts"}]
-readme = "README.md"
 version = "0.1.0"
+description = "A Python platform for New Testament manuscript data and running quality control, analysis, and birth-death process inference."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "griffe<2.0.0",
+    "itables>=2.7.0",
+    "joblib>=1.5.3",
+    "jupyter>=1.1.1",
+    "kaleido>=1.2.0",
+    "lxml>=6.0.2",
+    "numpy>=2.4.2",
+    "pandas>=3.0.0",
+    "plotly>=6.5.2",
+    "pydantic>=2.12.5",
+    "scipy>=1.17.0",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+]
 
-[tool.poetry.scripts]
-inf-bp-texts = "inf_bp_texts.cli:main"
-
-[tool.poetry.dependencies]
-itables = "^2.6.2"
-joblib = "^1.5.2"
-jupyter = "^1.0.0"
-kaleido = "^1.1.0"
-lxml = "^6.0.0"
-numpy = "^2.0.0"
-pandas = "^2.3.1"
-plotly = "^6.2.0"
-pydantic = "^2.11.7"
-python = ">=3.13,<3.14"
-requests = "^2.32.4"
-scikit-learn = "^1.5.0"
-scipy = "^1.16.1"
-torch = "^2.9.1"
-torchvision = "^0.24.1"
-
-[tool.poetry.group.dev.dependencies]
-griffe = "<2.0.0"
-isort = "^6.0.1"
-joblib-stubs = "^1.5.2.0.20250831"
-jupyter-cache = "^1.0.1"
-lintquarto = "^0.7.0"
-lxml-stubs = "^0.5.1"
-mypy = "^1.17.1"
-plotly-stubs = "^0.0.6"
-pre-commit = "^4.2.0"
-pydantic = "^2.12.4"
-pytest = "^8.0.0"
-pytest-cov = "^7.0.0"
-quarto = "^0.1.0"
-quartodoc = "^0.11.1"
-ruff = "^0.12.7"
-scipy-stubs = "^1.16.1.0"
-toml-sort = "^0.24.3"
-types-requests = "^2.32.4.20250913"
-types-torch = "^0.1.1"
-typing-extensions = "^4.15.0"
+[dependency-groups]
+dev = [
+    "isort>=7.0.0",
+    "joblib-stubs>=1.5.3.1.20260117",
+    "jupyter-cache>=1.0.1",
+    "lintquarto>=0.8.0",
+    "lxml-stubs>=0.5.1",
+    "mypy>=1.19.1",
+    "pandas-stubs>=3.0.0.260204",
+    "plotly-stubs>=0.1.2",
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "quarto>=0.1.0",
+    "quartodoc>=0.11.1",
+    "ruff>=0.15.1",
+    "scipy-stubs>=1.17.0.2",
+    "toml-sort>=0.24.3",
+    "types-torch>=0.1.1",
+    "typing-extensions>=4.15.0",
+]
 
 [tool.black]
 include = '\.pyi?$'
@@ -64,7 +58,7 @@ pretty = true
 show_error_codes = true
 strict = true
 
-[tool.tomlsort]
+[tool.toml-sort]
 all = true
 ignore_case = true
 in_place = true
@@ -86,5 +80,9 @@ python_functions = ["test_*"]
 testpaths = ["tests"]
 
 [build-system]
-build-backend = "poetry.core.masonry.api"
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["inf_bp_texts*"]
