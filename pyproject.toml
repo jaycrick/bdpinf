@@ -1,7 +1,7 @@
 [project]
 name = "inf-bp-texts"
 version = "0.1.0"
-description = "Inference for birth-and-death processes in Python."
+description = "A Python platform for New Testament manuscript data and running quality control, analysis, and birth-death process inference."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
