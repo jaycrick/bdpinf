@@ -38,7 +38,6 @@ repos:
         additional_dependencies:
           - torch
           - pydantic
-          - types-requests
           - joblib-stubs
           - pandas-stubs
           - scipy-stubs
