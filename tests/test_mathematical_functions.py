@@ -1352,7 +1352,7 @@ class TestNonSpineAgesLogLikelihood:
         result = calculate_non_spine_ages_log_lik(
             birth_rates=torch.tensor([0.1], dtype=torch.float64),
             death_rates=torch.tensor([0.05], dtype=torch.float64),
-            ages_t=sample_ages_scalar,
+            ages=sample_ages_scalar,
             times=torch.tensor([100.0], dtype=torch.float64),
         )
 
@@ -1364,7 +1364,7 @@ class TestNonSpineAgesLogLikelihood:
         result = calculate_non_spine_ages_log_lik(
             birth_rates=torch.tensor([0.1], dtype=torch.float64),
             death_rates=torch.tensor([0.05], dtype=torch.float64),
-            ages_t=sample_ages_array,
+            ages=sample_ages_array,
             times=torch.tensor([100.0], dtype=torch.float64),
         )
 
@@ -1380,7 +1380,7 @@ class TestNonSpineAgesLogLikelihood:
         result = calculate_non_spine_ages_log_lik(
             birth_rates=standard_array_params["birth_rates"],
             death_rates=standard_array_params["death_rates"],
-            ages_t=ages,
+            ages=ages,
             times=standard_array_params["times"],
         )
 
@@ -1391,7 +1391,7 @@ class TestNonSpineAgesLogLikelihood:
         result = calculate_non_spine_ages_log_lik(
             birth_rates=torch.tensor([0.1], dtype=torch.float64),
             death_rates=torch.tensor([0.05], dtype=torch.float64),
-            ages_t=sample_ages_scalar,
+            ages=sample_ages_scalar,
             times=torch.tensor([100.0], dtype=torch.float64),
         )
 
@@ -1402,7 +1402,7 @@ class TestNonSpineAgesLogLikelihood:
         result = calculate_non_spine_ages_log_lik(
             birth_rates=torch.tensor([0.1], dtype=torch.float64),
             death_rates=torch.tensor([0.1 + 1e-13], dtype=torch.float64),
-            ages_t=sample_ages_scalar,
+            ages=sample_ages_scalar,
             times=torch.tensor([100.0], dtype=torch.float64),
         )
 
@@ -1415,7 +1415,7 @@ class TestNonSpineAgesLogLikelihood:
             calculate_non_spine_ages_log_lik(
                 birth_rates=torch.tensor([0.1], dtype=torch.float64),
                 death_rates=torch.tensor([0.05], dtype=torch.float64),
-                ages_t=150.0,  # age > times[-1]
+                ages=150.0,  # age > times[-1]
                 times=torch.tensor([100.0], dtype=torch.float64),
             )
 
@@ -1429,7 +1429,7 @@ class TestNonSpineAgesLogLikelihood:
                 death_rates=torch.tensor(
                     [0.05], dtype=torch.float64
                 ),  # Different shape
-                ages_t=sample_ages_scalar,
+                ages=sample_ages_scalar,
                 times=torch.tensor([50.0, 100.0], dtype=torch.float64),
             )
 
@@ -1441,7 +1441,7 @@ class TestNonSpineAgesLogLikelihood:
             calculate_non_spine_ages_log_lik(
                 birth_rates=torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64),
                 death_rates=torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64),
-                ages_t=sample_ages_scalar,
+                ages=sample_ages_scalar,
                 times=torch.tensor(
                     [50.0, 100.0, 90.0], dtype=torch.float64
                 ),  # Not monotonic
@@ -1485,7 +1485,7 @@ class TestAgesLogLikelihood:
         result = calculate_ages_log_lik(
             birth_rates=0.1,
             death_rates=0.05,
-            ages_t=sample_ages_scalar,
+            ages=sample_ages_scalar,
             times=100.0,
             are_spines=False,
         )
@@ -1494,7 +1494,7 @@ class TestAgesLogLikelihood:
         expected = calculate_non_spine_ages_log_lik(
             birth_rates=torch.tensor([0.1], dtype=torch.float64),
             death_rates=torch.tensor([0.05], dtype=torch.float64),
-            ages_t=sample_ages_scalar,
+            ages=sample_ages_scalar,
             times=torch.tensor([100.0], dtype=torch.float64),
         )
 
@@ -1676,7 +1676,7 @@ class TestNumericalStability:
         result = calculate_spine_ages_log_lik(
             birth_rates=0.1,
             death_rates=0.05,
-            ages_t=ages,
+            ages=ages,
             times=T,
         )
 
