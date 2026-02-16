@@ -51,7 +51,6 @@ def _normalize_and_validate_inputs(
     require_times_positive: bool = True,
     require_times_increasing: bool = True,
     require_ages_in_range: bool = True,
-    skip_validation: bool = False,
 ) -> tuple[torch.Tensor, ...]:
     inputs = []
     labels = []
@@ -132,6 +131,8 @@ def calculate_populations_log_lik(
     death_rates: torch.Tensor | float,
     times: torch.Tensor | float,
     ns: torch.Tensor | int,
+    *,
+    starting_population: int = 1,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     """Calculate the log-probability (log-likelihood) of observing given population counts
@@ -145,25 +146,52 @@ def calculate_populations_log_lik(
     Parameters
     ----------
     birth_rates : torch.Tensor | float
-        Birth rate(s) :math:`\lambda`. Scalar for constant rate, 1D tensor for piecewise-constant rates.
+        Birth rate(s) $\\lambda$. Scalar for constant rate, 1D tensor for piecewise-constant rates.
     death_rates : torch.Tensor | float
-        Death rate(s) :math:`\mu`. Scalar for constant rate, 1D tensor for piecewise-constant rates.
+        Death rate(s) $\\mu$. Scalar for constant rate, 1D tensor for piecewise-constant rates.
     times : torch.Tensor | float
-        Time(s) :math:`T`. Scalar for single time point, 1D tensor of epoch end times.
-        Must be :math:`\geq 0` and strictly increasing.
+        Time(s) $T$. Scalar for single time point, 1D tensor of epoch end times.
+        Must be greater than zero and strictly increasing.
     ns : torch.Tensor | int
         Non-negative population count(s) for which to evaluate log-probabilities.
+    starting_population : int
+        The number of starting individuals at time 0. Default is 1.
 
     Returns
     -------
     torch.Tensor
         Scalar tensor (shape ()) containing sum of log p_n(T) across provided `ns`.
-        dtype: torch.float64. Fully differentiable via PyTorch autograd.
+        dtype: torch.float64.
 
     Notes
     -----
-    Handles λ ≈ μ limiting case for numerical stability. Array inputs must have
-    matching lengths. Returns -inf tensor for numerical issues.
+    Under the basic birth-and-death process with constant rates,
+    the probability of observing $n$ individuals at time $T$
+    can be expressed in terms of parameters $\\alpha_t$ and $\\beta_T$,
+    (Tavaré, 2018).
+
+    $$
+        \\alpha_T := \\Pr(Z_T = 0)
+        = \\frac{\\mu(e^{(\\mu - \\lambda)T} - 1)}{\\lambda e^{(\\mu - \\lambda)T} - \\mu}
+    $$
+
+    For $\\lambda = \\mu$, the limiting case is:
+
+    $$\\alpha_T = \\beta_T = \\frac{\\lambda T}{1 + \\lambda T}.$$
+
+    If the initial number of individuals is $n_0$, then we have
+    $$
+        \\Pr(Z_T = n))
+        = \\sum_{i = 0}^{\\min(n_0, n)} \\binom{n_0}{i} \\binom{n_0 + n - i - 1}{n - 1}
+        \\alpha_T^{n_0 - i} \\beta_T^{n - i} (1 - \\alpha_T - \\beta_T)^{i}
+    $$
+
+    References
+    ----------
+
+    - Tavaré, S. (2018). The linear birth--death process: an inferential retrospective.
+    *Advances in Applied Probability, 50*(A), 253--269. doi:10.1017/apr.2018.84
+
     """
     # Convert scalar inputs to tensors and ensure 1D arrays
     if not _skip_normalization:
@@ -175,6 +203,7 @@ def calculate_populations_log_lik(
         assert torch.is_tensor(death_rates)
         assert torch.is_tensor(times)
     (ns,) = ensure_1d_tensors(ns)
+    assert starting_population > 0, "starting_population must be a positive integer."
 
     # Input validation
     if torch.any(ns < 0):
@@ -238,29 +267,103 @@ def calculate_populations_log_lik(
     # Handle n == 0 case
     zero_mask = ns == 0
     if torch.any(zero_mask):
-        log_pr[zero_mask] = torch.log(alpha_t)
+        log_pr[zero_mask] = torch.log(alpha_t) * starting_population
 
     # Handle n > 0 case
-    nonzero_mask = ~zero_mask
+    nonzero_mask = torch.logical_not(zero_mask)
     if torch.any(nonzero_mask):
-        log_term1 = torch.log1p(-alpha_t)
-        log_term2 = torch.log1p(-beta_t)
-        log_term3 = torch.where(
-            ns == 1,
-            torch.tensor(0.0, dtype=torch.float64),
-            (ns - 1) * torch.log(beta_t),
-        )
+        if starting_population == 1:
+            log_term1 = torch.log1p(-alpha_t)
+            log_term2 = torch.log1p(-beta_t)
+            log_term3 = torch.where(
+                ns == 1,
+                torch.tensor(0.0, dtype=torch.float64),
+                (ns - 1) * torch.log(beta_t),
+            )
 
-        # Check all terms are finite
-        if not (
-            torch.isfinite(log_term1)
-            and torch.isfinite(log_term2)
-            and torch.all(torch.isfinite(log_term3[nonzero_mask]))
-        ):
-            return torch.tensor(float("-inf"), dtype=torch.float64)
+            # Check all terms are finite
+            if not (
+                torch.isfinite(log_term1)
+                and torch.isfinite(log_term2)
+                and torch.all(torch.isfinite(log_term3[nonzero_mask]))
+            ):
+                return torch.tensor(float("-inf"), dtype=torch.float64)
 
-        # Broadcast full expression then mask to preserve original shape
-        log_pr[nonzero_mask] = (log_term1 + log_term2 + log_term3)[nonzero_mask]
+            # Broadcast full expression then mask to preserve original shape
+            log_pr[nonzero_mask] = (log_term1 + log_term2 + log_term3)[nonzero_mask]
+        else:
+            n0 = int(starting_population)
+            alpha_plus_beta = alpha_t + beta_t
+            if alpha_plus_beta > 1:
+                return torch.tensor(float("-inf"), dtype=torch.float64)
+
+            log_alpha = (
+                torch.log(alpha_t)
+                if alpha_t > 0
+                else torch.tensor(float("-inf"), dtype=torch.float64)
+            )
+            log_beta = (
+                torch.log(beta_t)
+                if beta_t > 0
+                else torch.tensor(float("-inf"), dtype=torch.float64)
+            )
+            log_one_minus = (
+                torch.log1p(-alpha_plus_beta)
+                if alpha_plus_beta < 1
+                else torch.tensor(float("-inf"), dtype=torch.float64)
+            )
+
+            nonzero_indices = torch.where(nonzero_mask)[0]
+            for idx in nonzero_indices:
+                n_val = int(ns[idx].item())
+                if n_val <= 0:
+                    log_pr[idx] = torch.tensor(float("-inf"), dtype=torch.float64)
+                    continue
+
+                i_max = min(n0, n_val)
+                i = torch.arange(i_max + 1, dtype=torch.int64)
+                i_f = i.to(torch.float64)
+                n_f = torch.tensor(float(n_val), dtype=torch.float64)
+                n0_f = torch.tensor(float(n0), dtype=torch.float64)
+
+                log_binom_n0 = (
+                    torch.lgamma(n0_f + 1)
+                    - torch.lgamma(i_f + 1)
+                    - torch.lgamma(n0_f - i_f + 1)
+                )
+                log_binom_second = (
+                    torch.lgamma(n0_f + n_f - i_f)
+                    - torch.lgamma(n_f)
+                    - torch.lgamma(n0_f - i_f + 1)
+                )
+
+                n0_minus_i = (n0_f - i_f).to(torch.float64)
+                n_minus_i = (n_f - i_f).to(torch.float64)
+
+                log_alpha_term = torch.where(
+                    n0_minus_i == 0,
+                    torch.tensor(0.0, dtype=torch.float64),
+                    n0_minus_i * log_alpha,
+                )
+                log_beta_term = torch.where(
+                    n_minus_i == 0,
+                    torch.tensor(0.0, dtype=torch.float64),
+                    n_minus_i * log_beta,
+                )
+                log_one_minus_term = torch.where(
+                    i_f == 0,
+                    torch.tensor(0.0, dtype=torch.float64),
+                    i_f * log_one_minus,
+                )
+
+                log_terms = (
+                    log_binom_n0
+                    + log_binom_second
+                    + log_alpha_term
+                    + log_beta_term
+                    + log_one_minus_term
+                )
+                log_pr[idx] = torch.logsumexp(log_terms, dim=0)
 
     # Final numerical check
     if not torch.all(torch.isfinite(log_pr)):
@@ -274,6 +377,7 @@ def calculate_non_spine_ages_log_lik(
     death_rates: torch.Tensor | float,
     ages: torch.Tensor | float,
     times: torch.Tensor | float,
+    *,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     """
@@ -397,6 +501,7 @@ def calculate_spine_ages_log_lik(
     death_rates: torch.Tensor | float,
     ages: torch.Tensor | float,
     times: torch.Tensor | float,
+    *,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     """
@@ -616,7 +721,7 @@ def calculate_extinction_pr(
     """
     Calculate extinction probability for a birth-death process *Z* at time *T*:
 
-        Pr(Z(T) = 0)
+        Pr(Z_T = 0)
 
     Parameters
     ----------
@@ -1064,7 +1169,6 @@ def _population_geometric_parameter(
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
-            skip_validation=_skip_normalization,
         )
     else:
         assert torch.is_tensor(birth_rates)
@@ -1223,7 +1327,6 @@ def _pr_extinction_numerator(
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
-            skip_validation=_skip_normalization,
         )
     else:
         assert torch.is_tensor(birth_rates)

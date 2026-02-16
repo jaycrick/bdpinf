@@ -28,7 +28,7 @@ def calculate_populations_log_lik_derivatives(
     d_death_rate = torch.zeros_like(ns, dtype=torch.float64)
 
     zero_mask = ns == 0
-    non_zero_mask = ~zero_mask
+    non_zero_mask = torch.logical_not(zero_mask)
 
     is_critical = torch.isclose(birth_rate_val, death_rate_val, rtol=1e-14).item()
 

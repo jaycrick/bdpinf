@@ -5,6 +5,8 @@ These tests verify the correctness of the birth-death process population
 probability calculation based on the Arley & Borchsenius formula.
 """
 
+import math
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -172,6 +174,36 @@ class TestPopulationProbability:
             f"Manual and function results should match: "
             f"manual={manual_result}, function={function_result}"
         )
+
+    def test_starting_population_gt_one(self) -> None:
+        """Validate the n0 > 1 branch against the closed-form summation."""
+        birth_rate, death_rate, time = 0.2, 0.1, 1.0
+        n0 = 3
+        n = 2
+
+        result = calculate_populations_log_lik(
+            birth_rate, death_rate, time, n, starting_population=n0
+        )
+
+        growth_rate = birth_rate - death_rate
+        exp_term = np.exp(growth_rate * time)
+        denominator = birth_rate * exp_term - death_rate
+        alpha_t = death_rate * (exp_term - 1) / denominator
+        beta_t = (birth_rate / death_rate) * alpha_t
+
+        prob = 0.0
+        for i in range(0, min(n0, n) + 1):
+            term = (
+                math.comb(n0, i)
+                * math.comb(n0 + n - i - 1, n - 1)
+                * (alpha_t ** (n0 - i))
+                * (beta_t ** (n - i))
+                * ((1 - alpha_t - beta_t) ** i)
+            )
+            prob += term
+
+        expected = np.log(prob)
+        assert_allclose(result, expected, rtol=1e-10, atol=1e-12)
 
     def test_extreme_parameters(self) -> None:
         """Test behavior with extreme but valid parameters."""
