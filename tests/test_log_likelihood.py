@@ -333,8 +333,6 @@ class TestLogLikelihood:
 
         assert np.isfinite(_as_float(result_single))
         assert np.isfinite(_as_float(result_multi))
-        # Relaxed tolerance due to known multi-epoch numerical differences
-        # This case shows larger discrepancy (~10%) possibly due to multiple population groups
         assert_allclose(result_single, result_multi, rtol=1e-8)
 
     def test_multi_epoch_identical_rates_ordered(self) -> None:
