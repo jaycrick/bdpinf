@@ -94,15 +94,17 @@ def validate_positive_number(value: float, name: str) -> int | float:
 
     """
     if not isinstance(value, (int, float)):
+        msg = f"{name} must be a number, got {type(value).__name__}"
         raise ValidationError(
-            f"{name} must be a number, got {type(value).__name__}",
+            msg,
             field_name=name,
             received_value=value,
         )
 
     if value <= 0:
+        msg = f"{name} must be positive, got {value}"
         raise ValidationError(
-            f"{name} must be positive, got {value}",
+            msg,
             field_name=name,
             received_value=value,
         )
@@ -128,15 +130,17 @@ def validate_non_negative_number(
 
     """
     if not isinstance(value, (int, float)):
+        msg = f"{name} must be a number, got {type(value).__name__}"
         raise ValidationError(
-            f"{name} must be a number, got {type(value).__name__}",
+            msg,
             field_name=name,
             received_value=value,
         )
 
     if value < 0:
+        msg = f"{name} must be non-negative, got {value}"
         raise ValidationError(
-            f"{name} must be non-negative, got {value}",
+            msg,
             field_name=name,
             received_value=value,
         )
@@ -156,16 +160,20 @@ def validate_dataframe_columns(df: pd.DataFrame, required_columns: list[str]) ->
 
     """
     if not isinstance(df, pd.DataFrame):
+        msg = f"Expected pandas DataFrame, got {type(df).__name__}"
         raise ValidationError(
-            f"Expected pandas DataFrame, got {type(df).__name__}",
+            msg,
             received_value=type(df).__name__,
         )
 
     missing_columns = set(required_columns) - set(df.columns)
     if missing_columns:
-        raise ValidationError(
+        msg = (
             f"Missing required columns: {sorted(missing_columns)}. "
-            f"Available columns: {sorted(df.columns)}",
+            f"Available columns: {sorted(df.columns)}"
+        )
+        raise ValidationError(
+            msg,
             field_name="columns",
             received_value=list(df.columns),
         )
@@ -183,8 +191,9 @@ def validate_dataframe_not_empty(df: pd.DataFrame, name: str = "DataFrame") -> N
 
     """
     if df.empty:
+        msg = f"{name} cannot be empty (shape: {df.shape})"
         raise ValidationError(
-            f"{name} cannot be empty (shape: {df.shape})",
+            msg,
             field_name=name,
             received_value=f"shape_{df.shape}",
         )
@@ -210,17 +219,23 @@ def validate_parameter_bounds(
     validate_positive_number(death_rate, "death_rate")
 
     if birth_rate > max_value:
-        raise ValidationError(
+        msg = (
             f"birth_rate too large: {birth_rate} > {max_value}. "
-            "This may indicate convergence issues.",
+            "This may indicate convergence issues."
+        )
+        raise ValidationError(
+            msg,
             field_name="birth_rate",
             received_value=birth_rate,
         )
 
     if death_rate > max_value:
-        raise ValidationError(
+        msg = (
             f"death_rate too large: {death_rate} > {max_value}. "
-            "This may indicate convergence issues.",
+            "This may indicate convergence issues."
+        )
+        raise ValidationError(
+            msg,
             field_name="death_rate",
             received_value=death_rate,
         )
@@ -238,16 +253,18 @@ def validate_creation_times(creation_times: list[float], final_time: float) -> N
 
     """
     if not isinstance(creation_times, (list, tuple)):
+        msg = f"creation_times must be a list or tuple, got {type(creation_times).__name__}"
         raise ValidationError(
-            f"creation_times must be a list or tuple, got {type(creation_times).__name__}",
+            msg,
             field_name="creation_times",
             received_value=type(creation_times).__name__,
         )
 
     for i, time in enumerate(creation_times):
         if not isinstance(time, (int, float)):
+            msg = f"creation_times[{i}] must be a number, got {type(time).__name__}"
             raise ValidationError(
-                f"creation_times[{i}] must be a number, got {type(time).__name__}",
+                msg,
                 field_name=f"creation_times[{i}]",
                 received_value=time,
             )
@@ -255,8 +272,9 @@ def validate_creation_times(creation_times: list[float], final_time: float) -> N
         validate_non_negative_number(time, f"creation_times[{i}]")
 
         if time > final_time:
+            msg = f"creation_times[{i}] ({time}) cannot be after final_time ({final_time})"
             raise ValidationError(
-                f"creation_times[{i}] ({time}) cannot be after final_time ({final_time})",
+                msg,
                 field_name=f"creation_times[{i}]",
                 received_value=time,
             )

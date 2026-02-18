@@ -111,8 +111,9 @@ def get_config(config_type: str) -> object:
     }
 
     if config_type not in configs:
+        msg = f"Unknown config type: {config_type}. Available: {list(configs.keys())}"
         raise ValueError(
-            f"Unknown config type: {config_type}. Available: {list(configs.keys())}",
+            msg,
         )
 
     return configs[config_type]

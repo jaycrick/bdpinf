@@ -17,7 +17,8 @@ class ValidBookSet(RootModel[set[str]]):
     def validate_books(cls, v: set[str]) -> set[str]:
         invalid = v - CANONICAL_BOOKS
         if invalid:
-            raise ValueError(f"Invalid books: {invalid}")
+            msg = f"Invalid books: {invalid}"
+            raise ValueError(msg)
         return v
 
     def add(self, book: str) -> None:
@@ -45,7 +46,8 @@ class ValidSectionSet(RootModel[set[str]]):
     def validate_sections(cls, v: set[str]) -> set[str]:
         invalid = v - CANONICAL_SECTIONS
         if invalid:
-            raise ValueError(f"Invalid sections: {invalid}")
+            msg = f"Invalid sections: {invalid}"
+            raise ValueError(msg)
         return v
 
     def add(self, section: str) -> None:
@@ -66,8 +68,8 @@ class ValidSectionSet(RootModel[set[str]]):
 class ParsedContentOverview(BaseModel):
     """Holds parsed content overview information (books + sections)."""
 
-    books: ValidBookSet = Field(default_factory=lambda: ValidBookSet())
-    sections: ValidSectionSet = Field(default_factory=lambda: ValidSectionSet())
+    books: ValidBookSet = Field(default_factory=ValidBookSet)
+    sections: ValidSectionSet = Field(default_factory=ValidSectionSet)
 
     def merge(self, other: ParsedContentOverview) -> None:
         """In-place merge from another ParsedContentOverview."""

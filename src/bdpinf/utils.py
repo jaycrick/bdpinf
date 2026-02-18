@@ -1,17 +1,18 @@
 """Common utilities for API data collection and processing."""
 
-import os
+import urllib.error
 import urllib.request
+from pathlib import Path
 
 import torch
 
 
 def ensure_directory(path: str) -> None:
     """Ensure a directory exists, creating it if necessary."""
-    os.makedirs(path, exist_ok=True)
+    Path(path).mkdir(parents=True, exist_ok=True)
 
 
-def download_file(url: str, local_path: str, overwrite: bool = False) -> None:
+def download_file(url: str, local_path: str, *, overwrite: bool = False) -> None:
     """Download a file from a URL to a local path.
 
     Args:
@@ -23,16 +24,21 @@ def download_file(url: str, local_path: str, overwrite: bool = False) -> None:
         Exception: If download fails
 
     """
-    if not overwrite and os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+    if (
+        not overwrite
+        and Path(local_path).exists()
+        and Path(local_path).stat().st_size > 0
+    ):
         return
 
     try:
         print(f"Downloading {url} to {local_path}")
         # Ensure directory exists
-        ensure_directory(os.path.dirname(local_path))
+        ensure_directory(str(Path(local_path).parent))
         urllib.request.urlretrieve(url, local_path)
-    except Exception as e:
-        raise Exception(f"Error downloading {url}: {e}")
+    except urllib.error.URLError as e:
+        msg = f"Error downloading {url}: {e}"
+        raise urllib.error.URLError(msg) from e
 
 
 def safe_int(value: str | None) -> int | None:
@@ -80,9 +86,12 @@ def validate_matching_shapes(
     if len(tensors) < 2:
         return
     if names is not None and len(names) != len(tensors):
-        raise ValueError(
+        msg = (
             "names must be the same length as tensors when provided. "
-            f"Got names={len(names)}, tensors={len(tensors)}",
+            f"Got names={len(names)}, tensors={len(tensors)}"
+        )
+        raise ValueError(
+            msg,
         )
 
     reference_shape = tensors[0].shape
@@ -112,9 +121,12 @@ def validate_matching_lengths(
     if len(tensors) < 2:
         return
     if names is not None and len(names) != len(tensors):
-        raise ValueError(
+        msg = (
             "names must be the same length as tensors when provided. "
-            f"Got names={len(names)}, tensors={len(tensors)}",
+            f"Got names={len(names)}, tensors={len(tensors)}"
+        )
+        raise ValueError(
+            msg,
         )
 
     reference_len = len(tensors[0])

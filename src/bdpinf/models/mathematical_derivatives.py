@@ -5,7 +5,7 @@ This module contains analytical derivatives used by the mathematical functions.
 
 import torch
 
-from ..utils import ensure_1d_tensors
+from inf_bp_texts.utils import ensure_1d_tensors
 
 
 def calculate_populations_log_lik_derivatives(
@@ -247,6 +247,7 @@ def calculate_ages_log_lik_derivatives(
     death_rate: torch.Tensor | float,
     ages_t: torch.Tensor | float,
     T: torch.Tensor | float,
+    *,
     are_spines: bool = False,
 ) -> torch.Tensor:
     """Compute derivatives of log age-density with respect to lambda and mu."""

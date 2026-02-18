@@ -43,8 +43,8 @@ FONT_SIZE = 13
 TITLE_FONT_SIZE = 15
 
 # Global font configuration for plotly
-font_config = dict(family=FONT_FAMILY, size=FONT_SIZE, color="black")
-title_font_config = dict(family=FONT_FAMILY, size=TITLE_FONT_SIZE, color="black")
+font_config = {"family": FONT_FAMILY, "size": FONT_SIZE, "color": "black"}
+title_font_config = {"family": FONT_FAMILY, "size": TITLE_FONT_SIZE, "color": "black"}
 
 # Professional plot styling with high luminance, low saturation background
 # Using OKLCH values: L > 95, C < 2 (very bright, desaturated grey)
@@ -72,27 +72,27 @@ ptolqual = [
 ]
 
 # Global layout configuration
-layout_config = dict(
-    plot_bgcolor=plot_bgcolor,
-    paper_bgcolor=paper_bgcolor,
-    font=font_config,
-    title_font=title_font_config,
-    xaxis=dict(
-        gridcolor=gridcolor,
-        gridwidth=0.5,
-        showgrid=False,
-        zeroline=False,
-        automargin=True,
-    ),
-    yaxis=dict(
-        gridcolor=gridcolor,
-        gridwidth=0.5,
-        showgrid=False,
-        zeroline=False,
-        automargin=True,
-    ),
-    margin=dict(l=0, r=0, t=1, b=1, autoexpand=True),
-)
+layout_config = {
+    "plot_bgcolor": plot_bgcolor,
+    "paper_bgcolor": paper_bgcolor,
+    "font": font_config,
+    "title_font": title_font_config,
+    "xaxis": {
+        "gridcolor": gridcolor,
+        "gridwidth": 0.5,
+        "showgrid": False,
+        "zeroline": False,
+        "automargin": True,
+    },
+    "yaxis": {
+        "gridcolor": gridcolor,
+        "gridwidth": 0.5,
+        "showgrid": False,
+        "zeroline": False,
+        "automargin": True,
+    },
+    "margin": {"l": 0, "r": 0, "t": 1, "b": 1, "autoexpand": True},
+}
 
 
 def apply_professional_styling(
@@ -101,6 +101,7 @@ def apply_professional_styling(
     xaxis_title: str,
     yaxis_title: str,
     height: int = 400,
+    *,
     autosize: bool = True,
 ) -> Any:
     """Apply consistent professional styling to all figures.
@@ -125,34 +126,34 @@ def apply_professional_styling(
         paper_bgcolor=paper_bgcolor,
         font=font_config,
         title_font=title_font_config,
-        xaxis=dict(
-            gridcolor=gridcolor,
-            gridwidth=0.5,
-            showgrid=True,
-            zeroline=False,
-            automargin=True,
-        ),
-        yaxis=dict(
-            gridcolor=gridcolor,
-            gridwidth=0.5,
-            showgrid=True,
-            zeroline=False,
-            automargin=True,
-        ),
+        xaxis={
+            "gridcolor": gridcolor,
+            "gridwidth": 0.5,
+            "showgrid": True,
+            "zeroline": False,
+            "automargin": True,
+        },
+        yaxis={
+            "gridcolor": gridcolor,
+            "gridwidth": 0.5,
+            "showgrid": True,
+            "zeroline": False,
+            "automargin": True,
+        },
         # Tufte-like in-plot legend defaults (small, muted, inside plotting area)
-        legend=dict(
-            orientation="v",
-            yanchor="top",
-            y=0.98,
-            xanchor="left",
-            x=0.02,
-            bgcolor="rgba(250,250,250,0.6)",
-            bordercolor="rgba(0,0,0,0.08)",
-            borderwidth=0.5,
-            font=dict(size=9, color="black"),
-            traceorder="normal",
-        ),
-        margin=dict(l=50, r=15, t=15 if title else 8, b=40, pad=4),
+        legend={
+            "orientation": "v",
+            "yanchor": "top",
+            "y": 0.98,
+            "xanchor": "left",
+            "x": 0.02,
+            "bgcolor": "rgba(250,250,250,0.6)",
+            "bordercolor": "rgba(0,0,0,0.08)",
+            "borderwidth": 0.5,
+            "font": {"size": 9, "color": "black"},
+            "traceorder": "normal",
+        },
+        margin={"l": 50, "r": 15, "t": 15 if title else 8, "b": 40, "pad": 4},
         autosize=autosize,
     )
     return fig
@@ -164,6 +165,7 @@ def apply_tufte_legend(
     bgcolor: str = "rgba(250,250,250,0.6)",
     bordercolor: str = "rgba(0,0,0,0.08)",
     font_size: int = 9,
+    *,
     showlegend: bool = True,
 ) -> Any:
     """Apply a small, Tufte-style internal legend to a Plotly figure.
@@ -171,27 +173,27 @@ def apply_tufte_legend(
     position: one of ('top right', 'top left', 'bottom right', 'bottom left')
     """
     pos_map = {
-        "top right": dict(x=0.98, y=0.98, xanchor="right", yanchor="top"),
-        "top left": dict(x=0.02, y=0.98, xanchor="left", yanchor="top"),
-        "bottom right": dict(x=0.98, y=0.02, xanchor="right", yanchor="bottom"),
-        "bottom left": dict(x=0.02, y=0.02, xanchor="left", yanchor="bottom"),
+        "top right": {"x": 0.98, "y": 0.98, "xanchor": "right", "yanchor": "top"},
+        "top left": {"x": 0.02, "y": 0.98, "xanchor": "left", "yanchor": "top"},
+        "bottom right": {"x": 0.98, "y": 0.02, "xanchor": "right", "yanchor": "bottom"},
+        "bottom left": {"x": 0.02, "y": 0.02, "xanchor": "left", "yanchor": "bottom"},
     }
 
     p = pos_map.get(position, pos_map["top right"])
 
     fig.update_layout(
         showlegend=showlegend,
-        legend=dict(
-            orientation="v",
-            y=p["y"],
-            x=p["x"],
-            yanchor=p["yanchor"],
-            xanchor=p["xanchor"],
-            bgcolor=bgcolor,
-            bordercolor=bordercolor,
-            borderwidth=0.5,
-            font=dict(size=font_size, color="black"),
-        ),
+        legend={
+            "orientation": "v",
+            "y": p["y"],
+            "x": p["x"],
+            "yanchor": p["yanchor"],
+            "xanchor": p["xanchor"],
+            "bgcolor": bgcolor,
+            "bordercolor": bordercolor,
+            "borderwidth": 0.5,
+            "font": {"size": font_size, "color": "black"},
+        },
     )
 
     return fig
@@ -270,19 +272,19 @@ def save_figure(
         # Smaller figures need tighter margins; larger figures can have more space
         if width < 250 or height < 200:
             # Very small figures: minimal margins but enough for axis labels
-            margin_dict = dict(l=30, r=8, t=8, b=35, pad=2)
+            margin_dict = {"l": 30, "r": 8, "t": 8, "b": 35, "pad": 2}
         elif width < 350 or height < 300:
             # Small figures: compact margins
-            margin_dict = dict(l=40, r=10, t=10, b=40, pad=3)
+            margin_dict = {"l": 40, "r": 10, "t": 10, "b": 40, "pad": 3}
         else:
             # Standard figures: comfortable margins
-            margin_dict = dict(l=50, r=15, t=15, b=45, pad=4)
+            margin_dict = {"l": 50, "r": 15, "t": 15, "b": 45, "pad": 4}
 
         # Update figure size and margins for consistent export
         fig.update_layout(
             width=width,
             height=height,
-            font=dict(size=11),  # Ensure readable font size
+            font={"size": 11},  # Ensure readable font size
             margin=margin_dict,
             autosize=False,
         )
@@ -350,11 +352,11 @@ def plot_simulation_results(
     fig.add_trace(
         go.Histogram(
             x=surviving_manuscripts["age"],
-            xbins=dict(
-                start=age_bins[0],
-                end=age_bins[-1],
-                size=age_bins[1] - age_bins[0],
-            ),
+            xbins={
+                "start": age_bins[0],
+                "end": age_bins[-1],
+                "size": age_bins[1] - age_bins[0],
+            },
             name="Age Distribution",
             marker_color="blue",
             showlegend=False,
@@ -370,7 +372,7 @@ def plot_simulation_results(
             y=surviving_manuscripts["age"],
             mode="markers",
             name="Surviving",
-            marker=dict(size=6, color="green"),
+            marker={"size": 6, "color": "green"},
             showlegend=False,
         ),
         row=1,
@@ -387,7 +389,7 @@ def plot_simulation_results(
             y=[1] * len(survived),
             mode="markers",
             name="Survived",
-            marker=dict(size=8, color="green"),
+            marker={"size": 8, "color": "green"},
         ),
         row=2,
         col=1,
@@ -400,7 +402,7 @@ def plot_simulation_results(
                 y=[0] * len(died),
                 mode="markers",
                 name="Died",
-                marker=dict(size=8, color="red"),
+                marker={"size": 8, "color": "red"},
             ),
             row=2,
             col=1,
@@ -416,7 +418,7 @@ def plot_simulation_results(
         go.Bar(
             x=["Created", "Survived", "Died"],
             y=[total_created, total_survived, total_created - total_survived],
-            marker=dict(color=["blue", "green", "red"]),
+            marker={"color": ["blue", "green", "red"]},
             showlegend=False,
         ),
         row=2,
@@ -467,7 +469,8 @@ def plot_parameter_comparison(
         return
 
     if len(fit_results_list) != len(parameter_names):
-        raise ValueError("fit_results_list and parameter_names must have same length")
+        msg = "fit_results_list and parameter_names must have same length"
+        raise ValueError(msg)
 
     # Extract parameters
     birth_rates: list[float] = []
@@ -580,14 +583,14 @@ def plot_bootstrap_confidence_intervals(
         go.Scatter(
             x=["Birth Rate"],
             y=[float(original_fit["birth_rate"])],
-            error_y=dict(
-                type="data",
-                symmetric=False,
-                array=[birth_rate_ci[1] - float(original_fit["birth_rate"])],
-                arrayminus=[float(original_fit["birth_rate"]) - birth_rate_ci[0]],
-            ),
+            error_y={
+                "type": "data",
+                "symmetric": False,
+                "array": [birth_rate_ci[1] - float(original_fit["birth_rate"])],
+                "arrayminus": [float(original_fit["birth_rate"]) - birth_rate_ci[0]],
+            },
             mode="markers",
-            marker=dict(size=10, color="blue"),
+            marker={"size": 10, "color": "blue"},
             name="Birth Rate",
         ),
     )
@@ -597,14 +600,14 @@ def plot_bootstrap_confidence_intervals(
         go.Scatter(
             x=["Death Rate"],
             y=[float(original_fit["death_rate"])],
-            error_y=dict(
-                type="data",
-                symmetric=False,
-                array=[death_rate_ci[1] - float(original_fit["death_rate"])],
-                arrayminus=[float(original_fit["death_rate"]) - death_rate_ci[0]],
-            ),
+            error_y={
+                "type": "data",
+                "symmetric": False,
+                "array": [death_rate_ci[1] - float(original_fit["death_rate"])],
+                "arrayminus": [float(original_fit["death_rate"]) - death_rate_ci[0]],
+            },
             mode="markers",
-            marker=dict(size=10, color="red"),
+            marker={"size": 10, "color": "red"},
             name="Death Rate",
         ),
     )

@@ -88,18 +88,22 @@ def simulate_birth_death_process(
 
     # Validate inputs
     if not (len(birth_rates_arr) == len(death_rates_arr) == len(times_arr)):
+        msg = "birth_rates, death_rates, and times must have the same length"
         raise ValueError(
-            "birth_rates, death_rates, and times must have the same length",
+            msg,
         )
 
     if np.any(birth_rates_arr <= 0) or np.any(death_rates_arr <= 0):
-        raise ValueError("Birth rates and death rates must be positive")
+        msg = "Birth rates and death rates must be positive"
+        raise ValueError(msg)
 
     if np.any(times_arr <= 0):
-        raise ValueError("Times must be positive")
+        msg = "Times must be positive"
+        raise ValueError(msg)
 
     if len(times_arr) > 1 and np.any(np.diff(times_arr) <= 0):
-        raise ValueError("Times must be strictly increasing")
+        msg = "Times must be strictly increasing"
+        raise ValueError(msg)
 
     # Create random number generator
     rng = np.random.default_rng(random_seed)

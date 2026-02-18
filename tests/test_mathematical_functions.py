@@ -685,7 +685,7 @@ class TestNumericalAccuracy:
         birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
         T = torch.tensor([100.0], dtype=torch.float64)
 
-        # Expected: α_t = 0.1 * 100 / (1 + 0.1 * 100) = 10 / 11 ≈ 0.909091
+        # Expected: alpha_t = 0.1 * 100 / (1 + 0.1 * 100) = 10 / 11 ≈ 0.909091
         expected = birth_rate_val * T / (1 + birth_rate_val * T)
 
         result = torch.tensor(
@@ -706,7 +706,7 @@ class TestNumericalAccuracy:
         death_rate_val = torch.tensor([0.1], dtype=torch.float64)
         T = torch.tensor([10.0], dtype=torch.float64)
 
-        # Compute expected α_t manually
+        # Compute expected alpha_t manually
         growth = (birth_rate_val - death_rate_val) * T  # 1.0
         exp_growth = torch.exp(growth)  # e^1.0 ≈ 2.71828
         alpha_t = (
@@ -739,7 +739,7 @@ class TestNumericalAccuracy:
         birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
         T = torch.tensor([50.0], dtype=torch.float64)
 
-        # Expected: α_t = 0.1 * 50 / (1 + 0.1 * 50) = 5/6
+        # Expected: alpha_t = 0.1 * 50 / (1 + 0.1 * 50) = 5/6
         alpha_t = birth_rate_val * T / (1 + birth_rate_val * T)
         expected = torch.log(alpha_t)
 
@@ -767,7 +767,7 @@ class TestNumericalAccuracy:
         death_rate_val = torch.tensor([0.2], dtype=torch.float64)
         T = torch.tensor([5.0], dtype=torch.float64)
 
-        # Compute α_t and β_t
+        # Compute alpha_t and beta_t
         growth = (birth_rate_val - death_rate_val) * T
         exp_growth = torch.exp(growth)
         alpha_t = (
@@ -1282,7 +1282,7 @@ class TestPopulationsLogLikelihood:
             ns=torch.tensor([0], dtype=torch.int64),
         )
 
-        # P(n=0) = α_t, so log P should be finite and negative
+        # P(n=0) = alpha_t, so log P should be finite and negative
         assert torch.isfinite(result)
         assert result < 0
 

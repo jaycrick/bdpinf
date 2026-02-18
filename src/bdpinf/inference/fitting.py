@@ -8,7 +8,8 @@ import pandas as pd
 import torch
 from numpy.typing import NDArray
 
-from ..utils import ensure_1d_tensor
+from inf_bp_texts.utils import ensure_1d_tensor
+
 from .likelihood import negative_log_likelihood
 
 
@@ -21,7 +22,8 @@ def get_crude_parameter_estimates(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Get crude initial parameter estimates from age data."""
     if birth_rates is not None and death_rates is not None:
-        raise ValueError("Cannot provide both birth_rates and death_rates")
+        msg = "Cannot provide both birth_rates and death_rates"
+        raise ValueError(msg)
 
     times = ensure_1d_tensor(times)
     ages = ensure_1d_tensor(ages)
@@ -29,7 +31,8 @@ def get_crude_parameter_estimates(
     observation_time = times[-1]
     n_manuscripts = len(ages)
     if n_manuscripts == 0:
-        raise ValueError("Cannot estimate parameters from empty age data")
+        msg = "Cannot estimate parameters from empty age data"
+        raise ValueError(msg)
 
     mean_age = float(ages.mean())
 
@@ -52,10 +55,13 @@ def get_crude_parameter_estimates(
 
     # Validate that all arrays have consistent sizes
     if len(times) != len(est_birth_rates) or len(times) != len(est_death_rates):
-        raise ValueError(
+        msg = (
             f"Size mismatch: times ({len(times)}), "
             f"est_birth_rates ({len(est_birth_rates)}), "
-            f"est_death_rates ({len(est_death_rates)}) must all be equal",
+            f"est_death_rates ({len(est_death_rates)}) must all be equal"
+        )
+        raise ValueError(
+            msg,
         )
 
     return (est_birth_rates, est_death_rates)
@@ -66,14 +72,16 @@ def _find_non_empty_age(list_of_ages: list[torch.Tensor]) -> torch.Tensor:
     for ages in list_of_ages:
         if len(ages) > 0:
             return ages
-    raise ValueError("No valid data points for fitting")
+    msg = "No valid data points for fitting"
+    raise ValueError(msg)
 
 
 def _validate_times(times: torch.Tensor | float) -> torch.Tensor:
     """Convert and validate times; raise ValueError if not positive."""
     times_tensor = ensure_1d_tensor(times)
     if torch.any(times_tensor <= 0):
-        raise ValueError("All elements of times must be positive")
+        msg = "All elements of times must be positive"
+        raise ValueError(msg)
     return times_tensor
 
 
@@ -88,8 +96,9 @@ def _prepare_population_sizes(
             dtype=torch.int64,
         )
         if population_sizes_tensor.numel() != len(list_of_ages):
+            msg = "Length of population_sizes must match length of list_of_ages"
             raise ValueError(
-                "Length of population_sizes must match length of list_of_ages",
+                msg,
             )
         return population_sizes_tensor
 
@@ -101,6 +110,7 @@ def _prepare_population_sizes(
 
 def _extract_spine_and_ages(
     list_of_ages: list[torch.Tensor],
+    *,
     is_ordered: bool,
     spine_ages: torch.Tensor | None,
 ) -> tuple[torch.Tensor | None, torch.Tensor]:
@@ -225,9 +235,12 @@ def _normalize_requested_optimizers(
 
     for key in requested_keys:
         if key not in strategies_map:
-            raise ValueError(
+            msg = (
                 f"Unsupported optimizer '{key}'. "
-                f"Choose from {list(strategies_map.keys())}.",
+                f"Choose from {list(strategies_map.keys())}."
+            )
+            raise ValueError(
+                msg,
             )
     return requested_keys
 
@@ -313,12 +326,11 @@ def _run_optimizer_strategies(
                     iterations += 1
                     if not torch.isfinite(nll):
                         non_finite_objective = True
-                        inf_with_grad = (log_params * 0).sum() + torch.tensor(
+                        return (log_params * 0).sum() + torch.tensor(
                             float("inf"),
                             device=log_params.device,
                             dtype=log_params.dtype,
                         )
-                        return inf_with_grad
                     nll.backward()  # type: ignore[no-untyped-call]
                     nll_value = float(nll.item())
                     nll_history.append(nll_value)
@@ -534,8 +546,8 @@ def fit_birth_death_processes(
     )
     spine_ages_tensor, non_spine_ages = _extract_spine_and_ages(
         list_of_ages,
-        is_ordered,
-        spine_ages,
+        is_ordered=is_ordered,
+        spine_ages=spine_ages,
     )
 
     initial_params = _build_initial_params(
@@ -545,14 +557,18 @@ def fit_birth_death_processes(
         times_tensor,
     )
     if torch.any(initial_params <= 0):
-        raise ValueError("Initial parameters must be positive before log transform")
+        msg = "Initial parameters must be positive before log transform"
+        raise ValueError(msg)
 
     n_epochs = len(times_tensor)
     expected_len = 2 * n_epochs
     if len(initial_params) != expected_len:
-        raise ValueError(
+        msg = (
             "Initial parameters size mismatch with times: "
-            f"expected {expected_len}, got {len(initial_params)}",
+            f"expected {expected_len}, got {len(initial_params)}"
+        )
+        raise ValueError(
+            msg,
         )
 
     initial_params = _apply_param_perturbation(
@@ -627,13 +643,15 @@ def fit_from_dataframe(
     df: pd.DataFrame,
     age_column: str,
     times: float | NDArray[np.float64] | torch.Tensor,
+    *,
     is_ordered: bool = False,
     initial_birth_rates: NDArray[np.float64] | torch.Tensor | None = None,
     initial_death_rates: NDArray[np.float64] | torch.Tensor | None = None,
 ) -> dict[str, Any]:
     """Fit parameters from DataFrame age column."""
     if age_column not in df.columns:
-        raise ValueError(f"Column '{age_column}' not found in DataFrame")
+        msg = f"Column '{age_column}' not found in DataFrame"
+        raise ValueError(msg)
 
     ages_tensor = ensure_1d_tensor(
         torch.as_tensor(df[age_column].to_numpy(dtype=np.float64), dtype=torch.float64),

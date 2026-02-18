@@ -70,8 +70,8 @@ class TestPopulationProbability:
     def test_finite_results(self) -> None:
         """Test that valid inputs produce finite results."""
         test_cases = [
-            # Removed cases that lead to β_t = 1 (mathematical boundary)
-            # (1.0, 0.5, 100.0, 10),  # This leads to β_t = 1
+            # Removed cases that lead to beta_t = 1 (mathematical boundary)
+            # (1.0, 0.5, 100.0, 10),  # This leads to beta_t = 1
             # (0.5, 1.0, 100.0, 10),  # λ < μ case - different analysis needed
             (0.01, 0.001, 1000.0, 50),  # Small rates, should be stable
             (0.1, 0.05, 100.0, 25),  # Moderate case, shorter time
@@ -132,8 +132,8 @@ class TestPopulationProbability:
         birth_rate, death_rate, n = 0.1, 0.05, 10
 
         results = []
-        # Use shorter times to avoid β_t = 1 boundary issues
-        for time in [50.0, 100.0, 200.0, 500.0]:  # Removed 1000 which causes β_t = 1
+        # Use shorter times to avoid beta_t = 1 boundary issues
+        for time in [50.0, 100.0, 200.0, 500.0]:  # Removed 1000 which causes beta_t = 1
             result = calculate_populations_log_lik(
                 birth_rate,
                 death_rate,
@@ -165,7 +165,7 @@ class TestPopulationProbability:
                 times=time,
                 ns=n,
             )
-            # If the function returns -inf, it means α_t or β_t went out of bounds
+            # If the function returns -inf, it means alpha_t or beta_t went out of bounds
             # For these reasonable parameters, we expect finite results
             assert np.isfinite(result), (
                 f"Expected finite result for λ={birth_rate}, μ={death_rate}, "
@@ -255,7 +255,7 @@ class TestPopulationProbability:
 
     def test_n_equals_one_special_case(self) -> None:
         """Test the special case where n=1."""
-        # When n=1, the (n-1)*log(β_t) term becomes 0
+        # When n=1, the (n-1)*log(beta_t) term becomes 0
         birth_rate, death_rate, time = 0.1, 0.05, 100.0
 
         result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=1)
@@ -271,7 +271,7 @@ class TestPopulationProbability:
 
         expected = np.log(1 - alpha_t) + np.log(
             1 - beta_t,
-        )  # (n-1)*log(β_t) = 0 for n=1
+        )  # (n-1)*log(beta_t) = 0 for n=1
 
         assert abs(result - expected) < 1e-12, (
             f"n=1 case mismatch: expected={expected}, got={result}"
@@ -281,7 +281,7 @@ class TestPopulationProbability:
         "birth_rate,death_rate,time,n",
         [
             (0.1, 0.05, 100.0, 5),
-            # (0.5, 0.3, 200.0, 10),  # This leads to β_t = 1, excluded
+            # (0.5, 0.3, 200.0, 10),  # This leads to beta_t = 1, excluded
             (1.0, 0.8, 50.0, 3),
             (0.01, 0.008, 1000.0, 15),
             (2.0, 1.5, 30.0, 7),
@@ -316,10 +316,10 @@ class TestPopulationProbability:
 
     def test_boundary_conditions(self) -> None:
         """Test conditions that might cause boundary issues."""
-        # Test case where α_t or β_t might approach 1
+        # Test case where alpha_t or beta_t might approach 1
         # This is a challenging case numerically
 
-        # When μ is very small compared to λ, β_t approaches λ/λ = 1
+        # When μ is very small compared to λ, beta_t approaches λ/λ = 1
         birth_rate = 1.0
         death_rate = 1e-10  # Very small
         time = 1.0  # Small time to avoid other numerical issues
@@ -334,8 +334,8 @@ class TestPopulationProbability:
 
     def test_beta_equals_one_cases(self) -> None:
         """Test cases where β_t = 1 (should return -inf)."""
-        # These are mathematically valid cases that lead to β_t = 1
-        # They should return -inf because log(1 - β_t) = log(0) = -∞
+        # These are mathematically valid cases that lead to beta_t = 1
+        # They should return -inf because log(1 - beta_t) = log(0) = -∞
 
         boundary_cases = [
             (1.0, 0.5, 100.0, 10, "λ = 2μ case"),
