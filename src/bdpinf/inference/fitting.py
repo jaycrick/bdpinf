@@ -1,6 +1,7 @@
 """Maximum likelihood estimation for birth-death process parameters using PyTorch."""
 
-from typing import Any, Dict, List, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,7 @@ def get_crude_parameter_estimates(
     *,
     birth_rates: torch.Tensor | float | None = None,
     death_rates: torch.Tensor | float | None = None,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Get crude initial parameter estimates from age data."""
     if birth_rates is not None and death_rates is not None:
         raise ValueError("Cannot provide both birth_rates and death_rates")
@@ -54,13 +55,13 @@ def get_crude_parameter_estimates(
         raise ValueError(
             f"Size mismatch: times ({len(times)}), "
             f"est_birth_rates ({len(est_birth_rates)}), "
-            f"est_death_rates ({len(est_death_rates)}) must all be equal"
+            f"est_death_rates ({len(est_death_rates)}) must all be equal",
         )
 
     return (est_birth_rates, est_death_rates)
 
 
-def _find_non_empty_age(list_of_ages: List[torch.Tensor]) -> torch.Tensor:
+def _find_non_empty_age(list_of_ages: list[torch.Tensor]) -> torch.Tensor:
     """Return first non-empty age array; raise ValueError if all empty." """
     for ages in list_of_ages:
         if len(ages) > 0:
@@ -77,18 +78,18 @@ def _validate_times(times: torch.Tensor | float) -> torch.Tensor:
 
 
 def _prepare_population_sizes(
-    list_of_ages: List[torch.Tensor],
+    list_of_ages: list[torch.Tensor],
     population_sizes: torch.Tensor | None,
     spine_ages: torch.Tensor | None,
 ) -> torch.Tensor:
     """Return population_sizes or auto-compute from list_of_ages + spine_ages."""
     if population_sizes is not None:
         population_sizes_tensor = ensure_1d_tensor(population_sizes).to(
-            dtype=torch.int64
+            dtype=torch.int64,
         )
         if population_sizes_tensor.numel() != len(list_of_ages):
             raise ValueError(
-                "Length of population_sizes must match length of list_of_ages"
+                "Length of population_sizes must match length of list_of_ages",
             )
         return population_sizes_tensor
 
@@ -99,15 +100,15 @@ def _prepare_population_sizes(
 
 
 def _extract_spine_and_ages(
-    list_of_ages: List[torch.Tensor],
+    list_of_ages: list[torch.Tensor],
     is_ordered: bool,
     spine_ages: torch.Tensor | None,
 ) -> tuple[torch.Tensor | None, torch.Tensor]:
     """Extract/auto-extract spine ages and return (spine_ages, non_spine_ages)."""
     spine_ages_tensor: torch.Tensor | None
     if is_ordered and (spine_ages is None):
-        spine_list: List[float] = []
-        remaining: List[torch.Tensor] = []
+        spine_list: list[float] = []
+        remaining: list[torch.Tensor] = []
         for arr in list_of_ages:
             if len(arr) == 0:
                 continue
@@ -117,7 +118,7 @@ def _extract_spine_and_ages(
                 remaining.append(arr_tensor[1:])
 
         spine_ages_tensor = ensure_1d_tensor(
-            torch.tensor(spine_list, dtype=torch.float64)
+            torch.tensor(spine_list, dtype=torch.float64),
         )
         non_spine_ages = (
             torch.cat(remaining) if remaining else torch.tensor([], dtype=torch.float64)
@@ -129,7 +130,7 @@ def _extract_spine_and_ages(
     else:
         spine_ages_tensor = ensure_1d_tensor(spine_ages)
     non_spine_ages = torch.cat(
-        [ensure_1d_tensor(arr) for arr in list_of_ages if len(arr) > 0]
+        [ensure_1d_tensor(arr) for arr in list_of_ages if len(arr) > 0],
     )
     return spine_ages_tensor, non_spine_ages
 
@@ -154,7 +155,7 @@ def _build_initial_params(
         (
             ensure_1d_tensor(initial_birth_rates),
             ensure_1d_tensor(initial_death_rates),
-        )
+        ),
     )
 
 
@@ -181,7 +182,7 @@ def _apply_param_perturbation(
 
 
 def _build_optimizer_strategies(
-    optimizer_kwargs: Dict[str, Dict[str, Any]] | None,
+    optimizer_kwargs: dict[str, dict[str, Any]] | None,
 ) -> dict[str, tuple[str, type, int, dict[str, Any]]]:
     """Build optimizer config dict"""
     strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]] = {
@@ -217,7 +218,7 @@ def _build_optimizer_strategies(
 def _normalize_requested_optimizers(
     optimizers: Sequence[str] | str,
     strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]],
-) -> List[str]:
+) -> list[str]:
     """Normalize optimizer names to lowercase list; validate against strategies_map."""
     requested_opts = [optimizers] if isinstance(optimizers, str) else list(optimizers)
     requested_keys = [opt.strip().lower() for opt in requested_opts]
@@ -226,14 +227,14 @@ def _normalize_requested_optimizers(
         if key not in strategies_map:
             raise ValueError(
                 f"Unsupported optimizer '{key}'. "
-                f"Choose from {list(strategies_map.keys())}."
+                f"Choose from {list(strategies_map.keys())}.",
             )
     return requested_keys
 
 
 def _run_optimizer_strategies(
     strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]],
-    requested_keys: List[str],
+    requested_keys: list[str],
     log_params: torch.nn.Parameter,
     initial_params: torch.Tensor,
     n_epochs: int,
@@ -246,7 +247,7 @@ def _run_optimizer_strategies(
     absolute_tolerance: float,
     patience: int,
     gradient_threshold: float = 1e-5,
-) -> tuple[torch.nn.Parameter, List[float], str, int, bool, Exception | None]:
+) -> tuple[torch.nn.Parameter, list[float], str, int, bool, Exception | None]:
     """Run optimizers sequentially until convergence; return params, history, metadata.
 
     Args:
@@ -261,11 +262,12 @@ def _run_optimizer_strategies(
 
     Returns:
         (optimized_log_params, nll_history, optimizer_name, iterations, converged, exception).
+
     """
     converged = False
     iterations: int = 0
     optimizer_used = "Unknown"
-    nll_history: List[float] = []
+    nll_history: list[float] = []
     last_exception: Exception | None = None
 
     def _compute_nll() -> torch.Tensor:
@@ -331,13 +333,13 @@ def _run_optimizer_strategies(
                 if non_finite_objective:
                     last_exception = RuntimeError(
                         f"Non-finite objective encountered "
-                        f"during optimization with {opt_name}."
+                        f"during optimization with {opt_name}.",
                     )
                     continue
 
                 if last_nll_value is None:
                     last_exception = RuntimeError(
-                        f"Optimizer {opt_name} did not produce a valid objective value."
+                        f"Optimizer {opt_name} did not produce a valid objective value.",
                     )
                     continue
 
@@ -348,7 +350,7 @@ def _run_optimizer_strategies(
 
                 if not improved_once:
                     last_exception = RuntimeError(
-                        f"Objective did not improve from initial value with {opt_name}."
+                        f"Objective did not improve from initial value with {opt_name}.",
                     )
                     continue
 
@@ -407,13 +409,13 @@ def _run_optimizer_strategies(
 
                 if non_finite_objective:
                     last_exception = RuntimeError(
-                        f"Non-finite objective encountered during optimization with {opt_name}."
+                        f"Non-finite objective encountered during optimization with {opt_name}.",
                     )
                     continue
 
                 if not improved_once:
                     last_exception = RuntimeError(
-                        f"Objective did not improve from initial value with {opt_name}."
+                        f"Objective did not improve from initial value with {opt_name}.",
                     )
                     continue
 
@@ -473,7 +475,7 @@ def _finalize_fit(
 
 
 def fit_birth_death_processes(
-    list_of_ages: List[torch.Tensor],
+    list_of_ages: list[torch.Tensor],
     times: torch.Tensor | float,
     *,
     initial_birth_rates: torch.Tensor | None = None,
@@ -483,10 +485,10 @@ def fit_birth_death_processes(
     population_sizes: torch.Tensor | None = None,
     starting_population: int = 1,
     optimizers: Sequence[str] | str = ("Adam", "SGD", "LBFGS"),
-    optimizer_kwargs: Dict[str, Dict[str, Any]] | None = None,
+    optimizer_kwargs: dict[str, dict[str, Any]] | None = None,
     perturb_initial_params_std: float = 0.0,
     random_seed: int | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Fit birth-death parameters to grouped age data via PyTorch.
 
     Optimizes log-parameters (LBFGS, Adam, SGD) until convergence.
@@ -521,18 +523,26 @@ def fit_birth_death_processes(
     dict
         {'success': bool, 'birth_rates': ndarray, 'death_rates': ndarray,
          'log_likelihood': float, 'nll_history': list, 'optimization_result': dict}
+
     """
     non_empty_age = _find_non_empty_age(list_of_ages)
     times_tensor = _validate_times(times)
     population_sizes_tensor = _prepare_population_sizes(
-        list_of_ages, population_sizes, spine_ages
+        list_of_ages,
+        population_sizes,
+        spine_ages,
     )
     spine_ages_tensor, non_spine_ages = _extract_spine_and_ages(
-        list_of_ages, is_ordered, spine_ages
+        list_of_ages,
+        is_ordered,
+        spine_ages,
     )
 
     initial_params = _build_initial_params(
-        initial_birth_rates, initial_death_rates, non_empty_age, times_tensor
+        initial_birth_rates,
+        initial_death_rates,
+        non_empty_age,
+        times_tensor,
     )
     if torch.any(initial_params <= 0):
         raise ValueError("Initial parameters must be positive before log transform")
@@ -542,11 +552,13 @@ def fit_birth_death_processes(
     if len(initial_params) != expected_len:
         raise ValueError(
             "Initial parameters size mismatch with times: "
-            f"expected {expected_len}, got {len(initial_params)}"
+            f"expected {expected_len}, got {len(initial_params)}",
         )
 
     initial_params = _apply_param_perturbation(
-        initial_params, perturb_initial_params_std, random_seed
+        initial_params,
+        perturb_initial_params_std,
+        random_seed,
     )
     log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
 
@@ -618,14 +630,13 @@ def fit_from_dataframe(
     is_ordered: bool = False,
     initial_birth_rates: NDArray[np.float64] | torch.Tensor | None = None,
     initial_death_rates: NDArray[np.float64] | torch.Tensor | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Fit parameters from DataFrame age column."""
-
     if age_column not in df.columns:
         raise ValueError(f"Column '{age_column}' not found in DataFrame")
 
     ages_tensor = ensure_1d_tensor(
-        torch.as_tensor(df[age_column].to_numpy(dtype=np.float64), dtype=torch.float64)
+        torch.as_tensor(df[age_column].to_numpy(dtype=np.float64), dtype=torch.float64),
     )
     times_tensor = ensure_1d_tensor(torch.as_tensor(times, dtype=torch.float64))
 

@@ -1,5 +1,4 @@
-"""
-Visualization functions for birth-death process analysis.
+"""Visualization functions for birth-death process analysis.
 
 This module contains plotting and visualization utilities for birth-death
 process models and their results.
@@ -27,10 +26,11 @@ Examples:
     >>> simulation_data = {'ages': ages, 'counts': [10, 8, 6, 4, 2, 1]}
     >>> fig = plot_simulation_results(simulation_data)
     >>> fig.show()
+
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -103,8 +103,7 @@ def apply_professional_styling(
     height: int = 400,
     autosize: bool = True,
 ) -> Any:
-    """
-    Apply consistent professional styling to all figures.
+    """Apply consistent professional styling to all figures.
 
     Args:
         fig: Plotly figure object
@@ -115,6 +114,7 @@ def apply_professional_styling(
 
     Returns:
         Updated figure object with professional styling applied
+
     """
     fig.update_layout(
         title=title,
@@ -166,8 +166,7 @@ def apply_tufte_legend(
     font_size: int = 9,
     showlegend: bool = True,
 ) -> Any:
-    """
-    Apply a small, Tufte-style internal legend to a Plotly figure.
+    """Apply a small, Tufte-style internal legend to a Plotly figure.
 
     position: one of ('top right', 'top left', 'bottom right', 'bottom left')
     """
@@ -206,8 +205,7 @@ def apply_tufte_axes(
     tick_width: int = 1,
     axis_line_width: int = 1,
 ) -> Any:
-    """
-    Apply Tufte-style minimalist axes to all subplots in a Plotly figure.
+    """Apply Tufte-style minimalist axes to all subplots in a Plotly figure.
 
     - Removes gridlines and zero lines
     - Uses thin, subtle axis lines
@@ -249,9 +247,8 @@ def save_figure(
     width: int = 550,
     height: int = 450,
     output_dir: str = "figures",
-) -> Optional[Path]:
-    """
-    Save plotly figure as PDF with A4-friendly dimensions.
+) -> Path | None:
+    """Save plotly figure as PDF with A4-friendly dimensions.
 
     Args:
         fig: Plotly figure object
@@ -262,6 +259,7 @@ def save_figure(
 
     Returns:
         Path to saved file if successful, None if failed
+
     """
     try:
         # Create output directory if it doesn't exist
@@ -305,16 +303,16 @@ def save_figure(
 
 def plot_simulation_results(
     simulation_df: pd.DataFrame,
-    age_bins: Optional[NDArray[np.float64]] = None,
+    age_bins: NDArray[np.float64] | None = None,
     title: str = "Birth-Death Process Simulation Results",
 ) -> None:
-    """
-    Plot results from birth-death process simulation.
+    """Plot results from birth-death process simulation.
 
     Args:
         simulation_df: DataFrame from simulate_birth_death_process
         age_bins: Optional age bins for histogram
         title: Plot title
+
     """
     try:
         import plotly.graph_objects as go
@@ -353,7 +351,9 @@ def plot_simulation_results(
         go.Histogram(
             x=surviving_manuscripts["age"],
             xbins=dict(
-                start=age_bins[0], end=age_bins[-1], size=age_bins[1] - age_bins[0]
+                start=age_bins[0],
+                end=age_bins[-1],
+                size=age_bins[1] - age_bins[0],
             ),
             name="Age Distribution",
             marker_color="blue",
@@ -447,17 +447,17 @@ def plot_simulation_results(
 
 
 def plot_parameter_comparison(
-    fit_results_list: list[Dict[str, Any]],
+    fit_results_list: list[dict[str, Any]],
     parameter_names: list[str],
     title: str = "Parameter Comparison",
 ) -> None:
-    """
-    Plot comparison of fitted parameters across different datasets.
+    """Plot comparison of fitted parameters across different datasets.
 
     Args:
         fit_results_list: List of fit result dictionaries
         parameter_names: List of names for each dataset
         title: Plot title
+
     """
     try:
         import plotly.graph_objects as go
@@ -549,15 +549,15 @@ def plot_parameter_comparison(
 
 
 def plot_bootstrap_confidence_intervals(
-    bootstrap_results: Dict[str, Any],
+    bootstrap_results: dict[str, Any],
     title: str = "Bootstrap Confidence Intervals",
 ) -> None:
-    """
-    Plot bootstrap confidence intervals for parameters.
+    """Plot bootstrap confidence intervals for parameters.
 
     Args:
         bootstrap_results: Results from bootstrap_confidence_intervals
         title: Plot title
+
     """
     try:
         import plotly.graph_objects as go
@@ -589,7 +589,7 @@ def plot_bootstrap_confidence_intervals(
             mode="markers",
             marker=dict(size=10, color="blue"),
             name="Birth Rate",
-        )
+        ),
     )
 
     # Death rate
@@ -606,7 +606,7 @@ def plot_bootstrap_confidence_intervals(
             mode="markers",
             marker=dict(size=10, color="red"),
             name="Death Rate",
-        )
+        ),
     )
 
     confidence_level = bootstrap_results["confidence_level"]

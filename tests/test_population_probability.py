@@ -1,5 +1,4 @@
-"""
-Test cases for the calculate_populations_log_lik function.
+"""Test cases for the calculate_populations_log_lik function.
 
 These tests verify the correctness of the birth-death process population
 probability calculation based on the Arley & Borchsenius formula.
@@ -53,7 +52,8 @@ class TestPopulationProbability:
         result = calculate_populations_log_lik(0.0, 0.05, times=100.0, ns=0)
         assert np.isfinite(result)
         assert_allclose(
-            result, calculate_extinction_pr(0.0, 0.05, 100.0, return_log_prob=True)
+            result,
+            calculate_extinction_pr(0.0, 0.05, 100.0, return_log_prob=True),
         )
 
     def test_zero_birth_rate_n_one(self) -> None:
@@ -79,7 +79,10 @@ class TestPopulationProbability:
 
         for birth_rate, death_rate, time, n in test_cases:
             result = calculate_populations_log_lik(
-                birth_rate, death_rate, times=time, ns=n
+                birth_rate,
+                death_rate,
+                times=time,
+                ns=n,
             )
             assert np.isfinite(result), (
                 f"Non-finite result for λ={birth_rate}, μ={death_rate}, T={time}, n={n}"
@@ -107,7 +110,10 @@ class TestPopulationProbability:
         results = []
         for n in [1, 5, 10, 20, 50]:
             result = calculate_populations_log_lik(
-                birth_rate, death_rate, times=time, ns=n
+                birth_rate,
+                death_rate,
+                times=time,
+                ns=n,
             )
             results.append((n, result))
             assert np.isfinite(result), f"Non-finite result for n={n}"
@@ -129,7 +135,10 @@ class TestPopulationProbability:
         # Use shorter times to avoid β_t = 1 boundary issues
         for time in [50.0, 100.0, 200.0, 500.0]:  # Removed 1000 which causes β_t = 1
             result = calculate_populations_log_lik(
-                birth_rate, death_rate, times=time, ns=n
+                birth_rate,
+                death_rate,
+                times=time,
+                ns=n,
             )
             results.append((time, result))
             assert np.isfinite(result), f"Non-finite result for T={time}"
@@ -151,7 +160,10 @@ class TestPopulationProbability:
 
         for birth_rate, death_rate, time, n in test_cases:
             result = calculate_populations_log_lik(
-                birth_rate, death_rate, times=time, ns=n
+                birth_rate,
+                death_rate,
+                times=time,
+                ns=n,
             )
             # If the function returns -inf, it means α_t or β_t went out of bounds
             # For these reasonable parameters, we expect finite results
@@ -177,7 +189,10 @@ class TestPopulationProbability:
 
         # Function result
         function_result = calculate_populations_log_lik(
-            birth_rate, death_rate, times=time, ns=n
+            birth_rate,
+            death_rate,
+            times=time,
+            ns=n,
         )
 
         assert abs(manual_result - function_result) < 1e-12, (
@@ -192,7 +207,11 @@ class TestPopulationProbability:
         n = 2
 
         result = calculate_populations_log_lik(
-            birth_rate, death_rate, times=time, ns=n, starting_population=n0
+            birth_rate,
+            death_rate,
+            times=time,
+            ns=n,
+            starting_population=n0,
         )
 
         growth_rate = birth_rate - death_rate
@@ -202,7 +221,7 @@ class TestPopulationProbability:
         beta_t = (birth_rate / death_rate) * alpha_t
 
         prob = 0.0
-        for i in range(0, min(n0, n) + 1):
+        for i in range(min(n0, n) + 1):
             term = (
                 math.comb(n0, i)
                 * math.comb(n0 + n - i - 1, n - 1)
@@ -251,7 +270,7 @@ class TestPopulationProbability:
         beta_t = (birth_rate / death_rate) * alpha_t
 
         expected = np.log(1 - alpha_t) + np.log(
-            1 - beta_t
+            1 - beta_t,
         )  # (n-1)*log(β_t) = 0 for n=1
 
         assert abs(result - expected) < 1e-12, (
@@ -326,7 +345,10 @@ class TestPopulationProbability:
 
         for birth_rate, death_rate, time, n, description in boundary_cases:
             result = calculate_populations_log_lik(
-                birth_rate, death_rate, times=time, ns=n
+                birth_rate,
+                death_rate,
+                times=time,
+                ns=n,
             )
             assert result == -np.inf, (
                 f"Case '{description}' should return -inf due to β_t = 1"
@@ -348,7 +370,10 @@ class TestPopulationProbabilityIntegration:
         # Test that log-likelihood calculation doesn't fail using modular function
         ages = model.get_manuscript_ages()
         log_likelihood_value = log_likelihood(
-            birth_rates=0.1, death_rates=0.05, ages=ages, times=1500.0
+            birth_rates=0.1,
+            death_rates=0.05,
+            ages=ages,
+            times=1500.0,
         )
 
         # Should be finite or -inf, but not NaN

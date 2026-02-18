@@ -1,5 +1,4 @@
-"""
-Mathematical functions for birth-and-death process calculations.
+"""Mathematical functions for birth-and-death process calculations.
 
 This module contains pure mathematical functions for calculating birth-and-death
 process probabilities and densities. These functions are isolated from the
@@ -22,7 +21,9 @@ def _validate_times_positive(times: torch.Tensor, *, error_message: str) -> None
 
 
 def _validate_times_strictly_increasing(
-    times: torch.Tensor, *, all_positive: bool = False
+    times: torch.Tensor,
+    *,
+    all_positive: bool = False,
 ) -> None:
     error_message = f"times must be strictly increasing. Got times: {times}"
     if all_positive:
@@ -34,7 +35,10 @@ def _validate_times_strictly_increasing(
 
 
 def _validate_ages_in_range(
-    ages: torch.Tensor, end_time: torch.Tensor, *, error_message: str
+    ages: torch.Tensor,
+    end_time: torch.Tensor,
+    *,
+    error_message: str,
 ) -> None:
     if torch.any(ages < 0) or torch.any(ages > end_time):
         raise ValueError(error_message)
@@ -114,7 +118,9 @@ def _normalize_and_validate_inputs(
 
 
 def _reverse_time(
-    birth_rates: torch.Tensor, death_rates: torch.Tensor, times: torch.Tensor
+    birth_rates: torch.Tensor,
+    death_rates: torch.Tensor,
+    times: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     end_time = times[-1]
     inverted_times = torch.flip(
@@ -188,7 +194,6 @@ def calculate_populations_log_lik(
 
     References
     ----------
-
     - Tavaré, S. (2018). The linear birth--death process: an inferential retrospective.
     *Advances in Applied Probability, 50*(A), 253--269. doi:10.1017/apr.2018.84
 
@@ -196,7 +201,9 @@ def calculate_populations_log_lik(
     # Convert scalar inputs to tensors and ensure 1D arrays
     if not _skip_normalization:
         birth_rates, death_rates, times = _normalize_and_validate_inputs(
-            birth_rates=birth_rates, death_rates=death_rates, times=times
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
         )
     else:
         assert torch.is_tensor(birth_rates)
@@ -215,10 +222,16 @@ def calculate_populations_log_lik(
             return torch.tensor(float("-inf"), dtype=torch.float64)
 
         alpha_t = calculate_extinction_pr(
-            birth_rates, death_rates, times, _skip_normalization=True
+            birth_rates,
+            death_rates,
+            times,
+            _skip_normalization=True,
         )
         beta_t = 1 - _population_geometric_parameter(
-            birth_rates, death_rates, times, _skip_normalization=True
+            birth_rates,
+            death_rates,
+            times,
+            _skip_normalization=True,
         )
     else:
         # Single-epoch case
@@ -380,8 +393,7 @@ def calculate_non_spine_ages_log_lik(
     *,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """
-    Calculate log-likelihood of the ages of the "non-spine" individual(s).
+    """Calculate log-likelihood of the ages of the "non-spine" individual(s).
     In the constant rate case, the density for the age *a* is:
 
         (λ * exp(-λa) - μ * exp(-(λ - μ)T) * exp(-μa))
@@ -409,15 +421,19 @@ def calculate_non_spine_ages_log_lik(
         dtype: torch.float64.
 
     References
-    -----
+    ----------
     For the constant rate case see equation (3.6) from:
         Kück, F., & Schuhmacher, D. (2018).
         On the age of a randomly picked individual in a linear birth-and-death process.
         *Journal of Applied Probability, 55*(1), 82–93. doi:10.1017/jpr.2018.7
+
     """
     if not _skip_normalization:
         birth_rates, death_rates, times, ages = _normalize_and_validate_inputs(
-            birth_rates=birth_rates, death_rates=death_rates, times=times, ages=ages
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            ages=ages,
         )
     else:
         assert torch.is_tensor(birth_rates)
@@ -428,7 +444,9 @@ def calculate_non_spine_ages_log_lik(
 
     if len(times) > 1:
         inverted_times, reflected_birth_rates, reflected_death_rates = _reverse_time(
-            birth_rates=birth_rates, death_rates=death_rates, times=times
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
         )
         return calculate_log_lik_initial_lifetimes_given_extinction(
             ages,
@@ -504,8 +522,7 @@ def calculate_spine_ages_log_lik(
     *,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """
-    Calculate log-likelihood of the age(s) of the special "spine" individual(s).
+    """Calculate log-likelihood of the age(s) of the special "spine" individual(s).
     In the constant rate case, the density for the age a is:
 
         λμ(exp(-λa) - exp(-μa)) / (λ - μ) for a < T, and
@@ -538,10 +555,14 @@ def calculate_spine_ages_log_lik(
     For the constant rate case see equation (3.8) from Kück, F., & Schuhmacher, D. (2018).
     On the age of a randomly picked individual in a linear birth-and-death process.
     *Journal of Applied Probability, 55*(1), 82–93. doi:10.1017/jpr.2018.7
+
     """
     if not _skip_normalization:
         birth_rates, death_rates, times, ages = _normalize_and_validate_inputs(
-            birth_rates=birth_rates, death_rates=death_rates, times=times, ages=ages
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            ages=ages,
         )
     else:
         assert torch.is_tensor(birth_rates)
@@ -552,7 +573,9 @@ def calculate_spine_ages_log_lik(
 
     if len(times) > 1:
         inverted_times, reflected_birth_rates, reflected_death_rates = _reverse_time(
-            birth_rates=birth_rates, death_rates=death_rates, times=times
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
         )
         return calculate_log_lik_initial_lifetimes_given_non_extinction(
             lifetimes=ages,
@@ -591,7 +614,7 @@ def calculate_spine_ages_log_lik(
 
     if torch.any(at_boundary):
         numerator_boundary = birth_rate * torch.exp(
-            -death_rate * end_time
+            -death_rate * end_time,
         ) - death_rate * torch.exp(-birth_rate * end_time)
 
         if not torch.all(torch.sign(numerator_boundary) == sign_denominator):
@@ -635,8 +658,7 @@ def calculate_ages_log_lik(
     are_spines: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """
-    Compute log-likelihood of manuscript ages under a birth-death model.
+    """Compute log-likelihood of manuscript ages under a birth-death model.
 
     Dispatches to spine or non-spine likelihood calculation based on ``are_spines``.
     All operations preserve PyTorch's computational graph for automatic differentiation.
@@ -692,6 +714,7 @@ def calculate_ages_log_lik(
     >>> log_lik = calculate_ages_log_lik(birth_rate_val, death_rate_val, ages, T, are_spines=False)
     >>> log_lik.backward()  # Compute gradients w.r.t. birth_rate_val and death_rate_val
     >>> print(birth_rate_val.grad, death_rate_val.grad)
+
     """
     if are_spines:
         return calculate_spine_ages_log_lik(
@@ -701,14 +724,13 @@ def calculate_ages_log_lik(
             times,
             _skip_normalization=_skip_normalization,
         )
-    else:
-        return calculate_non_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times,
-            _skip_normalization=_skip_normalization,
-        )
+    return calculate_non_spine_ages_log_lik(
+        birth_rates,
+        death_rates,
+        ages,
+        times,
+        _skip_normalization=_skip_normalization,
+    )
 
 
 def calculate_extinction_pr(
@@ -718,8 +740,7 @@ def calculate_extinction_pr(
     return_log_prob: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """
-    Calculate extinction probability for a birth-death process *Z* at time *T*:
+    """Calculate extinction probability for a birth-death process *Z* at time *T*:
 
         Pr(Z_T = 0)
 
@@ -740,10 +761,13 @@ def calculate_extinction_pr(
     torch.Tensor
         Scalar tensor (shape ()) containing extinction probability α_t
         (or log(α_t) if return_log_prob=True). dtype: torch.float64.
+
     """
     if not _skip_normalization:
         birth_rates, death_rates, times = _normalize_and_validate_inputs(
-            birth_rates=birth_rates, death_rates=death_rates, times=times
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
         )
     else:
         assert torch.is_tensor(birth_rates)
@@ -761,7 +785,7 @@ def calculate_extinction_pr(
     )
     if return_log_prob:
         log_alpha_t = torch.log(pr_extinction_numerator) - torch.log1p(
-            pr_extinction_numerator
+            pr_extinction_numerator,
         )
         return log_alpha_t
 
@@ -777,8 +801,7 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
     times: torch.Tensor,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """
-    Calculate log-likelihood of initial lifetime(s) given extinction.
+    """Calculate log-likelihood of initial lifetime(s) given extinction.
 
     Uses only PyTorch operations to maintain autograd support.
 
@@ -798,8 +821,8 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
     torch.Tensor
         Scalar tensor (shape ()) containing summed log-likelihood values.
         dtype: torch.float64.
-    """
 
+    """
     n = len(lifetimes)
 
     log_prs_extinction_given_lifetimes = (
@@ -841,8 +864,7 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     times: torch.Tensor,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """
-    Calculate log-likelihood of initial lifetime(s) given non-extinction.
+    """Calculate log-likelihood of initial lifetime(s) given non-extinction.
 
     This implementation uses only PyTorch operations to preserve
     autograd support end-to-end.
@@ -863,8 +885,8 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     torch.Tensor
         Scalar tensor (shape ()) containing summed log-likelihood values
         in torch.float64.
-    """
 
+    """
     n = len(lifetimes)
 
     log_prs_extinction_given_lifetimes = (
@@ -892,7 +914,7 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     )
 
     log_prs_non_extinction_given_lifetimes = torch.log(
-        -torch.expm1(log_prs_extinction_given_lifetimes)
+        -torch.expm1(log_prs_extinction_given_lifetimes),
     )
 
     # Compute conditional log likelihood
@@ -912,8 +934,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     as_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """
-    Calculate log probability of extinction given initial lifetime(s).
+    """Calculate log probability of extinction given initial lifetime(s).
 
     Parameters
     ----------
@@ -945,8 +966,8 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     Uses adaptive quadrature (scipy.integrate.quad) for numerical integration.
     Handles multi-epoch piecewise-constant rates with cumulative integral caching
     for efficiency.
-    """
 
+    """
     if not _skip_normalization:
         birth_rates, death_rates, times, lifetimes = _normalize_and_validate_inputs(
             birth_rates=birth_rates,
@@ -972,7 +993,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     if sorted_lifetimes[-1] > times[-1]:
         raise ValueError(
             "All lifetimes must be less than or equal to the final time point."
-            + f" Got max lifetime: {sorted_lifetimes[-1]}, final time: {times[-1]}"
+            f" Got max lifetime: {sorted_lifetimes[-1]}, final time: {times[-1]}",
         )
 
     log_probs = torch.zeros_like(sorted_lifetimes, dtype=torch.float64)
@@ -982,7 +1003,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
 
     # Create interval boundaries: [0, sorted_lifetimes[0], sorted_lifetimes[1], ...]
     interval_boundaries = torch.cat(
-        [torch.tensor([0.0], dtype=torch.float64), sorted_lifetimes]
+        [torch.tensor([0.0], dtype=torch.float64), sorted_lifetimes],
     )
 
     # Create intervals: each row is [start, end]
@@ -1009,8 +1030,11 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
             result, _ = scipy.integrate.quad(
                 lambda t: float(
                     _integrand_surv_from_weighted_birth_time_scalar(
-                        t, birth_rates_cpu, death_rates_cpu, times_cpu
-                    )
+                        t,
+                        birth_rates_cpu,
+                        death_rates_cpu,
+                        times_cpu,
+                    ),
                 ),
                 a,
                 b,
@@ -1021,7 +1045,8 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
         interval_integral_full = torch.zeros(n_lifetimes, dtype=torch.float64)
         for i, idx in enumerate(active_indices):
             interval_integral_full[idx] = torch.tensor(
-                interval_integrals[i], dtype=torch.float64
+                interval_integrals[i],
+                dtype=torch.float64,
             )
 
         cumulative_integrals = torch.cumsum(interval_integral_full, dim=0)
@@ -1038,13 +1063,13 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
 
         # Compute epoch durations
         lifetime_epochs_padded = torch.cat(
-            [torch.tensor([0.0], dtype=torch.float64), lifetime_epochs]
+            [torch.tensor([0.0], dtype=torch.float64), lifetime_epochs],
         )
         epoch_durs = torch.diff(lifetime_epochs_padded)
 
         # Compute cumulative birth rate
         cum_birth_rate = torch.sum(
-            birth_rates_array[: num_full_epochs + 1] * epoch_durs
+            birth_rates_array[: num_full_epochs + 1] * epoch_durs,
         )
 
         log_probs[i] = cumulative_integrals[i] - cum_birth_rate
@@ -1061,8 +1086,7 @@ def calculate_log_lik_lifetimes(
     times: torch.Tensor,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """
-    Calculate log-likelihood of manuscript lifetime(s).
+    """Calculate log-likelihood of manuscript lifetime(s).
     Pr(lifetime)
 
     Parameters
@@ -1079,8 +1103,8 @@ def calculate_log_lik_lifetimes(
     torch.Tensor
         Scalar tensor containing sum of log-likelihood values.
         Shape: (), dtype: torch.float64.
-    """
 
+    """
     # Convert inputs to tensors
     if not _skip_normalization:
         lifetimes, death_rates, times = ensure_1d_tensors(lifetimes, death_rates, times)
@@ -1137,8 +1161,7 @@ def _population_geometric_parameter(
     times: torch.Tensor,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """
-    Calculate geometric parameter (1 - β_t) for offspring distribution.
+    """Calculate geometric parameter (1 - β_t) for offspring distribution.
 
     Private helper function for computing the conditional geometric parameter
     of the population distribution given survival.
@@ -1162,6 +1185,7 @@ def _population_geometric_parameter(
     -----
     Handles λ ≈ μ limiting case for numerical stability. Full support for
     PyTorch's autograd differentiation.
+
     """
     # Convert inputs to tensors
     if not _skip_normalization:
@@ -1189,7 +1213,10 @@ def _population_geometric_parameter(
     cum_growth = torch.cumsum(growth_rates * epoch_durations, dim=0)
 
     geom_sum = _pr_extinction_numerator(
-        birth_rates, death_rates, times, _skip_normalization=True
+        birth_rates,
+        death_rates,
+        times,
+        _skip_normalization=True,
     )
     log_cond = -cum_growth[-1] - torch.log1p(geom_sum)
     cond_geom_prob = torch.exp(log_cond)
@@ -1202,8 +1229,7 @@ def _integrand_surv_from_weighted_birth_time(
     death_rates: torch.Tensor,
     times: torch.Tensor,
 ) -> torch.Tensor:
-    """
-    Integrand for survival probability calculation (scalar version).
+    """Integrand for survival probability calculation (scalar version).
 
     Parameters
     ----------
@@ -1221,10 +1247,14 @@ def _integrand_surv_from_weighted_birth_time(
     torch.Tensor
         Scalar tensor containing integrand value. Shape: (),
         dtype: torch.float64.
+
     """
     # Convert inputs to tensors
     birth_time, birth_rates, death_rates, times = ensure_1d_tensors(
-        birth_time, birth_rates, death_rates, times
+        birth_time,
+        birth_rates,
+        death_rates,
+        times,
     )
 
     # Find the index of the last epoch that starts before or at start_time
@@ -1255,8 +1285,7 @@ def _integrand_surv_from_weighted_birth_time_scalar(
     death_rates: torch.Tensor,
     times: torch.Tensor,
 ) -> float:
-    """
-    Scalar integrand for survival probability calculation.
+    """Scalar integrand for survival probability calculation.
 
     Parameters
     ----------
@@ -1273,6 +1302,7 @@ def _integrand_surv_from_weighted_birth_time_scalar(
     -------
     float
         Integrand value for this birth time.
+
     """
     shifted_times = times - birth_time
     valid_mask = shifted_times > 0
@@ -1297,8 +1327,7 @@ def _pr_extinction_numerator(
     times: torch.Tensor,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """
-    Calculate numerator of extinction probability integral.
+    """Calculate numerator of extinction probability integral.
 
     Private helper function for extinction probability calculation.
 
@@ -1321,6 +1350,7 @@ def _pr_extinction_numerator(
     -----
     Handles λ ≈ μ limiting case for numerical stability. Full support for
     PyTorch's autograd differentiation.
+
     """
     if not _skip_normalization:
         birth_rates, death_rates, times = _normalize_and_validate_inputs(

@@ -1,5 +1,4 @@
 import math
-from typing import Dict
 
 import pytest
 import scipy
@@ -48,7 +47,7 @@ Test Strategy:
 
 
 @pytest.fixture
-def standard_scalar_params() -> Dict[str, torch.Tensor]:
+def standard_scalar_params() -> dict[str, torch.Tensor]:
     """Standard scalar parameters for testing."""
     return {
         "birth_rate": torch.tensor([0.1], dtype=torch.float64),
@@ -58,7 +57,7 @@ def standard_scalar_params() -> Dict[str, torch.Tensor]:
 
 
 @pytest.fixture
-def standard_array_params() -> Dict[str, torch.Tensor]:
+def standard_array_params() -> dict[str, torch.Tensor]:
     """Standard array parameters for piecewise-constant rates."""
     return {
         "birth_rates": torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64),
@@ -68,19 +67,20 @@ def standard_array_params() -> Dict[str, torch.Tensor]:
 
 
 @pytest.fixture
-def nearly_equal_params() -> Dict[str, torch.Tensor]:
+def nearly_equal_params() -> dict[str, torch.Tensor]:
     """Parameters where λ ≈ μ (numerical stability test)."""
     return {
         "birth_rate": torch.tensor([0.1], dtype=torch.float64),
         "death_rate": torch.tensor(
-            [0.1 + 1e-13], dtype=torch.float64
+            [0.1 + 1e-13],
+            dtype=torch.float64,
         ),  # Within tolerance of 1e-12
         "time": torch.tensor([100.0], dtype=torch.float64),
     }
 
 
 @pytest.fixture
-def log_scale_params() -> Dict[str, torch.Tensor]:
+def log_scale_params() -> dict[str, torch.Tensor]:
     """Parameters in log scale."""
     return {
         "log_birth_rate": torch.log(0.1),
@@ -108,7 +108,7 @@ def sample_population_counts() -> torch.Tensor:
 
 
 @pytest.fixture
-def two_epoch_params() -> Dict[str, torch.Tensor]:
+def two_epoch_params() -> dict[str, torch.Tensor]:
     """Parameters for two-epoch testing."""
     return {
         "birth_rates": torch.tensor([0.01, 0.001], dtype=torch.float64),
@@ -118,7 +118,7 @@ def two_epoch_params() -> Dict[str, torch.Tensor]:
 
 
 @pytest.fixture
-def three_epoch_params() -> Dict[str, torch.Tensor]:
+def three_epoch_params() -> dict[str, torch.Tensor]:
     """Parameters for three-epoch testing."""
     return {
         "birth_rates": torch.tensor([0.1, 0.05, 0.08], dtype=torch.float64),
@@ -148,7 +148,10 @@ class TestMultiEpochNumericalAccuracy:
 
         # Single epoch result
         single_result = calculate_populations_log_lik(
-            birth_rate_val, death_rate_val, times=T, ns=n
+            birth_rate_val,
+            death_rate_val,
+            times=T,
+            ns=n,
         )
 
         # Two epochs with same parameters should give same result
@@ -188,14 +191,20 @@ class TestMultiEpochNumericalAccuracy:
         # Age in first epoch
         age_epoch1 = torch.tensor([30.0], dtype=torch.float64)
         result1 = calculate_spine_ages_log_lik(
-            birth_rates, death_rates, age_epoch1, times
+            birth_rates,
+            death_rates,
+            age_epoch1,
+            times,
         )
         assert torch.isfinite(result1)
 
         # Age in second epoch
         age_epoch2 = torch.tensor([70.0], dtype=torch.float64)
         result2 = calculate_spine_ages_log_lik(
-            birth_rates, death_rates, age_epoch2, times
+            birth_rates,
+            death_rates,
+            age_epoch2,
+            times,
         )
         assert torch.isfinite(result2)
 
@@ -248,10 +257,16 @@ class TestMultiEpochConsistency:
         death_rates2 = torch.tensor([0.05, 0.1], dtype=torch.float64)
 
         result1 = calculate_populations_log_lik(
-            birth_rates1, death_rates1, times=times, ns=5
+            birth_rates1,
+            death_rates1,
+            times=times,
+            ns=5,
         )
         result2 = calculate_populations_log_lik(
-            birth_rates2, death_rates2, times=times, ns=5
+            birth_rates2,
+            death_rates2,
+            times=times,
+            ns=5,
         )
 
         # Results should differ (order matters)
@@ -267,7 +282,10 @@ class TestMultiEpochConsistency:
 
         # Compute for array
         result_array = calculate_non_spine_ages_log_lik(
-            birth_rates, death_rates, ages, times=times
+            birth_rates,
+            death_rates,
+            ages,
+            times=times,
         )
 
         # Compute individually and sum
@@ -310,10 +328,14 @@ class TestMultiEpochEqualsSingleEpoch:
 
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (3,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (3,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = calculate_extinction_pr(birth_rates, death_rates, times)
 
@@ -329,10 +351,14 @@ class TestMultiEpochEqualsSingleEpoch:
         single = _population_geometric_parameter(birth_rate_val, death_rate_val, T)
         times = torch.tensor([30.0, 60.0, 90.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (3,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (3,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = _population_geometric_parameter(birth_rates, death_rates, times)
         assert_close(actual=multi, expected=single)
@@ -346,10 +372,14 @@ class TestMultiEpochEqualsSingleEpoch:
         single = _pr_extinction_numerator(birth_rate_val, death_rate_val, T)
         times = torch.tensor([25.0, 50.0, 75.0, 100.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (4,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (4,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (4,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (4,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = _pr_extinction_numerator(birth_rates, death_rates, times)
         assert_close(actual=multi, expected=single)
@@ -363,7 +393,9 @@ class TestMultiEpochEqualsSingleEpoch:
         single = calculate_log_lik_lifetimes(lifetimes, death_rate_val, T)
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = calculate_log_lik_lifetimes(lifetimes, death_rates, times)
         assert_close(actual=multi, expected=single)
@@ -378,17 +410,27 @@ class TestMultiEpochEqualsSingleEpoch:
             torch.tensor([120.0], dtype=torch.float64),
         )
         single = calculate_log_pr_extinction_given_initial_lifetimes(
-            lifetimes, birth_rate_val, death_rate_val, T
+            lifetimes,
+            birth_rate_val,
+            death_rate_val,
+            T,
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (3,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (3,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = calculate_log_pr_extinction_given_initial_lifetimes(
-            lifetimes, birth_rates, death_rates, times
+            lifetimes,
+            birth_rates,
+            death_rates,
+            times,
         )
         assert_close(actual=multi, expected=single)
 
@@ -402,17 +444,27 @@ class TestMultiEpochEqualsSingleEpoch:
             torch.tensor([120.0], dtype=torch.float64),
         )
         single = calculate_log_lik_initial_lifetimes_given_extinction(
-            lifetimes, birth_rate_val, death_rate_val, T
+            lifetimes,
+            birth_rate_val,
+            death_rate_val,
+            T,
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (3,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (3,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = calculate_log_lik_initial_lifetimes_given_extinction(
-            lifetimes, birth_rates, death_rates, times
+            lifetimes,
+            birth_rates,
+            death_rates,
+            times,
         )
         assert_close(actual=multi, expected=single)
 
@@ -426,17 +478,27 @@ class TestMultiEpochEqualsSingleEpoch:
             torch.tensor([120.0], dtype=torch.float64),
         )
         single = calculate_log_lik_initial_lifetimes_given_non_extinction(
-            lifetimes, birth_rate_val, death_rate_val, T
+            lifetimes,
+            birth_rate_val,
+            death_rate_val,
+            T,
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (3,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (3,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = calculate_log_lik_initial_lifetimes_given_non_extinction(
-            lifetimes, birth_rates, death_rates, times
+            lifetimes,
+            birth_rates,
+            death_rates,
+            times,
         )
         assert_close(actual=multi, expected=single)
 
@@ -449,15 +511,22 @@ class TestMultiEpochEqualsSingleEpoch:
         )
         # Single-epoch via scalar
         single = calculate_non_spine_ages_log_lik(
-            birth_rate_val, death_rate_val, ages, T
+            birth_rate_val,
+            death_rate_val,
+            ages,
+            T,
         )
         # Multi-epoch via arrays with identical rates
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (3,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (3,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = calculate_non_spine_ages_log_lik(birth_rates, death_rates, ages, times)
         assert torch.isfinite(single)
@@ -474,10 +543,14 @@ class TestMultiEpochEqualsSingleEpoch:
         single = calculate_spine_ages_log_lik(birth_rate_val, death_rate_val, ages, T)
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (3,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (3,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = calculate_spine_ages_log_lik(birth_rates, death_rates, ages, times)
         assert torch.isfinite(single)
@@ -492,17 +565,29 @@ class TestMultiEpochEqualsSingleEpoch:
             torch.tensor([120.0], dtype=torch.float64),
         )
         single = calculate_ages_log_lik(
-            birth_rate_val, death_rate_val, ages, T, are_spines=False
+            birth_rate_val,
+            death_rate_val,
+            ages,
+            T,
+            are_spines=False,
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (3,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (3,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = calculate_ages_log_lik(
-            birth_rates, death_rates, ages, times, are_spines=False
+            birth_rates,
+            death_rates,
+            ages,
+            times,
+            are_spines=False,
         )
         assert torch.isfinite(single)
         assert torch.isfinite(multi)
@@ -516,17 +601,29 @@ class TestMultiEpochEqualsSingleEpoch:
             torch.tensor([120.0], dtype=torch.float64),
         )
         single = calculate_ages_log_lik(
-            birth_rate_val, death_rate_val, ages, T, are_spines=True
+            birth_rate_val,
+            death_rate_val,
+            ages,
+            T,
+            are_spines=True,
         )
         times = torch.tensor([30.0, 90.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (3,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (3,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = calculate_ages_log_lik(
-            birth_rates, death_rates, ages, times, are_spines=True
+            birth_rates,
+            death_rates,
+            ages,
+            times,
+            are_spines=True,
         )
         assert torch.isfinite(single)
         assert torch.isfinite(multi)
@@ -542,17 +639,27 @@ class TestMultiEpochEqualsSingleEpoch:
             torch.tensor([120.0], dtype=torch.float64),
         )
         single = _integrand_surv_from_weighted_birth_time_scalar(
-            birth_time, birth_rate_val, death_rate_val, T
+            birth_time,
+            birth_rate_val,
+            death_rate_val,
+            T,
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
-            (3,), birth_rate_val.item(), dtype=birth_rate_val.dtype
+            (3,),
+            birth_rate_val.item(),
+            dtype=birth_rate_val.dtype,
         )
         death_rates = torch.full(
-            (3,), death_rate_val.item(), dtype=death_rate_val.dtype
+            (3,),
+            death_rate_val.item(),
+            dtype=death_rate_val.dtype,
         )
         multi = _integrand_surv_from_weighted_birth_time_scalar(
-            birth_time, birth_rates, death_rates, times
+            birth_time,
+            birth_rates,
+            death_rates,
+            times,
         )
         assert_close(actual=multi, expected=single)
 
@@ -616,7 +723,7 @@ class TestNumericalAccuracy:
                     death_rate_val,
                     times=T,
                     ns=torch.tensor([0], dtype=torch.int64),
-                )
+                ),
             ],
             dtype=torch.float64,
         )
@@ -643,7 +750,7 @@ class TestNumericalAccuracy:
                     birth_rate_val,
                     T,
                     ns=torch.tensor([0], dtype=torch.int64),
-                )
+                ),
             ],
             dtype=torch.float64,
         )
@@ -679,7 +786,7 @@ class TestNumericalAccuracy:
                     death_rate_val,
                     times=T,
                     ns=torch.tensor([1], dtype=torch.int64),
-                )
+                ),
             ],
             dtype=torch.float64,
         )
@@ -702,12 +809,10 @@ class TestNumericalAccuracy:
         assert result == -torch.tensor(float("inf"), dtype=torch.float64)
 
     def test_geometric_scalar_case(self) -> None:
-        """
-        Docstring for test_geometric_scalar_case
+        """Docstring for test_geometric_scalar_case
 
         :param self: Description
         """
-
         T = 10.0
         birth_rate_val = torch.tensor([1.0], dtype=torch.float64)
         death_rate_val = torch.tensor([2.0], dtype=torch.float64)
@@ -776,7 +881,7 @@ class TestNumericalAccuracy:
                     -(
                         (birth_rates[0] - death_rates[0]) * epoch_ends[0]
                         + (birth_rates[1] - death_rates[1]) * (x_arr - epoch_ends[0])
-                    )
+                    ),
                 )
                 * death_rates[1]
             )
@@ -791,7 +896,7 @@ class TestNumericalAccuracy:
             -(
                 (birth_rates[1] - death_rates[1]) * (epoch_ends[1] - epoch_ends[0])
                 + epoch_ends[0] * (birth_rates[0] - death_rates[0])
-            )
+            ),
         ) / (1 + integral)
         result = _population_geometric_parameter(birth_rates, death_rates, epoch_ends)
 
@@ -932,7 +1037,10 @@ class TestNumericalAccuracy:
         age = torch.tensor([0.0], dtype=torch.float64)
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
-            age, birth_rate_val, death_rate_val, T
+            age,
+            birth_rate_val,
+            death_rate_val,
+            T,
         )
 
         # Should be finite (could be 0 at age 0, representing log(1) = 0)
@@ -952,12 +1060,18 @@ class TestNumericalAccuracy:
 
         # Scalar computation
         result_scalar = calculate_populations_log_lik(
-            birth_rate_val, death_rate_val, times=T, ns=n
+            birth_rate_val,
+            death_rate_val,
+            times=T,
+            ns=n,
         )
 
         # Single-epoch array computation
         result_array = calculate_populations_log_lik(
-            birth_rate_val, death_rate_val, times=T, ns=n
+            birth_rate_val,
+            death_rate_val,
+            times=T,
+            ns=n,
         )
 
         assert_close(result_scalar, result_array)
@@ -972,7 +1086,8 @@ class TestExtinctionProbability:
     """Test extinction probability calculations (α_t)."""
 
     def test_extinction_pr_basic(
-        self, standard_array_params: Dict[str, torch.Tensor]
+        self,
+        standard_array_params: dict[str, torch.Tensor],
     ) -> None:
         """Test basic extinction probability calculation."""
         result = calculate_extinction_pr(
@@ -985,7 +1100,8 @@ class TestExtinctionProbability:
         assert isinstance(result, torch.Tensor)
 
     def test_extinction_pr_return_log_prob(
-        self, standard_array_params: Dict[str, torch.Tensor]
+        self,
+        standard_array_params: dict[str, torch.Tensor],
     ) -> None:
         """Test extinction probability with return_log_prob=True."""
         result = calculate_extinction_pr(
@@ -1004,7 +1120,8 @@ class TestExtinctionProbability:
         # Nearly equal rates
         birth_rate_arr = torch.tensor([0.1, 0.1, 0.1], dtype=torch.float64)
         death_rate_arr = torch.tensor(
-            [0.1 + 1e-13, 0.1 + 1e-13, 0.1 + 1e-13], dtype=torch.float64
+            [0.1 + 1e-13, 0.1 + 1e-13, 0.1 + 1e-13],
+            dtype=torch.float64,
         )
         times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
 
@@ -1067,7 +1184,9 @@ class TestExtinctionProbability:
         times = [50.0, 100.0, 200.0, 400.0]
         results = [
             calculate_extinction_pr(
-                birth_rate_val, death_rate_val, torch.tensor([t], dtype=torch.float64)
+                birth_rate_val,
+                death_rate_val,
+                torch.tensor([t], dtype=torch.float64),
             )
             for t in times
         ]
@@ -1137,7 +1256,8 @@ class TestPopulationsLogLikelihood:
     """Test population count log-likelihood calculations."""
 
     def test_scalar_inputs_basic(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test basic scalar input case."""
         result = calculate_populations_log_lik(
@@ -1151,7 +1271,8 @@ class TestPopulationsLogLikelihood:
         assert isinstance(result, torch.Tensor)
 
     def test_scalar_inputs_n_zero(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test n=0 (extinction) case."""
         result = calculate_populations_log_lik(
@@ -1167,7 +1288,7 @@ class TestPopulationsLogLikelihood:
 
     def test_scalar_inputs_array_ns(
         self,
-        standard_scalar_params: Dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, torch.Tensor],
         sample_population_counts: torch.Tensor,
     ) -> None:
         """Test scalar parameters with array of population counts."""
@@ -1182,7 +1303,8 @@ class TestPopulationsLogLikelihood:
         assert torch.isfinite(result)
 
     def test_array_inputs_piecewise_constant(
-        self, standard_array_params: Dict[str, torch.Tensor]
+        self,
+        standard_array_params: dict[str, torch.Tensor],
     ) -> None:
         """Test piecewise-constant rates (array inputs)."""
         result = calculate_populations_log_lik(
@@ -1195,7 +1317,8 @@ class TestPopulationsLogLikelihood:
         assert torch.isfinite(result)
 
     def test_negative_time_returns_error(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test that negative time raises ValueError."""
         with pytest.raises(ValueError):
@@ -1207,7 +1330,8 @@ class TestPopulationsLogLikelihood:
             )
 
     def test_negative_ns_returns_error(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test that negative population count raises ValueError."""
         with pytest.raises(ValueError):
@@ -1219,7 +1343,8 @@ class TestPopulationsLogLikelihood:
             )
 
     def test_critical_case_scalar(
-        self, nearly_equal_params: Dict[str, torch.Tensor]
+        self,
+        nearly_equal_params: dict[str, torch.Tensor],
     ) -> None:
         """Test numerical stability when λ ≈ μ (scalar)."""
         result = calculate_populations_log_lik(
@@ -1237,7 +1362,8 @@ class TestPopulationsLogLikelihood:
             calculate_populations_log_lik(
                 birth_rates=torch.tensor([0.1, 0.15], dtype=torch.float64),
                 death_rates=torch.tensor(
-                    [0.05, 0.06, 0.055], dtype=torch.float64
+                    [0.05, 0.06, 0.055],
+                    dtype=torch.float64,
                 ),  # Different length
                 times=torch.tensor([50.0, 100.0], dtype=torch.float64),
                 ns=torch.tensor([1], dtype=torch.int64),
@@ -1254,7 +1380,7 @@ class TestSpineAgesLogLikelihood:
 
     def test_scalar_age(
         self,
-        standard_scalar_params: Dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, torch.Tensor],
         sample_ages_scalar: torch.Tensor,
     ) -> None:
         """Test with single age value."""
@@ -1270,7 +1396,7 @@ class TestSpineAgesLogLikelihood:
 
     def test_array_ages(
         self,
-        standard_scalar_params: Dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, torch.Tensor],
         sample_ages_array: torch.Tensor,
     ) -> None:
         """Test with array of ages."""
@@ -1285,7 +1411,8 @@ class TestSpineAgesLogLikelihood:
         assert torch.isfinite(result)
 
     def test_age_at_boundary(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test age exactly equal to observation time T."""
         T = standard_scalar_params["time"]
@@ -1300,7 +1427,7 @@ class TestSpineAgesLogLikelihood:
 
     def test_critical_case(
         self,
-        nearly_equal_params: Dict[str, torch.Tensor],
+        nearly_equal_params: dict[str, torch.Tensor],
         sample_ages_scalar: torch.Tensor,
     ) -> None:
         """Test numerical stability when λ ≈ μ."""
@@ -1314,11 +1441,13 @@ class TestSpineAgesLogLikelihood:
         assert torch.isfinite(result)
 
     def test_invalid_age_greater_than_T(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test that age > T returns -inf."""
         with pytest.raises(
-            ValueError, match=r"ages must be in \[0, .*\]. Got ages:"
+            ValueError,
+            match=r"ages must be in \[0, .*\]. Got ages:",
         ):  # age > T
             calculate_spine_ages_log_lik(
                 standard_scalar_params["birth_rate"],
@@ -1328,11 +1457,13 @@ class TestSpineAgesLogLikelihood:
             )
 
     def test_negative_age_returns_minus_inf(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test that negative age returns -inf."""
         with pytest.raises(
-            ValueError, match=r"ages must be in \[0, .*\]. Got ages:"
+            ValueError,
+            match=r"ages must be in \[0, .*\]. Got ages:",
         ):  # Negative age
             calculate_spine_ages_log_lik(
                 standard_scalar_params["birth_rate"],
@@ -1375,7 +1506,8 @@ class TestNonSpineAgesLogLikelihood:
         assert torch.isfinite(result)
 
     def test_array_params_piecewise_constant(
-        self, standard_array_params: Dict[str, torch.Tensor]
+        self,
+        standard_array_params: dict[str, torch.Tensor],
     ) -> None:
         """Test with piecewise-constant rates (array parameters)."""
         # Use ages within the valid time range
@@ -1424,21 +1556,24 @@ class TestNonSpineAgesLogLikelihood:
             )
 
     def test_shape_mismatch_raises_error(
-        self, sample_ages_scalar: torch.Tensor
+        self,
+        sample_ages_scalar: torch.Tensor,
     ) -> None:
         """Test that parameter shape mismatches raise ValueError."""
         with pytest.raises(ValueError, match="matching lengths"):
             calculate_non_spine_ages_log_lik(
                 birth_rates=torch.tensor([0.1, 0.15], dtype=torch.float64),
                 death_rates=torch.tensor(
-                    [0.05], dtype=torch.float64
+                    [0.05],
+                    dtype=torch.float64,
                 ),  # Different shape
                 ages=sample_ages_scalar,
                 times=torch.tensor([50.0, 100.0], dtype=torch.float64),
             )
 
     def test_non_monotonic_times_raises_error(
-        self, sample_ages_scalar: torch.Tensor
+        self,
+        sample_ages_scalar: torch.Tensor,
     ) -> None:
         """Test that non-monotonic times raise ValueError."""
         with pytest.raises(ValueError, match="strictly increasing"):
@@ -1447,7 +1582,8 @@ class TestNonSpineAgesLogLikelihood:
                 death_rates=torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64),
                 ages=sample_ages_scalar,
                 times=torch.tensor(
-                    [50.0, 100.0, 90.0], dtype=torch.float64
+                    [50.0, 100.0, 90.0],
+                    dtype=torch.float64,
                 ),  # Not monotonic
             )
 
@@ -1462,7 +1598,7 @@ class TestAgesLogLikelihood:
 
     def test_spine_routing(
         self,
-        standard_scalar_params: Dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, torch.Tensor],
         sample_ages_scalar: torch.Tensor,
     ) -> None:
         """Test that are_spines=True routes to spine implementation."""
@@ -1514,10 +1650,11 @@ class TestMathematicalProperties:
     """Test mathematical properties and consistency."""
 
     def test_pr_bounds_population(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test that log probabilities are negative (probabilities < 1)."""
-        for n in range(0, 20):
+        for n in range(20):
             result = calculate_populations_log_lik(
                 standard_scalar_params["birth_rate"],
                 standard_scalar_params["death_rate"],
@@ -1526,7 +1663,8 @@ class TestMathematicalProperties:
             )
             # Log probabilities should be ≤ 0
             assert result <= 0 or torch.isclose(
-                result, torch.tensor(0.0, dtype=torch.float64)
+                result,
+                torch.tensor(0.0, dtype=torch.float64),
             )
 
     def test_extinction_pr_increases_with_mu(self) -> None:
@@ -1535,10 +1673,14 @@ class TestMathematicalProperties:
         times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
 
         alpha_1 = calculate_extinction_pr(
-            birth_rates, torch.tensor([0.05, 0.05, 0.05], dtype=torch.float64), times
+            birth_rates,
+            torch.tensor([0.05, 0.05, 0.05], dtype=torch.float64),
+            times,
         )
         alpha_2 = calculate_extinction_pr(
-            birth_rates, torch.tensor([0.08, 0.08, 0.08], dtype=torch.float64), times
+            birth_rates,
+            torch.tensor([0.08, 0.08, 0.08], dtype=torch.float64),
+            times,
         )
 
         # Higher death rate → higher extinction probability
@@ -1564,7 +1706,8 @@ class TestMathematicalProperties:
         assert_close(scalar_result, array_result)
 
     def test_sum_property_array_ns(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test that array of ns gives sum of individual likelihoods."""
         ns_array = torch.tensor([5, 10, 15], dtype=torch.int64)
@@ -1611,7 +1754,8 @@ class TestNumericalStability:
 
         # Should not return inf or nan
         assert torch.isfinite(result) or result == -torch.tensor(
-            float("inf"), dtype=torch.float64
+            float("inf"),
+            dtype=torch.float64,
         )
 
     def test_extreme_rate_differences(self) -> None:
@@ -1626,7 +1770,8 @@ class TestNumericalStability:
 
         # Should handle gracefully
         assert torch.isfinite(result1) or result1 == -torch.tensor(
-            float("inf"), dtype=torch.float64
+            float("inf"),
+            dtype=torch.float64,
         )
 
         # μ >> λ (high death)
@@ -1638,7 +1783,8 @@ class TestNumericalStability:
         )
 
         assert torch.isfinite(result2) or result2 == -torch.tensor(
-            float("inf"), dtype=torch.float64
+            float("inf"),
+            dtype=torch.float64,
         )
 
     def test_very_small_rates(self) -> None:
@@ -1651,7 +1797,8 @@ class TestNumericalStability:
         )
 
         assert torch.isfinite(result) or result == -torch.tensor(
-            float("inf"), dtype=torch.float64
+            float("inf"),
+            dtype=torch.float64,
         )
 
     def test_many_epochs(self) -> None:
@@ -1669,7 +1816,8 @@ class TestNumericalStability:
         )
 
         assert torch.isfinite(result) or result == -torch.tensor(
-            float("inf"), dtype=torch.float64
+            float("inf"),
+            dtype=torch.float64,
         )
 
     def test_ages_near_observation_time(self) -> None:
@@ -1697,7 +1845,7 @@ class TestIntegration:
 
     def test_spine_non_spine_different_formulas(
         self,
-        standard_scalar_params: Dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, torch.Tensor],
         sample_ages_scalar: torch.Tensor,
     ) -> None:
         """Test that spine and non-spine give different results (different formulas)."""
@@ -1728,7 +1876,8 @@ class TestVectorization:
     """Test vectorization and performance characteristics."""
 
     def test_array_ages_more_efficient_than_loop(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Verify that array processing is implemented (not just a loop)."""
         # This is more of a smoke test - actual performance testing
@@ -1745,7 +1894,8 @@ class TestVectorization:
         assert torch.isfinite(result)
 
     def test_large_population_counts_array(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test with large array of population counts."""
         ns = torch.arange(0, 100)
@@ -1932,7 +2082,8 @@ class TestIntegrandSurvFromWeightedBirthTime:
         birth_time = 10.0
         birth_rates1 = torch.tensor([0.1, 0.15], dtype=torch.float64)
         birth_rates2 = torch.tensor(
-            [0.2, 0.15], dtype=torch.float64
+            [0.2, 0.15],
+            dtype=torch.float64,
         )  # Double the first rate
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
@@ -1960,7 +2111,8 @@ class TestIntegrandSurvFromWeightedBirthTime:
         birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)  # Length 2
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)  # Length 2
         times = torch.tensor(
-            [50.0, 100.0, 150.0], dtype=torch.float64
+            [50.0, 100.0, 150.0],
+            dtype=torch.float64,
         )  # Length 3 - MISMATCH!
 
         with pytest.raises(IndexError):
@@ -1991,7 +2143,8 @@ class TestIntegrandSurvFromWeightedBirthTime:
         birth_time = 10.0
         birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)  # Length 2
         death_rates = torch.tensor(
-            [0.05, 0.06, 0.055], dtype=torch.float64
+            [0.05, 0.06, 0.055],
+            dtype=torch.float64,
         )  # Length 3 - MISMATCH!
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
@@ -2023,7 +2176,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
         # If times gets modified to include lifetime:
         bad_times = torch.cat(
-            [times, torch.as_tensor(lifetime, dtype=torch.float64).reshape(-1)]
+            [times, torch.as_tensor(lifetime, dtype=torch.float64).reshape(-1)],
         )  # Now length 3!
 
         # This should raise IndexError due to valid_indices being out of bounds
@@ -2124,7 +2277,8 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
     def test_multiple_lifetimes_one_beyond_epochs(self) -> None:
         """Test with array of lifetimes where one exceeds max(times)."""
         lifetimes = torch.tensor(
-            [50.0, 80.0, 120.0], dtype=torch.float64
+            [50.0, 80.0, 120.0],
+            dtype=torch.float64,
         )  # Last one beyond times
         birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)

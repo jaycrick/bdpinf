@@ -1,5 +1,3 @@
-from typing import Dict
-
 import pytest
 import torch
 from numpy.testing import assert_allclose
@@ -19,7 +17,7 @@ from inf_bp_texts.models.mathematical_functions import (
 
 
 @pytest.fixture
-def standard_scalar_params() -> Dict[str, torch.Tensor]:
+def standard_scalar_params() -> dict[str, torch.Tensor]:
     """Standard scalar parameters for testing."""
     return {
         "birth_rate": torch.tensor([0.1], dtype=torch.float64),
@@ -29,7 +27,7 @@ def standard_scalar_params() -> Dict[str, torch.Tensor]:
 
 
 @pytest.fixture
-def nearly_equal_params() -> Dict[str, torch.Tensor]:
+def nearly_equal_params() -> dict[str, torch.Tensor]:
     """Parameters where birth_rate is approximately death_rate (numerical stability test)."""
     return {
         "birth_rate": torch.tensor([0.1], dtype=torch.float64),
@@ -60,7 +58,8 @@ class TestPopulationsLogLikelihoodDerivatives:
     """Test derivatives of population log-likelihood."""
 
     def test_basic_derivatives(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         result = calculate_populations_log_lik_derivatives(
             standard_scalar_params["birth_rate"],
@@ -73,7 +72,8 @@ class TestPopulationsLogLikelihoodDerivatives:
         assert torch.all(torch.isfinite(result))
 
     def test_derivatives_with_n_zero(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         result = calculate_populations_log_lik_derivatives(
             standard_scalar_params["birth_rate"],
@@ -87,7 +87,7 @@ class TestPopulationsLogLikelihoodDerivatives:
 
     def test_derivatives_array_ns(
         self,
-        standard_scalar_params: Dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, torch.Tensor],
         sample_population_counts: torch.Tensor,
     ) -> None:
         result = calculate_populations_log_lik_derivatives(
@@ -101,7 +101,8 @@ class TestPopulationsLogLikelihoodDerivatives:
         assert torch.all(torch.isfinite(result))
 
     def test_derivatives_critical_case(
-        self, nearly_equal_params: Dict[str, torch.Tensor]
+        self,
+        nearly_equal_params: dict[str, torch.Tensor],
     ) -> None:
         result = calculate_populations_log_lik_derivatives(
             nearly_equal_params["birth_rate"],
@@ -117,7 +118,9 @@ class TestSpineAgesLogLikelihoodDerivatives:
     """Test derivatives for spine age log-likelihood."""
 
     def test_scalar_age_derivatives(
-        self, standard_scalar_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
+        sample_ages_scalar: float,
     ) -> None:
         result = calculate_spine_ages_log_lik_derivatives(
             standard_scalar_params["birth_rate"],
@@ -131,7 +134,7 @@ class TestSpineAgesLogLikelihoodDerivatives:
 
     def test_array_ages_derivatives(
         self,
-        standard_scalar_params: Dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, torch.Tensor],
         sample_ages_array: torch.Tensor,
     ) -> None:
         result = calculate_spine_ages_log_lik_derivatives(
@@ -145,7 +148,8 @@ class TestSpineAgesLogLikelihoodDerivatives:
         assert torch.all(torch.isfinite(result))
 
     def test_derivatives_at_boundary(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         T = standard_scalar_params["time"]
         result = calculate_spine_ages_log_lik_derivatives(
@@ -159,7 +163,9 @@ class TestSpineAgesLogLikelihoodDerivatives:
         assert torch.all(torch.isfinite(result))
 
     def test_derivatives_critical_case(
-        self, nearly_equal_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+        self,
+        nearly_equal_params: dict[str, torch.Tensor],
+        sample_ages_scalar: float,
     ) -> None:
         result = calculate_spine_ages_log_lik_derivatives(
             nearly_equal_params["birth_rate"],
@@ -175,7 +181,9 @@ class TestNonSpineAgesLogLikelihoodDerivatives:
     """Test derivatives for non-spine age log-likelihood."""
 
     def test_scalar_age_derivatives(
-        self, standard_scalar_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
+        sample_ages_scalar: float,
     ) -> None:
         result = calculate_non_spine_ages_log_lik_derivatives(
             standard_scalar_params["birth_rate"],
@@ -189,7 +197,7 @@ class TestNonSpineAgesLogLikelihoodDerivatives:
 
     def test_array_ages_derivatives(
         self,
-        standard_scalar_params: Dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, torch.Tensor],
         sample_ages_array: torch.Tensor,
     ) -> None:
         result = calculate_non_spine_ages_log_lik_derivatives(
@@ -203,7 +211,9 @@ class TestNonSpineAgesLogLikelihoodDerivatives:
         assert torch.all(torch.isfinite(result))
 
     def test_derivatives_critical_case(
-        self, nearly_equal_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+        self,
+        nearly_equal_params: dict[str, torch.Tensor],
+        sample_ages_scalar: float,
     ) -> None:
         result = calculate_non_spine_ages_log_lik_derivatives(
             nearly_equal_params["birth_rate"],
@@ -219,7 +229,9 @@ class TestAgesLogLikelihoodDerivatives:
     """Test unified age log-likelihood derivatives interface."""
 
     def test_spine_derivatives_routing(
-        self, standard_scalar_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
+        sample_ages_scalar: float,
     ) -> None:
         result = calculate_ages_log_lik_derivatives(
             standard_scalar_params["birth_rate"],
@@ -239,7 +251,9 @@ class TestAgesLogLikelihoodDerivatives:
         assert_allclose(result, expected)
 
     def test_non_spine_derivatives_routing(
-        self, standard_scalar_params: Dict[str, torch.Tensor], sample_ages_scalar: float
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
+        sample_ages_scalar: float,
     ) -> None:
         result = calculate_ages_log_lik_derivatives(
             standard_scalar_params["birth_rate"],
@@ -267,12 +281,18 @@ class TestDerivativeIntegration:
         ns = torch.tensor([1, 5, 10], dtype=torch.int64)
 
         result_together = calculate_populations_log_lik_derivatives(
-            birth_rate_val, death_rate_val, T, ns
+            birth_rate_val,
+            death_rate_val,
+            T,
+            ns,
         )
 
         derivs_separate = [
             calculate_populations_log_lik_derivatives(
-                birth_rate_val, death_rate_val, T, n
+                birth_rate_val,
+                death_rate_val,
+                T,
+                n,
             )
             for n in ns
         ]
@@ -281,7 +301,8 @@ class TestDerivativeIntegration:
         assert_allclose(result_together, result_separate, rtol=1e-8)
 
     def test_derivatives_match_numerical_gradient(
-        self, standard_scalar_params: Dict[str, torch.Tensor]
+        self,
+        standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         birth_rate = (
             standard_scalar_params["birth_rate"].detach().clone().requires_grad_(True)
@@ -291,13 +312,17 @@ class TestDerivativeIntegration:
         )
 
         objective_val = calculate_populations_log_lik(
-            birth_rate, death_rate, ns=5, times=standard_scalar_params["time"]
+            birth_rate,
+            death_rate,
+            ns=5,
+            times=standard_scalar_params["time"],
         )
 
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -320,8 +345,7 @@ class TestDerivativeIntegration:
 
 
 class TestGradientValidation:
-    """
-    Comprehensive tests for analytical gradient functions
+    """Comprehensive tests for analytical gradient functions
     using PyTorch's native autograd.
     """
 
@@ -333,13 +357,17 @@ class TestGradientValidation:
         death_rate = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
 
         objective_val = calculate_populations_log_lik(
-            birth_rate, death_rate, times=time, ns=n
+            birth_rate,
+            death_rate,
+            times=time,
+            ns=n,
         )
 
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -347,7 +375,10 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_populations_log_lik_derivatives(
-                birth_rate.detach(), death_rate.detach(), time, ns=n
+                birth_rate.detach(),
+                death_rate.detach(),
+                time,
+                ns=n,
             )
 
         relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -366,13 +397,17 @@ class TestGradientValidation:
         death_rate = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
 
         objective_val = calculate_populations_log_lik(
-            birth_rate, death_rate, times=time, ns=ns
+            birth_rate,
+            death_rate,
+            times=time,
+            ns=ns,
         )
 
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -380,7 +415,10 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_populations_log_lik_derivatives(
-                birth_rate.detach(), death_rate.detach(), time, ns=ns
+                birth_rate.detach(),
+                death_rate.detach(),
+                time,
+                ns=ns,
             )
 
         relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -399,13 +437,17 @@ class TestGradientValidation:
         death_rate = torch.tensor(0.1 + 1e-13, dtype=torch.float64, requires_grad=True)
 
         objective_val = calculate_populations_log_lik(
-            birth_rate, death_rate, times=time, ns=n
+            birth_rate,
+            death_rate,
+            times=time,
+            ns=n,
         )
 
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -413,7 +455,10 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_populations_log_lik_derivatives(
-                birth_rate.detach(), death_rate.detach(), time, ns=n
+                birth_rate.detach(),
+                death_rate.detach(),
+                time,
+                ns=n,
             )
 
         relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -436,7 +481,8 @@ class TestGradientValidation:
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -444,7 +490,10 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_non_spine_ages_log_lik_derivatives(
-                birth_rate.detach(), death_rate.detach(), age, T
+                birth_rate.detach(),
+                death_rate.detach(),
+                age,
+                T,
             )
 
         relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -463,13 +512,17 @@ class TestGradientValidation:
         death_rate = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
 
         objective_val = calculate_non_spine_ages_log_lik(
-            birth_rate, death_rate, ages, T
+            birth_rate,
+            death_rate,
+            ages,
+            T,
         )
 
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -477,7 +530,10 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_non_spine_ages_log_lik_derivatives(
-                birth_rate.detach(), death_rate.detach(), ages, T
+                birth_rate.detach(),
+                death_rate.detach(),
+                ages,
+                T,
             )
 
         relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -500,7 +556,8 @@ class TestGradientValidation:
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -508,7 +565,10 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_non_spine_ages_log_lik_derivatives(
-                birth_rate.detach(), death_rate.detach(), age, T
+                birth_rate.detach(),
+                death_rate.detach(),
+                age,
+                T,
             )
 
         relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -536,7 +596,8 @@ class TestGradientValidation:
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -570,7 +631,8 @@ class TestGradientValidation:
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -578,7 +640,10 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_spine_ages_log_lik_derivatives(
-                birth_rate.detach(), death_rate.detach(), age, T
+                birth_rate.detach(),
+                death_rate.detach(),
+                age,
+                T,
             )
 
         relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -601,7 +666,8 @@ class TestGradientValidation:
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -609,7 +675,10 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_spine_ages_log_lik_derivatives(
-                birth_rate.detach(), death_rate.detach(), ages, T
+                birth_rate.detach(),
+                death_rate.detach(),
+                ages,
+                T,
             )
 
         relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -632,7 +701,8 @@ class TestGradientValidation:
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -640,7 +710,10 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_spine_ages_log_lik_derivatives(
-                birth_rate.detach(), death_rate.detach(), age, T
+                birth_rate.detach(),
+                death_rate.detach(),
+                age,
+                T,
             )
 
         relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -658,14 +731,19 @@ class TestGradientValidation:
         T = torch.tensor([100.0], dtype=torch.float64)
 
         log_params = torch.tensor(
-            [log_birth_rate, log_death_rate], dtype=torch.float64, requires_grad=True
+            [log_birth_rate, log_death_rate],
+            dtype=torch.float64,
+            requires_grad=True,
         )
 
         birth_rate_val = torch.exp(log_params[0])
         death_rate_val = torch.exp(log_params[1])
 
         objective_val = calculate_non_spine_ages_log_lik(
-            birth_rate_val, death_rate_val, age, T
+            birth_rate_val,
+            death_rate_val,
+            age,
+            T,
         )
 
         objective_val.backward()
@@ -673,7 +751,10 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_non_spine_ages_log_lik_derivatives(
-                birth_rate_val.detach(), death_rate_val.detach(), age, T
+                birth_rate_val.detach(),
+                death_rate_val.detach(),
+                age,
+                T,
             )
             analytical_grads_log = analytical_grads * torch.exp(log_params.detach())
 
@@ -731,7 +812,8 @@ class TestGradientValidation:
         )
 
         numerical = torch.tensor(
-            [d_birth_rate_numerical, d_death_rate_numerical], dtype=torch.float64
+            [d_birth_rate_numerical, d_death_rate_numerical],
+            dtype=torch.float64,
         )
 
         relative_error = torch.abs(analytical - numerical) / (
@@ -755,10 +837,14 @@ class TestGradientValidation:
 
         for birth_rate_val, death_rate_val, description in test_cases:
             birth_rate = torch.tensor(
-                birth_rate_val, dtype=torch.float64, requires_grad=True
+                birth_rate_val,
+                dtype=torch.float64,
+                requires_grad=True,
             )
             death_rate = torch.tensor(
-                death_rate_val, dtype=torch.float64, requires_grad=True
+                death_rate_val,
+                dtype=torch.float64,
+                requires_grad=True,
             )
 
             objective_val = (
@@ -779,7 +865,10 @@ class TestGradientValidation:
 
             with torch.no_grad():
                 analytical_grads = calculate_non_spine_ages_log_lik_derivatives(
-                    birth_rate.detach(), death_rate.detach(), ages, T
+                    birth_rate.detach(),
+                    death_rate.detach(),
+                    ages,
+                    T,
                 )
 
             relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -798,13 +887,18 @@ class TestGradientValidation:
         death_rate = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
 
         objective_val = calculate_ages_log_lik(
-            birth_rate, death_rate, age, T, are_spines=False
+            birth_rate,
+            death_rate,
+            age,
+            T,
+            are_spines=False,
         )
 
         objective_val.backward()
         autograd_grads = (
             torch.tensor(
-                [birth_rate.grad.item(), death_rate.grad.item()], dtype=torch.float64
+                [birth_rate.grad.item(), death_rate.grad.item()],
+                dtype=torch.float64,
             )
             if birth_rate.grad is not None and death_rate.grad is not None
             else None
@@ -812,7 +906,11 @@ class TestGradientValidation:
 
         with torch.no_grad():
             analytical_grads = calculate_ages_log_lik_derivatives(
-                birth_rate.detach(), death_rate.detach(), age, T, are_spines=False
+                birth_rate.detach(),
+                death_rate.detach(),
+                age,
+                T,
+                are_spines=False,
             )
 
         relative_error = torch.abs(autograd_grads - analytical_grads) / (
@@ -826,7 +924,11 @@ class TestGradientValidation:
         death_rate_spine = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
 
         objective_val_spine = calculate_ages_log_lik(
-            birth_rate_spine, death_rate_spine, age, T, are_spines=True
+            birth_rate_spine,
+            death_rate_spine,
+            age,
+            T,
+            are_spines=True,
         )
 
         objective_val_spine.backward()

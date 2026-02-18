@@ -1,5 +1,4 @@
-"""
-Integration tests for architectural improvements.
+"""Integration tests for architectural improvements.
 
 These tests validate that the configuration system, error handling,
 and modular structure work together correctly.
@@ -42,7 +41,7 @@ class TestArchitecturalIntegration:
             {
                 "age": model.get_manuscript_ages(),
                 "count": [1] * len(model.get_manuscript_ages()),
-            }
+            },
         )
 
         # 3. Fit using inference module
@@ -100,7 +99,9 @@ class TestArchitecturalIntegration:
 
         # Create custom configurations
         fast_config = OptimizationConfig(
-            method="Nelder-Mead", max_iterations=50, tolerance=1e-3
+            method="Nelder-Mead",
+            max_iterations=50,
+            tolerance=1e-3,
         )
 
         test_model_config = ModelConfig(

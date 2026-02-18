@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 from pydantic import BaseModel, Field, RootModel, field_validator
 
@@ -69,7 +69,7 @@ class ParsedContentOverview(BaseModel):
     books: ValidBookSet = Field(default_factory=lambda: ValidBookSet())
     sections: ValidSectionSet = Field(default_factory=lambda: ValidSectionSet())
 
-    def merge(self, other: "ParsedContentOverview") -> None:
+    def merge(self, other: ParsedContentOverview) -> None:
         """In-place merge from another ParsedContentOverview."""
         self.books.update(other.books.root)
         self.sections.update(other.sections.root)
@@ -77,8 +77,8 @@ class ParsedContentOverview(BaseModel):
 
 class BasicMetadata(BaseModel):
     docID: int
-    gaNum: Optional[str] = None
-    primaryName: Optional[str] = None
-    lang: Optional[str] = None
-    earlyYear: Optional[int] = None
-    lateYear: Optional[int] = None
+    gaNum: str | None = None
+    primaryName: str | None = None
+    lang: str | None = None
+    earlyYear: int | None = None
+    lateYear: int | None = None

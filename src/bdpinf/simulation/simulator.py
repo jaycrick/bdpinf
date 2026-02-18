@@ -1,5 +1,4 @@
-"""
-Simulation functions for birth-death process models.
+"""Simulation functions for birth-death process models.
 
 This module contains functions for simulating manuscript data from birth-death
 processes and making predictions using fitted models.
@@ -45,9 +44,10 @@ Examples:
     ...     current_ages, birth_rate, death_rate, future_time=100
     ... )
     >>> print(f"Predicted future manuscripts: {predicted_count}")
+
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -58,10 +58,9 @@ def simulate_birth_death_process(
     birth_rates: float | NDArray[np.float64],
     death_rates: float | NDArray[np.float64],
     times: float | NDArray[np.float64],
-    random_seed: Optional[int] = None,
+    random_seed: int | None = None,
 ) -> pd.DataFrame:
-    """
-    Simulate manuscript data from the birth-death process with time-varying rates.
+    """Simulate manuscript data from the birth-death process with time-varying rates.
 
     This creates a proper birth-death process simulation where manuscripts
     are born at rate λ and die at rate μ. The rates can change at specified
@@ -80,6 +79,7 @@ def simulate_birth_death_process(
 
     Returns:
         DataFrame with simulated manuscript data including creation times and ages
+
     """
     # Convert inputs to arrays for uniform handling
     birth_rates_arr = np.atleast_1d(birth_rates)
@@ -89,7 +89,7 @@ def simulate_birth_death_process(
     # Validate inputs
     if not (len(birth_rates_arr) == len(death_rates_arr) == len(times_arr)):
         raise ValueError(
-            "birth_rates, death_rates, and times must have the same length"
+            "birth_rates, death_rates, and times must have the same length",
         )
 
     if np.any(birth_rates_arr <= 0) or np.any(death_rates_arr <= 0):
@@ -106,17 +106,17 @@ def simulate_birth_death_process(
 
     # Initialize tracking variables
     current_time = 0.0
-    manuscripts_alive: List[Tuple[float, int]] = [
-        (0.0, 0)
+    manuscripts_alive: list[tuple[float, int]] = [
+        (0.0, 0),
     ]  # (creation_time, manuscript_id)
-    all_manuscripts: List[Dict[str, Any]] = [
+    all_manuscripts: list[dict[str, Any]] = [
         {
             "manuscript_id": 0,
             "parent_id": None,
             "creation_time": 0.0,
             "death_time": None,
             "is_spine": False,
-        }
+        },
     ]  # Record of all manuscripts
     new_manuscript_id = 1
 
@@ -176,7 +176,7 @@ def simulate_birth_death_process(
                     "creation_time": current_time,
                     "death_time": None,
                     "is_spine": False,
-                }
+                },
             )
             new_manuscript_id += 1
             total_rate += birth_death_rate
@@ -212,20 +212,21 @@ def simulate_birth_death_process(
 
     # Add lifespan column for dead manuscripts (vectorized)
     df["lifespan"] = np.where(
-        ~df["survived"], df["death_time"] - df["creation_time"], np.nan
+        ~df["survived"],
+        df["death_time"] - df["creation_time"],
+        np.nan,
     )
 
     return df
 
 
 def simulate_multiple_scenarios(
-    parameter_sets: List[Tuple[float, float]],
+    parameter_sets: list[tuple[float, float]],
     times: float | NDArray[np.float64] = 2000.0,
     n_simulations: int = 10,
-    random_seed: Optional[int] = None,
-) -> Dict[str, pd.DataFrame]:
-    """
-    Simulate multiple birth-death scenarios for comparison.
+    random_seed: int | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Simulate multiple birth-death scenarios for comparison.
 
     Args:
         parameter_sets: List of (birth_rate, death_rate) tuples
@@ -236,15 +237,16 @@ def simulate_multiple_scenarios(
 
     Returns:
         Dictionary mapping scenario names to simulation results
+
     """
     # Create random number generator
     rng = np.random.default_rng(random_seed)
 
-    results: Dict[str, pd.DataFrame] = {}
+    results: dict[str, pd.DataFrame] = {}
 
     for i, (birth_rate, death_rate) in enumerate(parameter_sets):
         scenario_name = f"scenario_{i + 1}_b{birth_rate:.3f}_d{death_rate:.3f}"
-        scenario_data: List[pd.DataFrame] = []
+        scenario_data: list[pd.DataFrame] = []
 
         for sim_idx in range(n_simulations):
             sim_seed = int(rng.integers(low=0, high=2**31))
@@ -271,10 +273,9 @@ def simulate_multiple_scenarios(
 
 def calculate_simulation_statistics(
     simulation_df: pd.DataFrame,
-    age_bins: Optional[NDArray[np.float64]] = None,
-) -> Dict[str, Any]:
-    """
-    Calculate summary statistics from simulation results.
+    age_bins: NDArray[np.float64] | None = None,
+) -> dict[str, Any]:
+    """Calculate summary statistics from simulation results.
 
     Args:
         simulation_df: DataFrame from simulate_birth_death_process
@@ -282,13 +283,14 @@ def calculate_simulation_statistics(
 
     Returns:
         Dictionary with simulation statistics
+
     """
     surviving_manuscripts = simulation_df[simulation_df["survived"]]
 
     if len(surviving_manuscripts) == 0:
         return {"error": "No surviving manuscripts in simulation"}
 
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "total_manuscripts_created": len(simulation_df),
         "manuscripts_survived": len(surviving_manuscripts),
         "survival_rate": len(surviving_manuscripts) / len(simulation_df),

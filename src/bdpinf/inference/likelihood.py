@@ -1,5 +1,4 @@
-"""
-Likelihood calculation functions for birth-death process parameter estimation.
+"""Likelihood calculation functions for birth-death process parameter estimation.
 
 This module contains functions for calculating log-likelihood values for
 birth-death process models, used in parameter fitting and model evaluation.
@@ -32,8 +31,7 @@ def log_likelihood(
     is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> torch.Tensor:
-    """
-    Compute the log-likelihood of observed manuscript ages under a birth–death process.
+    """Compute the log-likelihood of observed manuscript ages under a birth–death process.
 
     This function evaluates the joint log-likelihood for a dataset of observed manuscript ages
     given a birth (λ) and death (μ) rate under a birth–death model. The likelihood is computed
@@ -100,26 +98,30 @@ def log_likelihood(
         Programming errors (type mismatches, array indexing errors) raise exceptions
         instead of returning -inf for easier debugging.
 
-    See also:
+    See Also
+    --------
         calculate_populations_log_likelihood, calculate_ages_log_likelihood
+
     """
     birth_rates, death_rates, ages, times = ensure_1d_tensors(
-        birth_rates, death_rates, ages, times
+        birth_rates,
+        death_rates,
+        ages,
+        times,
     )
 
     if not (birth_rates.shape == death_rates.shape == times.shape):
         raise ValueError(
             "birth_rates, death_rates, and times must have the same shape, "
-            f"got {birth_rates.shape}, {death_rates.shape}, {times.shape}."
+            f"got {birth_rates.shape}, {death_rates.shape}, {times.shape}.",
         )
 
     # Handle parameter conversion if in log scale
     if log_scale_params:
         birth_rates = torch.exp(birth_rates)
         death_rates = torch.exp(death_rates)
-    else:
-        if torch.any(birth_rates <= 0) or torch.any(death_rates <= 0):
-            return torch.tensor(-torch.inf, dtype=torch.float64)
+    elif torch.any(birth_rates <= 0) or torch.any(death_rates <= 0):
+        return torch.tensor(-torch.inf, dtype=torch.float64)
 
     if spine_ages is not None:
         spine_ages = ensure_1d_tensor(spine_ages)
@@ -128,16 +130,15 @@ def log_likelihood(
         else:
             if is_ordered:
                 raise ValueError(
-                    "Cannot have both is_ordered=True and spine_ages provided."
+                    "Cannot have both is_ordered=True and spine_ages provided.",
                 )
             if ns is None:
                 if len(spine_ages) > 1:
                     raise ValueError(
                         "When multiple spine ages are provided, "
-                        "population sizes (ns) must also be provided."
+                        "population sizes (ns) must also be provided.",
                     )
-                else:
-                    ns = torch.tensor([len(ages) + len(spine_ages)], dtype=torch.int64)
+                ns = torch.tensor([len(ages) + len(spine_ages)], dtype=torch.int64)
             if torch.any(spine_ages < 0) or torch.any(spine_ages > times[-1]):
                 raise ValueError(f"Spine ages must be in the range [0, {times[-1]}].")
 
@@ -156,7 +157,7 @@ def log_likelihood(
         total_pop_size = sum(ns)
         if total_pop_size < num_ages:
             raise ValueError(
-                "Sum of the populations must equal the number of ages provided."
+                "Sum of the populations must equal the number of ages provided.",
             )
         if total_pop_size > num_ages:
             warnings.warn(
@@ -236,8 +237,7 @@ def log_likelihood_gradient(
     is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> torch.Tensor:
-    """
-    Compute the gradient of the model log-likelihood with respect to the birth and
+    """Compute the gradient of the model log-likelihood with respect to the birth and
     death parameters.
 
     This function validates inputs and then combines two contributions to the
@@ -309,6 +309,7 @@ def log_likelihood_gradient(
         >>> grad = log_likelihood_gradient(
                 torch.log(torch.tensor([1.2, 0.3])), ages=[0.1, 0.4], observation_time=1.0, log_scale_params=True
             )
+
     """
     params_tensor, ages = ensure_1d_tensors(params, ages)
     if len(params_tensor) != 2:
@@ -352,7 +353,7 @@ def log_likelihood_gradient(
         len(spine_ages) if spine_ages is not None else 0
     ):
         raise ValueError(
-            "Sum of the populations must equal the number of ages provided."
+            "Sum of the populations must equal the number of ages provided.",
         )
 
     # Gradient components
@@ -406,8 +407,7 @@ def negative_log_likelihood(
     is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> torch.Tensor:
-    """
-    Compute the negative log-likelihood for use with numerical optimizers.
+    """Compute the negative log-likelihood for use with numerical optimizers.
 
     This function is a thin wrapper around log_likelihood that negates its
     value so it can be minimized by optimizers.
@@ -455,8 +455,8 @@ def negative_log_likelihood(
     - Returns inf for numerical issues in the underlying log_likelihood computation.
     - Programming errors in underlying functions will raise exceptions.
     - Designed to be cheap to call repeatedly by optimization routines.
-    """
 
+    """
     result = -log_likelihood(
         birth_rates=birth_rates,
         death_rates=death_rates,

@@ -1,6 +1,4 @@
-"""
-Test suite for BirthDeathProcess log-likelihood calculations.
-"""
+"""Test suite for BirthDeathProcess log-likelihood calculations."""
 
 import numpy as np
 from numpy.testing import assert_allclose
@@ -24,7 +22,10 @@ class TestLogLikelihood:
 
         ages = process.get_manuscript_ages()
         result = log_likelihood(
-            birth_rates=0.1, death_rates=0.01, ages=ages, times=1000.0
+            birth_rates=0.1,
+            death_rates=0.01,
+            ages=ages,
+            times=1000.0,
         )
         assert result < 0
         assert np.isfinite(_as_float(result))
@@ -32,12 +33,16 @@ class TestLogLikelihood:
     def test_basic_log_likelihood(self) -> None:
         """Test basic log-likelihood functionality."""
         process = BirthDeathProcess(
-            creation_times=[100.0, 200.0, 300.0], final_time=1000.0
+            creation_times=[100.0, 200.0, 300.0],
+            final_time=1000.0,
         )
 
         ages = process.get_manuscript_ages()
         result = log_likelihood(
-            birth_rates=0.01, death_rates=0.005, ages=ages, times=1000.0
+            birth_rates=0.01,
+            death_rates=0.005,
+            ages=ages,
+            times=1000.0,
         )
 
         # Check that the result is finite
@@ -47,7 +52,8 @@ class TestLogLikelihood:
     def test_log_likelihood_critical_case(self) -> None:
         """Test log-likelihood when birth_rate ≈ death_rate."""
         process = BirthDeathProcess(
-            creation_times=[100.0, 200.0, 300.0], final_time=1000.0
+            creation_times=[100.0, 200.0, 300.0],
+            final_time=1000.0,
         )
 
         # Very close birth and death rates
@@ -78,7 +84,10 @@ class TestLogLikelihood:
         # Use explicit parameters
         ages = process.get_manuscript_ages()
         result = log_likelihood(
-            birth_rates=0.02, death_rates=0.001, ages=ages, times=1000.0
+            birth_rates=0.02,
+            death_rates=0.001,
+            ages=ages,
+            times=1000.0,
         )
         assert np.isfinite(_as_float(result))
         assert result < 0
@@ -95,10 +104,16 @@ class TestLogLikelihood:
         # These should be identical
         ages = process.get_manuscript_ages()
         result1 = log_likelihood(
-            birth_rates=0.01, death_rates=0.005, ages=ages, times=1000.0
+            birth_rates=0.01,
+            death_rates=0.005,
+            ages=ages,
+            times=1000.0,
         )
         result2 = log_likelihood(
-            birth_rates=0.01, death_rates=0.005, ages=ages, times=1000.0
+            birth_rates=0.01,
+            death_rates=0.005,
+            ages=ages,
+            times=1000.0,
         )
 
         assert_allclose(result1, result2, rtol=1e-8)
@@ -108,14 +123,18 @@ class TestLogLikelihood:
     def test_log_likelihood_negative_parameters(self) -> None:
         """Test log-likelihood with invalid (negative) parameters."""
         process = BirthDeathProcess(
-            creation_times=[100.0, 200.0, 300.0], final_time=1000.0
+            creation_times=[100.0, 200.0, 300.0],
+            final_time=1000.0,
         )
 
         ages = process.get_manuscript_ages()
 
         # Negative birth rate should still work (just gives very negative log-likelihood)
         result = log_likelihood(
-            birth_rates=-0.01, death_rates=0.005, ages=ages, times=1000.0
+            birth_rates=-0.01,
+            death_rates=0.005,
+            ages=ages,
+            times=1000.0,
         )
 
         # Should return negative infinity or very negative value
@@ -123,20 +142,28 @@ class TestLogLikelihood:
 
         # Negative death rate should also work (just gives very negative log-likelihood)
         result = log_likelihood(
-            birth_rates=0.01, death_rates=-0.005, ages=ages, times=1000.0
+            birth_rates=0.01,
+            death_rates=-0.005,
+            ages=ages,
+            times=1000.0,
         )
         assert result == -np.inf or not np.isfinite(_as_float(result))
 
     def test_negative_log_likelihood_call_context(self) -> None:
         """Test negative log-likelihood in optimization context."""
         process = BirthDeathProcess(
-            creation_times=[100.0, 200.0, 300.0], final_time=1000.0
+            creation_times=[100.0, 200.0, 300.0],
+            final_time=1000.0,
         )
 
         # Use log-scale parameters as expected by negative_log_likelihood
         ages = process.get_manuscript_ages()
         result = negative_log_likelihood(
-            np.log(0.01), np.log(0.005), ages=ages, times=1000.0, log_scale_params=True
+            np.log(0.01),
+            np.log(0.005),
+            ages=ages,
+            times=1000.0,
+            log_scale_params=True,
         )
 
         # Result should be positive and finite
@@ -151,7 +178,10 @@ class TestLogLikelihood:
         birth_rate, death_rate = 0.01, 0.005
         ages = process.get_manuscript_ages()
         result = negative_log_likelihood(
-            birth_rate, death_rate, ages=ages, times=1000.0
+            birth_rate,
+            death_rate,
+            ages=ages,
+            times=1000.0,
         )
 
         # Should be a finite value (the likelihood for an empty dataset)
@@ -165,7 +195,10 @@ class TestLogLikelihood:
         ages = process.get_manuscript_ages()
         # Test log likelihood calculation with explicit parameters
         result = log_likelihood(
-            birth_rates=0.01, death_rates=0.005, ages=ages, times=500.0
+            birth_rates=0.01,
+            death_rates=0.005,
+            ages=ages,
+            times=500.0,
         )
 
         assert np.isfinite(_as_float(result))
@@ -178,40 +211,54 @@ class TestLogLikelihood:
         ages = process.get_manuscript_ages()
         # Test with invalid parameters using public interface
         result = log_likelihood(
-            birth_rates=-0.01, death_rates=0.005, ages=ages, times=500.0
+            birth_rates=-0.01,
+            death_rates=0.005,
+            ages=ages,
+            times=500.0,
         )
         assert result == -np.inf
 
         result = log_likelihood(
-            birth_rates=0.01, death_rates=-0.005, ages=ages, times=500.0
+            birth_rates=0.01,
+            death_rates=-0.005,
+            ages=ages,
+            times=500.0,
         )
         assert result == -np.inf
 
     def test_log_likelihood_numerical_stability(self) -> None:
         """Test numerical stability with extreme parameters."""
         process = BirthDeathProcess(
-            creation_times=[10.0, 20.0, 30.0], final_time=1000.0
+            creation_times=[10.0, 20.0, 30.0],
+            final_time=1000.0,
         )
 
         ages = process.get_manuscript_ages()
 
         # Very small rates
         result1 = log_likelihood(
-            birth_rates=1e-6, death_rates=1e-7, ages=ages, times=1000.0
+            birth_rates=1e-6,
+            death_rates=1e-7,
+            ages=ages,
+            times=1000.0,
         )
         assert np.isfinite(_as_float(result1))
         assert result1 < 0
 
         # Larger rates - may legitimately return -inf due to numerical limits
         result2 = log_likelihood(
-            birth_rates=1.0, death_rates=0.1, ages=ages, times=1000.0
+            birth_rates=1.0,
+            death_rates=0.1,
+            ages=ages,
+            times=1000.0,
         )
         assert np.isfinite(_as_float(result2)) or result2 == -np.inf
         assert result2 < 0
 
         # Very large ages with small rates - may return -inf due to numerical limits
         process_large = BirthDeathProcess(
-            creation_times=[1.0, 2.0, 3.0], final_time=10000.0
+            creation_times=[1.0, 2.0, 3.0],
+            final_time=10000.0,
         )
         ages_large = process_large.get_manuscript_ages()
         result3 = log_likelihood(

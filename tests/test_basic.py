@@ -1,6 +1,4 @@
-"""
-Tests for inf-bp-texts package.
-"""
+"""Tests for inf-bp-texts package."""
 
 import os
 import tempfile

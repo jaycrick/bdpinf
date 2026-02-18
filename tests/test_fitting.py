@@ -1,6 +1,4 @@
-"""
-Test suite for modular fitting functionality.
-"""
+"""Test suite for modular fitting functionality."""
 
 import numpy as np
 import pandas as pd
@@ -37,13 +35,17 @@ class TestFittingHelpers:
         ages_list = [torch.tensor([1.0]), torch.tensor([2.0])]
         with pytest.raises(ValueError, match="Length of population_sizes"):
             _prepare_population_sizes(
-                ages_list, torch.tensor([1], dtype=torch.int64), None
+                ages_list,
+                torch.tensor([1], dtype=torch.int64),
+                None,
             )
 
     def test_extract_spine_and_ages_ordered(self) -> None:
         ages_list = [torch.tensor([10.0, 20.0]), torch.tensor([30.0])]
         spine_ages, non_spine = _extract_spine_and_ages(
-            ages_list, is_ordered=True, spine_ages=None
+            ages_list,
+            is_ordered=True,
+            spine_ages=None,
         )
 
         assert spine_ages is not None
@@ -76,10 +78,14 @@ class TestFittingHelpers:
         times_tensor = torch.tensor([100.0, 200.0])
 
         initial_params = _build_initial_params(
-            birth_rates, death_rates, non_empty_age, times_tensor
+            birth_rates,
+            death_rates,
+            non_empty_age,
+            times_tensor,
         )
         expected_params = torch.tensor(
-            [0.1, 0.2, 0.03, 0.04], dtype=initial_params.dtype
+            [0.1, 0.2, 0.03, 0.04],
+            dtype=initial_params.dtype,
         )
         assert torch.allclose(initial_params, expected_params)
 
@@ -240,7 +246,8 @@ class TestFitting:
         """Test integration between BirthDeathProcess and fitting functions."""
         # Create process
         process = BirthDeathProcess(
-            creation_times=[100.0, 200.0, 300.0], final_time=1000.0
+            creation_times=[100.0, 200.0, 300.0],
+            final_time=1000.0,
         )
 
         # Get ages and fit
@@ -263,7 +270,7 @@ class TestFitting:
             {
                 "manuscript_age": [100.0, 200.0, 300.0, 400.0],
                 "frequency": [1.0, 1.0, 1.0, 1.0],
-            }
+            },
         )
 
         result = fit_from_dataframe(df, age_column="manuscript_age", times=1000.0)
@@ -275,7 +282,8 @@ class TestFitting:
     def test_process_state_preservation(self) -> None:
         """Test that process state is preserved when using external fitting."""
         process = BirthDeathProcess(
-            creation_times=[50.0, 150.0, 250.0], final_time=500.0
+            creation_times=[50.0, 150.0, 250.0],
+            final_time=500.0,
         )
 
         original_ages = process.get_manuscript_ages().copy()
