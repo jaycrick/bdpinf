@@ -129,8 +129,8 @@ def _reverse_time(
 def calculate_populations_log_lik(
     birth_rates: torch.Tensor | float,
     death_rates: torch.Tensor | float,
-    times: torch.Tensor | float,
     ns: torch.Tensor | int,
+    times: torch.Tensor | float,
     *,
     starting_population: int = 1,
     _skip_normalization: bool = False,

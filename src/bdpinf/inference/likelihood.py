@@ -25,8 +25,10 @@ def log_likelihood(
     death_rates: torch.Tensor | float,
     ages: torch.Tensor | float,
     times: torch.Tensor | float,
+    *,
     spine_ages: torch.Tensor | None = None,
     ns: torch.Tensor | None = None,
+    starting_population: int = 1,
     is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> torch.Tensor:
@@ -75,6 +77,8 @@ def log_likelihood(
     ns : torch.Tensor | None, optional
         Counts per population/class that sum to the total number of ages. If None,
         a single population with one count per provided age is assumed.
+    starting_population: int
+        Starting population size.
     is_ordered : bool, optional
         If True, the first element of ages is treated as a spine and the rest as
         ordinary observations. Cannot be used together with spine_ages.
@@ -176,6 +180,7 @@ def log_likelihood(
         death_rates=death_rates,
         times=times,
         ns=ns,
+        starting_population=starting_population,
     )
 
     # Check if population probability calculation succeeded
@@ -394,8 +399,10 @@ def negative_log_likelihood(
     death_rates: torch.Tensor | float,
     ages: torch.Tensor | float,
     times: torch.Tensor | float,
+    *,
     spine_ages: torch.Tensor | None = None,
     ns: torch.Tensor | None = None,
+    starting_population: int = 1,
     is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> torch.Tensor:
@@ -424,6 +431,8 @@ def negative_log_likelihood(
     ns : torch.Tensor | None, optional
         Optional counts/weights associated with each age. If omitted, each
         observation is treated as a single count.
+    starting_population: int
+        Starting population size.
     is_ordered : bool, default False
         If True, interpret `ages` (and `ns` when provided) as ordered-event data
         and use the ordered-data likelihood branch in the underlying function.
@@ -455,10 +464,9 @@ def negative_log_likelihood(
         times=times,
         spine_ages=spine_ages,
         ns=ns,
+        starting_population=starting_population,
         is_ordered=is_ordered,
         log_scale_params=log_scale_params,
     )
-
-    return result
 
     return result

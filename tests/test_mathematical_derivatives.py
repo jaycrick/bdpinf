@@ -291,7 +291,7 @@ class TestDerivativeIntegration:
         )
 
         objective_val = calculate_populations_log_lik(
-            birth_rate, death_rate, standard_scalar_params["time"], ns=5
+            birth_rate, death_rate, ns=5, times=standard_scalar_params["time"]
         )
 
         objective_val.backward()
@@ -333,7 +333,7 @@ class TestGradientValidation:
         death_rate = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
 
         objective_val = calculate_populations_log_lik(
-            birth_rate, death_rate, time, ns=n
+            birth_rate, death_rate, times=time, ns=n
         )
 
         objective_val.backward()
@@ -366,7 +366,7 @@ class TestGradientValidation:
         death_rate = torch.tensor(0.05, dtype=torch.float64, requires_grad=True)
 
         objective_val = calculate_populations_log_lik(
-            birth_rate, death_rate, time, ns=ns
+            birth_rate, death_rate, times=time, ns=ns
         )
 
         objective_val.backward()
@@ -399,7 +399,7 @@ class TestGradientValidation:
         death_rate = torch.tensor(0.1 + 1e-13, dtype=torch.float64, requires_grad=True)
 
         objective_val = calculate_populations_log_lik(
-            birth_rate, death_rate, time, ns=n
+            birth_rate, death_rate, times=time, ns=n
         )
 
         objective_val.backward()

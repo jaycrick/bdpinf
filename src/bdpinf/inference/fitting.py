@@ -14,6 +14,7 @@ from .likelihood import negative_log_likelihood
 def get_crude_parameter_estimates(
     ages: torch.Tensor | float,
     times: torch.Tensor | float,
+    *,
     birth_rates: torch.Tensor | float | None = None,
     death_rates: torch.Tensor | float | None = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -142,7 +143,10 @@ def _build_initial_params(
     """Build initial param vector [birth_rates, death_rates]; auto-estimate if needed."""
     if initial_birth_rates is None or initial_death_rates is None:
         crude_birth, crude_death = get_crude_parameter_estimates(
-            non_empty_age, times_tensor, initial_birth_rates, initial_death_rates
+            non_empty_age,
+            times_tensor,
+            birth_rates=initial_birth_rates,
+            death_rates=initial_death_rates,
         )
         return torch.cat((crude_birth, crude_death))
 
@@ -234,6 +238,7 @@ def _run_optimizer_strategies(
     initial_params: torch.Tensor,
     n_epochs: int,
     non_spine_ages: torch.Tensor,
+    starting_population: int,
     times_tensor: torch.Tensor,
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
@@ -251,6 +256,7 @@ def _run_optimizer_strategies(
         initial_params: Initial params on original scale.
         n_epochs: Number of time epochs.
         non_spine_ages, times_tensor, spine_ages_tensor, population_sizes_tensor: Data.
+        starting_population: Starting population size.
         convergence_tolerance, absolute_tolerance, patience, gradient_threshold: Stopping criteria.
 
     Returns:
@@ -271,6 +277,7 @@ def _run_optimizer_strategies(
             times=times_tensor,
             spine_ages=spine_ages_tensor,
             ns=population_sizes_tensor,
+            starting_population=starting_population,
             is_ordered=False,
             log_scale_params=True,
         )
@@ -436,8 +443,10 @@ def _finalize_fit(
     n_epochs: int,
     non_spine_ages: torch.Tensor,
     times_tensor: torch.Tensor,
+    *,
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
+    starting_population: int = 1,
 ) -> tuple[np.ndarray, np.ndarray, float, float] | None:
     """Convert log params to original scale; compute final NLL; return rates + likelihoods."""
     with torch.no_grad():
@@ -448,6 +457,7 @@ def _finalize_fit(
             times=times_tensor,
             spine_ages=spine_ages_tensor,
             ns=population_sizes_tensor,
+            starting_population=starting_population,
             is_ordered=False,
             log_scale_params=True,
         )
@@ -465,11 +475,13 @@ def _finalize_fit(
 def fit_birth_death_processes(
     list_of_ages: List[torch.Tensor],
     times: torch.Tensor | float,
-    is_ordered: bool = False,
+    *,
     initial_birth_rates: torch.Tensor | None = None,
     initial_death_rates: torch.Tensor | None = None,
+    is_ordered: bool = False,
     spine_ages: torch.Tensor | None = None,
     population_sizes: torch.Tensor | None = None,
+    starting_population: int = 1,
     optimizers: Sequence[str] | str = ("Adam", "SGD", "LBFGS"),
     optimizer_kwargs: Dict[str, Dict[str, Any]] | None = None,
     perturb_initial_params_std: float = 0.0,
@@ -493,6 +505,8 @@ def fit_birth_death_processes(
         Explicit spine ages (if not auto-extracted).
     population_sizes : torch.Tensor | None
         Counts per group; auto-computed if None.
+    starting_population : int
+        The number of starting individuals at time 0. Default is 1.
     optimizers : Sequence[str] | str
         Optimizer names ('LBFGS', 'Adam', 'SGD') to try sequentially.
     optimizer_kwargs : Dict[str, Dict[str, Any]] | None
@@ -547,15 +561,16 @@ def fit_birth_death_processes(
         converged,
         last_exception,
     ) = _run_optimizer_strategies(
-        strategies_map,
-        requested_keys,
-        log_params,
-        initial_params,
-        n_epochs,
-        non_spine_ages,
-        times_tensor,
-        spine_ages_tensor,
-        population_sizes_tensor,
+        strategies_map=strategies_map,
+        requested_keys=requested_keys,
+        log_params=log_params,
+        initial_params=initial_params,
+        n_epochs=n_epochs,
+        non_spine_ages=non_spine_ages,
+        times_tensor=times_tensor,
+        spine_ages_tensor=spine_ages_tensor,
+        population_sizes_tensor=population_sizes_tensor,
+        starting_population=starting_population,
         convergence_tolerance=1e-7,
         absolute_tolerance=1e-6,
         patience=20,
@@ -574,8 +589,9 @@ def fit_birth_death_processes(
         n_epochs,
         non_spine_ages,
         times_tensor,
-        spine_ages_tensor,
-        population_sizes_tensor,
+        spine_ages_tensor=spine_ages_tensor,
+        population_sizes_tensor=population_sizes_tensor,
+        starting_population=starting_population,
     )
     if finalized is None:
         return {"success": False}

@@ -148,14 +148,14 @@ class TestMultiEpochNumericalAccuracy:
 
         # Single epoch result
         single_result = calculate_populations_log_lik(
-            birth_rate_val, death_rate_val, T, ns=n
+            birth_rate_val, death_rate_val, times=T, ns=n
         )
 
         # Two epochs with same parameters should give same result
         two_epoch_result = calculate_populations_log_lik(
             torch.tensor([birth_rate_val[0], birth_rate_val[0]], dtype=torch.float64),
             torch.tensor([death_rate_val[0], death_rate_val[0]], dtype=torch.float64),
-            torch.tensor([T[0] / 2, T[0]], dtype=torch.float64),
+            times=torch.tensor([T[0] / 2, T[0]], dtype=torch.float64),
             ns=n,
         )
 
@@ -247,8 +247,12 @@ class TestMultiEpochConsistency:
         birth_rates2 = torch.tensor([0.1, 0.2], dtype=torch.float64)
         death_rates2 = torch.tensor([0.05, 0.1], dtype=torch.float64)
 
-        result1 = calculate_populations_log_lik(birth_rates1, death_rates1, times, ns=5)
-        result2 = calculate_populations_log_lik(birth_rates2, death_rates2, times, ns=5)
+        result1 = calculate_populations_log_lik(
+            birth_rates1, death_rates1, times=times, ns=5
+        )
+        result2 = calculate_populations_log_lik(
+            birth_rates2, death_rates2, times=times, ns=5
+        )
 
         # Results should differ (order matters)
         assert not torch.isclose(result1, result2)
@@ -263,7 +267,7 @@ class TestMultiEpochConsistency:
 
         # Compute for array
         result_array = calculate_non_spine_ages_log_lik(
-            birth_rates, death_rates, ages, times
+            birth_rates, death_rates, ages, times=times
         )
 
         # Compute individually and sum
@@ -272,7 +276,7 @@ class TestMultiEpochConsistency:
                 birth_rates,
                 death_rates,
                 torch.tensor([age], dtype=torch.float64),
-                times,
+                times=times,
             )
             for age in ages
         )
@@ -610,7 +614,7 @@ class TestNumericalAccuracy:
                 calculate_populations_log_lik(
                     birth_rate_val,
                     death_rate_val,
-                    T,
+                    times=T,
                     ns=torch.tensor([0], dtype=torch.int64),
                 )
             ],
@@ -673,7 +677,7 @@ class TestNumericalAccuracy:
                 calculate_populations_log_lik(
                     birth_rate_val,
                     death_rate_val,
-                    T,
+                    times=T,
                     ns=torch.tensor([1], dtype=torch.int64),
                 )
             ],
@@ -948,12 +952,12 @@ class TestNumericalAccuracy:
 
         # Scalar computation
         result_scalar = calculate_populations_log_lik(
-            birth_rate_val, death_rate_val, T, n
+            birth_rate_val, death_rate_val, times=T, ns=n
         )
 
         # Single-epoch array computation
         result_array = calculate_populations_log_lik(
-            birth_rate_val, death_rate_val, T, n
+            birth_rate_val, death_rate_val, times=T, ns=n
         )
 
         assert_close(result_scalar, result_array)
@@ -1139,7 +1143,7 @@ class TestPopulationsLogLikelihood:
         result = calculate_populations_log_lik(
             standard_scalar_params["birth_rate"],
             standard_scalar_params["death_rate"],
-            standard_scalar_params["time"],
+            times=standard_scalar_params["time"],
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
@@ -1153,7 +1157,7 @@ class TestPopulationsLogLikelihood:
         result = calculate_populations_log_lik(
             standard_scalar_params["birth_rate"],
             standard_scalar_params["death_rate"],
-            standard_scalar_params["time"],
+            times=standard_scalar_params["time"],
             ns=torch.tensor([0], dtype=torch.int64),
         )
 
@@ -1170,7 +1174,7 @@ class TestPopulationsLogLikelihood:
         result = calculate_populations_log_lik(
             standard_scalar_params["birth_rate"],
             standard_scalar_params["death_rate"],
-            standard_scalar_params["time"],
+            times=standard_scalar_params["time"],
             ns=sample_population_counts,
         )
 
@@ -1184,7 +1188,7 @@ class TestPopulationsLogLikelihood:
         result = calculate_populations_log_lik(
             standard_array_params["birth_rates"],
             standard_array_params["death_rates"],
-            standard_array_params["times"],
+            times=standard_array_params["times"],
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
@@ -1198,7 +1202,7 @@ class TestPopulationsLogLikelihood:
             calculate_populations_log_lik(
                 standard_scalar_params["birth_rate"],
                 standard_scalar_params["death_rate"],
-                -100.0,  # Negative time
+                times=-100.0,  # Negative time
                 ns=torch.tensor([1], dtype=torch.int64),
             )
 
@@ -1210,7 +1214,7 @@ class TestPopulationsLogLikelihood:
             calculate_populations_log_lik(
                 standard_scalar_params["birth_rate"],
                 standard_scalar_params["death_rate"],
-                standard_scalar_params["time"],
+                times=standard_scalar_params["time"],
                 ns=-5,  # Negative count
             )
 
@@ -1221,7 +1225,7 @@ class TestPopulationsLogLikelihood:
         result = calculate_populations_log_lik(
             nearly_equal_params["birth_rate"],
             nearly_equal_params["death_rate"],
-            nearly_equal_params["time"],
+            times=nearly_equal_params["time"],
             ns=torch.tensor([1], dtype=torch.int64),
         )
 
@@ -1517,7 +1521,7 @@ class TestMathematicalProperties:
             result = calculate_populations_log_lik(
                 standard_scalar_params["birth_rate"],
                 standard_scalar_params["death_rate"],
-                standard_scalar_params["time"],
+                times=standard_scalar_params["time"],
                 ns=n,
             )
             # Log probabilities should be ≤ 0
@@ -1569,7 +1573,7 @@ class TestMathematicalProperties:
         result_together = calculate_populations_log_lik(
             standard_scalar_params["birth_rate"],
             standard_scalar_params["death_rate"],
-            standard_scalar_params["time"],
+            times=standard_scalar_params["time"],
             ns=ns_array,
         )
 
@@ -1578,7 +1582,7 @@ class TestMathematicalProperties:
             calculate_populations_log_lik(
                 standard_scalar_params["birth_rate"],
                 standard_scalar_params["death_rate"],
-                standard_scalar_params["time"],
+                times=standard_scalar_params["time"],
                 ns=n,
             )
             for n in ns_array
@@ -1749,7 +1753,7 @@ class TestVectorization:
         result = calculate_populations_log_lik(
             standard_scalar_params["birth_rate"],
             standard_scalar_params["death_rate"],
-            standard_scalar_params["time"],
+            times=standard_scalar_params["time"],
             ns=ns,
         )
 

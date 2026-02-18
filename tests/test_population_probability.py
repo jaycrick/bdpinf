@@ -26,31 +26,31 @@ class TestPopulationProbability:
     def test_input_validation(self) -> None:
         """Test that invalid inputs return -inf."""
         # Negative birth rate
-        result = calculate_populations_log_lik(-0.1, 0.05, 100.0, 10)
+        result = calculate_populations_log_lik(-0.1, 0.05, times=100.0, ns=10)
         assert result == -np.inf
 
         # Negative death rate
-        result = calculate_populations_log_lik(0.1, -0.05, 100.0, 10)
+        result = calculate_populations_log_lik(0.1, -0.05, times=100.0, ns=10)
         assert result == -np.inf
 
         # Zero death rate
-        result = calculate_populations_log_lik(0.1, 0.0, 100.0, 10)
+        result = calculate_populations_log_lik(0.1, 0.0, times=100.0, ns=10)
         assert np.isfinite(result)
 
         # Zero birth rate
-        result = calculate_populations_log_lik(0.0, 0.1, 100.0, 10)
+        result = calculate_populations_log_lik(0.0, 0.1, times=100.0, ns=10)
         assert result == -np.inf
 
         # Negative time
         with pytest.raises(ValueError):
-            calculate_populations_log_lik(0.1, 0.05, -100.0, 10)
+            calculate_populations_log_lik(0.1, 0.05, times=-100.0, ns=10)
 
         with pytest.raises(ValueError):
-            calculate_populations_log_lik(0.1, 0.05, 0.0, 10)
+            calculate_populations_log_lik(0.1, 0.05, times=0.0, ns=10)
 
     def test_zero_birth_rate_n_zero(self) -> None:
         """Zero birth rate with n=0 stays finite."""
-        result = calculate_populations_log_lik(0.0, 0.05, 100.0, 0)
+        result = calculate_populations_log_lik(0.0, 0.05, times=100.0, ns=0)
         assert np.isfinite(result)
         assert_allclose(
             result, calculate_extinction_pr(0.0, 0.05, 100.0, return_log_prob=True)
@@ -58,13 +58,13 @@ class TestPopulationProbability:
 
     def test_zero_birth_rate_n_one(self) -> None:
         """Zero birth rate with n=1 stays finite."""
-        result = calculate_populations_log_lik(0.0, 0.05, 100.0, 1)
+        result = calculate_populations_log_lik(0.0, 0.05, times=100.0, ns=1)
         assert np.isfinite(result)
         assert_allclose(result, np.log1p(-calculate_extinction_pr(0.0, 0.05, 100.0)))
 
     def test_zero_birth_rate_high_n(self) -> None:
         """Zero birth rate with n>1 returns -inf."""
-        result = calculate_populations_log_lik(0.0, 0.05, 100.0, 10)
+        result = calculate_populations_log_lik(0.0, 0.05, times=100.0, ns=10)
         assert result == -np.inf
 
     def test_finite_results(self) -> None:
@@ -78,7 +78,9 @@ class TestPopulationProbability:
         ]
 
         for birth_rate, death_rate, time, n in test_cases:
-            result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+            result = calculate_populations_log_lik(
+                birth_rate, death_rate, times=time, ns=n
+            )
             assert np.isfinite(result), (
                 f"Non-finite result for λ={birth_rate}, μ={death_rate}, T={time}, n={n}"
             )
@@ -91,7 +93,7 @@ class TestPopulationProbability:
         time = 100.0
         n = 10
 
-        result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+        result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
         # Should not return -inf due to the perturbation handling
         assert np.isfinite(result), (
@@ -104,7 +106,9 @@ class TestPopulationProbability:
 
         results = []
         for n in [1, 5, 10, 20, 50]:
-            result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+            result = calculate_populations_log_lik(
+                birth_rate, death_rate, times=time, ns=n
+            )
             results.append((n, result))
             assert np.isfinite(result), f"Non-finite result for n={n}"
 
@@ -124,7 +128,9 @@ class TestPopulationProbability:
         results = []
         # Use shorter times to avoid β_t = 1 boundary issues
         for time in [50.0, 100.0, 200.0, 500.0]:  # Removed 1000 which causes β_t = 1
-            result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+            result = calculate_populations_log_lik(
+                birth_rate, death_rate, times=time, ns=n
+            )
             results.append((time, result))
             assert np.isfinite(result), f"Non-finite result for T={time}"
 
@@ -144,7 +150,9 @@ class TestPopulationProbability:
         ]
 
         for birth_rate, death_rate, time, n in test_cases:
-            result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+            result = calculate_populations_log_lik(
+                birth_rate, death_rate, times=time, ns=n
+            )
             # If the function returns -inf, it means α_t or β_t went out of bounds
             # For these reasonable parameters, we expect finite results
             assert np.isfinite(result), (
@@ -168,7 +176,9 @@ class TestPopulationProbability:
         )
 
         # Function result
-        function_result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+        function_result = calculate_populations_log_lik(
+            birth_rate, death_rate, times=time, ns=n
+        )
 
         assert abs(manual_result - function_result) < 1e-12, (
             f"Manual and function results should match: "
@@ -182,7 +192,7 @@ class TestPopulationProbability:
         n = 2
 
         result = calculate_populations_log_lik(
-            birth_rate, death_rate, time, n, starting_population=n0
+            birth_rate, death_rate, times=time, ns=n, starting_population=n0
         )
 
         growth_rate = birth_rate - death_rate
@@ -208,18 +218,18 @@ class TestPopulationProbability:
     def test_extreme_parameters(self) -> None:
         """Test behavior with extreme but valid parameters."""
         # Very small rates
-        result = calculate_populations_log_lik(1e-6, 1e-7, 1000.0, 5)
+        result = calculate_populations_log_lik(1e-6, 1e-7, times=1000.0, ns=5)
         assert np.isfinite(result), "Should handle very small rates"
 
         # Large time
-        result = calculate_populations_log_lik(0.1, 0.05, 10000.0, 5)
+        result = calculate_populations_log_lik(0.1, 0.05, times=10000.0, ns=5)
         # This might return -inf due to numerical overflow, which is acceptable
         assert result == -np.inf or np.isfinite(result), (
             "Large time should either overflow or be finite"
         )
 
         # Large population
-        result = calculate_populations_log_lik(0.1, 0.05, 100.0, 1000)
+        result = calculate_populations_log_lik(0.1, 0.05, times=100.0, ns=1000)
         assert result == -np.inf or np.isfinite(result), (
             "Large n should either be very small or finite"
         )
@@ -229,7 +239,7 @@ class TestPopulationProbability:
         # When n=1, the (n-1)*log(β_t) term becomes 0
         birth_rate, death_rate, time = 0.1, 0.05, 100.0
 
-        result = calculate_populations_log_lik(birth_rate, death_rate, time, 1)
+        result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=1)
 
         assert np.isfinite(result), "n=1 case should produce finite result"
 
@@ -260,7 +270,7 @@ class TestPopulationProbability:
     )
     def test_parametrized_valid_cases(self, birth_rate, death_rate, time, n):
         """Test multiple valid parameter combinations."""
-        result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+        result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
         assert np.isfinite(result), (
             f"Expected finite result for λ={birth_rate}, μ={death_rate}, "
@@ -277,7 +287,7 @@ class TestPopulationProbability:
         time = 10.0  # Moderate time
         n = 5
 
-        result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+        result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
         # Should either be finite or -inf (due to overflow), but not NaN
         assert result == -np.inf or np.isfinite(result), (
@@ -296,7 +306,7 @@ class TestPopulationProbability:
         time = 1.0  # Small time to avoid other numerical issues
         n = 2
 
-        result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+        result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
         # This case might legitimately return -inf due to boundary conditions
         assert result == -np.inf or np.isfinite(result), (
@@ -315,7 +325,9 @@ class TestPopulationProbability:
         ]
 
         for birth_rate, death_rate, time, n, description in boundary_cases:
-            result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+            result = calculate_populations_log_lik(
+                birth_rate, death_rate, times=time, ns=n
+            )
             assert result == -np.inf, (
                 f"Case '{description}' should return -inf due to β_t = 1"
             )
@@ -350,7 +362,7 @@ class TestPopulationProbabilityIntegration:
         time = 1000.0  # 1000 years of observation
         n = 50  # 50 surviving manuscripts
 
-        result = calculate_populations_log_lik(birth_rate, death_rate, time, n)
+        result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
         assert np.isfinite(result), (
             "Realistic manuscript parameters should give finite result"
