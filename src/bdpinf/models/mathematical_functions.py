@@ -260,10 +260,10 @@ def calculate_populations_log_lik(
     If the initial number of individuals is $n_0$, then we have
     $$
         \Pr(Z_T = n))
-        = \sum_{i = 0}^{\min(n_0, n)} \binom{n_0}{i}
-        \binom{n_0 + n - i - 1}{n - 1}
-        \alpha_T^{n_0 - i} \beta_T^{n - i}
-        (1 - \alpha_T - \beta_T)^{i}
+        = \sum_{i = \max(0, n_0 - n)}^{n_0 - 1} \binom{n_0}{i}
+        \binom{n - 1}{n_0 - i - 1}
+        \alpha_T^{i} \beta_T^{n - n_0 + i}
+        [(1 - \alpha_T)(1 - \beta_T)]^{n_0 - i}
     $$
 
     References
@@ -385,10 +385,6 @@ def calculate_populations_log_lik(
             log_pr[nonzero_mask] = (log_term1 + log_term2 + log_term3)[nonzero_mask]
         else:
             n0 = int(starting_population)
-            alpha_plus_beta = alpha_t + beta_t
-            if alpha_plus_beta > 1:
-                return torch.tensor(float("-inf"), dtype=torch.float64)
-
             log_alpha = (
                 torch.log(alpha_t)
                 if alpha_t > 0
@@ -399,11 +395,17 @@ def calculate_populations_log_lik(
                 if beta_t > 0
                 else torch.tensor(float("-inf"), dtype=torch.float64)
             )
-            log_one_minus = (
-                torch.log1p(-alpha_plus_beta)
-                if alpha_plus_beta < 1
+            log_one_minus_alpha = (
+                torch.log1p(-alpha_t)
+                if alpha_t < 1
                 else torch.tensor(float("-inf"), dtype=torch.float64)
             )
+            log_one_minus_beta = (
+                torch.log1p(-beta_t)
+                if beta_t < 1
+                else torch.tensor(float("-inf"), dtype=torch.float64)
+            )
+            log_one_minus = log_one_minus_alpha + log_one_minus_beta
 
             nonzero_indices = torch.where(nonzero_mask)[0]
             for idx in nonzero_indices:
@@ -412,8 +414,13 @@ def calculate_populations_log_lik(
                     log_pr[idx] = torch.tensor(float("-inf"), dtype=torch.float64)
                     continue
 
-                i_max = min(n0, n_val)
-                i = torch.arange(i_max + 1, dtype=torch.int64)
+                i_min = max(0, n0 - n_val)
+                i_max = n0 - 1
+                if i_min > i_max:
+                    log_pr[idx] = torch.tensor(float("-inf"), dtype=torch.float64)
+                    continue
+
+                i = torch.arange(i_min, i_max + 1, dtype=torch.int64)
                 i_f = i.to(torch.float64)
                 n_f = torch.tensor(float(n_val), dtype=torch.float64)
                 n0_f = torch.tensor(float(n0), dtype=torch.float64)
@@ -424,28 +431,28 @@ def calculate_populations_log_lik(
                     - torch.lgamma(n0_f - i_f + 1)
                 )
                 log_binom_second = (
-                    torch.lgamma(n0_f + n_f - i_f)
-                    - torch.lgamma(n_f)
-                    - torch.lgamma(n0_f - i_f + 1)
+                    torch.lgamma(n_f)
+                    - torch.lgamma(n0_f - i_f)
+                    - torch.lgamma(n_f - n0_f + i_f + 1)
                 )
 
                 n0_minus_i = (n0_f - i_f).to(torch.float64)
-                n_minus_i = (n_f - i_f).to(torch.float64)
+                n_minus_n0_plus_i = (n_f - n0_f + i_f).to(torch.float64)
 
                 log_alpha_term = torch.where(
-                    n0_minus_i == 0,
-                    torch.tensor(0.0, dtype=torch.float64),
-                    n0_minus_i * log_alpha,
-                )
-                log_beta_term = torch.where(
-                    n_minus_i == 0,
-                    torch.tensor(0.0, dtype=torch.float64),
-                    n_minus_i * log_beta,
-                )
-                log_one_minus_term = torch.where(
                     i_f == 0,
                     torch.tensor(0.0, dtype=torch.float64),
-                    i_f * log_one_minus,
+                    i_f * log_alpha,
+                )
+                log_beta_term = torch.where(
+                    n_minus_n0_plus_i == 0,
+                    torch.tensor(0.0, dtype=torch.float64),
+                    n_minus_n0_plus_i * log_beta,
+                )
+                log_one_minus_term = torch.where(
+                    n0_minus_i == 0,
+                    torch.tensor(0.0, dtype=torch.float64),
+                    n0_minus_i * log_one_minus,
                 )
 
                 log_terms = (
