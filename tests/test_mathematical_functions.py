@@ -748,7 +748,7 @@ class TestNumericalAccuracy:
                 calculate_populations_log_lik(
                     birth_rate_val,
                     birth_rate_val,
-                    T,
+                    times=T,
                     ns=torch.tensor([0], dtype=torch.int64),
                 ),
             ],

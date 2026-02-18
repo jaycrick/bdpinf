@@ -29,6 +29,8 @@ website:
             file: qmd_scripts/manuscript_data_exploration.qmd
           - text: "Birth-Death Inference"
             file: qmd_scripts/birth_death_inference.qmd
+          - text: "Birth-Death Inference (Multiple Starting Manuscripts)"
+            file: qmd_scripts/birth_death_inference_mult_start.qmd
           - text: "Methods Validation"
             file: qmd_scripts/methods_validation.qmd
           - text: "Multi-Epoch Validation"

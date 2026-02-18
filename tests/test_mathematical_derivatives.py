@@ -466,7 +466,8 @@ class TestGradientValidation:
         )
         assert torch.all(relative_error < 1e-5), (
             "Gradient error "
-            f"{relative_error.max().item():.2e} exceeds tolerance for birth_rate ~= death_rate"
+            f"{relative_error.max().item():.2e} "
+            "exceeds tolerance for birth_rate ~= death_rate"
         )
 
     def test_non_spine_ages_derivatives_scalar_age(self) -> None:

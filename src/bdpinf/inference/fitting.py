@@ -647,6 +647,7 @@ def fit_from_dataframe(
     is_ordered: bool = False,
     initial_birth_rates: NDArray[np.float64] | torch.Tensor | None = None,
     initial_death_rates: NDArray[np.float64] | torch.Tensor | None = None,
+    starting_population: int = 1,
 ) -> dict[str, Any]:
     """Fit parameters from DataFrame age column."""
     if age_column not in df.columns:
@@ -675,4 +676,5 @@ def fit_from_dataframe(
         is_ordered=is_ordered,
         initial_birth_rates=init_birth_tensor,
         initial_death_rates=init_death_tensor,
+        starting_population=starting_population,
     )

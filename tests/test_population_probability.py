@@ -227,7 +227,7 @@ class TestPopulationProbability:
                 * math.comb(n0 + n - i - 1, n - 1)
                 * (alpha_t ** (n0 - i))
                 * (beta_t ** (n - i))
-                * ((1 - alpha_t - beta_t) ** i)
+                * ((1 - alpha_t - beta_t + alpha_t * beta_t) ** i)
             )
             prob += term
 

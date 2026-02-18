@@ -446,6 +446,28 @@ class TestMultiEpochFitting:
             assert len(result["death_rates"]) == 2
             assert len(result["death_rates"]) == 2
 
+    def test_multi_epoch_from_dataframe_large_starting_pop(self) -> None:
+        """Test multi-epoch fitting from DataFrame, with starting population sizes."""
+        ages = [100.0, 200.0, 300.0, 400.0, 500.0]
+        df = pd.DataFrame({"age": ages})
+        times = np.array([250.0, 550.0])
+
+        result = fit_from_dataframe(
+            df,
+            age_column="age",
+            times=times,
+            starting_population=10,
+        )
+
+        assert isinstance(result, dict)
+        assert "success" in result
+
+        if result["success"]:
+            # Should have multi-epoch parameters
+            assert len(result["birth_rates"]) == 2
+            assert len(result["death_rates"]) == 2
+            assert len(result["death_rates"]) == 2
+
 
 class TestConvergenceFlags:
     def test_max_iters_no_convergence(self) -> None:
