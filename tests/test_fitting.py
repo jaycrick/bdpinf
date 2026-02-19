@@ -159,7 +159,7 @@ class TestFitting:
     def test_fit_from_dataframe_success(self) -> None:
         """Test successful fitting with external DataFrame."""
         # Create test data
-        rng = np.random.Generator(42)
+        rng = np.random.default_rng(42)
         ages = rng.exponential(scale=200, size=50)
         df = pd.DataFrame({"age": ages, "count": np.ones(len(ages))})
 
