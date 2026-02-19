@@ -218,7 +218,7 @@ class TestPopulationProbability:
                 (λ/μ) * alpha_t
 
             """
-            prob = 0.0
+            terms: list[float] = []
             for j in range(max(0, a - k), a):
                 term = (
                     math.comb(a, j)
@@ -227,8 +227,8 @@ class TestPopulationProbability:
                     * (beta_t ** (k - a + j))
                     * ((1 - alpha_t - beta_t + alpha_t * beta_t) ** (a - j))
                 )
-                prob += term
-            return prob
+                terms.append(term)
+            return sum(terms)
 
         def tavare_formula(n: int, m: int, alpha_t: float, beta_t: float) -> float:
             """Calculate the probability using Tavaré's formula.
@@ -245,21 +245,21 @@ class TestPopulationProbability:
                 (λ/μ) * alpha_t
 
             """
-            prob = 0.0
-            for j in range(min(n, m) + 1):
+            terms: list[float] = []
+            for j in range(1, min(n, m) + 1):
                 term = (
                     math.comb(n, j)
-                    * math.comb(n + m - j - 1, n - 1)
+                    * math.comb(m - 1, j - 1)
                     * (alpha_t ** (n - j))
                     * (beta_t ** (m - j))
                     * ((1 - alpha_t - beta_t + alpha_t * beta_t) ** j)
                 )
-                prob += term
-            return prob
+                terms.append(term)
+            return sum(terms)
 
         birth_rate, death_rate, time = 0.2, 0.1, 1.0
-        n0 = 3
-        n = 2
+        n0 = 5
+        n = 4
 
         alpha_t = calculate_extinction_pr(
             birth_rate,
@@ -273,8 +273,6 @@ class TestPopulationProbability:
         davison_result = davison_formula(n0, n, alpha_t, beta_t)
         tavare_result = tavare_formula(n0, n, alpha_t, beta_t)
 
-        assert_allclose(tavare_result, davison_result)
-
         my_result = math.exp(
             calculate_populations_log_lik(
                 birth_rate,
@@ -285,7 +283,9 @@ class TestPopulationProbability:
             ),
         )
 
-        assert_allclose(my_result, davison_result, rtol=1e-10, atol=1e-12)
+        assert_allclose(my_result, davison_result)
+        assert_allclose(my_result, tavare_result)
+        assert_allclose(tavare_result, davison_result)
 
     def test_extreme_parameters(self) -> None:
         """Test behavior with extreme but valid parameters."""
