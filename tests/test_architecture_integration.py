@@ -4,6 +4,8 @@ These tests validate that the configuration system, error handling,
 and modular structure work together correctly.
 """
 
+# ruff: noqa: S101
+
 import pandas as pd
 import pytest
 

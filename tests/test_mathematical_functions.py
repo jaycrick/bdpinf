@@ -1,3 +1,6 @@
+# ruff: noqa: S101
+# ruff: noqa: D102
+
 import math
 
 import pytest

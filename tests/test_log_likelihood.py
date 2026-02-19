@@ -1,5 +1,7 @@
 """Test suite for BirthDeathProcess log-likelihood calculations."""
 
+# ruff: noqa: S101
+
 import numpy as np
 from numpy.testing import assert_allclose
 

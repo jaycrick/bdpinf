@@ -4,6 +4,8 @@ These tests verify that different components work together correctly
 and test realistic end-to-end workflows.
 """
 
+# ruff: noqa: S101
+
 import numpy as np
 import pandas as pd
 import pytest

@@ -1,3 +1,6 @@
+# ruff: noqa: S101
+# ruff: noqa: D101 D102
+
 import pytest
 import torch
 from numpy.testing import assert_allclose

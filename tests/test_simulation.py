@@ -1,5 +1,7 @@
 """Test suite for BirthDeathProcess simulation functionality."""
 
+# ruff: noqa: S101
+
 import numpy as np
 import pandas as pd
 

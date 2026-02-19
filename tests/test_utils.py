@@ -1,5 +1,7 @@
 """Test suite for BirthDeathProcess utility functions and helper methods."""
 
+# ruff: noqa: S101
+
 import numpy as np
 import torch
 

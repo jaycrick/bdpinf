@@ -1,5 +1,7 @@
 """Configuration for pytest tests with comprehensive fixtures and utilities."""
 
+# ruff: noqa: S101
+
 import sys
 from pathlib import Path
 from typing import Any

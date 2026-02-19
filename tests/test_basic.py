@@ -1,5 +1,7 @@
 """Tests for inf-bp-texts package."""
 
+# ruff: noqa: S101
+
 import os
 import tempfile
 
