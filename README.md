@@ -1,5 +1,10 @@
 # inf-bp-texts
 
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
+
 A Python platform for downloading New Testament manuscript data from the NTVMR API
 and running quality control, analysis, and birth-death process inference.
 
