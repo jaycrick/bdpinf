@@ -25,6 +25,12 @@ For development (includes testing and documentation tools):
 uv sync --all-groups
 ```
 
+For static image generation with Plotly, install the Chrome dependency:
+
+```sh
+uv run plotly_get_chrome
+```
+
 ## Quick Start
 
 Download and analyze manuscripts:
@@ -48,12 +54,9 @@ uv run quarto render manuscript_analysis.qmd
 
 ## Key Features
 
-- NTVMR data collection with resume support
-- XML formatting and validation for git-friendly tracking
-- Data quality assessment and manual corrections
-- Biblical book detection and section alignment checks
-- Birth-death process modeling, fitting, and visualization
-- Quarto site output for interactive reports
+- NTVMR data collection with resume support plus git-friendly XML formatting and validation
+- Quality control, book detection/section alignment,
+- Birth-death modeling with Quarto reports
 
 ## Development
 

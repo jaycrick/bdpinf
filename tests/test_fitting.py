@@ -1,5 +1,8 @@
 """Test suite for modular fitting functionality."""
 
+# ruff: noqa: S101
+# ruff: noqa: D101 D102
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -14,11 +17,11 @@ from inf_bp_texts.inference.fitting import (
     _normalize_requested_optimizers,
     _prepare_population_sizes,
     _run_optimizer_strategies,
-    _validate_times,
     fit_birth_death_processes,
     fit_from_dataframe,
 )
 from inf_bp_texts.models import BirthDeathProcess
+from inf_bp_texts.models.validation import validate_times_properties
 
 
 class TestFittingHelpers:
@@ -27,9 +30,9 @@ class TestFittingHelpers:
         result = _find_non_empty_age(ages_list)
         assert torch.equal(result, ages_list[1])
 
-    def test_validate_times_rejects_non_positive(self) -> None:
+    def testvalidate_times_properties_rejects_non_positive(self) -> None:
         with pytest.raises(ValueError, match="must be positive"):
-            _validate_times(torch.tensor([1.0, 0.0]))
+            validate_times_properties(torch.tensor([1.0, 0.0]))
 
     def test_prepare_population_sizes_length_mismatch(self) -> None:
         ages_list = [torch.tensor([1.0]), torch.tensor([2.0])]
@@ -156,8 +159,8 @@ class TestFitting:
     def test_fit_from_dataframe_success(self) -> None:
         """Test successful fitting with external DataFrame."""
         # Create test data
-        np.random.seed(42)
-        ages = np.random.exponential(scale=200, size=50)
+        rng = np.random.Generator(42)
+        ages = rng.exponential(scale=200, size=50)
         df = pd.DataFrame({"age": ages, "count": np.ones(len(ages))})
 
         result = fit_from_dataframe(df, age_column="age", times=1000.0)
@@ -327,8 +330,8 @@ class TestMultiEpochFitting:
             # Should return arrays for multi-epoch
             assert isinstance(result["birth_rates"], np.ndarray)
             assert isinstance(result["death_rates"], np.ndarray)
-            assert len(result["birth_rates"]) == 2
-            assert len(result["death_rates"]) == 2
+            assert len(result["birth_rates"]) == len(times)
+            assert len(result["death_rates"]) == len(times)
 
             # All rates should be positive
             assert all(result["birth_rates"] > 0)
@@ -353,8 +356,8 @@ class TestMultiEpochFitting:
 
         if result["success"]:
             # Check structure
-            assert len(result["birth_rates"]) == 2
-            assert len(result["death_rates"]) == 2
+            assert len(result["birth_rates"]) == len(times)
+            assert len(result["death_rates"]) == len(times)
 
     def test_three_epoch_fitting(self) -> None:
         """Test fitting with three epochs."""
@@ -368,8 +371,8 @@ class TestMultiEpochFitting:
 
         if result["success"]:
             # Should have 3 parameters for each rate
-            assert len(result["birth_rates"]) == 3
-            assert len(result["death_rates"]) == 3
+            assert len(result["birth_rates"]) == len(times)
+            assert len(result["death_rates"]) == len(times)
             assert all(result["birth_rates"] > 0)
             assert all(result["death_rates"] > 0)
 
@@ -442,9 +445,8 @@ class TestMultiEpochFitting:
 
         if result["success"]:
             # Should have multi-epoch parameters
-            assert len(result["birth_rates"]) == 2
-            assert len(result["death_rates"]) == 2
-            assert len(result["death_rates"]) == 2
+            assert len(result["birth_rates"]) == len(times)
+            assert len(result["death_rates"]) == len(times)
 
     def test_multi_epoch_from_dataframe_large_starting_pop(self) -> None:
         """Test multi-epoch fitting from DataFrame, with starting population sizes."""
@@ -464,9 +466,8 @@ class TestMultiEpochFitting:
 
         if result["success"]:
             # Should have multi-epoch parameters
-            assert len(result["birth_rates"]) == 2
-            assert len(result["death_rates"]) == 2
-            assert len(result["death_rates"]) == 2
+            assert len(result["birth_rates"]) == len(times)
+            assert len(result["death_rates"]) == len(times)
 
 
 class TestConvergenceFlags:

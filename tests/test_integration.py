@@ -192,8 +192,8 @@ class TestIntegration:
     def test_model_comparison_workflow(self) -> None:
         """Test workflow for comparing different models manually."""
         # Create test data with more realistic parameters
-        np.random.seed(42)  # For reproducibility
-        ages = np.random.exponential(
+        rng = np.random.Generator(42)  # For reproducibility
+        ages = rng.exponential(
             scale=200,
             size=20,
         )  # Smaller scale and sample size

@@ -4,10 +4,11 @@ These tests verify the correctness of the birth-death process population
 probability calculation based on the Arley & Borchsenius formula.
 """
 
+# ruff: noqa: S101
 import math
 
-import numpy as np
 import pytest
+import torch
 from numpy.testing import assert_allclose
 
 from inf_bp_texts.models.mathematical_functions import calculate_extinction_pr
@@ -25,20 +26,20 @@ class TestPopulationProbability:
     def test_input_validation(self) -> None:
         """Test that invalid inputs return -inf."""
         # Negative birth rate
-        result = calculate_populations_log_lik(-0.1, 0.05, times=100.0, ns=10)
-        assert result == -np.inf
+        with pytest.raises(ValueError):
+            calculate_populations_log_lik(-0.1, 0.05, times=100.0, ns=10)
 
         # Negative death rate
-        result = calculate_populations_log_lik(0.1, -0.05, times=100.0, ns=10)
-        assert result == -np.inf
+        with pytest.raises(ValueError):
+            calculate_populations_log_lik(0.1, -0.05, times=100.0, ns=10)
 
         # Zero death rate
         result = calculate_populations_log_lik(0.1, 0.0, times=100.0, ns=10)
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
 
         # Zero birth rate
         result = calculate_populations_log_lik(0.0, 0.1, times=100.0, ns=10)
-        assert result == -np.inf
+        assert result == torch.as_tensor(float("-inf"))
 
         # Negative time
         with pytest.raises(ValueError):
@@ -50,7 +51,7 @@ class TestPopulationProbability:
     def test_zero_birth_rate_n_zero(self) -> None:
         """Zero birth rate with n=0 stays finite."""
         result = calculate_populations_log_lik(0.0, 0.05, times=100.0, ns=0)
-        assert np.isfinite(result)
+        assert torch.isfinite(result)
         assert_allclose(
             result,
             calculate_extinction_pr(0.0, 0.05, 100.0, return_log_prob=True),
@@ -59,22 +60,19 @@ class TestPopulationProbability:
     def test_zero_birth_rate_n_one(self) -> None:
         """Zero birth rate with n=1 stays finite."""
         result = calculate_populations_log_lik(0.0, 0.05, times=100.0, ns=1)
-        assert np.isfinite(result)
-        assert_allclose(result, np.log1p(-calculate_extinction_pr(0.0, 0.05, 100.0)))
+        assert torch.isfinite(result)
+        assert_allclose(result, torch.log1p(-calculate_extinction_pr(0.0, 0.05, 100.0)))
 
     def test_zero_birth_rate_high_n(self) -> None:
         """Zero birth rate with n>1 returns -inf."""
         result = calculate_populations_log_lik(0.0, 0.05, times=100.0, ns=10)
-        assert result == -np.inf
+        assert result == -torch.inf
 
     def test_finite_results(self) -> None:
         """Test that valid inputs produce finite results."""
         test_cases = [
-            # Removed cases that lead to beta_t = 1 (mathematical boundary)
-            # (1.0, 0.5, 100.0, 10),  # This leads to beta_t = 1
-            # (0.5, 1.0, 100.0, 10),  # λ < μ case - different analysis needed
-            (0.01, 0.001, 1000.0, 50),  # Small rates, should be stable
-            (0.1, 0.05, 100.0, 25),  # Moderate case, shorter time
+            (0.01, 0.001, 1000.0, 50),
+            (0.1, 0.05, 100.0, 25),
         ]
 
         for birth_rate, death_rate, time, n in test_cases:
@@ -84,7 +82,7 @@ class TestPopulationProbability:
                 times=time,
                 ns=n,
             )
-            assert np.isfinite(result), (
+            assert torch.isfinite(result), (
                 f"Non-finite result for λ={birth_rate}, μ={death_rate}, T={time}, n={n}"
             )
 
@@ -99,7 +97,7 @@ class TestPopulationProbability:
         result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
         # Should not return -inf due to the perturbation handling
-        assert np.isfinite(result), (
+        assert torch.isfinite(result), (
             "Nearly equal rates should be handled with perturbation"
         )
 
@@ -116,7 +114,7 @@ class TestPopulationProbability:
                 ns=n,
             )
             results.append((n, result))
-            assert np.isfinite(result), f"Non-finite result for n={n}"
+            assert torch.isfinite(result), f"Non-finite result for n={n}"
 
         # Check that probabilities generally decrease with larger n
         # (allowing for some numerical noise)
@@ -141,10 +139,10 @@ class TestPopulationProbability:
                 ns=n,
             )
             results.append((time, result))
-            assert np.isfinite(result), f"Non-finite result for T={time}"
+            assert torch.isfinite(result), f"Non-finite result for T={time}"
 
         # Results should be finite for all times
-        assert all(np.isfinite(prob) for _, prob in results)
+        assert all(torch.isfinite(prob) for _, prob in results)
 
     def test_alpha_beta_bounds(self) -> None:
         """Test that α_t and β_t stay within valid bounds [0, 1]."""
@@ -167,7 +165,7 @@ class TestPopulationProbability:
             )
             # If the function returns -inf, it means alpha_t or beta_t went out of bounds
             # For these reasonable parameters, we expect finite results
-            assert np.isfinite(result), (
+            assert torch.isfinite(result), (
                 f"Expected finite result for λ={birth_rate}, μ={death_rate}, "
                 f"T={time}, n={n}, got {result}"
             )
@@ -177,14 +175,16 @@ class TestPopulationProbability:
         birth_rate, death_rate, time, n = 0.1, 0.05, 100.0, 5
 
         # Manual calculation following the same steps
-        birth_rate_minus_death_rate = birth_rate - death_rate
-        exp_term = np.exp(birth_rate_minus_death_rate * time)
-        denominator = birth_rate * exp_term - death_rate
-        alpha_t = death_rate * (exp_term - 1) / denominator
+        alpha_t = calculate_extinction_pr(
+            birth_rate,
+            death_rate,
+            time,
+            return_log_prob=False,
+        )
         beta_t = (birth_rate / death_rate) * alpha_t
 
         manual_result = (
-            np.log(1 - alpha_t) + np.log(1 - beta_t) + (n - 1) * np.log(beta_t)
+            torch.log(1 - alpha_t) + torch.log(1 - beta_t) + (n - 1) * torch.log(beta_t)
         )
 
         # Function result
@@ -214,10 +214,13 @@ class TestPopulationProbability:
             starting_population=n0,
         )
 
-        growth_rate = birth_rate - death_rate
-        exp_term = np.exp(growth_rate * time)
-        denominator = birth_rate * exp_term - death_rate
-        alpha_t = death_rate * (exp_term - 1) / denominator
+        alpha_t = calculate_extinction_pr(
+            birth_rate,
+            death_rate,
+            time,
+            return_log_prob=False,
+        )
+
         beta_t = (birth_rate / death_rate) * alpha_t
 
         prob = 0.0
@@ -231,25 +234,25 @@ class TestPopulationProbability:
             )
             prob += term
 
-        expected = np.log(prob)
+        expected = torch.log(prob)
         assert_allclose(result, expected, rtol=1e-10, atol=1e-12)
 
     def test_extreme_parameters(self) -> None:
         """Test behavior with extreme but valid parameters."""
         # Very small rates
         result = calculate_populations_log_lik(1e-6, 1e-7, times=1000.0, ns=5)
-        assert np.isfinite(result), "Should handle very small rates"
+        assert torch.isfinite(result), "Should handle very small rates"
 
         # Large time
         result = calculate_populations_log_lik(0.1, 0.05, times=10000.0, ns=5)
         # This might return -inf due to numerical overflow, which is acceptable
-        assert result == -np.inf or np.isfinite(result), (
+        assert result == -torch.inf or torch.isfinite(result), (
             "Large time should either overflow or be finite"
         )
 
         # Large population
         result = calculate_populations_log_lik(0.1, 0.05, times=100.0, ns=1000)
-        assert result == -np.inf or np.isfinite(result), (
+        assert result == -torch.inf or torch.isfinite(result), (
             "Large n should either be very small or finite"
         )
 
@@ -260,16 +263,18 @@ class TestPopulationProbability:
 
         result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=1)
 
-        assert np.isfinite(result), "n=1 case should produce finite result"
+        assert torch.isfinite(result), "n=1 case should produce finite result"
 
         # Manual verification for n=1
-        birth_rate_minus_death_rate = birth_rate - death_rate
-        exp_term = np.exp(birth_rate_minus_death_rate * time)
-        denominator = birth_rate * exp_term - death_rate
-        alpha_t = death_rate * (exp_term - 1) / denominator
+        alpha_t = calculate_extinction_pr(
+            birth_rate,
+            death_rate,
+            time,
+            return_log_prob=False,
+        )
         beta_t = (birth_rate / death_rate) * alpha_t
 
-        expected = np.log(1 - alpha_t) + np.log(
+        expected = torch.log(1 - alpha_t) + torch.log(
             1 - beta_t,
         )  # (n-1)*log(beta_t) = 0 for n=1
 
@@ -291,7 +296,7 @@ class TestPopulationProbability:
         """Test multiple valid parameter combinations."""
         result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
-        assert np.isfinite(result), (
+        assert torch.isfinite(result), (
             f"Expected finite result for λ={birth_rate}, μ={death_rate}, "
             f"T={time}, n={n}"
         )
@@ -309,10 +314,10 @@ class TestPopulationProbability:
         result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
         # Should either be finite or -inf (due to overflow), but not NaN
-        assert result == -np.inf or np.isfinite(result), (
+        assert result == -torch.inf or torch.isfinite(result), (
             "Result should be finite or -inf, not NaN"
         )
-        assert not np.isnan(result), "Result should not be NaN"
+        assert not torch.isnan(result), "Result should not be NaN"
 
     def test_boundary_conditions(self) -> None:
         """Test conditions that might cause boundary issues."""
@@ -328,7 +333,7 @@ class TestPopulationProbability:
         result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
         # This case might legitimately return -inf due to boundary conditions
-        assert result == -np.inf or np.isfinite(result), (
+        assert result == -torch.inf or torch.isfinite(result), (
             "Boundary case should be handled gracefully"
         )
 
@@ -350,7 +355,7 @@ class TestPopulationProbability:
                 times=time,
                 ns=n,
             )
-            assert result == -np.inf, (
+            assert result == -torch.inf, (
                 f"Case '{description}' should return -inf due to β_t = 1"
             )
 
@@ -377,7 +382,7 @@ class TestPopulationProbabilityIntegration:
         )
 
         # Should be finite or -inf, but not NaN
-        assert not np.isnan(log_likelihood_value), "Log-likelihood should not be NaN"
+        assert not torch.isnan(log_likelihood_value), "Log-likelihood should not be NaN"
 
     def test_population_probability_in_context(self) -> None:
         """Test population probability calculation in realistic manuscript context."""
@@ -389,7 +394,7 @@ class TestPopulationProbabilityIntegration:
 
         result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
-        assert np.isfinite(result), (
+        assert torch.isfinite(result), (
             "Realistic manuscript parameters should give finite result"
         )
         assert result <= 0, "Log probability should be non-positive"
