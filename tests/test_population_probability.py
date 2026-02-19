@@ -202,17 +202,64 @@ class TestPopulationProbability:
 
     def test_starting_population_gt_one(self) -> None:
         """Validate the n0 > 1 branch against the closed-form summation."""
+
+        def davison_formula(a: int, k: int, alpha_t: float, beta_t: float) -> float:
+            """Calculate the probability using Davison's formula.
+
+            Parameters
+            ----------
+            a: int
+                starting population size (n0)
+            k: int
+                observed population size (n)
+            alpha_t: float
+                extinction probability at time t
+            beta_t: float
+                (λ/μ) * alpha_t
+
+            """
+            prob = 0.0
+            for j in range(max(0, a - k), a):
+                term = (
+                    math.comb(a, j)
+                    * math.comb(k - 1, a - j - 1)
+                    * (alpha_t**j)
+                    * (beta_t ** (k - a + j))
+                    * ((1 - alpha_t - beta_t + alpha_t * beta_t) ** (a - j))
+                )
+                prob += term
+            return prob
+
+        def tavare_formula(n: int, m: int, alpha_t: float, beta_t: float) -> float:
+            """Calculate the probability using Tavaré's formula.
+
+            Parameters
+            ----------
+            n: int
+                starting population size (n0)
+            m: int
+                observed population size (n)
+            alpha_t: float
+                extinction probability at time t
+            beta_t: float
+                (λ/μ) * alpha_t
+
+            """
+            prob = 0.0
+            for j in range(min(n, m) + 1):
+                term = (
+                    math.comb(n, j)
+                    * math.comb(n + m - j - 1, n - 1)
+                    * (alpha_t ** (n - j))
+                    * (beta_t ** (m - j))
+                    * ((1 - alpha_t - beta_t + alpha_t * beta_t) ** j)
+                )
+                prob += term
+            return prob
+
         birth_rate, death_rate, time = 0.2, 0.1, 1.0
         n0 = 3
         n = 2
-
-        result = calculate_populations_log_lik(
-            birth_rate,
-            death_rate,
-            times=time,
-            ns=n,
-            starting_population=n0,
-        )
 
         alpha_t = calculate_extinction_pr(
             birth_rate,
@@ -223,19 +270,22 @@ class TestPopulationProbability:
 
         beta_t = (birth_rate / death_rate) * alpha_t
 
-        prob = 0.0
-        for i in range(min(n0, n) + 1):
-            term = (
-                math.comb(n0, i)
-                * math.comb(n0 + n - i - 1, n - 1)
-                * (alpha_t ** (n0 - i))
-                * (beta_t ** (n - i))
-                * ((1 - alpha_t - beta_t + alpha_t * beta_t) ** i)
-            )
-            prob += term
+        davison_result = davison_formula(n0, n, alpha_t, beta_t)
+        tavare_result = tavare_formula(n0, n, alpha_t, beta_t)
 
-        expected = torch.log(prob)
-        assert_allclose(result, expected, rtol=1e-10, atol=1e-12)
+        assert_allclose(tavare_result, davison_result)
+
+        my_result = math.exp(
+            calculate_populations_log_lik(
+                birth_rate,
+                death_rate,
+                times=time,
+                ns=n,
+                starting_population=n0,
+            ),
+        )
+
+        assert_allclose(my_result, davison_result, rtol=1e-10, atol=1e-12)
 
     def test_extreme_parameters(self) -> None:
         """Test behavior with extreme but valid parameters."""
