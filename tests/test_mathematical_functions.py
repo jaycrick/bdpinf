@@ -13,6 +13,7 @@ from inf_bp_texts.models.mathematical_functions import (
     _integrand_surv_from_weighted_birth_time_scalar,
     _population_geometric_parameter,
     _pr_extinction_numerator,
+    _reverse_time,
     calculate_ages_log_lik,
     calculate_extinction_pr,
     calculate_log_lik_initial_lifetimes_given_extinction,
@@ -2342,3 +2343,133 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
                 death_rates,
                 times,
             )
+
+
+class TestTimeReversalInvolution:
+    """Test time-reversal transformation is an involution (applying twice = identity).
+
+    The _reverse_time function should satisfy the mathematical property that
+    applying it twice returns to the original state (times, rates). This is crucial
+    for correctness since the transformation is used to reduce multi-epoch likelihoods
+    to single-epoch formulas.
+    """
+
+    def test_double_reversal_two_epochs(self) -> None:
+        """Test double reversal for two-epoch case."""
+        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
+        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
+        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+
+        # Apply reversal once
+        inv_times_1, refl_birth_1, refl_death_1 = _reverse_time(
+            birth_rates,
+            death_rates,
+            times,
+        )
+
+        # Apply reversal again
+        inv_times_2, refl_birth_2, refl_death_2 = _reverse_time(
+            refl_birth_1,
+            refl_death_1,
+            inv_times_1,
+        )
+
+        # Should recover original (up to numerical precision)
+        assert_close(inv_times_2, times)
+        assert_close(refl_birth_2, birth_rates)
+        assert_close(refl_death_2, death_rates)
+
+    def test_double_reversal_three_epochs(self) -> None:
+        """Test double reversal for three-epoch case."""
+        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
+        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
+        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
+
+        # Apply reversal twice
+        inv_times_1, refl_birth_1, refl_death_1 = _reverse_time(
+            birth_rates,
+            death_rates,
+            times,
+        )
+        inv_times_2, refl_birth_2, refl_death_2 = _reverse_time(
+            refl_birth_1,
+            refl_death_1,
+            inv_times_1,
+        )
+
+        # Should recover original
+        assert_close(inv_times_2, times, rtol=1e-14, atol=1e-14)
+        assert_close(refl_birth_2, birth_rates, rtol=1e-14, atol=1e-14)
+        assert_close(refl_death_2, death_rates, rtol=1e-14, atol=1e-14)
+
+    def test_double_reversal_many_epochs(self) -> None:
+        """Test double reversal with many epochs."""
+        # Create 5-epoch case
+        birth_rates = torch.tensor(
+            [0.10, 0.12, 0.11, 0.13, 0.09],
+            dtype=torch.float64,
+        )
+        death_rates = torch.tensor(
+            [0.05, 0.06, 0.055, 0.065, 0.04],
+            dtype=torch.float64,
+        )
+        times = torch.tensor([30.0, 60.0, 90.0, 120.0, 150.0], dtype=torch.float64)
+
+        # Apply reversal twice
+        inv_times_1, refl_birth_1, refl_death_1 = _reverse_time(
+            birth_rates,
+            death_rates,
+            times,
+        )
+        inv_times_2, refl_birth_2, refl_death_2 = _reverse_time(
+            refl_birth_1,
+            refl_death_1,
+            inv_times_1,
+        )
+
+        # Verify involution property
+        assert_close(inv_times_2, times)
+        assert_close(refl_birth_2, birth_rates)
+        assert_close(refl_death_2, death_rates)
+
+    def test_single_reversal_swaps_rates(self) -> None:
+        """Test that single reversal correctly swaps birth and death rates."""
+        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
+        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
+        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+
+        inv_times, refl_birth, refl_death = _reverse_time(
+            birth_rates,
+            death_rates,
+            times,
+        )
+
+        # After first reversal, birth rates should be flipped death rates
+        expected_birth = torch.flip(death_rates, dims=[0])
+        expected_death = torch.flip(birth_rates, dims=[0])
+
+        assert_close(refl_birth, expected_birth)
+        assert_close(refl_death, expected_death)
+
+    def test_reversed_times_are_monotonic(self) -> None:
+        """Test that reversed times remain monotonically increasing."""
+        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
+        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
+        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+
+        inv_times, _, _ = _reverse_time(birth_rates, death_rates, times)
+
+        # Check that inverted times are strictly increasing
+        diffs = torch.diff(inv_times)
+        assert torch.all(diffs > 0), "Reversed times should be strictly increasing"
+
+    def test_total_time_preserved(self) -> None:
+        """Test that total elapsed time is preserved under reversal."""
+        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
+        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
+        times = torch.tensor([40.0, 90.0, 130.0], dtype=torch.float64)
+
+        inv_times, _, _ = _reverse_time(birth_rates, death_rates, times)
+
+        # Final time should be the same
+        assert_close(inv_times[-1], times[-1])

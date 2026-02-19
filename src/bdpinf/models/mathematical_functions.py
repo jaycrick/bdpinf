@@ -17,6 +17,45 @@ def _reverse_time(
     death_rates: torch.Tensor,
     times: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    r"""Reverse time and swap rates for multi-epoch likelihood transformation.
+
+    **Mathematical Principle:**
+
+    The time-reversal trick exploits a fundamental duality: a non-spine age likelihood
+    under forward-time evolution (ages observed at final time $T$) can be recomputed as
+    an extinction-conditioned lifetime likelihood under backward-time evolution.
+
+    **Transformation:**
+    - Epoch times: $\tilde{T}_k = T_K - T_{K-k}$ (flip and shift)
+    - Rates: $(\tilde{\lambda}_k, \tilde{\mu}_k) = (\mu_{K-k+1}, \lambda_{K-k+1})$
+    (swap birth ↔ death)
+
+    Parameters
+    ----------
+    birth_rates : torch.Tensor
+        Birth rates $\lambda_k$ for each epoch (shape: (n_epochs,),
+        dtype: torch.float64).
+    death_rates : torch.Tensor
+        Death rates $\mu_k$ for each epoch (shape: (n_epochs,), dtype: torch.float64).
+    times : torch.Tensor
+        Epoch end times $T_1, T_2, \ldots, T_K$ strictly increasing
+        (shape: (n_epochs,), dtype: torch.float64).
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        - **inverted_times**: Reversed and shifted epoch boundaries
+          $(\tilde{T}_1, \tilde{T}_2, \ldots, \tilde{T}_K)$
+        - **reflected_birth_rates**: Swapped death rates (new birth rates)
+        - **reflected_death_rates**: Swapped birth rates (new death rates)
+
+    Notes
+    -----
+    Used internally by `calculate_non_spine_ages_log_lik` and
+    `calculate_spine_ages_log_lik` to handle multi-epoch cases.
+    Enables efficient dispatch to extinction-conditioned likelihood functions.
+
+    """
     end_time = times[-1]
     inverted_times = torch.flip(
         end_time - torch.cat([torch.tensor([0.0], dtype=torch.float64), times])[:-1],
