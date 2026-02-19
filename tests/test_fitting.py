@@ -378,7 +378,7 @@ class TestMultiEpochFitting:
 
     def test_multi_epoch_fitting_array_lengths_consistent(self) -> None:
         """Test that array lengths match between times and rates."""
-        ages = np.array([50.0, 150.0, 250.0], dtype=np.float64)
+        ages = np.array([50.0, 150.0, 175.0], dtype=np.float64)
         times = np.array([100.0, 200.0])
 
         result = fit_birth_death_processes([ages], times)
@@ -522,7 +522,7 @@ class TestConvergenceFlags:
         times_tensor = torch.tensor([1000.0], dtype=torch.float64)
         initial_params = _build_initial_params(None, None, ages, times_tensor)
         log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
-        strategies_map = {opt_key: (opt_key.upper(), opt_class, 2, opt_kwargs)}
+        strategies_map = {opt_key: (opt_key.upper(), opt_class, 100, opt_kwargs)}
 
         _, _, _, _, converged, _ = _run_optimizer_strategies(
             strategies_map,
@@ -537,7 +537,7 @@ class TestConvergenceFlags:
             starting_population=1,
             convergence_tolerance=1e-12,
             absolute_tolerance=1e-12,
-            patience=100,
+            patience=0,
             gradient_threshold=1e9,
         )
 
