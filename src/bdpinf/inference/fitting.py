@@ -38,6 +38,32 @@ class OptimizerRunResult:
     failed_optimizer_histories: list[dict[str, Any]]
 
 
+DEFAULT_GRADIENT_THRESHOLD = 1e-5
+DEFAULT_ABSOLUTE_TOLERANCE = 1e-6
+DEFAULT_CONVERGENCE_TOLERANCE = 1e-7
+DEFAULT_PATIENCE = 10
+
+
+@dataclass(frozen=True)
+class ConvergenceConfig:
+    """Configuration for convergence criteria evaluation."""
+
+    gradient_threshold: float
+    absolute_tolerance: float
+    convergence_tolerance: float
+    patience: int
+
+    @classmethod
+    def default(cls) -> "ConvergenceConfig":
+        """Create configuration with default values."""
+        return cls(
+            gradient_threshold=DEFAULT_GRADIENT_THRESHOLD,
+            absolute_tolerance=DEFAULT_ABSOLUTE_TOLERANCE,
+            convergence_tolerance=DEFAULT_CONVERGENCE_TOLERANCE,
+            patience=DEFAULT_PATIENCE,
+        )
+
+
 def _get_crude_parameter_estimates(
     ages: torch.Tensor | float,
     times: torch.Tensor | float,
@@ -260,9 +286,8 @@ def _check_convergence_criteria(
     *,
     improved_once: bool,
     grad_norm: float,
-    gradient_threshold: float,
+    convergence_config: ConvergenceConfig,
     iterations_without_improvement: int | None = None,
-    patience: int | None = None,
 ) -> bool:
     """Check if optimizer meets convergence criteria.
 
@@ -272,9 +297,8 @@ def _check_convergence_criteria(
         optimizer_name: Name of optimizer type ("LBFGS", "Adam", "SGD").
         improved_once: Whether objective improved from initial value.
         grad_norm: Current gradient norm.
-        gradient_threshold: Gradient norm convergence threshold.
+        convergence_config: Convergence configuration with thresholds.
         iterations_without_improvement: For non-LBFGS, iterations without improvement.
-        patience: For non-LBFGS, patience threshold for early stopping.
 
     Returns:
         True if convergence criteria are met, False otherwise.
@@ -283,16 +307,16 @@ def _check_convergence_criteria(
     if not improved_once:
         return False
 
+    if grad_norm >= convergence_config.gradient_threshold:
+        return False
+
     if optimizer_name == "LBFGS":
-        return grad_norm < gradient_threshold
+        return True
 
-    if iterations_without_improvement is not None and patience is not None:
-        return (
-            grad_norm < gradient_threshold
-            and iterations_without_improvement >= patience
-        )
+    if iterations_without_improvement is None:
+        return False
 
-    return False
+    return iterations_without_improvement >= convergence_config.patience
 
 
 def _run_lbfgs_optimizer(
@@ -306,10 +330,9 @@ def _run_lbfgs_optimizer(
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
     starting_population: int,
-    absolute_tolerance: float,
-    gradient_threshold: float,
     max_iters: int,
     nll_history: list[float],
+    convergence_config: ConvergenceConfig,
     compute_nll_fn: Callable[[], torch.Tensor],
 ) -> tuple[bool, Exception | None, torch.Tensor | None]:
     """Run LBFGS optimization loop.
@@ -345,7 +368,7 @@ def _run_lbfgs_optimizer(
             last_nll_value = nll_value
             if first_nll is None:
                 first_nll = nll_value
-            elif nll_value < first_nll - absolute_tolerance:
+            elif nll_value < first_nll - convergence_config.absolute_tolerance:
                 improved_once = True
             step_counter[0] += 1
             return nll
@@ -370,14 +393,12 @@ def _run_lbfgs_optimizer(
             )
             break
 
-        did_converge = _check_convergence_criteria(
+        if _check_convergence_criteria(
             optimizer_name=strategy.name,
             improved_once=improved_once,
             grad_norm=grad_norm,
-            gradient_threshold=gradient_threshold,
-        )
-
-        if did_converge:
+            convergence_config=convergence_config,
+        ):
             return True, None, best_log_params
 
     if current_exception is not None:
@@ -394,7 +415,7 @@ def _run_lbfgs_optimizer(
         f"final_nll={final_nll_value:.6f}, "
         f"improvement={improvement:.6f}, "
         f"last_grad_norm={last_grad_norm}, "
-        f"gradient_threshold={gradient_threshold}",
+        f"gradient_threshold={convergence_config.gradient_threshold}",
     )
     return False, current_exception, best_log_params
 
@@ -410,12 +431,9 @@ def _run_first_order_optimizer(
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
     starting_population: int,
-    absolute_tolerance: float,
-    convergence_tolerance: float,
-    gradient_threshold: float,
-    patience: int,
     max_iters: int,
     nll_history: list[float],
+    convergence_config: ConvergenceConfig,
     compute_nll_fn: Callable[[], torch.Tensor],
 ) -> tuple[bool, Exception | None, torch.Tensor | None, int]:
     """Run first-order optimizer (Adam/SGD) loop.
@@ -436,54 +454,55 @@ def _run_first_order_optimizer(
     for _ in range(max_iters):
         optimizer.zero_grad()
         nll = compute_nll_fn()
-        if torch.isfinite(nll):
-            nll.backward()  # type: ignore[no-untyped-call]
 
-            grad_norm = 0.0
-            if log_params.grad is not None:
-                grad_norm = float(torch.norm(log_params.grad).item())
-            last_grad_norm = grad_norm
-            optimizer.step()
-            iterations += 1
-            nll_value = float(nll.item())
-            nll_history.append(nll_value)
-            if first_nll is None:
-                first_nll = nll_value
-            elif nll_value < first_nll - absolute_tolerance:
-                improved_once = True
-
-            if nll_value < best_nll:
-                improvement = best_nll - nll_value
-                relative_improvement = abs(improvement / (best_nll + 1e-10))
-
-                if (
-                    improvement < absolute_tolerance
-                    and relative_improvement < convergence_tolerance
-                ):
-                    iterations_without_improvement += 1
-                else:
-                    iterations_without_improvement = 0
-
-                best_nll = nll_value
-                best_log_params = log_params.detach().clone()
-            else:
-                iterations_without_improvement += 1
-
-            if _check_convergence_criteria(
-                optimizer_name=strategy.name,
-                improved_once=improved_once,
-                grad_norm=grad_norm,
-                gradient_threshold=gradient_threshold,
-                iterations_without_improvement=iterations_without_improvement,
-                patience=patience,
-            ):
-                return True, None, best_log_params, iterations
-        else:
+        if not torch.isfinite(nll):
             current_exception = RuntimeError(
                 f"Non-finite objective encountered during optimization with "
                 f"{strategy.name}.",
             )
             return False, current_exception, None, iterations
+
+        nll.backward()  # type: ignore[no-untyped-call]
+
+        grad_norm = 0.0
+        if log_params.grad is not None:
+            grad_norm = float(torch.norm(log_params.grad).item())
+        last_grad_norm = grad_norm
+        optimizer.step()
+        iterations += 1
+        nll_value = float(nll.item())
+        nll_history.append(nll_value)
+
+        if first_nll is None:
+            first_nll = nll_value
+        elif nll_value < first_nll - convergence_config.absolute_tolerance:
+            improved_once = True
+
+        if nll_value >= best_nll:
+            iterations_without_improvement += 1
+        else:
+            improvement = best_nll - nll_value
+            relative_improvement = abs(improvement / (best_nll + 1e-10))
+
+            if (
+                improvement < convergence_config.absolute_tolerance
+                and relative_improvement < convergence_config.convergence_tolerance
+            ):
+                iterations_without_improvement += 1
+            else:
+                iterations_without_improvement = 0
+
+            best_nll = nll_value
+            best_log_params = log_params.detach().clone()
+
+        if _check_convergence_criteria(
+            optimizer_name=strategy.name,
+            improved_once=improved_once,
+            grad_norm=grad_norm,
+            convergence_config=convergence_config,
+            iterations_without_improvement=iterations_without_improvement,
+        ):
+            return True, None, best_log_params, iterations
 
     if not improved_once:
         current_exception = RuntimeError(
@@ -505,8 +524,8 @@ def _run_first_order_optimizer(
         f"improvement={improvement:.6f}, "
         f"last_grad_norm={last_grad_norm}, "
         f"iterations_without_improvement={iterations_without_improvement}, "
-        f"patience={patience}, "
-        f"gradient_threshold={gradient_threshold}",
+        f"patience={convergence_config.patience}, "
+        f"gradient_threshold={convergence_config.gradient_threshold}",
     )
     return False, current_exception, best_log_params, iterations
 
@@ -521,13 +540,10 @@ def _run_single_optimizer(
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
     starting_population: int,
-    absolute_tolerance: float,
-    convergence_tolerance: float,
-    gradient_threshold: float,
-    patience: int,
     nll_history: list[float],
     all_exceptions: list[Exception],
     failed_optimizer_histories: list[dict[str, Any]],
+    convergence_config: ConvergenceConfig,
     compute_nll_fn: Callable[[], torch.Tensor],
 ) -> tuple[bool, torch.Tensor | None, int]:
     """Run a single optimizer strategy and handle results.
@@ -557,10 +573,9 @@ def _run_single_optimizer(
                 spine_ages_tensor=spine_ages_tensor,
                 population_sizes_tensor=population_sizes_tensor,
                 starting_population=starting_population,
-                absolute_tolerance=absolute_tolerance,
-                gradient_threshold=gradient_threshold,
                 max_iters=strategy.max_iters,
                 nll_history=nll_history,
+                convergence_config=convergence_config,
                 compute_nll_fn=compute_nll_fn,
             )
         else:
@@ -575,12 +590,9 @@ def _run_single_optimizer(
                 spine_ages_tensor=spine_ages_tensor,
                 population_sizes_tensor=population_sizes_tensor,
                 starting_population=starting_population,
-                absolute_tolerance=absolute_tolerance,
-                convergence_tolerance=convergence_tolerance,
-                gradient_threshold=gradient_threshold,
-                patience=patience,
                 max_iters=strategy.max_iters,
                 nll_history=nll_history,
+                convergence_config=convergence_config,
                 compute_nll_fn=compute_nll_fn,
             )
     except (RuntimeError, ValueError) as exc:
@@ -612,10 +624,7 @@ def _run_optimizer_strategies(
     times_tensor: torch.Tensor,
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
-    convergence_tolerance: float,
-    absolute_tolerance: float,
-    patience: int,
-    gradient_threshold: float = 1e-5,
+    convergence_config: ConvergenceConfig,
 ) -> OptimizerRunResult:
     """Run optimizers sequentially until convergence; return params, history, metadata.
 
@@ -630,10 +639,7 @@ def _run_optimizer_strategies(
         times_tensor: Time points.
         spine_ages_tensor: Spine ages if provided.
         population_sizes_tensor: Population sizes per group.
-        convergence_tolerance: Relative convergence threshold.
-        absolute_tolerance: Absolute change convergence threshold.
-        patience: Early stopping patience.
-        gradient_threshold: Gradient norm convergence threshold.
+        convergence_config: Configuration for convergence criteria.
 
     Returns:
         OptimizerRunResult with optimized params, history, and metadata.
@@ -674,13 +680,10 @@ def _run_optimizer_strategies(
             spine_ages_tensor=spine_ages_tensor,
             population_sizes_tensor=population_sizes_tensor,
             starting_population=starting_population,
-            absolute_tolerance=absolute_tolerance,
-            convergence_tolerance=convergence_tolerance,
-            gradient_threshold=gradient_threshold,
-            patience=patience,
             nll_history=nll_history,
             all_exceptions=all_exceptions,
             failed_optimizer_histories=failed_optimizer_histories,
+            convergence_config=convergence_config,
             compute_nll_fn=_compute_nll,
         )
 
@@ -845,10 +848,7 @@ def fit_birth_death_processes(
         spine_ages_tensor=spine_ages_tensor,
         population_sizes_tensor=population_sizes_tensor,
         starting_population=starting_population,
-        convergence_tolerance=1e-7,
-        absolute_tolerance=1e-6,
-        patience=10,
-        gradient_threshold=1e-5,
+        convergence_config=ConvergenceConfig.default(),
     )
 
     log_params = optimizer_run_result.log_params

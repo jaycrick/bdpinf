@@ -11,6 +11,7 @@ import pytest
 import torch
 
 from inf_bp_texts.inference.fitting import (
+    ConvergenceConfig,
     OptimizerStrategy,
     _apply_param_perturbation,
     _build_initial_params,
@@ -483,6 +484,13 @@ class TestConvergenceFlags:
             "sgd": OptimizerStrategy("SGD", torch.optim.SGD, 1, {"lr": 0.0001}),
         }
 
+        convergence_config = ConvergenceConfig(
+            gradient_threshold=-1.0,
+            absolute_tolerance=1e-12,
+            convergence_tolerance=1e-12,
+            patience=100,
+        )
+
         run_result = _run_optimizer_strategies(
             strategies_map,
             ["sgd"],
@@ -494,10 +502,7 @@ class TestConvergenceFlags:
             spine_ages_tensor=None,
             population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
             starting_population=1,
-            convergence_tolerance=1e-12,
-            absolute_tolerance=1e-12,
-            patience=100,
-            gradient_threshold=-1.0,
+            convergence_config=convergence_config,
         )
 
         assert not run_result.converged
@@ -529,6 +534,13 @@ class TestConvergenceFlags:
             opt_key: OptimizerStrategy(opt_key.upper(), opt_class, 100, opt_kwargs),
         }
 
+        convergence_config = ConvergenceConfig(
+            gradient_threshold=1e9,
+            absolute_tolerance=1e-12,
+            convergence_tolerance=1e-12,
+            patience=0,
+        )
+
         run_result = _run_optimizer_strategies(
             strategies_map,
             [opt_key],
@@ -540,10 +552,7 @@ class TestConvergenceFlags:
             spine_ages_tensor=None,
             population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
             starting_population=1,
-            convergence_tolerance=1e-12,
-            absolute_tolerance=1e-12,
-            patience=0,
-            gradient_threshold=1e9,
+            convergence_config=convergence_config,
         )
 
         assert run_result.converged
@@ -559,6 +568,13 @@ class TestConvergenceFlags:
             "adam": OptimizerStrategy("Adam", torch.optim.Adam, 1, {"lr": 0.001}),
         }
 
+        convergence_config = ConvergenceConfig(
+            gradient_threshold=-1.0,
+            absolute_tolerance=1e-12,
+            convergence_tolerance=1e-12,
+            patience=100,
+        )
+
         run_result = _run_optimizer_strategies(
             strategies_map,
             ["sgd", "adam"],
@@ -570,10 +586,7 @@ class TestConvergenceFlags:
             spine_ages_tensor=None,
             population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
             starting_population=1,
-            convergence_tolerance=1e-12,
-            absolute_tolerance=1e-12,
-            patience=100,
-            gradient_threshold=-1.0,
+            convergence_config=convergence_config,
         )
 
         assert not run_result.converged
@@ -668,6 +681,12 @@ class TestFittingDiagnostics:
 
         for optimizer_key, strategy in optimizer_setups.items():
             log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
+            convergence_config = ConvergenceConfig(
+                gradient_threshold=1e-5,
+                absolute_tolerance=1e-6,
+                convergence_tolerance=1e-7,
+                patience=20,
+            )
             run_result = _run_optimizer_strategies(
                 strategies_map={optimizer_key: strategy},
                 requested_keys=[optimizer_key],
@@ -679,10 +698,7 @@ class TestFittingDiagnostics:
                 times_tensor=times_tensor,
                 spine_ages_tensor=None,
                 population_sizes_tensor=population_sizes,
-                convergence_tolerance=1e-7,
-                absolute_tolerance=1e-6,
-                patience=20,
-                gradient_threshold=1e-5,
+                convergence_config=convergence_config,
             )
 
             nll_history = run_result.nll_history
