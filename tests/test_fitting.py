@@ -3,12 +3,15 @@
 # ruff: noqa: S101
 # ruff: noqa: D101 D102
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 import torch
 
 from inf_bp_texts.inference.fitting import (
+    OptimizerStrategy,
     _apply_param_perturbation,
     _build_initial_params,
     _build_optimizer_strategies,
@@ -20,6 +23,7 @@ from inf_bp_texts.inference.fitting import (
     fit_birth_death_processes,
     fit_from_dataframe,
 )
+from inf_bp_texts.inference.likelihood import negative_log_likelihood
 from inf_bp_texts.models import BirthDeathProcess
 from inf_bp_texts.models.validation import validate_times_properties
 
@@ -66,8 +70,9 @@ class TestFittingHelpers:
         assert torch.all(perturbed_first > 0)
 
     def test_build_optimizer_strategies_merges_kwargs(self) -> None:
-        strategies = _build_optimizer_strategies({"adam": {"lr": 0.01}})
-        assert strategies["adam"][3]["lr"] == 0.01
+        lr = 0.01
+        strategies = _build_optimizer_strategies({"adam": {"lr": lr}})
+        assert strategies["adam"].optimizer_kwargs["lr"] == lr
 
     def test_normalize_requested_optimizers_rejects_unknown(self) -> None:
         strategies = _build_optimizer_strategies(None)
@@ -121,13 +126,11 @@ class TestFitting:
         assert isinstance(result, dict)
         assert "success" in result
         assert result["success"]
-
-        if result["success"]:
-            assert "birth_rates" in result
-            assert "death_rates" in result
-            assert "log_likelihood" in result
-            assert result["birth_rates"] > 0
-            assert result["death_rates"] > 0
+        assert "birth_rates" in result
+        assert "death_rates" in result
+        assert "log_likelihood" in result
+        assert result["birth_rates"] > 0
+        assert result["death_rates"] > 0
 
     def test_fit_birth_death_process_no_ages(self) -> None:
         """Test fitting fails with no ages."""
@@ -477,10 +480,10 @@ class TestConvergenceFlags:
         initial_params = _build_initial_params(None, None, ages, times_tensor)
         log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
         strategies_map = {
-            "sgd": ("SGD", torch.optim.SGD, 1, {"lr": 0.0001}),
+            "sgd": OptimizerStrategy("SGD", torch.optim.SGD, 1, {"lr": 0.0001}),
         }
 
-        _, nll_history, _, iterations, converged, _ = _run_optimizer_strategies(
+        run_result = _run_optimizer_strategies(
             strategies_map,
             ["sgd"],
             log_params,
@@ -497,12 +500,12 @@ class TestConvergenceFlags:
             gradient_threshold=-1.0,
         )
 
-        assert not converged
-        assert iterations == 1
-        assert len(nll_history) == 1
+        assert not run_result.converged
+        assert run_result.iterations == 1
+        assert len(run_result.nll_history) == 1
 
     @pytest.mark.parametrize(
-        "opt_key,opt_class,opt_kwargs",
+        ("opt_key", "opt_class", "opt_kwargs"),
         [
             ("sgd", torch.optim.SGD, {"lr": 0.0001}),
             (
@@ -522,9 +525,11 @@ class TestConvergenceFlags:
         times_tensor = torch.tensor([1000.0], dtype=torch.float64)
         initial_params = _build_initial_params(None, None, ages, times_tensor)
         log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
-        strategies_map = {opt_key: (opt_key.upper(), opt_class, 100, opt_kwargs)}
+        strategies_map = {
+            opt_key: OptimizerStrategy(opt_key.upper(), opt_class, 100, opt_kwargs),
+        }
 
-        _, _, _, _, converged, _ = _run_optimizer_strategies(
+        run_result = _run_optimizer_strategies(
             strategies_map,
             [opt_key],
             log_params,
@@ -541,4 +546,243 @@ class TestConvergenceFlags:
             gradient_threshold=1e9,
         )
 
-        assert converged
+        assert run_result.converged
+
+    def test_collects_exceptions_across_optimizer_attempts(self) -> None:
+        ages = torch.tensor([100.0, 200.0], dtype=torch.float64)
+        times_tensor = torch.tensor([1000.0], dtype=torch.float64)
+        initial_params = _build_initial_params(None, None, ages, times_tensor)
+        log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
+
+        strategies_map = {
+            "sgd": OptimizerStrategy("SGD", torch.optim.SGD, 1, {"lr": 0.0001}),
+            "adam": OptimizerStrategy("Adam", torch.optim.Adam, 1, {"lr": 0.001}),
+        }
+
+        run_result = _run_optimizer_strategies(
+            strategies_map,
+            ["sgd", "adam"],
+            log_params,
+            initial_params,
+            n_epochs=len(times_tensor),
+            non_spine_ages=ages,
+            times_tensor=times_tensor,
+            spine_ages_tensor=None,
+            population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
+            starting_population=1,
+            convergence_tolerance=1e-12,
+            absolute_tolerance=1e-12,
+            patience=100,
+            gradient_threshold=-1.0,
+        )
+
+        assert not run_result.converged
+        assert len(run_result.all_exceptions) == len(strategies_map)
+        assert all(isinstance(exc, Exception) for exc in run_result.all_exceptions)
+
+
+@pytest.mark.slow
+class TestFittingDiagnostics:
+    def test_realistic_optimizer_diagnostics_report_failure_stage(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        data_file = project_root / "manuscript_analysis_cleaned.csv"
+        if not data_file.exists():
+            pytest.skip(
+                "Diagnostic dataset manuscript_analysis_cleaned.csv not available",
+            )
+
+        df = pd.read_csv(data_file)
+        manuscripts_with_dates = df.dropna(subset=["earlyYear", "lateYear"]).copy()
+        manuscripts_with_dates["midYear"] = (
+            manuscripts_with_dates["earlyYear"] + manuscripts_with_dates["lateYear"]
+        ) / 2
+
+        epochs = [
+            (100, 325),
+            (325, 636),
+            (636, 867),
+            (867, 1204),
+            (1204, 1516),
+            (1516, 2000),
+        ]
+
+        all_ages: list[float] = []
+        for start_time, end_time in epochs:
+            manuscripts_epoch = manuscripts_with_dates[
+                (manuscripts_with_dates["midYear"] >= start_time)
+                & (manuscripts_with_dates["midYear"] < end_time)
+            ].copy()
+            if len(manuscripts_epoch) == 0:
+                continue
+
+            model = BirthDeathProcess(
+                creation_times=manuscripts_epoch["midYear"].tolist(),
+                final_time=end_time,
+                start_time=start_time,
+            )
+            all_ages.extend(model.get_manuscript_ages())
+
+        assert len(all_ages) > 0, "No ages prepared from epoch split"
+
+        times_tensor = torch.as_tensor([e[0] for e in epochs], dtype=torch.float64)
+        non_spine_ages = torch.as_tensor(all_ages, dtype=torch.float64)
+        population_sizes = torch.tensor([len(non_spine_ages)], dtype=torch.int64)
+
+        initial_params = _build_initial_params(
+            initial_birth_rates=None,
+            initial_death_rates=None,
+            non_empty_age=non_spine_ages,
+            times_tensor=times_tensor,
+        )
+        assert torch.all(initial_params > 0)
+
+        base_log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
+        initial_nll = float(
+            negative_log_likelihood(
+                birth_rates=base_log_params[: len(times_tensor)],
+                death_rates=base_log_params[len(times_tensor) :],
+                ages=non_spine_ages,
+                times=times_tensor,
+                spine_ages=None,
+                ns=population_sizes,
+                starting_population=1,
+                is_ordered=False,
+                log_scale_params=True,
+            ).item(),
+        )
+        assert np.isfinite(initial_nll), f"Initial objective non-finite: {initial_nll}"
+
+        optimizer_setups = {
+            "adam": OptimizerStrategy("Adam", torch.optim.Adam, 300, {"lr": 0.001}),
+            "sgd": OptimizerStrategy("SGD", torch.optim.SGD, 300, {"lr": 0.0001}),
+            "lbfgs": OptimizerStrategy(
+                "LBFGS",
+                torch.optim.LBFGS,
+                120,
+                {"lr": 1.0, "line_search_fn": "strong_wolfe"},
+            ),
+        }
+
+        diagnostics: list[str] = []
+        any_converged = False
+
+        for optimizer_key, strategy in optimizer_setups.items():
+            log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
+            run_result = _run_optimizer_strategies(
+                strategies_map={optimizer_key: strategy},
+                requested_keys=[optimizer_key],
+                log_params=log_params,
+                initial_params=initial_params,
+                n_epochs=len(times_tensor),
+                non_spine_ages=non_spine_ages,
+                starting_population=1,
+                times_tensor=times_tensor,
+                spine_ages_tensor=None,
+                population_sizes_tensor=population_sizes,
+                convergence_tolerance=1e-7,
+                absolute_tolerance=1e-6,
+                patience=20,
+                gradient_threshold=1e-5,
+            )
+
+            nll_history = run_result.nll_history
+            iterations = run_result.iterations
+            converged = run_result.converged
+            all_exceptions = run_result.all_exceptions
+
+            any_converged = any_converged or converged
+
+            history_len = len(nll_history)
+            history_tail = nll_history[-1] if history_len > 0 else None
+            diagnostics.append(
+                (
+                    f"{optimizer_key}: converged={converged}, iterations={iterations}, "
+                    f"history_len={history_len}, final_nll={history_tail}, "
+                    f"all_exceptions={all_exceptions}"
+                ),
+            )
+
+            assert history_len > 0, (
+                f"{optimizer_key} failed before objective evaluation. "
+                f"Diagnostics: {' | '.join(diagnostics)}"
+            )
+
+        if not any_converged:
+            pytest.fail(
+                "All optimizers failed after finite initialization. "
+                "Failure point is in optimization/convergence stage. "
+                f"Initial NLL={initial_nll}. Diagnostics: {' | '.join(diagnostics)}",
+            )
+
+    def test_actual_fit(self) -> None:
+        """Test that the full fitting function can run on the realistic dataset."""
+        # Load cleaned manuscript data
+        project_root = Path(__file__).resolve().parents[1]
+        data_file = project_root / "manuscript_analysis_cleaned.csv"
+        if data_file.exists():
+            df = pd.read_csv(data_file)
+        else:
+            # Fallback to raw data if cleaned version doesn't exist
+            pytest.fail(f"Expected data file not found: {data_file}")
+
+        # Filter to manuscripts with dating information
+        manuscripts_with_dates = df.dropna(subset=["earlyYear", "lateYear"]).copy()
+        manuscripts_with_dates["midYear"] = (
+            manuscripts_with_dates["earlyYear"] + manuscripts_with_dates["lateYear"]
+        ) / 2
+        manuscripts_with_dates["dateRange"] = (
+            manuscripts_with_dates["lateYear"] - manuscripts_with_dates["earlyYear"]
+        )
+        # | label: setup-epochs
+
+        # Define epochs for analysis
+        epochs = [
+            (100, 325, "Ante Nicaea"),
+            (325, 636, "Post Nicaea"),
+            (636, 867, "Post Islamic Conquest"),
+            (867, 1204, "Late Byzantium"),
+            (1204, 1516, "Post 4th Crusade"),
+            (1516, 2000, "Modern Era"),
+        ]
+
+        # Collect ages and metadata for each epoch
+        all_ages = []
+        epoch_counts = []
+        epoch_metadata = []
+
+        for start_time, end_time, period_name in epochs:
+            manuscripts_epoch = manuscripts_with_dates[
+                (manuscripts_with_dates["midYear"] >= start_time)
+                & (manuscripts_with_dates["midYear"] < end_time)
+            ].copy()
+
+            if len(manuscripts_epoch) > 0:
+                creation_times = manuscripts_epoch["midYear"].tolist()
+                model = BirthDeathProcess(
+                    creation_times=creation_times,
+                    final_time=end_time,
+                    start_time=start_time,
+                )
+                ages = model.get_manuscript_ages()
+                all_ages.extend(ages)
+                epoch_counts.append(len(manuscripts_epoch))
+                epoch_metadata.append(
+                    (period_name, start_time, end_time, len(manuscripts_epoch)),
+                )
+
+        # Create list with single combined array of all ages
+        epoch_ages_list = [np.array(all_ages)]
+
+        # Fit all epochs jointly
+        times = np.array([e[1] for e in epochs], dtype=float)
+
+        result = fit_birth_death_processes(
+            list_of_ages=epoch_ages_list,
+            times=times,
+            is_ordered=False,
+            optimizers="LBFGS",
+            perturb_initial_params_std=0.2,
+            random_seed=209,
+        )
+
+        assert isinstance(result, dict)

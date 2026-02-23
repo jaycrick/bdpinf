@@ -1,7 +1,8 @@
 """Maximum likelihood estimation for birth-death process parameters using PyTorch."""
 
 from collections.abc import Sequence
-from typing import Any, TypedDict, Unpack
+from dataclasses import dataclass
+from typing import Any, TypedDict, Unpack, cast
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,29 @@ from inf_bp_texts.models.validation import normalize_and_validate_inputs
 from inf_bp_texts.utils import ensure_1d_tensor
 
 from .likelihood import negative_log_likelihood
+
+
+@dataclass(frozen=True)
+class OptimizerStrategy:
+    """Configuration for a single optimizer strategy."""
+
+    name: str
+    optimizer_class: type[torch.optim.Optimizer]
+    max_iters: int
+    optimizer_kwargs: dict[str, Any]
+
+
+@dataclass
+class OptimizerRunResult:
+    """Result payload from running optimizer strategies."""
+
+    log_params: torch.nn.Parameter
+    nll_history: list[float]
+    optimizer_used: str
+    iterations: int
+    converged: bool
+    all_exceptions: list[Exception]
+    failed_optimizer_histories: list[dict[str, Any]]
 
 
 def _get_crude_parameter_estimates(
@@ -181,17 +205,17 @@ def _apply_param_perturbation(
 
 def _build_optimizer_strategies(
     optimizer_kwargs: dict[str, dict[str, Any]] | None,
-) -> dict[str, tuple[str, type, int, dict[str, Any]]]:
+) -> dict[str, OptimizerStrategy]:
     """Build optimizer config dict."""
-    strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]] = {
-        "adam": ("Adam", torch.optim.Adam, 1000, {"lr": 0.01}),
-        "lbfgs": (
+    strategies_map: dict[str, OptimizerStrategy] = {
+        "adam": OptimizerStrategy("Adam", torch.optim.Adam, 1000, {"lr": 0.01}),
+        "lbfgs": OptimizerStrategy(
             "LBFGS",
             torch.optim.LBFGS,
-            1000,
+            300,
             {"lr": 1.0, "line_search_fn": "strong_wolfe"},
         ),
-        "sgd": ("SGD", torch.optim.SGD, 1000, {"lr": 0.0001}),
+        "sgd": OptimizerStrategy("SGD", torch.optim.SGD, 1000, {"lr": 0.0001}),
     }
 
     if optimizer_kwargs is None:
@@ -200,22 +224,20 @@ def _build_optimizer_strategies(
     for key, custom_kwargs in optimizer_kwargs.items():
         key_lower = key.lower()
         if key_lower in strategies_map:
-            opt_name, optimizer_cls, max_iters, default_opt_kwargs = strategies_map[
-                key_lower
-            ]
-            merged_opt_kwargs = {**default_opt_kwargs, **custom_kwargs}
-            strategies_map[key_lower] = (
-                opt_name,
-                optimizer_cls,
-                max_iters,
-                merged_opt_kwargs,
+            strategy = strategies_map[key_lower]
+            merged_opt_kwargs = {**strategy.optimizer_kwargs, **custom_kwargs}
+            strategies_map[key_lower] = OptimizerStrategy(
+                name=strategy.name,
+                optimizer_class=strategy.optimizer_class,
+                max_iters=strategy.max_iters,
+                optimizer_kwargs=merged_opt_kwargs,
             )
     return strategies_map
 
 
 def _normalize_requested_optimizers(
     optimizers: Sequence[str] | str,
-    strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]],
+    strategies_map: dict[str, OptimizerStrategy],
 ) -> list[str]:
     """Normalize optimizer names to lowercase list; validate against strategies_map."""
     requested_opts = [optimizers] if isinstance(optimizers, str) else list(optimizers)
@@ -233,8 +255,47 @@ def _normalize_requested_optimizers(
     return requested_keys
 
 
+def _check_convergence_criteria(
+    optimizer_name: str,
+    improved_once: bool,
+    grad_norm: float,
+    gradient_threshold: float,
+    iterations_without_improvement: int | None = None,
+    patience: int | None = None,
+) -> bool:
+    """Check if optimizer meets convergence criteria.
+
+    Evaluates convergence based on optimizer type and stopping criteria.
+
+    Args:
+        optimizer_name: Name of optimizer type ("LBFGS", "Adam", "SGD").
+        improved_once: Whether objective improved from initial value.
+        grad_norm: Current gradient norm.
+        gradient_threshold: Gradient norm convergence threshold.
+        iterations_without_improvement: For non-LBFGS, iterations without improvement.
+        patience: For non-LBFGS, patience threshold for early stopping.
+
+    Returns:
+        True if convergence criteria are met, False otherwise.
+
+    """
+    if not improved_once:
+        return False
+
+    if optimizer_name == "LBFGS":
+        return grad_norm < gradient_threshold
+
+    if iterations_without_improvement is not None and patience is not None:
+        return (
+            grad_norm < gradient_threshold
+            and iterations_without_improvement >= patience
+        )
+
+    return False
+
+
 def _run_optimizer_strategies(
-    strategies_map: dict[str, tuple[str, type, int, dict[str, Any]]],
+    strategies_map: dict[str, OptimizerStrategy],
     requested_keys: list[str],
     log_params: torch.nn.Parameter,
     initial_params: torch.Tensor,
@@ -248,7 +309,7 @@ def _run_optimizer_strategies(
     absolute_tolerance: float,
     patience: int,
     gradient_threshold: float = 1e-5,
-) -> tuple[torch.nn.Parameter, list[float], str, int, bool, Exception | None]:
+) -> OptimizerRunResult:
     """Run optimizers sequentially until convergence; return params, history, metadata.
 
     Args:
@@ -264,14 +325,15 @@ def _run_optimizer_strategies(
 
     Returns:
         (optimized_log_params, nll_history, optimizer_name,
-        iterations, converged, exception).
+        iterations, converged, all_exceptions, failed_optimizer_histories).
 
     """
     converged = False
     iterations: int = 0
     optimizer_used = "Unknown"
     nll_history: list[float] = []
-    last_exception: Exception | None = None
+    all_exceptions: list[Exception] = []
+    failed_optimizer_histories: list[dict[str, Any]] = []
 
     def _compute_nll() -> torch.Tensor:
         """Compute negative log likelihood for current log_params."""
@@ -290,7 +352,13 @@ def _run_optimizer_strategies(
     for key in requested_keys:
         non_finite_objective = False
         did_converge = False
-        opt_name, optim_class, max_iters, opt_kwargs = strategies_map[key]
+        current_exception: Exception | None = None
+        history_start_idx = len(nll_history)
+        strategy = strategies_map[key]
+        opt_name = strategy.name
+        optim_class = strategy.optimizer_class
+        max_iters = strategy.max_iters
+        opt_kwargs = strategy.optimizer_kwargs
         try:
             with torch.no_grad():
                 log_params.copy_(torch.log(initial_params.clone().detach()))
@@ -302,14 +370,17 @@ def _run_optimizer_strategies(
             improved_once = False
 
             if opt_name == "LBFGS":
+                lbfgs_optimizer = cast("torch.optim.LBFGS", optimizer)
                 last_nll_value: float | None = None
                 lbfgs_step = [0]
+                last_grad_norm: float | None = None
 
                 while lbfgs_step[0] <= max_iters:
 
                     def closure(
-                        lbfgs_step: list[int] = lbfgs_step,
-                        opt: torch.optim.Optimizer = optimizer,
+                        *,
+                        opt: torch.optim.LBFGS = lbfgs_optimizer,
+                        step_counter: list[int] = lbfgs_step,
                     ) -> torch.Tensor:
                         nonlocal non_finite_objective
                         nonlocal last_nll_value
@@ -326,50 +397,85 @@ def _run_optimizer_strategies(
                             first_nll = nll_value
                         elif nll_value < first_nll - absolute_tolerance:
                             improved_once = True
-                        lbfgs_step[0] += 1
+                        step_counter[0] += 1
                         return nll
 
-                    optimizer.step(closure)
+                    lbfgs_optimizer.step(closure)  # type: ignore[no-untyped-call]
 
                     if non_finite_objective:
-                        last_exception = RuntimeError(
+                        current_exception = RuntimeError(
                             f"Non-finite objective encountered "
                             f"during optimization with {opt_name}.",
                         )
                         break
 
                     if last_nll_value is None:
-                        last_exception = RuntimeError(
+                        current_exception = RuntimeError(
                             f"Optimizer {opt_name} did not produce "
                             f"a valid objective value.",
                         )
                         break
 
                     # Check convergence: gradient norm below threshold
+                    grad_norm = float("inf")
                     if log_params.grad is not None:
                         grad_norm = float(torch.norm(log_params.grad).item())
+                    last_grad_norm = grad_norm
+                    best_log_params = log_params.detach().clone()
 
                     if not improved_once:
-                        last_exception = RuntimeError(
+                        current_exception = RuntimeError(
                             f"Objective did not improve "
                             f"from initial value with {opt_name}.",
                         )
                         break
 
-                    best_log_params = log_params.detach().clone()
-                    did_converge = grad_norm < gradient_threshold
+                    did_converge = _check_convergence_criteria(
+                        optimizer_name=opt_name,
+                        improved_once=improved_once,
+                        grad_norm=grad_norm,
+                        gradient_threshold=gradient_threshold,
+                    )
 
                     if did_converge:
                         break
 
                 # If error occurred, try next optimizer
-                if last_exception is not None:
-                    print(last_exception)
+                if current_exception is not None:
+                    all_exceptions.append(current_exception)
                     continue
+
+                if not did_converge:
+                    first_nll_value = (
+                        first_nll if first_nll is not None else float("nan")
+                    )
+                    final_nll_value = (
+                        last_nll_value if last_nll_value is not None else float("nan")
+                    )
+                    improvement = first_nll_value - final_nll_value
+                    optimizer_history = nll_history[history_start_idx:]
+                    current_exception = RuntimeError(
+                        "Convergence not reached with "
+                        f"{opt_name}: max_iters={max_iters}, "
+                        f"history_len={len(nll_history)}, "
+                        f"first_nll={first_nll_value:.6f}, "
+                        f"final_nll={final_nll_value:.6f}, "
+                        f"improvement={improvement:.6f}, "
+                        f"last_grad_norm={last_grad_norm}, "
+                        f"gradient_threshold={gradient_threshold}",
+                    )
+                    all_exceptions.append(current_exception)
+                    failed_optimizer_histories.append(
+                        {
+                            "optimizer": opt_name,
+                            "nll_history": optimizer_history,
+                        },
+                    )
             else:
                 best_nll = float("inf")
                 iterations_without_improvement = 0
                 iterations = 0
+                last_grad_norm = None
 
                 for _ in range(max_iters):
                     optimizer.zero_grad()
@@ -380,6 +486,7 @@ def _run_optimizer_strategies(
                         grad_norm = 0.0
                         if log_params.grad is not None:
                             grad_norm = float(torch.norm(log_params.grad).item())
+                        last_grad_norm = grad_norm
                         optimizer.step()
                         iterations += 1
                         nll_value = float(nll.item())
@@ -406,10 +513,13 @@ def _run_optimizer_strategies(
                         else:
                             iterations_without_improvement += 1
 
-                        if (
-                            grad_norm < gradient_threshold
-                            and iterations_without_improvement >= patience
-                            and improved_once
+                        if _check_convergence_criteria(
+                            optimizer_name=opt_name,
+                            improved_once=improved_once,
+                            grad_norm=grad_norm,
+                            gradient_threshold=gradient_threshold,
+                            iterations_without_improvement=iterations_without_improvement,
+                            patience=patience,
                         ):
                             did_converge = True
                             break
@@ -418,16 +528,50 @@ def _run_optimizer_strategies(
                         break
 
                 if non_finite_objective:
-                    last_exception = RuntimeError(
-                        f"Non-finite objective encountered during optimization with {opt_name}.",
+                    current_exception = RuntimeError(
+                        f"Non-finite objective encountered during optimization with "
+                        f"{opt_name}.",
                     )
+                    all_exceptions.append(current_exception)
                     continue
 
                 if not improved_once:
-                    last_exception = RuntimeError(
-                        f"Objective did not improve from initial value with {opt_name}.",
+                    current_exception = RuntimeError(
+                        f"Objective did not improve from initial value with "
+                        f"{opt_name}.",
                     )
+                    all_exceptions.append(current_exception)
                     continue
+
+                if not did_converge:
+                    first_nll_value = (
+                        first_nll if first_nll is not None else float("nan")
+                    )
+                    final_nll_value = nll_history[-1] if nll_history else float("nan")
+                    improvement = first_nll_value - final_nll_value
+                    optimizer_history = nll_history[history_start_idx:]
+                    current_exception = RuntimeError(
+                        "Convergence not reached with "
+                        f"{opt_name}: max_iters={max_iters}, "
+                        f"iterations={iterations}, "
+                        f"history_len={len(nll_history)}, "
+                        f"first_nll={first_nll_value:.6f}, "
+                        f"best_nll={best_nll:.6f}, "
+                        f"final_nll={final_nll_value:.6f}, "
+                        f"improvement={improvement:.6f}, "
+                        f"last_grad_norm={last_grad_norm}, "
+                        f"iterations_without_improvement="
+                        f"{iterations_without_improvement}, "
+                        f"patience={patience}, "
+                        f"gradient_threshold={gradient_threshold}",
+                    )
+                    all_exceptions.append(current_exception)
+                    failed_optimizer_histories.append(
+                        {
+                            "optimizer": opt_name,
+                            "nll_history": optimizer_history,
+                        },
+                    )
 
             if best_log_params is not None:
                 with torch.no_grad():
@@ -437,16 +581,17 @@ def _run_optimizer_strategies(
                 converged = True
                 break
         except (RuntimeError, ValueError) as exc:
-            last_exception = exc
+            all_exceptions.append(exc)
             continue
 
-    return (
-        log_params,
-        nll_history,
-        optimizer_used,
-        iterations,
-        converged,
-        last_exception,
+    return OptimizerRunResult(
+        log_params=log_params,
+        nll_history=nll_history,
+        optimizer_used=optimizer_used,
+        iterations=iterations,
+        converged=converged,
+        all_exceptions=all_exceptions,
+        failed_optimizer_histories=failed_optimizer_histories,
     )
 
 
@@ -579,14 +724,7 @@ def fit_birth_death_processes(
     strategies_map = _build_optimizer_strategies(optimizer_kwargs)
     requested_keys = _normalize_requested_optimizers(optimizers, strategies_map)
 
-    (
-        log_params,
-        nll_history,
-        optimizer_used,
-        iterations,
-        converged,
-        last_exception,
-    ) = _run_optimizer_strategies(
+    optimizer_run_result = _run_optimizer_strategies(
         strategies_map=strategies_map,
         requested_keys=requested_keys,
         log_params=log_params,
@@ -599,16 +737,45 @@ def fit_birth_death_processes(
         starting_population=starting_population,
         convergence_tolerance=1e-7,
         absolute_tolerance=1e-6,
-        patience=20,
+        patience=10,
         gradient_threshold=1e-5,
     )
 
+    log_params = optimizer_run_result.log_params
+    nll_history = optimizer_run_result.nll_history
+    optimizer_used = optimizer_run_result.optimizer_used
+    iterations = optimizer_run_result.iterations
+    converged = optimizer_run_result.converged
+    all_exceptions = optimizer_run_result.all_exceptions
+    failed_optimizer_histories = optimizer_run_result.failed_optimizer_histories
+
     if not converged:
+        last_exception = all_exceptions[-1] if all_exceptions else None
         error_message = str(last_exception) if last_exception is not None else None
         error_type = (
             type(last_exception).__name__ if last_exception is not None else None
         )
-        return {"success": False, "error": error_message, "error_type": error_type}
+        errors = [
+            {"error": str(exc), "error_type": type(exc).__name__}
+            for exc in all_exceptions
+        ]
+        final_nll = nll_history[-1] if nll_history else None
+        return {
+            "success": False,
+            "error": error_message,
+            "error_type": error_type,
+            "errors": errors,
+            "nll_history": nll_history,
+            "failed_optimizer_histories": failed_optimizer_histories,
+            "optimization_result": {
+                "optimizer": optimizer_used,
+                "iterations": iterations,
+                "converged": converged,
+                "nll_history_length": len(nll_history),
+                "final_nll": final_nll,
+                "exceptions_count": len(all_exceptions),
+            },
+        }
 
     finalized = _finalize_fit(
         log_params,
