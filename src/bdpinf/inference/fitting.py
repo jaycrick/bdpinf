@@ -295,7 +295,7 @@ def fit_from_dataframe(
         age_column = candidates[0]
 
     ages_tensor = torch.as_tensor(
-        df[age_column].to_numpy(dtype=np.float64),
+        df[age_column].to_numpy(dtype=np.float64, copy=True),
         dtype=torch.float64,
     )
     times_tensor = torch.as_tensor(times, dtype=torch.float64)

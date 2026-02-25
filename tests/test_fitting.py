@@ -80,7 +80,8 @@ class TestFittingHelpers:
 
     def test_normalize_requested_optimizers_rejects_unknown(self) -> None:
         strategies = _build_optimizer_strategies(
-            None, convergence_config=ConvergenceConfig.default()
+            None,
+            convergence_config=ConvergenceConfig.default(),
         )
         with pytest.raises(ValueError, match="Unsupported optimizer"):
             _normalize_requested_optimizers(["Adam", "Bogus"], strategies)
@@ -510,7 +511,9 @@ class TestConvergenceFlags:
         )
 
         assert not run_result.converged
-        assert run_result.iterations == 1
+        assert run_result.iterations == 1, (
+            f"Expected 1 iteration, got {run_result.iterations}"
+        )
         assert len(run_result.nll_history) == 1
 
     @pytest.mark.parametrize(
