@@ -35,7 +35,7 @@ class TestFittingHelpers:
         result = _find_non_empty_age(ages_list)
         assert torch.equal(result, ages_list[1])
 
-    def testvalidate_times_properties_rejects_non_positive(self) -> None:
+    def test_validate_times_properties_rejects_non_positive(self) -> None:
         with pytest.raises(ValueError, match="must be positive"):
             validate_times_properties(torch.tensor([1.0, 0.0]))
 
@@ -72,11 +72,16 @@ class TestFittingHelpers:
 
     def test_build_optimizer_strategies_merges_kwargs(self) -> None:
         lr = 0.01
-        strategies = _build_optimizer_strategies({"adam": {"lr": lr}})
+        strategies = _build_optimizer_strategies(
+            {"adam": {"lr": lr}},
+            convergence_config=ConvergenceConfig.default(),
+        )
         assert strategies["adam"].optimizer_kwargs["lr"] == lr
 
     def test_normalize_requested_optimizers_rejects_unknown(self) -> None:
-        strategies = _build_optimizer_strategies(None)
+        strategies = _build_optimizer_strategies(
+            None, convergence_config=ConvergenceConfig.default()
+        )
         with pytest.raises(ValueError, match="Unsupported optimizer"):
             _normalize_requested_optimizers(["Adam", "Bogus"], strategies)
 
@@ -487,7 +492,6 @@ class TestConvergenceFlags:
         convergence_config = ConvergenceConfig(
             gradient_threshold=-1.0,
             absolute_tolerance=1e-12,
-            convergence_tolerance=1e-12,
             patience=100,
         )
 
@@ -537,7 +541,6 @@ class TestConvergenceFlags:
         convergence_config = ConvergenceConfig(
             gradient_threshold=1e9,
             absolute_tolerance=1e-12,
-            convergence_tolerance=1e-12,
             patience=0,
         )
 
@@ -567,11 +570,9 @@ class TestConvergenceFlags:
             "sgd": OptimizerStrategy("SGD", torch.optim.SGD, 1, {"lr": 0.0001}),
             "adam": OptimizerStrategy("Adam", torch.optim.Adam, 1, {"lr": 0.001}),
         }
-
         convergence_config = ConvergenceConfig(
             gradient_threshold=-1.0,
             absolute_tolerance=1e-12,
-            convergence_tolerance=1e-12,
             patience=100,
         )
 
@@ -684,7 +685,6 @@ class TestFittingDiagnostics:
             convergence_config = ConvergenceConfig(
                 gradient_threshold=1e-5,
                 absolute_tolerance=1e-6,
-                convergence_tolerance=1e-7,
                 patience=20,
             )
             run_result = _run_optimizer_strategies(

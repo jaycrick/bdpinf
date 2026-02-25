@@ -52,7 +52,7 @@ Test Strategy:
 
 @pytest.fixture
 def standard_scalar_params() -> dict[str, torch.Tensor]:
-    """Standard scalar parameters for testing."""
+    """Set standard scalar parameters for testing."""
     return {
         "birth_rate": torch.tensor([0.1], dtype=torch.float64),
         "death_rate": torch.tensor([0.05], dtype=torch.float64),
@@ -62,7 +62,7 @@ def standard_scalar_params() -> dict[str, torch.Tensor]:
 
 @pytest.fixture
 def standard_array_params() -> dict[str, torch.Tensor]:
-    """Standard array parameters for piecewise-constant rates."""
+    """Set standard array parameters for piecewise-constant rates."""
     return {
         "birth_rates": torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64),
         "death_rates": torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64),
