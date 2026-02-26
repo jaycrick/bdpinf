@@ -86,7 +86,7 @@ def fit_birth_death_processes(
     spine_ages: torch.Tensor | None = None,
     population_sizes: torch.Tensor | None = None,
     starting_population: int = 1,
-    optimizers: Sequence[str] | str = ("Adam", "SGD", "LBFGS"),
+    optimizers: Sequence[str] | str = ("LBFGS", "Adam", "SGD"),
     optimizer_kwargs: dict[str, dict[str, Any]] | None = None,
     perturb_initial_params_std: float = 0.0,
     random_seed: int | None = None,
@@ -147,6 +147,7 @@ def fit_birth_death_processes(
         initial_death_rates,
         non_empty_age,
         times_tensor,
+        starting_population=starting_population,
     )
     if torch.any(initial_params <= 0):
         msg = "Initial parameters must be positive before log transform"
@@ -659,6 +660,7 @@ def _get_crude_parameter_estimates(
     *,
     birth_rates: torch.Tensor | float | None = None,
     death_rates: torch.Tensor | float | None = None,
+    starting_population: int = 1,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Get crude initial parameter estimates from age data."""
     if birth_rates is not None and death_rates is not None:
@@ -685,7 +687,12 @@ def _get_crude_parameter_estimates(
     if death_rates is None:
         est_death_rates = torch.maximum(
             est_birth_rates
-            - torch.log(torch.tensor(float(n_manuscripts), dtype=torch.float64))
+            - torch.log(
+                torch.tensor(
+                    float(n_manuscripts / starting_population),
+                    dtype=torch.float64,
+                ),
+            )
             / observation_time,
             torch.full_like(times, 1e-8, dtype=torch.float64),
         )
@@ -777,6 +784,7 @@ def _build_initial_params(
     initial_death_rates: torch.Tensor | None,
     non_empty_age: torch.Tensor,
     times_tensor: torch.Tensor,
+    starting_population: int = 1,
 ) -> torch.Tensor:
     """Build initial param vector; auto-estimate if needed."""
     if initial_birth_rates is None or initial_death_rates is None:
@@ -785,6 +793,7 @@ def _build_initial_params(
             times_tensor,
             birth_rates=initial_birth_rates,
             death_rates=initial_death_rates,
+            starting_population=starting_population,
         )
         return torch.cat((crude_birth, crude_death))
 
