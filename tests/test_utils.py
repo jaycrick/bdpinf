@@ -1,6 +1,6 @@
-"""
-Test suite for BirthDeathProcess utility functions and helper methods.
-"""
+"""Test suite for BirthDeathProcess utility functions and helper methods."""
+
+# ruff: noqa: S101
 
 import numpy as np
 import torch
@@ -143,7 +143,8 @@ class TestEnsure1dTensor:
         assert result.dtype == torch.float64
         assert result.shape == (3,)
         assert torch.allclose(
-            result, torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
+            result,
+            torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64),
         )
 
     def test_2d_tensor_flattened(self) -> None:
@@ -162,7 +163,8 @@ class TestEnsure1dTensor:
         assert result.shape == (8,)
         assert result.dtype == torch.float64
         expected = torch.tensor(
-            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], dtype=torch.float64
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            dtype=torch.float64,
         )
         assert torch.allclose(result, expected)
 
@@ -189,7 +191,8 @@ class TestEnsure1dTensor:
         assert result.shape == (3,)
         assert result.dtype == torch.float64
         assert torch.allclose(
-            result, torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
+            result,
+            torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64),
         )
 
     def test_numpy_2d_array_flattened(self) -> None:

@@ -1,21 +1,19 @@
-"""
-Common utilities for API data collection and processing.
-"""
+"""Common utilities for API data collection and processing."""
 
-import os
+import urllib.error
 import urllib.request
+from pathlib import Path
 
 import torch
 
 
 def ensure_directory(path: str) -> None:
     """Ensure a directory exists, creating it if necessary."""
-    os.makedirs(path, exist_ok=True)
+    Path(path).mkdir(parents=True, exist_ok=True)
 
 
-def download_file(url: str, local_path: str, overwrite: bool = False) -> None:
-    """
-    Download a file from a URL to a local path.
+def download_file(url: str, local_path: str, *, overwrite: bool = False) -> None:
+    """Download a file from a URL to a local path.
 
     Args:
         url: The URL to download from
@@ -24,32 +22,36 @@ def download_file(url: str, local_path: str, overwrite: bool = False) -> None:
 
     Raises:
         Exception: If download fails
+
     """
-    if not overwrite and os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+    if (
+        not overwrite
+        and Path(local_path).exists()
+        and Path(local_path).stat().st_size > 0
+    ):
         return
 
     try:
         print(f"Downloading {url} to {local_path}")
         # Ensure directory exists
-        ensure_directory(os.path.dirname(local_path))
+        ensure_directory(str(Path(local_path).parent))
         urllib.request.urlretrieve(url, local_path)
-    except Exception as e:
-        raise Exception(f"Error downloading {url}: {e}")
+    except urllib.error.URLError as e:
+        msg = f"Error downloading {url}: {e}"
+        raise urllib.error.URLError(msg) from e
 
 
 def safe_int(value: str | None) -> int | None:
     try:
         if value is not None:
             return int(value)
-        else:
-            return None
+        return None
     except (TypeError, ValueError):
         return None
 
 
-def ensure_1d_tensor(x: torch.Tensor | float | int) -> torch.Tensor:
-    """
-    Convert scalar or array-like input to a 1D PyTorch tensor.
+def ensure_1d_tensor(x: torch.Tensor | float) -> torch.Tensor:
+    """Convert scalar or array-like input to a 1D PyTorch tensor.
 
     Parameters
     ----------
@@ -68,23 +70,28 @@ def ensure_1d_tensor(x: torch.Tensor | float | int) -> torch.Tensor:
     tensor([5.], dtype=torch.float64)
     >>> ensure_1d_tensor(torch.tensor([[1, 2], [3, 4]]))
     tensor([1., 2., 3., 4.], dtype=torch.float64)
+
     """
     return torch.as_tensor(x, dtype=torch.float64).reshape(-1)
 
 
-def ensure_1d_tensors(*values: torch.Tensor | float | int) -> tuple[torch.Tensor, ...]:
+def ensure_1d_tensors(*values: torch.Tensor | float) -> tuple[torch.Tensor, ...]:
     return tuple(ensure_1d_tensor(value) for value in values)
 
 
 def validate_matching_shapes(
-    *tensors: torch.Tensor, names: tuple[str, ...] | None = None
+    *tensors: torch.Tensor,
+    names: tuple[str, ...] | None = None,
 ) -> None:
     if len(tensors) < 2:
         return
     if names is not None and len(names) != len(tensors):
-        raise ValueError(
+        msg = (
             "names must be the same length as tensors when provided. "
             f"Got names={len(names)}, tensors={len(tensors)}"
+        )
+        raise ValueError(
+            msg,
         )
 
     reference_shape = tensors[0].shape
@@ -108,14 +115,18 @@ def validate_matching_shapes(
 
 
 def validate_matching_lengths(
-    *tensors: torch.Tensor, names: tuple[str, ...] | None = None
+    *tensors: torch.Tensor,
+    names: tuple[str, ...] | None = None,
 ) -> None:
     if len(tensors) < 2:
         return
     if names is not None and len(names) != len(tensors):
-        raise ValueError(
+        msg = (
             "names must be the same length as tensors when provided. "
             f"Got names={len(names)}, tensors={len(tensors)}"
+        )
+        raise ValueError(
+            msg,
         )
 
     reference_len = len(tensors[0])

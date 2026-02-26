@@ -1,12 +1,11 @@
-"""
-Configuration management for inf-bp-texts package.
+"""Configuration management for inf-bp-texts package.
 
 This module provides centralized configuration classes for different components
 of the birth-death process analysis toolkit.
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 
 @dataclass
@@ -20,7 +19,7 @@ class OptimizationConfig:
     initial_birth_rate: float = 0.1
     initial_death_rate: float = 0.01
 
-    def get_scipy_options(self) -> Dict[str, Any]:
+    def get_scipy_options(self) -> dict[str, Any]:
         """Get options dictionary for scipy.optimize.minimize."""
         return {
             "maxiter": self.max_iterations,
@@ -41,7 +40,7 @@ class PlottingConfig:
     title_font_size: int = 16
     axis_font_size: int = 12
 
-    def get_plotly_layout(self) -> Dict[str, Any]:
+    def get_plotly_layout(self) -> dict[str, Any]:
         """Get layout dictionary for plotly figures."""
         return {
             "width": self.figure_width,
@@ -62,7 +61,7 @@ class ModelConfig:
     numerical_stability_threshold: float = 1e-15
     max_parameter_value: float = 100.0
 
-    def get_parameter_bounds(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    def get_parameter_bounds(self) -> tuple[tuple[float, float], tuple[float, float]]:
         """Get parameter bounds for optimization."""
         return (
             (1e-10, self.max_parameter_value),  # birth_rate bounds
@@ -75,7 +74,7 @@ class SimulationConfig:
     """Configuration for simulation parameters."""
 
     default_max_time: float = 2000.0
-    default_random_seed: Optional[int] = None
+    default_random_seed: int | None = None
     max_events: int = 100000
     time_step: float = 0.1
 
@@ -92,8 +91,7 @@ DEFAULT_SIMULATION = SimulationConfig()
 
 
 def get_config(config_type: str) -> object:
-    """
-    Get default configuration for a specific component.
+    """Get default configuration for a specific component.
 
     Args:
         config_type: Type of configuration ("optimization", "plotting", "model", "simulation")
@@ -103,6 +101,7 @@ def get_config(config_type: str) -> object:
 
     Raises:
         ValueError: If config_type is not recognized
+
     """
     configs = {
         "optimization": DEFAULT_OPTIMIZATION,
@@ -112,8 +111,9 @@ def get_config(config_type: str) -> object:
     }
 
     if config_type not in configs:
+        msg = f"Unknown config type: {config_type}. Available: {list(configs.keys())}"
         raise ValueError(
-            f"Unknown config type: {config_type}. Available: {list(configs.keys())}"
+            msg,
         )
 
     return configs[config_type]

@@ -1,12 +1,11 @@
-"""
-Derivative functions for birth-and-death process calculations.
+"""Derivative functions for birth-and-death process calculations.
 
 This module contains analytical derivatives used by the mathematical functions.
 """
 
 import torch
 
-from ..utils import ensure_1d_tensors
+from inf_bp_texts.utils import ensure_1d_tensors
 
 
 def calculate_populations_log_lik_derivatives(
@@ -15,13 +14,15 @@ def calculate_populations_log_lik_derivatives(
     time: torch.Tensor | float,
     ns: torch.Tensor | int,
 ) -> torch.Tensor:
-    """
-    Calculate derivatives of log population probabilities with respect to lambda and mu.
+    """Calculate derivatives of log population probabilities with respect to lambda and mu.
 
     Uses only PyTorch operations to preserve autograd support.
     """
     birth_rate_val, death_rate_val, time_t, ns = ensure_1d_tensors(
-        birth_rate, death_rate, time, ns
+        birth_rate,
+        death_rate,
+        time,
+        ns,
     )
 
     d_birth_rate = torch.zeros_like(ns, dtype=torch.float64)
@@ -124,13 +125,15 @@ def calculate_non_spine_ages_log_lik_derivatives(
     ages_t: torch.Tensor | float,
     T: torch.Tensor | float,
 ) -> torch.Tensor:
-    """
-    Calculate derivatives of log age-density for non-spine manuscripts.
+    """Calculate derivatives of log age-density for non-spine manuscripts.
 
     Uses only PyTorch operations to preserve autograd support.
     """
     birth_rate_val, death_rate_val, ages_t_t, T_t = ensure_1d_tensors(
-        birth_rate, death_rate, ages_t, T
+        birth_rate,
+        death_rate,
+        ages_t,
+        T,
     )
 
     is_critical = torch.isclose(birth_rate_val, death_rate_val, rtol=1e-14)
@@ -174,13 +177,15 @@ def calculate_spine_ages_log_lik_derivatives(
     ages_t: torch.Tensor | float,
     T: torch.Tensor | float,
 ) -> torch.Tensor:
-    """
-    Calculate derivatives of log age-density for spine manuscripts.
+    """Calculate derivatives of log age-density for spine manuscripts.
 
     Uses only PyTorch operations to preserve autograd support.
     """
     birth_rate_val, death_rate_val, ages_t_t, T_t = ensure_1d_tensors(
-        birth_rate, death_rate, ages_t, T
+        birth_rate,
+        death_rate,
+        ages_t,
+        T,
     )
 
     at_boundary = ages_t_t == T_t
@@ -242,15 +247,20 @@ def calculate_ages_log_lik_derivatives(
     death_rate: torch.Tensor | float,
     ages_t: torch.Tensor | float,
     T: torch.Tensor | float,
+    *,
     are_spines: bool = False,
 ) -> torch.Tensor:
-    """
-    Compute derivatives of log age-density with respect to lambda and mu.
-    """
+    """Compute derivatives of log age-density with respect to lambda and mu."""
     if are_spines:
         return calculate_spine_ages_log_lik_derivatives(
-            birth_rate, death_rate, ages_t, T
+            birth_rate,
+            death_rate,
+            ages_t,
+            T,
         )
     return calculate_non_spine_ages_log_lik_derivatives(
-        birth_rate, death_rate, ages_t, T
+        birth_rate,
+        death_rate,
+        ages_t,
+        T,
     )

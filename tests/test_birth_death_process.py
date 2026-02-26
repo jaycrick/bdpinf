@@ -1,6 +1,6 @@
-"""
-Test suite for BirthDeathProcess class initialization and basic functionality.
-"""
+"""Test suite for BirthDeathProcess class initialization and basic functionality."""
+
+# ruff: noqa: S101
 
 import numpy as np
 from numpy.testing import assert_array_equal

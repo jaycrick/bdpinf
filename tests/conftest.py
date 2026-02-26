@@ -1,10 +1,10 @@
-"""
-Configuration for pytest tests with comprehensive fixtures and utilities.
-"""
+"""Configuration for pytest tests with comprehensive fixtures and utilities."""
+
+# ruff: noqa: S101
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -18,7 +18,7 @@ sys.path.insert(0, str(src_path))
 
 
 @pytest.fixture
-def sample_creation_times() -> List[float]:
+def sample_creation_times() -> list[float]:
     """Sample creation times for testing."""
     return [100.0, 200.0, 300.0, 400.0, 500.0]
 
@@ -49,12 +49,12 @@ def sample_manuscript_data() -> pd.DataFrame:
             "count": [1, 1, 1, 1, 1],
             "docID": ["MS001", "MS002", "MS003", "MS004", "MS005"],
             "creation_time": [500.0, 400.0, 450.0, 300.0, 350.0],
-        }
+        },
     )
 
 
 @pytest.fixture
-def sample_fit_results() -> Dict[str, Any]:
+def sample_fit_results() -> dict[str, Any]:
     """Sample fitting results for testing."""
     return {
         "success": True,
@@ -85,7 +85,7 @@ def assert_valid_birth_death_rates(birth_rate: float, death_rate: float) -> None
     assert death_rate < 100, f"Death rate seems too large: {death_rate}"
 
 
-def assert_optimization_successful(fit_results: Dict[str, Any]) -> None:
+def assert_optimization_successful(fit_results: dict[str, Any]) -> None:
     """Assert that optimization was successful."""
     assert fit_results["success"], (
         f"Optimization failed: {fit_results.get('message', 'Unknown error')}"

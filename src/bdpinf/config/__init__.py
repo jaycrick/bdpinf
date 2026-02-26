@@ -13,13 +13,13 @@ from .settings import (
 )
 
 __all__ = [
-    "OptimizationConfig",
-    "PlottingConfig",
-    "ModelConfig",
-    "SimulationConfig",
+    "DEFAULT_MODEL",
     "DEFAULT_OPTIMIZATION",
     "DEFAULT_PLOTTING",
-    "DEFAULT_MODEL",
     "DEFAULT_SIMULATION",
+    "ModelConfig",
+    "OptimizationConfig",
+    "PlottingConfig",
+    "SimulationConfig",
     "get_config",
 ]

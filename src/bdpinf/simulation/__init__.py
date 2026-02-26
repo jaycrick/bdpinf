@@ -1,5 +1,4 @@
-"""
-Simulation package for birth-death process data generation.
+"""Simulation package for birth-death process data generation.
 
 This package contains simulation and prediction utilities for birth-death
 process models.

@@ -29,6 +29,8 @@ website:
             file: qmd_scripts/manuscript_data_exploration.qmd
           - text: "Birth-Death Inference"
             file: qmd_scripts/birth_death_inference.qmd
+          - text: "Birth-Death Inference (Multiple Starting Manuscripts)"
+            file: qmd_scripts/birth_death_inference_mult_start.qmd
           - text: "Methods Validation"
             file: qmd_scripts/methods_validation.qmd
           - text: "Multi-Epoch Validation"
@@ -74,6 +76,7 @@ quartodoc:
     - title: Mathematical functions
       desc: Core mathematical routines for the birth-death process models.
       contents:
+        - models
         - models.mathematical_functions
         - models.mathematical_functions.calculate_populations_log_lik
         - models.mathematical_functions.calculate_non_spine_ages_log_lik
@@ -81,3 +84,7 @@ quartodoc:
         - models.mathematical_functions.calculate_ages_log_lik
         - models.mathematical_functions.calculate_extinction_pr
         - models.mathematical_functions.calculate_log_lik_lifetimes
+        - inference
+        - inference.fitting
+        - inference.fitting.fit_birth_death_processes
+        - inference.fitting.fit_from_dataframe
