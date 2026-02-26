@@ -74,7 +74,7 @@ sort_inline_tables = true
 sort_table_keys = true
 
 [tool.pytest.ini_options]
-addopts = "-m \"not slow\""
+addopts = "-m \"not slow\" --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml --cov-fail-under=80"
 markers = [
     "slow: long-running tests that are skipped in regular runs",
 ]
@@ -82,6 +82,12 @@ python_classes = ["Test*"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+precision = 2
 
 [build-system]
 requires = ["setuptools"]
