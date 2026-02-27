@@ -834,6 +834,27 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
         dtype: torch.float64.
 
     """
+    if not _skip_normalization:
+        birth_rates, death_rates, times, lifetimes = normalize_and_validate_inputs(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            ages=lifetimes,
+        )
+    else:
+        if not torch.is_tensor(birth_rates):
+            msg = "birth_rates must be a torch.Tensor"
+            raise ValueError(msg)
+        if not torch.is_tensor(death_rates):
+            msg = "death_rates must be a torch.Tensor"
+            raise ValueError(msg)
+        if not torch.is_tensor(times):
+            msg = "times must be a torch.Tensor"
+            raise ValueError(msg)
+        if not torch.is_tensor(lifetimes):
+            msg = "lifetimes must be a torch.Tensor"
+            raise ValueError(msg)
+
     n = len(lifetimes)
 
     log_prs_extinction_given_lifetimes = (
@@ -898,6 +919,27 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
         in torch.float64.
 
     """
+    if not _skip_normalization:
+        birth_rates, death_rates, times, lifetimes = normalize_and_validate_inputs(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            ages=lifetimes,
+        )
+    else:
+        if not torch.is_tensor(birth_rates):
+            msg = "birth_rates must be a torch.Tensor"
+            raise ValueError(msg)
+        if not torch.is_tensor(death_rates):
+            msg = "death_rates must be a torch.Tensor"
+            raise ValueError(msg)
+        if not torch.is_tensor(times):
+            msg = "times must be a torch.Tensor"
+            raise ValueError(msg)
+        if not torch.is_tensor(lifetimes):
+            msg = "lifetimes must be a torch.Tensor"
+            raise ValueError(msg)
+
     n = len(lifetimes)
 
     log_prs_extinction_given_lifetimes = (

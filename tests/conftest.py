@@ -24,7 +24,7 @@ def sample_creation_times() -> list[float]:
 
 
 @pytest.fixture
-def sample_model(sample_creation_times) -> BirthDeathProcess:
+def sample_model(sample_creation_times: list[float]) -> BirthDeathProcess:
     """Create a sample birth-death process model."""
     return BirthDeathProcess(
         creation_times=sample_creation_times,
@@ -35,7 +35,7 @@ def sample_model(sample_creation_times) -> BirthDeathProcess:
 
 
 @pytest.fixture
-def unfitted_model(sample_creation_times) -> BirthDeathProcess:
+def unfitted_model(sample_creation_times: list[float]) -> BirthDeathProcess:
     """Create an unfitted birth-death process model."""
     return BirthDeathProcess(creation_times=sample_creation_times, final_time=600.0)
 
@@ -77,12 +77,15 @@ def optimization_config() -> OptimizationConfig:
 
 
 # Utility functions for testing
+MAX_RATE_VALUE = 100
+
+
 def assert_valid_birth_death_rates(birth_rate: float, death_rate: float) -> None:
     """Assert that birth and death rates are valid."""
     assert birth_rate > 0, f"Birth rate must be positive: {birth_rate}"
     assert death_rate > 0, f"Death rate must be positive: {death_rate}"
-    assert birth_rate < 100, f"Birth rate seems too large: {birth_rate}"
-    assert death_rate < 100, f"Death rate seems too large: {death_rate}"
+    assert birth_rate < MAX_RATE_VALUE, f"Birth rate seems too large: {birth_rate}"
+    assert death_rate < MAX_RATE_VALUE, f"Death rate seems too large: {death_rate}"
 
 
 def assert_optimization_successful(fit_results: dict[str, Any]) -> None:
