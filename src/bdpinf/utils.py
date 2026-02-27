@@ -1,7 +1,5 @@
 """Common utilities for API data collection and processing."""
 
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import torch
@@ -10,35 +8,6 @@ import torch
 def ensure_directory(path: str) -> None:
     """Ensure a directory exists, creating it if necessary."""
     Path(path).mkdir(parents=True, exist_ok=True)
-
-
-def download_file(url: str, local_path: str, *, overwrite: bool = False) -> None:
-    """Download a file from a URL to a local path.
-
-    Args:
-        url: The URL to download from
-        local_path: The local path to save to
-        overwrite: Whether to overwrite existing files
-
-    Raises:
-        Exception: If download fails
-
-    """
-    if (
-        not overwrite
-        and Path(local_path).exists()
-        and Path(local_path).stat().st_size > 0
-    ):
-        return
-
-    try:
-        print(f"Downloading {url} to {local_path}")
-        # Ensure directory exists
-        ensure_directory(str(Path(local_path).parent))
-        urllib.request.urlretrieve(url, local_path)
-    except urllib.error.URLError as e:
-        msg = f"Error downloading {url}: {e}"
-        raise urllib.error.URLError(msg) from e
 
 
 def safe_int(value: str | None) -> int | None:

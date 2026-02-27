@@ -1,5 +1,23 @@
 # ruff: noqa: S101
 # ruff: noqa: D102
+"""Comprehensive test suite for mathematical_functions.py.
+
+This module tests all mathematical functions for birth-death process calculations,
+organized in a logical dependency order:
+1. Basic helper functions (private)
+2. Extinction probability calculations
+3. Population likelihood functions
+4. Age likelihood functions (spine and non-spine)
+5. Derivative functions
+6. Integration and edge cases
+
+Test Strategy:
+- Unit tests for individual functions
+- Numerical stability tests for edge cases (λ ≈ μ, extreme parameters)
+- Mathematical property tests (probability bounds, monotonicity)
+- Integration tests for function chains
+- Array vs scalar input consistency tests
+"""
 
 import math
 
@@ -10,7 +28,7 @@ from torch.testing import assert_close
 
 # Import private functions for direct testing
 from inf_bp_texts.models.mathematical_functions import (
-    _integrand_surv_from_weighted_birth_time_scalar,
+    _integrand_surv_from_weighted_birth_time,
     _population_geometric_parameter,
     _pr_extinction_numerator,
     _reverse_time,
@@ -87,9 +105,9 @@ def nearly_equal_params() -> dict[str, torch.Tensor]:
 def log_scale_params() -> dict[str, torch.Tensor]:
     """Parameters in log scale."""
     return {
-        "log_birth_rate": torch.log(0.1),
-        "log_death_rate": torch.log(0.05),
-        "time": 100.0,
+        "log_birth_rate": torch.log(torch.tensor(0.1, dtype=torch.float64)),
+        "log_death_rate": torch.log(torch.tensor(0.05, dtype=torch.float64)),
+        "time": torch.tensor(100.0, dtype=torch.float64),
     }
 
 
@@ -147,14 +165,14 @@ class TestMultiEpochNumericalAccuracy:
         """Test that two identical epochs match single-epoch result."""
         birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
         death_rate_val = torch.tensor([0.05], dtype=torch.float64)
-        T = torch.tensor([100.0], dtype=torch.float64)
+        final_time = torch.tensor([100.0], dtype=torch.float64)
         n = torch.tensor([5], dtype=torch.int64)
 
         # Single epoch result
         single_result = calculate_populations_log_lik(
             birth_rate_val,
             death_rate_val,
-            times=T,
+            times=final_time,
             ns=n,
         )
 
@@ -162,7 +180,7 @@ class TestMultiEpochNumericalAccuracy:
         two_epoch_result = calculate_populations_log_lik(
             torch.tensor([birth_rate_val[0], birth_rate_val[0]], dtype=torch.float64),
             torch.tensor([death_rate_val[0], death_rate_val[0]], dtype=torch.float64),
-            times=torch.tensor([T[0] / 2, T[0]], dtype=torch.float64),
+            times=torch.tensor([final_time[0] / 2, final_time[0]], dtype=torch.float64),
             ns=n,
         )
 
@@ -213,7 +231,7 @@ class TestMultiEpochNumericalAccuracy:
         assert torch.isfinite(result2)
 
     def test_multi_epoch_non_spine_age_array(self) -> None:
-        """Check multi-epoch non-spine ages spanning epochs yield finite, negative log-lik.
+        """Check multi-epoch non-spine ages spanning epochs yield finite, neg log-lik.
 
         Confirms the multi-epoch branch of ``calculate_non_spine_ages_log_lik``
         handles ages on either side of an epoch boundary and returns a negative
@@ -322,13 +340,13 @@ class TestMultiEpochEqualsSingleEpoch:
     """
 
     def test_extinction_pr_multi_equals_single(self) -> None:
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, times = (
             torch.tensor([0.02], dtype=torch.float64),
             torch.tensor([0.01], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
         )
 
-        single = calculate_extinction_pr(birth_rate_val, death_rate_val, T)
+        single = calculate_extinction_pr(birth_rate_val, death_rate_val, times)
 
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
@@ -347,12 +365,12 @@ class TestMultiEpochEqualsSingleEpoch:
         assert 0 < single < 1
 
     def test_population_geometric_parameter_multi_equals_single(self) -> None:
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, times = (
             torch.tensor([0.03], dtype=torch.float64),
             torch.tensor([0.02], dtype=torch.float64),
             torch.tensor([90.0], dtype=torch.float64),
         )
-        single = _population_geometric_parameter(birth_rate_val, death_rate_val, T)
+        single = _population_geometric_parameter(birth_rate_val, death_rate_val, times)
         times = torch.tensor([30.0, 60.0, 90.0], dtype=torch.float64)
         birth_rates = torch.full(
             (3,),
@@ -368,12 +386,12 @@ class TestMultiEpochEqualsSingleEpoch:
         assert_close(actual=multi, expected=single)
 
     def test_pr_extinction_numerator_multi_equals_single(self) -> None:
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, times = (
             torch.tensor([0.015], dtype=torch.float64),
             torch.tensor([0.01], dtype=torch.float64),
             torch.tensor([100.0], dtype=torch.float64),
         )
-        single = _pr_extinction_numerator(birth_rate_val, death_rate_val, T)
+        single = _pr_extinction_numerator(birth_rate_val, death_rate_val, times)
         times = torch.tensor([25.0, 50.0, 75.0, 100.0], dtype=torch.float64)
         birth_rates = torch.full(
             (4,),
@@ -390,11 +408,11 @@ class TestMultiEpochEqualsSingleEpoch:
 
     def test_log_lik_lifetimes_multi_equals_single(self) -> None:
         lifetimes = torch.tensor([10.0, 30.0, 60.0, 90.0], dtype=torch.float64)
-        death_rate_val, T = (
+        death_rate_val, times = (
             torch.tensor([0.02], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
         )
-        single = calculate_log_lik_lifetimes(lifetimes, death_rate_val, T)
+        single = calculate_log_lik_lifetimes(lifetimes, death_rate_val, times)
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         death_rates = torch.full(
             (3,),
@@ -408,7 +426,7 @@ class TestMultiEpochEqualsSingleEpoch:
         self,
     ) -> None:
         lifetimes = torch.tensor([10.0, 45.0, 75.0, 110.0], dtype=torch.float64)
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, times = (
             torch.tensor([0.02], dtype=torch.float64),
             torch.tensor([0.01], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
@@ -417,7 +435,7 @@ class TestMultiEpochEqualsSingleEpoch:
             lifetimes,
             birth_rate_val,
             death_rate_val,
-            T,
+            times,
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
@@ -442,7 +460,7 @@ class TestMultiEpochEqualsSingleEpoch:
         self,
     ) -> None:
         lifetimes = torch.tensor([12.0, 50.0, 95.0], dtype=torch.float64)
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, times = (
             torch.tensor([0.025], dtype=torch.float64),
             torch.tensor([0.01], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
@@ -451,7 +469,7 @@ class TestMultiEpochEqualsSingleEpoch:
             lifetimes,
             birth_rate_val,
             death_rate_val,
-            T,
+            times,
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
@@ -476,7 +494,7 @@ class TestMultiEpochEqualsSingleEpoch:
         self,
     ) -> None:
         lifetimes = torch.tensor([12.0, 50.0, 95.0], dtype=torch.float64)
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, times = (
             torch.tensor([0.025], dtype=torch.float64),
             torch.tensor([0.01], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
@@ -485,7 +503,7 @@ class TestMultiEpochEqualsSingleEpoch:
             lifetimes,
             birth_rate_val,
             death_rate_val,
-            T,
+            times,
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
@@ -508,7 +526,7 @@ class TestMultiEpochEqualsSingleEpoch:
 
     def test_non_spine_ages_log_lik_multi_equals_single(self) -> None:
         ages = torch.tensor([15.0, 60.0, 95.0], dtype=torch.float64)
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, times = (
             torch.tensor([0.02], dtype=torch.float64),
             torch.tensor([0.01], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
@@ -518,7 +536,7 @@ class TestMultiEpochEqualsSingleEpoch:
             birth_rate_val,
             death_rate_val,
             ages,
-            T,
+            times,
         )
         # Multi-epoch via arrays with identical rates
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
@@ -539,12 +557,17 @@ class TestMultiEpochEqualsSingleEpoch:
 
     def test_spine_ages_log_lik_multi_equals_single(self) -> None:
         ages = torch.tensor([20.0, 40.0, 110.0], dtype=torch.float64)
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, final_time = (
             torch.tensor([0.018], dtype=torch.float64),
             torch.tensor([0.009], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
         )
-        single = calculate_spine_ages_log_lik(birth_rate_val, death_rate_val, ages, T)
+        single = calculate_spine_ages_log_lik(
+            birth_rate_val,
+            death_rate_val,
+            ages,
+            final_time,
+        )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
             (3,),
@@ -563,7 +586,7 @@ class TestMultiEpochEqualsSingleEpoch:
 
     def test_ages_log_lik_multi_equals_single_non_spine(self) -> None:
         ages = torch.tensor([10.0, 55.0, 90.0], dtype=torch.float64)
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, times = (
             torch.tensor([0.02], dtype=torch.float64),
             torch.tensor([0.01], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
@@ -572,7 +595,7 @@ class TestMultiEpochEqualsSingleEpoch:
             birth_rate_val,
             death_rate_val,
             ages,
-            T,
+            times,
             are_spines=False,
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
@@ -599,7 +622,7 @@ class TestMultiEpochEqualsSingleEpoch:
 
     def test_ages_log_lik_multi_equals_single_spine(self) -> None:
         ages = torch.tensor([15.0, 120.0], dtype=torch.float64)
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, final_time = (
             torch.tensor([0.018], dtype=torch.float64),
             torch.tensor([0.009], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
@@ -608,7 +631,7 @@ class TestMultiEpochEqualsSingleEpoch:
             birth_rate_val,
             death_rate_val,
             ages,
-            T,
+            final_time,
             are_spines=True,
         )
         times = torch.tensor([30.0, 90.0, 120.0], dtype=torch.float64)
@@ -633,20 +656,20 @@ class TestMultiEpochEqualsSingleEpoch:
         assert torch.isfinite(multi)
         assert_close(actual=multi, expected=single)
 
-    def test_integrand_surv_from_weighted_birth_time_scalar_multi_equals_single(
+    def test_integrand_surv_from_weighted_birth_time_multi_equals_single(
         self,
     ) -> None:
         birth_time = 30.0
-        birth_rate_val, death_rate_val, T = (
+        birth_rate_val, death_rate_val, final_time = (
             torch.tensor([0.02], dtype=torch.float64),
             torch.tensor([0.01], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
         )
-        single = _integrand_surv_from_weighted_birth_time_scalar(
+        single = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rate_val,
             death_rate_val,
-            T,
+            final_time,
         )
         times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
         birth_rates = torch.full(
@@ -659,7 +682,7 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
         )
-        multi = _integrand_surv_from_weighted_birth_time_scalar(
+        multi = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -681,19 +704,15 @@ class TestNumericalAccuracy:
     """
 
     def test_extinction_pr_critical_case_analytical(self) -> None:
-        """Test extinction probability when λ = μ (analytical formula).
-
-        When λ = μ, the extinction probability has the closed form:
-        α_t = λT / (1 + λT)
-        """
+        """Test extinction probability when λ = μ (analytical formula)."""
         birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        T = torch.tensor([100.0], dtype=torch.float64)
+        final_time = torch.tensor([100.0], dtype=torch.float64)
 
         # Expected: alpha_t = 0.1 * 100 / (1 + 0.1 * 100) = 10 / 11 ≈ 0.909091
-        expected = birth_rate_val * T / (1 + birth_rate_val * T)
+        expected = birth_rate_val * final_time / (1 + birth_rate_val * final_time)
 
         result = torch.tensor(
-            [calculate_extinction_pr(birth_rate_val, birth_rate_val, T)],
+            [calculate_extinction_pr(birth_rate_val, birth_rate_val, final_time)],
             dtype=torch.float64,
         )
 
@@ -701,17 +720,13 @@ class TestNumericalAccuracy:
         assert 0 < result < 1
 
     def test_populations_log_lik_n0_simple(self) -> None:
-        """Test log P(n=0) for simple parameters.
-
-        For n=0: log P(n=0) = log(α_t)
-        Where α_t = μ(e^{(λ-μ)T} - 1) / (λ e^{(λ-μ)T} - μ)
-        """
+        """Test log P(n=0) for simple parameters."""
         birth_rate_val = torch.tensor([0.2], dtype=torch.float64)
         death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        T = torch.tensor([10.0], dtype=torch.float64)
+        final_time = torch.tensor([10.0], dtype=torch.float64)
 
         # Compute expected alpha_t manually
-        growth = (birth_rate_val - death_rate_val) * T  # 1.0
+        growth = (birth_rate_val - death_rate_val) * final_time  # 1.0
         exp_growth = torch.exp(growth)  # e^1.0 ≈ 2.71828
         alpha_t = (
             death_rate_val
@@ -725,7 +740,7 @@ class TestNumericalAccuracy:
                 calculate_populations_log_lik(
                     birth_rate_val,
                     death_rate_val,
-                    times=T,
+                    times=final_time,
                     ns=torch.tensor([0], dtype=torch.int64),
                 ),
             ],
@@ -735,16 +750,12 @@ class TestNumericalAccuracy:
         assert_close(result, expected_log_prob)
 
     def test_populations_log_lik_critical_case_n0(self) -> None:
-        """Test log P(n=0) when λ = μ.
-
-        When λ = μ: α_t = λT / (1 + λT)
-        So log P(n=0) = log(λT / (1 + λT))
-        """
+        """Test log P(n=0) when λ = μ."""
         birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        T = torch.tensor([50.0], dtype=torch.float64)
+        final_time = torch.tensor([50.0], dtype=torch.float64)
 
         # Expected: alpha_t = 0.1 * 50 / (1 + 0.1 * 50) = 5/6
-        alpha_t = birth_rate_val * T / (1 + birth_rate_val * T)
+        alpha_t = birth_rate_val * final_time / (1 + birth_rate_val * final_time)
         expected = torch.log(alpha_t)
 
         result = torch.tensor(
@@ -752,7 +763,7 @@ class TestNumericalAccuracy:
                 calculate_populations_log_lik(
                     birth_rate_val,
                     birth_rate_val,
-                    times=T,
+                    times=final_time,
                     ns=torch.tensor([0], dtype=torch.int64),
                 ),
             ],
@@ -762,17 +773,13 @@ class TestNumericalAccuracy:
         assert_close(result, expected)
 
     def test_populations_log_lik_n1_simple(self) -> None:
-        """Test log P(n=1) for simple parameters.
-
-        For n=1: log P(n=1) = log(1 - α_t) + log(1 - β_t)
-        Where β_t = (λ/μ) * α_t
-        """
+        """Test log P(n=1) for simple parameters."""
         birth_rate_val = torch.tensor([0.3], dtype=torch.float64)
         death_rate_val = torch.tensor([0.2], dtype=torch.float64)
-        T = torch.tensor([5.0], dtype=torch.float64)
+        final_time = torch.tensor([5.0], dtype=torch.float64)
 
         # Compute alpha_t and beta_t
-        growth = (birth_rate_val - death_rate_val) * T
+        growth = (birth_rate_val - death_rate_val) * final_time
         exp_growth = torch.exp(growth)
         alpha_t = (
             death_rate_val
@@ -788,7 +795,7 @@ class TestNumericalAccuracy:
                 calculate_populations_log_lik(
                     birth_rate_val,
                     death_rate_val,
-                    times=T,
+                    times=final_time,
                     ns=torch.tensor([1], dtype=torch.int64),
                 ),
             ],
@@ -804,20 +811,22 @@ class TestNumericalAccuracy:
         """
         birth_rate_val = torch.tensor([0.2], dtype=torch.float64)
         death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        T = torch.tensor([10.0], dtype=torch.float64)
+        final_time = torch.tensor([10.0], dtype=torch.float64)
         age = torch.tensor([0.0], dtype=torch.float64)
 
-        result = calculate_spine_ages_log_lik(birth_rate_val, death_rate_val, age, T)
+        result = calculate_spine_ages_log_lik(
+            birth_rate_val,
+            death_rate_val,
+            age,
+            final_time,
+        )
 
         # Should return -inf
         assert result == -torch.tensor(float("inf"), dtype=torch.float64)
 
     def test_geometric_scalar_case(self) -> None:
-        """Docstring for test_geometric_scalar_case
-
-        :param self: Description
-        """
-        T = 10.0
+        """Docstring for test_geometric_scalar_case."""
+        final_time = torch.tensor([10.0], dtype=torch.float64)
         birth_rate_val = torch.tensor([1.0], dtype=torch.float64)
         death_rate_val = torch.tensor([2.0], dtype=torch.float64)
 
@@ -830,22 +839,27 @@ class TestNumericalAccuracy:
         integral, _ = scipy.integrate.quad(
             _integrand,
             0,
-            T,
+            final_time.item(),
         )
-        expected = torch.exp(-(birth_rate_val - death_rate_val) * T) / (1 + integral)
+        expected = torch.exp(-(birth_rate_val - death_rate_val) * final_time) / (
+            1 + integral
+        )
         result = torch.tensor(
-            [_population_geometric_parameter(birth_rate_val, death_rate_val, T)],
+            [
+                _population_geometric_parameter(
+                    birth_rate_val,
+                    death_rate_val,
+                    final_time,
+                ),
+            ],
             dtype=torch.float64,
         )
         assert_close(result, expected)
 
     def test_geometric_parameter_critical_case(self) -> None:
-        """Test _population_geometric_parameter when λ = μ.
-
-        Private function test: This function returns 1 - β_t where β_t = λT / (1 + λT)
-        """
+        """Test _population_geometric_parameter when λ = μ."""
         birth_rate_val = death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        T = 20.0
+        final_time = torch.tensor([20.0], dtype=torch.float64)
 
         def _integrand(x: float) -> float:
             lam = float(birth_rate_val[0])
@@ -856,21 +870,26 @@ class TestNumericalAccuracy:
         integral, _ = scipy.integrate.quad(
             _integrand,
             0,
-            T,
+            final_time.item(),
         )
-        expected = torch.exp(-(birth_rate_val - death_rate_val) * T) / (1 + integral)
+        expected = torch.exp(-(birth_rate_val - death_rate_val) * final_time) / (
+            1 + integral
+        )
         result = torch.tensor(
-            [_population_geometric_parameter(birth_rate_val, death_rate_val, T)],
+            [
+                _population_geometric_parameter(
+                    birth_rate_val,
+                    death_rate_val,
+                    final_time,
+                ),
+            ],
             dtype=torch.float64,
         )
 
         assert_close(result, expected)
 
     def test_geometric_parameter_general_case(self) -> None:
-        """Test _population_geometric_parameter for λ ≠ μ.
-
-        Private function test: Function returns 1 - β_t where β_t = (λ/μ) * α_t
-        """
+        """Test _population_geometric_parameter for λ ≠ μ."""
         birth_rates = torch.tensor([0.3, 0.4], dtype=torch.float64)
         death_rates = torch.tensor([0.1, 0.3], dtype=torch.float64)
         epoch_ends = torch.tensor([5.0, 9.0], dtype=torch.float64)
@@ -914,12 +933,12 @@ class TestNumericalAccuracy:
         """
         birth_rate_val = torch.tensor([0.2], dtype=torch.float64)
         death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        T = torch.tensor([10.0], dtype=torch.float64)
+        final_time = torch.tensor([10.0], dtype=torch.float64)
 
         result = _pr_extinction_numerator(
             birth_rate_val,
             death_rate_val,
-            T,
+            final_time,
         )
 
         # Should be positive and finite
@@ -935,14 +954,14 @@ class TestNumericalAccuracy:
         """
         death_rate_val = torch.tensor([0.1], dtype=torch.float64)
         age = torch.tensor([20.0], dtype=torch.float64)
-        T = torch.tensor([100.0], dtype=torch.float64)
+        final_time = torch.tensor([100.0], dtype=torch.float64)
 
         # For simple case: log f(t) = log(λ) - λt
         # (This is simplified; actual formula may differ)
         result = calculate_log_lik_lifetimes(
             age,
             death_rate_val,
-            T,
+            final_time,
         )
 
         # Should be finite and negative (log of density)
@@ -956,13 +975,13 @@ class TestNumericalAccuracy:
         """
         death_rate_val = torch.tensor([0.1], dtype=torch.float64)
         ages = torch.tensor([10.0, 30.0, 50.0], dtype=torch.float64)
-        T = torch.tensor([100.0], dtype=torch.float64)
+        final_time = torch.tensor([100.0], dtype=torch.float64)
 
         # Compute for array
         result_array = calculate_log_lik_lifetimes(
             ages,
             death_rate_val,
-            T,
+            final_time,
         )
 
         # Compute individually and sum
@@ -970,7 +989,7 @@ class TestNumericalAccuracy:
             calculate_log_lik_lifetimes(
                 torch.tensor([age], dtype=torch.float64),
                 death_rate_val,
-                T,
+                final_time,
             )
             for age in ages
         )
@@ -985,33 +1004,37 @@ class TestNumericalAccuracy:
         birth_rate_val = torch.tensor([0.2], dtype=torch.float64)
         death_rate_val = torch.tensor([0.1], dtype=torch.float64)
         age = torch.tensor([5.0], dtype=torch.float64)
-        T = torch.tensor([20.0], dtype=torch.float64)
+        final_time = torch.tensor([20.0], dtype=torch.float64)
 
         # Non-spine density: f(t) = [λe^{-λt} - μe^{-(λ-μ)T}e^{-μt}] / [1 - e^{-(λ-μ)T}]
         growth_rate = birth_rate_val - death_rate_val
         term1 = birth_rate_val * torch.exp(-birth_rate_val * age)
         term2 = (
             death_rate_val
-            * torch.exp(-growth_rate * T)
+            * torch.exp(-growth_rate * final_time)
             * torch.exp(-death_rate_val * age)
         )
         numerator = term1 - term2
-        denominator = 1 - torch.exp(-growth_rate * T)
+        denominator = 1 - torch.exp(-growth_rate * final_time)
         density = numerator / denominator
         expected = torch.log(density)
 
         result = torch.tensor(
-            [calculate_non_spine_ages_log_lik(birth_rate_val, death_rate_val, age, T)],
+            [
+                calculate_non_spine_ages_log_lik(
+                    birth_rate_val,
+                    death_rate_val,
+                    age,
+                    final_time,
+                ),
+            ],
             dtype=torch.float64,
         )
 
         assert_close(result, expected)
 
     def test_extinction_pr_bounds(self) -> None:
-        """Test that extinction probability satisfies 0 < α_t < 1 for various inputs.
-
-        Validates mathematical constraint across parameter space.
-        """
+        """Test that 0 < extinction probability < 1 for various inputs."""
         test_cases = [
             (0.1, 0.05, 100.0),
             (0.5, 0.3, 50.0),
@@ -1019,15 +1042,16 @@ class TestNumericalAccuracy:
             (0.01, 0.005, 1000.0),
         ]
 
-        for birth_rate_val, death_rate_val, T in test_cases:
+        for birth_rate_val, death_rate_val, final_time in test_cases:
             result = calculate_extinction_pr(
                 torch.tensor(birth_rate_val, dtype=torch.float64),
                 torch.tensor(death_rate_val, dtype=torch.float64),
-                torch.tensor(T, dtype=torch.float64),
+                torch.tensor(final_time, dtype=torch.float64),
             )
 
             assert 0 < result < 1, (
-                f"Failed for λ={birth_rate_val}, μ={death_rate_val}, T={T}"
+                f"Failed for λ={birth_rate_val}, μ={death_rate_val}, "
+                f"final_time={final_time}"
             )
 
     def test_calculate_log_pr_extinction_given_initial_lifetimes_zero(self) -> None:
@@ -1037,14 +1061,14 @@ class TestNumericalAccuracy:
         """
         birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
         death_rate_val = torch.tensor([0.05], dtype=torch.float64)
-        T = torch.tensor([100.0], dtype=torch.float64)
+        final_time = torch.tensor([100.0], dtype=torch.float64)
         age = torch.tensor([0.0], dtype=torch.float64)
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
             age,
             birth_rate_val,
             death_rate_val,
-            T,
+            final_time,
         )
 
         # Should be finite (could be 0 at age 0, representing log(1) = 0)
@@ -1059,14 +1083,14 @@ class TestNumericalAccuracy:
         """
         birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
         death_rate_val = torch.tensor([0.07], dtype=torch.float64)
-        T = torch.tensor([80.0], dtype=torch.float64)
+        final_time = torch.tensor([80.0], dtype=torch.float64)
         n = torch.tensor([5], dtype=torch.int64)
 
         # Scalar computation
         result_scalar = calculate_populations_log_lik(
             birth_rate_val,
             death_rate_val,
-            times=T,
+            times=final_time,
             ns=n,
         )
 
@@ -1074,7 +1098,7 @@ class TestNumericalAccuracy:
         result_array = calculate_populations_log_lik(
             birth_rate_val,
             death_rate_val,
-            times=T,
+            times=final_time,
             ns=n,
         )
 
@@ -1087,7 +1111,7 @@ class TestNumericalAccuracy:
 
 
 class TestExtinctionProbability:
-    """Test extinction probability calculations (α_t)."""
+    """Test extinction probability calculations."""
 
     def test_extinction_pr_basic(
         self,
@@ -1168,7 +1192,7 @@ class TestExtinctionProbability:
         assert result == 0
 
     def test_extinction_pr_zero_rates_multi_epoch(self) -> None:
-        """Test extinction probability with multi-epoch where some epochs have zero rates."""
+        """Test extinction probability with multi-epoch with some zero-rate epochs."""
         # Some epochs with normal rates, some with zero rates
         birth_rate_arr = torch.tensor([0.1, 0.0, 0.15], dtype=torch.float64)
         death_rate_arr = torch.tensor([0.05, 0.0, 0.08], dtype=torch.float64)
@@ -1198,14 +1222,14 @@ class TestExtinctionProbability:
         # Extinction probability should be monotonically increasing with time
         for i in range(len(results) - 1):
             assert results[i] < results[i + 1], (
-                f"α(t={times[i]}) = {results[i]} should be < "
-                f"α(t={times[i + 1]}) = {results[i + 1]}"
+                f"Pr ext by (t={times[i]}) = {results[i]} should be < "
+                f"Pr ext by (t={times[i + 1]}) = {results[i + 1]}"
             )
 
     def test_extinction_pr_increases_with_death_rate(self) -> None:
         """Test that extinction probability increases as death rate increases."""
         birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        T = torch.tensor([100.0], dtype=torch.float64)
+        final_time = torch.tensor([100.0], dtype=torch.float64)
 
         # Compare extinction probabilities at different death rates
         death_rates = [
@@ -1215,21 +1239,21 @@ class TestExtinctionProbability:
             torch.tensor([0.1], dtype=torch.float64),
         ]
         results = [
-            calculate_extinction_pr(birth_rate_val, death_rate_val, T)
+            calculate_extinction_pr(birth_rate_val, death_rate_val, final_time)
             for death_rate_val in death_rates
         ]
 
         # Extinction probability should be monotonically increasing with death rate
         for i in range(len(results) - 1):
             assert results[i] < results[i + 1], (
-                f"α(μ={death_rates[i]}) = {results[i]} should be < "
-                f"α(μ={death_rates[i + 1]}) = {results[i + 1]}"
+                f"Pr ext for (μ={death_rates[i]}) = {results[i]} should be < "
+                f"Pr ext for (μ={death_rates[i + 1]}) = {results[i + 1]}"
             )
 
     def test_extinction_pr_decreases_with_birth_rate(self) -> None:
         """Test that extinction probability decreases as birth rate increases."""
         death_rate_val = torch.tensor([0.05], dtype=torch.float64)
-        T = torch.tensor([100.0], dtype=torch.float64)
+        final_time = torch.tensor([100.0], dtype=torch.float64)
 
         # Compare extinction probabilities at different birth rates
         birth_rates = [
@@ -1239,15 +1263,15 @@ class TestExtinctionProbability:
             torch.tensor([0.2], dtype=torch.float64),
         ]
         results = [
-            calculate_extinction_pr(birth_rate_val, death_rate_val, T)
+            calculate_extinction_pr(birth_rate_val, death_rate_val, final_time)
             for birth_rate_val in birth_rates
         ]
 
         # Extinction probability should be monotonically decreasing with birth rate
         for i in range(len(results) - 1):
             assert results[i] > results[i + 1], (
-                f"α(λ={birth_rates[i]}) = {results[i]} should be > "
-                f"α(λ={birth_rates[i + 1]}) = {results[i + 1]}"
+                f"Pr extinction for (λ={birth_rates[i]}) = {results[i]} should be > "
+                f"Pr extinction for (λ={birth_rates[i + 1]}) = {results[i + 1]}"
             )
 
 
@@ -1325,7 +1349,7 @@ class TestPopulationsLogLikelihood:
         standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test that negative time raises ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="times must be positive"):
             calculate_populations_log_lik(
                 standard_scalar_params["birth_rate"],
                 standard_scalar_params["death_rate"],
@@ -1338,7 +1362,7 @@ class TestPopulationsLogLikelihood:
         standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
         """Test that negative population count raises ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="ns must be non-negative"):
             calculate_populations_log_lik(
                 standard_scalar_params["birth_rate"],
                 standard_scalar_params["death_rate"],
@@ -1362,7 +1386,7 @@ class TestPopulationsLogLikelihood:
 
     def test_array_length_mismatch_raises_error(self) -> None:
         """Test that mismatched array lengths raise ValueError."""
-        with pytest.raises(ValueError, match="Tensors must have matching lengths."):
+        with pytest.raises(ValueError, match="Tensors must have matching lengths"):
             calculate_populations_log_lik(
                 birth_rates=torch.tensor([0.1, 0.15], dtype=torch.float64),
                 death_rates=torch.tensor(
@@ -1418,13 +1442,13 @@ class TestSpineAgesLogLikelihood:
         self,
         standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
-        """Test age exactly equal to observation time T."""
-        T = standard_scalar_params["time"]
+        """Test age exactly equal to observation timefinal_time."""
+        final_time = standard_scalar_params["time"]
         result = calculate_spine_ages_log_lik(
             standard_scalar_params["birth_rate"],
             standard_scalar_params["death_rate"],
-            T,  # Age = T (boundary case)
-            T,
+            final_time,  # Age = final_time (boundary case)
+            final_time,
         )
 
         assert torch.isfinite(result)
@@ -1444,19 +1468,19 @@ class TestSpineAgesLogLikelihood:
 
         assert torch.isfinite(result)
 
-    def test_invalid_age_greater_than_T(
+    def test_invalid_age_greater_than_final_time(
         self,
         standard_scalar_params: dict[str, torch.Tensor],
     ) -> None:
-        """Test that age > T returns -inf."""
+        """Test that age > final_time returns -inf."""
         with pytest.raises(
             ValueError,
             match=r"ages must be in \[0, .*\]. Got ages:",
-        ):  # age > T
+        ):  # age > final_time
             calculate_spine_ages_log_lik(
                 standard_scalar_params["birth_rate"],
                 standard_scalar_params["death_rate"],
-                standard_scalar_params["time"] + 10.0,  # age > T
+                standard_scalar_params["time"] + 10.0,  # age > final_time
                 standard_scalar_params["time"],
             )
 
@@ -1825,15 +1849,18 @@ class TestNumericalStability:
         )
 
     def test_ages_near_observation_time(self) -> None:
-        """Test age likelihood with ages very close to T."""
-        T = torch.tensor([100.0], dtype=torch.float64)
-        ages = torch.tensor([T - 1e-6, T - 1e-8, T - 1e-10], dtype=torch.float64)
+        """Test age likelihood with ages very close to final_time."""
+        final_time = torch.tensor([100.0], dtype=torch.float64)
+        ages = torch.tensor(
+            [final_time - 1e-6, final_time - 1e-8, final_time - 1e-10],
+            dtype=torch.float64,
+        )
 
         result = calculate_spine_ages_log_lik(
             birth_rates=0.1,
             death_rates=0.05,
             ages=ages,
-            times=T,
+            times=final_time,
         )
 
         assert torch.isfinite(result)
@@ -1920,7 +1947,7 @@ class TestVectorization:
 
 
 class TestIntegrandSurvFromWeightedBirthTime:
-    """Test the _integrand_surv_from_weighted_birth_time_scalar private helper function.
+    """Test the _integrand_surv_from_weighted_birth_time private helper function.
 
     This function is used in calculating survival probabilities and returns a
     Python float for use in numerical integration.
@@ -1933,7 +1960,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05], dtype=torch.float64)
         times = torch.tensor([100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -1951,7 +1978,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -1968,7 +1995,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -1987,7 +2014,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
         # After subtracting birth_time, times becomes [0.0, 50.0]
         # valid_indices will be where times > 0, so only index 1
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2004,7 +2031,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2020,7 +2047,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
         # After subtracting birth_time, times becomes negative, no valid indices
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2035,7 +2062,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2054,7 +2081,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
         # After subtracting, times becomes [-25.0, 25.0, 75.0]
         # valid_indices will be [1, 2]
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2071,7 +2098,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05], dtype=torch.float64)
         times = torch.tensor([100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2092,13 +2119,13 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result1 = _integrand_surv_from_weighted_birth_time_scalar(
+        result1 = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates1,
             death_rates,
             times,
         )
-        result2 = _integrand_surv_from_weighted_birth_time_scalar(
+        result2 = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates2,
             death_rates,
@@ -2120,7 +2147,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         )  # Length 3 - MISMATCH!
 
         with pytest.raises(IndexError):
-            _integrand_surv_from_weighted_birth_time_scalar(
+            _integrand_surv_from_weighted_birth_time(
                 birth_time,
                 birth_rates,
                 death_rates,
@@ -2134,7 +2161,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2152,7 +2179,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         )  # Length 3 - MISMATCH!
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2185,7 +2212,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
         # This should raise IndexError due to valid_indices being out of bounds
         with pytest.raises(IndexError):
-            _integrand_surv_from_weighted_birth_time_scalar(
+            _integrand_surv_from_weighted_birth_time(
                 birth_time,
                 birth_rates,
                 death_rates,
@@ -2203,7 +2230,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # After subtracting birth_time, times becomes [-10.0, 40.0, 90.0]
         # valid_indices should be [1, 2] (where times > 0)
         # Accessing birth_rates[[1, 2]] should work fine
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2217,7 +2244,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
 class TestCalculateLogPrExtinctionGivenInitialLifetimes:
     """Test calculate_log_pr_extinction_given_initial_lifetimes function.
 
-    This function uses _integrand_surv_from_weighted_birth_time_scalar internally
+    This function uses _integrand_surv_from_weighted_birth_time internally
     and has a bug where lifetime > max(times) causes IndexError.
     """
 
@@ -2438,7 +2465,7 @@ class TestTimeReversalInvolution:
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        inv_times, refl_birth, refl_death = _reverse_time(
+        _, refl_birth, refl_death = _reverse_time(
             birth_rates,
             death_rates,
             times,
@@ -2473,3 +2500,285 @@ class TestTimeReversalInvolution:
 
         # Final time should be the same
         assert_close(inv_times[-1], times[-1])
+
+
+class TestSkipNormalizationWithNonTensorInputsRaises:
+    """Validate non-tensor inputs raise when _skip_normalization=True."""
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("birth_rates", 0.1, "birth_rates must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+        ],
+    )
+    def test_calculate_populations_log_lik_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "birth_rates": torch.tensor([0.1], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "ns": torch.tensor([3], dtype=torch.int64),
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            calculate_populations_log_lik(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("birth_rates", 0.1, "birth_rates must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+            ("ages", 20.0, "ages must be a torch.Tensor"),
+        ],
+    )
+    def test_calculate_non_spine_ages_log_lik_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "birth_rates": torch.tensor([0.1], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "ages": torch.tensor([20.0], dtype=torch.float64),
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            calculate_non_spine_ages_log_lik(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("birth_rates", 0.1, "birth_rates must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+            ("ages", 20.0, "ages must be a torch.Tensor"),
+        ],
+    )
+    def test_calculate_spine_ages_log_lik_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "birth_rates": torch.tensor([0.1], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "ages": torch.tensor([20.0], dtype=torch.float64),
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            calculate_spine_ages_log_lik(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("birth_rates", 0.1, "birth_rates must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+            ("ages", 20.0, "ages must be a torch.Tensor"),
+        ],
+    )
+    def test_calculate_ages_log_lik_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "birth_rates": torch.tensor([0.1], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "ages": torch.tensor([20.0], dtype=torch.float64),
+            "are_spines": False,
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            calculate_ages_log_lik(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("birth_rates", 0.1, "birth_rates must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+        ],
+    )
+    def test_calculate_extinction_pr_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "birth_rates": torch.tensor([0.1], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            calculate_extinction_pr(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("lifetimes", 20.0, "lifetimes must be a torch.Tensor"),
+            ("birth_rates", 0.1, "birth_rates must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+        ],
+    )
+    def test_calculate_log_pr_extinction_given_initial_lifetimes_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "lifetimes": torch.tensor([20.0], dtype=torch.float64),
+            "birth_rates": torch.tensor([0.1], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            calculate_log_pr_extinction_given_initial_lifetimes(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("lifetimes", 20.0, "lifetimes must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+        ],
+    )
+    def test_calculate_log_lik_lifetimes_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "lifetimes": torch.tensor([20.0], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            calculate_log_lik_lifetimes(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("lifetimes", 20.0, "lifetimes must be a torch.Tensor"),
+            ("birth_rates", 0.1, "birth_rates must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+        ],
+    )
+    def test_calculate_log_lik_initial_lifetimes_given_extinction_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "lifetimes": torch.tensor([20.0], dtype=torch.float64),
+            "birth_rates": torch.tensor([0.1], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            calculate_log_lik_initial_lifetimes_given_extinction(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("lifetimes", 20.0, "lifetimes must be a torch.Tensor"),
+            ("birth_rates", 0.1, "birth_rates must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+        ],
+    )
+    def test_calculate_log_lik_initial_lifetimes_given_non_extinction_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "lifetimes": torch.tensor([20.0], dtype=torch.float64),
+            "birth_rates": torch.tensor([0.1], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            calculate_log_lik_initial_lifetimes_given_non_extinction(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("birth_rates", 0.1, "birth_rates must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+        ],
+    )
+    def test_population_geometric_parameter_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "birth_rates": torch.tensor([0.1], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            _population_geometric_parameter(**kwargs)
+
+    @pytest.mark.parametrize(
+        ("arg_name", "arg_value", "error_message"),
+        [
+            ("birth_rates", 0.1, "birth_rates must be a torch.Tensor"),
+            ("death_rates", 0.05, "death_rates must be a torch.Tensor"),
+            ("times", 100.0, "times must be a torch.Tensor"),
+        ],
+    )
+    def test_pr_extinction_numerator_non_tensor_raises(
+        self,
+        arg_name: str,
+        arg_value: float,
+        error_message: str,
+    ) -> None:
+        kwargs = {
+            "birth_rates": torch.tensor([0.1], dtype=torch.float64),
+            "death_rates": torch.tensor([0.05], dtype=torch.float64),
+            "times": torch.tensor([100.0], dtype=torch.float64),
+            "_skip_normalization": True,
+        }
+        kwargs[arg_name] = arg_value
+        with pytest.raises(ValueError, match=error_message):
+            _pr_extinction_numerator(**kwargs)

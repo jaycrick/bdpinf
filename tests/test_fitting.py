@@ -26,7 +26,7 @@ from inf_bp_texts.inference.fitting import (
 )
 from inf_bp_texts.inference.likelihood import negative_log_likelihood
 from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.models.validation import validate_times_properties
+from inf_bp_texts.models.validation import _validate_times_properties
 
 
 class TestFittingHelpers:
@@ -35,9 +35,9 @@ class TestFittingHelpers:
         result = _find_non_empty_age(ages_list)
         assert torch.equal(result, ages_list[1])
 
-    def test_validate_times_properties_rejects_non_positive(self) -> None:
+    def test__validate_times_properties_rejects_non_positive(self) -> None:
         with pytest.raises(ValueError, match="must be positive"):
-            validate_times_properties(torch.tensor([1.0, 0.0]))
+            _validate_times_properties(torch.tensor([1.0, 0.0]))
 
     def test_prepare_population_sizes_length_mismatch(self) -> None:
         ages_list = [torch.tensor([1.0]), torch.tensor([2.0])]

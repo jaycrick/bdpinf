@@ -44,6 +44,7 @@ repos:
           - plotly-stubs
           - lxml-stubs
           - types-torch
+          - typer
         files: ^src/
 
   # toml-sort

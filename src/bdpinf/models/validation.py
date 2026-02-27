@@ -11,13 +11,13 @@ from inf_bp_texts.utils import (
 )
 
 
-def validate_times_positive(times: torch.Tensor, *, error_message: str) -> None:
+def _validate_times_positive(times: torch.Tensor, *, error_message: str) -> None:
     """Validate that times are strictly positive."""
     if torch.any(times <= 0):
         raise ValueError(error_message)
 
 
-def validate_times_strictly_increasing(
+def _validate_times_strictly_increasing(
     times: torch.Tensor,
     *,
     all_positive: bool = False,
@@ -32,7 +32,7 @@ def validate_times_strictly_increasing(
         raise ValueError(error_message)
 
 
-def validate_ages_in_range(
+def _validate_ages_in_range(
     ages: torch.Tensor,
     end_time: torch.Tensor,
     *,
@@ -43,7 +43,7 @@ def validate_ages_in_range(
         raise ValueError(error_message)
 
 
-def validate_rates_non_negative(
+def _validate_rates_non_negative(
     birth_rates: torch.Tensor | None,
     death_rates: torch.Tensor | None,
 ) -> None:
@@ -67,7 +67,7 @@ class ValidationConfig(NamedTuple):
     require_rates_non_negative: bool = True
 
 
-def validate_rate_time_consistency(
+def _validate_rate_time_consistency(
     tensor_map: dict[str, torch.Tensor],
     *,
     validate_lengths: bool = True,
@@ -93,7 +93,7 @@ def validate_rate_time_consistency(
         )
 
 
-def validate_times_properties(
+def _validate_times_properties(
     times: torch.Tensor,
     *,
     require_positive: bool = True,
@@ -101,12 +101,12 @@ def validate_times_properties(
 ) -> None:
     """Validate time tensor properties."""
     if require_positive:
-        validate_times_positive(
+        _validate_times_positive(
             times,
             error_message=f"times must be positive. Got times: {times}",
         )
     if require_increasing:
-        validate_times_strictly_increasing(
+        _validate_times_strictly_increasing(
             times,
             all_positive=require_positive,
         )
@@ -161,13 +161,13 @@ def normalize_and_validate_inputs(
 
     # Validate rates are non-negative
     if config.require_rates_non_negative:
-        validate_rates_non_negative(
+        _validate_rates_non_negative(
             tensor_map.get("birth_rates"),
             tensor_map.get("death_rates"),
         )
 
     # Validate rate/time consistency
-    validate_rate_time_consistency(
+    _validate_rate_time_consistency(
         tensor_map,
         validate_lengths=config.validate_lengths,
         validate_shapes=config.validate_shapes,
@@ -175,7 +175,7 @@ def normalize_and_validate_inputs(
 
     # Validate times
     if times is not None:
-        validate_times_properties(
+        _validate_times_properties(
             tensor_map["times"],
             require_positive=config.require_times_positive,
             require_increasing=config.require_times_increasing,
@@ -187,7 +187,7 @@ def normalize_and_validate_inputs(
             msg = "times is required for age range validation."
             raise ValueError(msg)
         end_time = tensor_map["times"][-1]
-        validate_ages_in_range(
+        _validate_ages_in_range(
             tensor_map["ages"],
             end_time,
             error_message=(

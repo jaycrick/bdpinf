@@ -1,6 +1,7 @@
 """Derivative functions for birth-and-death process calculations.
 
 This module contains analytical derivatives used by the mathematical functions.
+Currently it is only used for validating the autograd results from PyTorch.
 """
 
 import torch
@@ -14,10 +15,7 @@ def calculate_populations_log_lik_derivatives(
     time: torch.Tensor | float,
     ns: torch.Tensor | int,
 ) -> torch.Tensor:
-    """Calculate derivatives of log population probabilities with respect to lambda and mu.
-
-    Uses only PyTorch operations to preserve autograd support.
-    """
+    """Calculate derivatives of log population probs with respect to lambda and mu."""
     birth_rate_val, death_rate_val, time_t, ns = ensure_1d_tensors(
         birth_rate,
         death_rate,

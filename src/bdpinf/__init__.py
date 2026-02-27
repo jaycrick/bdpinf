@@ -1,4 +1,4 @@
-"""inf-bp-texts: A Python platform for performing inference and analysis on various datasets downloaded from APIs.
+"""inf-bp-texts: A Python platform for inference and analysis on manuscript datasets.
 
 This package provides birth-death process modeling tools for manuscript data analysis,
 including parameter estimation, simulation, and visualization capabilities.
