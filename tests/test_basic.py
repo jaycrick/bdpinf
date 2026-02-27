@@ -2,8 +2,8 @@
 
 # ruff: noqa: S101
 
-import os
 import tempfile
+from pathlib import Path
 
 from inf_bp_texts.utils import ensure_directory
 
@@ -11,10 +11,10 @@ from inf_bp_texts.utils import ensure_directory
 def test_ensure_directory() -> None:
     """Test directory creation utility."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        test_path = os.path.join(temp_dir, "test_subdir", "nested")
+        test_path = Path(temp_dir) / "test_subdir" / "nested"
         ensure_directory(test_path)
-        assert os.path.exists(test_path)
-        assert os.path.isdir(test_path)
+        assert test_path.exists()
+        assert test_path.is_dir()
 
 
 def test_package_import() -> None:
