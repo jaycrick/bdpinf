@@ -1089,7 +1089,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
             b = float(interval_ends[idx].item())
             result, _ = scipy.integrate.quad(
                 lambda t: float(
-                    _integrand_surv_from_weighted_birth_time_scalar(
+                    _integrand_surv_from_weighted_birth_time(
                         t,
                         birth_rates_cpu,
                         death_rates_cpu,
@@ -1298,65 +1298,6 @@ def _population_geometric_parameter(
 
 
 def _integrand_surv_from_weighted_birth_time(
-    birth_time: torch.Tensor | float,
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
-) -> torch.Tensor:
-    """Integrand for survival probability calculation (scalar version).
-
-    Parameters
-    ----------
-    birth_time : torch.Tensor | float
-        Scalar time at which birth occurred.
-    birth_rates : torch.Tensor
-        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
-    death_rates : torch.Tensor
-        1D tensor of death rates μ per epoch; same shape as ``birth_rates``
-        (dtype: torch.float64).
-    times : torch.Tensor
-        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,),
-        dtype: torch.float64).
-
-    Returns
-    -------
-    torch.Tensor
-        Scalar tensor containing integrand value. Shape: (),
-        dtype: torch.float64.
-
-    """
-    # Convert inputs to tensors
-    birth_time, birth_rates, death_rates, times = ensure_1d_tensors(
-        birth_time,
-        birth_rates,
-        death_rates,
-        times,
-    )
-
-    # Find the index of the last epoch that starts before or at start_time
-    times_shifted = times - birth_time
-    valid_mask = times_shifted > 0
-    valid_indices = torch.where(valid_mask)[0]
-
-    if len(valid_indices) == 0:
-        msg = "birth_time exceeds all epoch end times."
-        raise ValueError(msg)
-
-    trunc_times = times_shifted[valid_indices]
-    trunc_birth_rates = birth_rates[valid_indices]
-    trunc_death_rates = death_rates[valid_indices]
-
-    ext_prob = calculate_extinction_pr(
-        birth_rates=trunc_birth_rates,
-        death_rates=trunc_death_rates,
-        times=trunc_times,
-        _skip_normalization=True,
-    )
-
-    return ext_prob * trunc_birth_rates[0]
-
-
-def _integrand_surv_from_weighted_birth_time_scalar(
     birth_time: float,
     birth_rates: torch.Tensor,
     death_rates: torch.Tensor,

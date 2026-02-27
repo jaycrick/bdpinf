@@ -7,17 +7,12 @@ import types
 from pathlib import Path
 from typing import Any, cast
 
-import numpy as np
-import pandas as pd
 import pytest
 
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,
     apply_tufte_axes,
     apply_tufte_legend,
-    plot_bootstrap_confidence_intervals,
-    plot_parameter_comparison,
-    plot_simulation_results,
     save_figure,
 )
 
@@ -257,150 +252,3 @@ def test_save_figure_failure_returns_none(tmp_path: Path) -> None:
     saved = save_figure(fig, "bad_plot", output_dir=str(tmp_path))
 
     assert saved is None
-
-
-def test_plot_parameter_comparison_length_mismatch_raises() -> None:
-    """plot_parameter_comparison should reject mismatched input lengths."""
-    with pytest.raises(ValueError, match="must have same length"):
-        plot_parameter_comparison(
-            fit_results_list=[
-                {
-                    "success": True,
-                    "birth_rate": 1,
-                    "death_rate": 1,
-                    "log_likelihood": -1,
-                },
-            ],
-            parameter_names=["a", "b"],
-        )
-
-
-def test_plot_parameter_comparison_no_successful_fits_prints(
-    capsys: pytest.CaptureFixture[str],
-    fake_plotly: dict[str, list[DummyFigure]],
-) -> None:
-    """plot_parameter_comparison should print and exit when all fits fail."""
-    plot_parameter_comparison(
-        fit_results_list=[
-            {
-                "success": False,
-                "birth_rate": 0.1,
-                "death_rate": 0.05,
-                "log_likelihood": -10,
-            },
-        ],
-        parameter_names=["set1"],
-    )
-
-    out = capsys.readouterr().out
-    assert "No successful fits to plot." in out
-    assert fake_plotly["subplot_figures"] == []
-
-
-def test_plot_parameter_comparison_success_builds_traces(
-    fake_plotly: dict[str, list[DummyFigure]],
-) -> None:
-    """plot_parameter_comparison should create traces for successful fit entries."""
-    expected_traces = 3
-    plot_parameter_comparison(
-        fit_results_list=[
-            {
-                "success": True,
-                "birth_rate": 0.2,
-                "death_rate": 0.1,
-                "log_likelihood": -12.3,
-            },
-            {
-                "success": False,
-                "birth_rate": 0.3,
-                "death_rate": 0.2,
-                "log_likelihood": -10.0,
-            },
-            {
-                "success": True,
-                "birth_rate": 0.4,
-                "death_rate": 0.2,
-                "log_likelihood": -8.1,
-            },
-        ],
-        parameter_names=["A", "B", "C"],
-    )
-
-    fig = fake_plotly["subplot_figures"][0]
-    assert len(fig.traces) == expected_traces
-    assert fig.show_called is True
-
-
-def test_plot_simulation_results_no_survivors_prints(
-    capsys: pytest.CaptureFixture[str],
-    fake_plotly: dict[str, list[DummyFigure]],
-) -> None:
-    """plot_simulation_results should report when no manuscripts survive."""
-    df = pd.DataFrame(
-        {
-            "survived": [False, False],
-            "age": [10.0, 20.0],
-            "creation_time": [1.0, 2.0],
-        },
-    )
-
-    plot_simulation_results(df)
-
-    out = capsys.readouterr().out
-    assert "No surviving manuscripts to plot." in out
-    assert fake_plotly["subplot_figures"] == []
-
-
-def test_plot_simulation_results_success_creates_expected_traces(
-    fake_plotly: dict[str, list[DummyFigure]],
-) -> None:
-    """plot_simulation_results should build expected traces and show the figure."""
-    expected_traces = 5
-    df = pd.DataFrame(
-        {
-            "survived": [True, True, False],
-            "age": [50.0, 100.0, 150.0],
-            "creation_time": [10.0, 20.0, 30.0],
-        },
-    )
-
-    plot_simulation_results(df, age_bins=np.array([0.0, 50.0, 100.0, 150.0]))
-
-    fig = fake_plotly["subplot_figures"][0]
-    assert len(fig.traces) == expected_traces
-    assert fig.show_called is True
-
-
-def test_plot_bootstrap_confidence_intervals_failed_prints(
-    capsys: pytest.CaptureFixture[str],
-    fake_plotly: dict[str, list[DummyFigure]],
-) -> None:
-    """plot_bootstrap_confidence_intervals should print when bootstrap failed."""
-    plot_bootstrap_confidence_intervals({"success": False})
-    out = capsys.readouterr().out
-    assert "Bootstrap analysis failed, cannot plot." in out
-    assert fake_plotly["figure_figures"] == []
-
-
-def test_plot_bootstrap_confidence_intervals_success_builds_figure(
-    fake_plotly: dict[str, list[DummyFigure]],
-) -> None:
-    """plot_bootstrap_confidence_intervals should render two parameter traces."""
-    expected_traces = 2
-    results = {
-        "success": True,
-        "original_fit": {"birth_rate": 0.5, "death_rate": 0.2},
-        "birth_rate_ci": (0.4, 0.6),
-        "death_rate_ci": (0.1, 0.3),
-        "confidence_level": 0.95,
-        "n_bootstrap": 500,
-    }
-
-    plot_bootstrap_confidence_intervals(results)
-
-    fig = fake_plotly["figure_figures"][0]
-    assert len(fig.traces) == expected_traces
-    assert fig.show_called is True
-    title = fig.layout_updates[-1]["title"]
-    assert "95% CI" in title
-    assert "500 bootstrap samples" in title

@@ -185,10 +185,7 @@ class BirthDeathProcess:
         if self.birth_rate <= 0 or self.death_rate <= 0:
             return False
 
-        if not (np.isfinite(self.birth_rate) and np.isfinite(self.death_rate)):
-            return False
-
-        return True
+        return bool(np.isfinite(self.birth_rate) and np.isfinite(self.death_rate))
 
     def update_parameters(
         self,

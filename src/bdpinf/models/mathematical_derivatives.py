@@ -1,6 +1,7 @@
 """Derivative functions for birth-and-death process calculations.
 
 This module contains analytical derivatives used by the mathematical functions.
+Currently it is only used for validating the autograd results from PyTorch.
 """
 
 import torch

@@ -9,7 +9,6 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from inf_bp_texts.config import OptimizationConfig
 from inf_bp_texts.models.birth_death_process import BirthDeathProcess
 
 # Add the src directory to the path so we can import inf_bp_texts
@@ -64,16 +63,6 @@ def sample_fit_results() -> dict[str, Any]:
         "n_data_points": 50,
         "message": "Optimization completed successfully",
     }
-
-
-@pytest.fixture
-def optimization_config() -> OptimizationConfig:
-    """Sample optimization configuration."""
-    return OptimizationConfig(
-        method="L-BFGS-B",
-        max_iterations=100,  # Reduced for faster testing
-        tolerance=1e-4,
-    )
 
 
 # Utility functions for testing

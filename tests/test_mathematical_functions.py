@@ -28,7 +28,7 @@ from torch.testing import assert_close
 
 # Import private functions for direct testing
 from inf_bp_texts.models.mathematical_functions import (
-    _integrand_surv_from_weighted_birth_time_scalar,
+    _integrand_surv_from_weighted_birth_time,
     _population_geometric_parameter,
     _pr_extinction_numerator,
     _reverse_time,
@@ -656,7 +656,7 @@ class TestMultiEpochEqualsSingleEpoch:
         assert torch.isfinite(multi)
         assert_close(actual=multi, expected=single)
 
-    def test_integrand_surv_from_weighted_birth_time_scalar_multi_equals_single(
+    def test_integrand_surv_from_weighted_birth_time_multi_equals_single(
         self,
     ) -> None:
         birth_time = 30.0
@@ -665,7 +665,7 @@ class TestMultiEpochEqualsSingleEpoch:
             torch.tensor([0.01], dtype=torch.float64),
             torch.tensor([120.0], dtype=torch.float64),
         )
-        single = _integrand_surv_from_weighted_birth_time_scalar(
+        single = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rate_val,
             death_rate_val,
@@ -682,7 +682,7 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
         )
-        multi = _integrand_surv_from_weighted_birth_time_scalar(
+        multi = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -1947,7 +1947,7 @@ class TestVectorization:
 
 
 class TestIntegrandSurvFromWeightedBirthTime:
-    """Test the _integrand_surv_from_weighted_birth_time_scalar private helper function.
+    """Test the _integrand_surv_from_weighted_birth_time private helper function.
 
     This function is used in calculating survival probabilities and returns a
     Python float for use in numerical integration.
@@ -1960,7 +1960,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05], dtype=torch.float64)
         times = torch.tensor([100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -1978,7 +1978,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -1995,7 +1995,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2014,7 +2014,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
         # After subtracting birth_time, times becomes [0.0, 50.0]
         # valid_indices will be where times > 0, so only index 1
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2031,7 +2031,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2047,7 +2047,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
         # After subtracting birth_time, times becomes negative, no valid indices
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2062,7 +2062,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2081,7 +2081,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
         # After subtracting, times becomes [-25.0, 25.0, 75.0]
         # valid_indices will be [1, 2]
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2098,7 +2098,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05], dtype=torch.float64)
         times = torch.tensor([100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2119,13 +2119,13 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result1 = _integrand_surv_from_weighted_birth_time_scalar(
+        result1 = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates1,
             death_rates,
             times,
         )
-        result2 = _integrand_surv_from_weighted_birth_time_scalar(
+        result2 = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates2,
             death_rates,
@@ -2147,7 +2147,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         )  # Length 3 - MISMATCH!
 
         with pytest.raises(IndexError):
-            _integrand_surv_from_weighted_birth_time_scalar(
+            _integrand_surv_from_weighted_birth_time(
                 birth_time,
                 birth_rates,
                 death_rates,
@@ -2161,7 +2161,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2179,7 +2179,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         )  # Length 3 - MISMATCH!
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2212,7 +2212,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
 
         # This should raise IndexError due to valid_indices being out of bounds
         with pytest.raises(IndexError):
-            _integrand_surv_from_weighted_birth_time_scalar(
+            _integrand_surv_from_weighted_birth_time(
                 birth_time,
                 birth_rates,
                 death_rates,
@@ -2230,7 +2230,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
         # After subtracting birth_time, times becomes [-10.0, 40.0, 90.0]
         # valid_indices should be [1, 2] (where times > 0)
         # Accessing birth_rates[[1, 2]] should work fine
-        result = _integrand_surv_from_weighted_birth_time_scalar(
+        result = _integrand_surv_from_weighted_birth_time(
             birth_time,
             birth_rates,
             death_rates,
@@ -2244,7 +2244,7 @@ class TestIntegrandSurvFromWeightedBirthTime:
 class TestCalculateLogPrExtinctionGivenInitialLifetimes:
     """Test calculate_log_pr_extinction_given_initial_lifetimes function.
 
-    This function uses _integrand_surv_from_weighted_birth_time_scalar internally
+    This function uses _integrand_surv_from_weighted_birth_time internally
     and has a bug where lifetime > max(times) causes IndexError.
     """
 
