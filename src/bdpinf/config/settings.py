@@ -94,7 +94,8 @@ def get_config(config_type: str) -> object:
     """Get default configuration for a specific component.
 
     Args:
-        config_type: Type of configuration ("optimization", "plotting", "model", "simulation")
+        config_type: Type of configuration
+        ("optimization", "plotting", "model", "simulation")
 
     Returns:
         Configuration object

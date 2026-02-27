@@ -253,7 +253,10 @@ def validate_creation_times(creation_times: list[float], final_time: float) -> N
 
     """
     if not isinstance(creation_times, (list, tuple)):
-        msg = f"creation_times must be a list or tuple, got {type(creation_times).__name__}"
+        msg = (
+            "creation_times must be a list or tuple, "
+            f"got {type(creation_times).__name__}"
+        )
         raise ValidationError(
             msg,
             field_name="creation_times",
@@ -272,7 +275,8 @@ def validate_creation_times(creation_times: list[float], final_time: float) -> N
         validate_non_negative_number(time, f"creation_times[{i}]")
 
         if time > final_time:
-            msg = f"creation_times[{i}] ({time}) cannot be after final_time ({final_time})"
+            msg = f"creation_times[{i}] ({time}) "
+            f"cannot be after final_time ({final_time})"
             raise ValidationError(
                 msg,
                 field_name=f"creation_times[{i}]",

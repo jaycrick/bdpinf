@@ -616,7 +616,8 @@ def plot_bootstrap_confidence_intervals(
     n_bootstrap = bootstrap_results["n_bootstrap"]
 
     fig.update_layout(
-        title=f"{title}<br>({confidence_level * 100:.0f}% CI, {n_bootstrap} bootstrap samples)",
+        title=f"{title}<br>({confidence_level * 100:.0f}% CI, "
+        f"{n_bootstrap} bootstrap samples)",
         xaxis_title="Parameter",
         yaxis_title="Value",
         showlegend=True,

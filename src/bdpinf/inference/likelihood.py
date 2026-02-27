@@ -27,31 +27,38 @@ def log_likelihood(
     is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> torch.Tensor:
-    """Compute the log-likelihood of observed manuscript ages under a birth–death process.
+    """Compute the log-likelihood of observed manuscript ages in a birth--death process.
 
-    This function evaluates the joint log-likelihood for a dataset of observed manuscript ages
-    given a birth (λ) and death (μ) rate under a birth–death model. The likelihood is computed
+    This function evaluates the joint log-likelihood
+    for a dataset of observed manuscript ages
+    given a birth (λ) and death (μ) rate under a birth--death model.
+    The likelihood is computed
     as the sum of two contributions:
 
-        1. The log-probability of observing the total population configuration at observation
-             time T (log P_n(T)).
-        2. The sum of log age-densities for the observed manuscripts (Σ log f(t_i)), with an
-             option to treat one or more observations as "spines" (special conditional ages).
+        1. The log-probability of observing the total population configuration
+            at observation time T (log P_n(T)).
+        2. The sum of log age-densities for the observed manuscripts (Σ log f(t_i)),
+            with an option to treat one or more observations as "spines"
+            (special conditional ages).
 
     Behavior and notes
-    - If log_scale_params is True, birth_rate and death_rate are interpreted as log(λ) and
-        log(μ); otherwise they are interpreted on the original (positive) scale.
-    - If ns is None, the function assumes each provided age corresponds to one individual
-        (i.e., a count of 1 per age) and constructs ns accordingly.
-    - If is_ordered is True, the first provided age is treated as a spine (unique conditional
-        distribution) and the remaining ages are treated as ordinary observations. is_ordered
-        and spine_ages cannot both be provided.
-    - If spine_ages is provided, those ages are treated as spines; ordinary ages are treated
-        as non-spine observations.
-    - The function validates input ranges: rates must be finite (and positive if not in log
-        scale), observation_time must be > 0, and all ages/spine_ages must lie in [0, T].
-    - Returns -inf for numerical issues (non-finite rates, invalid parameter domains, overflow).
-    - Raises exceptions for programming errors (type mismatches, array shape errors, etc.).
+    - If log_scale_params is True, birth_rate and death_rate are interpreted as log(λ)
+        and log(μ); otherwise they are interpreted on the original (positive) scale.
+    - If ns is None, the function assumes each provided age corresponds to
+        one individual (i.e., a count of 1 per age) and constructs ns accordingly.
+    - If is_ordered is True, the first provided age is treated as a spine
+        (unique conditional distribution)
+        and the remaining ages are treated as ordinary observations.
+        is_ordered and spine_ages cannot both be provided.
+    - If spine_ages is provided, those ages are treated as spines;
+        ordinary ages are treated as non-spine observations.
+    - The function validates input ranges: rates must be finite
+        (and positive if not in log scale), observation_time must be > 0,
+        and all ages/spine_ages must lie in [0, T].
+    - Returns -inf for numerical issues
+        (non-finite rates, invalid parameter domains, overflow).
+    - Raises exceptions for programming errors
+        (type mismatches, array shape errors, etc.).
 
     Parameters
     ----------
@@ -83,7 +90,8 @@ def log_likelihood(
     -------
     torch.Tensor
         The computed total log-likelihood (log P_n(T) + Σ log f(t_i)).
-        Returns -inf for numerical issues (non-positive rates, overflow, invalid domains).
+        Returns -inf for numerical issues
+        (non-positive rates, overflow, invalid domains).
 
     Raises
     ------
@@ -252,7 +260,8 @@ def negative_log_likelihood(
 
     This function is a thin wrapper around log_likelihood that negates its
     value so it can be minimized by optimizers.
-    It expects the model's birth and death rates (or their logarithms, see log_scale_params).
+    It expects the model's birth and death rates
+    (or their logarithms, see log_scale_params).
 
     Parameters
     ----------

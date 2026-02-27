@@ -154,7 +154,7 @@ class BirthDeathProcess:
             "fitted": self.fitted,
         }
 
-        # Include parameters if they've been set (either at initialization or through fitting)
+        # Include parameters if they've been set
         if self.birth_rate is not None:
             summary["birth_rate"] = float(self.birth_rate)
         if self.death_rate is not None:
