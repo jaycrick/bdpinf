@@ -4,6 +4,7 @@
 
 import numpy as np
 import pandas as pd
+import torch
 
 from inf_bp_texts.models import BirthDeathProcess
 from inf_bp_texts.simulation import simulate_birth_death_process
@@ -207,9 +208,9 @@ class TestSimulation:
         )
 
         # Check that the process state is still valid
-        assert process.epoch_end_times[-1] == 1.0
+        assert process.epoch_end_times[-1].item() == 1.0
         assert isinstance(process.creation_times, list)
-        assert isinstance(process.get_manuscript_ages(), np.ndarray)
+        assert isinstance(process.get_manuscript_ages(), torch.Tensor)
 
     def test_simulation_resets_process(self) -> None:
         """Test that creating new process with simulation results gives proper state."""
@@ -221,7 +222,7 @@ class TestSimulation:
             birth_rate=0.1,
             death_rate=0.02,
         )
-        initial_ages = process.get_manuscript_ages().copy()
+        initial_ages = process.get_manuscript_ages().clone()
 
         # Run simulation using modular function - should give new results
         df = simulate_birth_death_process(

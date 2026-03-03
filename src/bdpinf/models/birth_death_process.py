@@ -9,7 +9,15 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import torch
 from numpy.typing import NDArray
+
+from inf_bp_texts.models.validation import (
+    ValidationConfig,
+    normalize_and_validate_inputs,
+)
+
+NumericInput = float | list[float] | NDArray[np.float64] | torch.Tensor
 
 
 @dataclass
@@ -52,10 +60,10 @@ class BirthDeathProcess:
     def __init__(
         self,
         creation_times: list[float],
-        epoch_end_times: float | list[float] | NDArray[np.float64],
+        epoch_end_times: NumericInput,
         start_time: float | None = None,
-        birth_rate: float | list[float] | NDArray[np.float64] | None = None,
-        death_rate: float | list[float] | NDArray[np.float64] | None = None,
+        birth_rate: NumericInput | None = None,
+        death_rate: NumericInput | None = None,
     ) -> None:
         """Initialize birth-death process with observation data.
 
@@ -69,16 +77,20 @@ class BirthDeathProcess:
         """
         self.creation_times: list[float] = creation_times.copy()
         self.start_time: float = start_time if start_time is not None else 0.0
-        self._epoch_end_times: NDArray[np.float64] = self._normalize_epoch_end_times(
+        self._epoch_end_times: torch.Tensor = self._normalize_epoch_end_times(
             epoch_end_times,
         )
 
         # Parameters can be provided at initialization or fitted later
-        self.birth_rate: NDArray[np.float64] | None = (
-            self._normalize_rate_vector(birth_rate) if birth_rate is not None else None
+        self.birth_rate: torch.Tensor | None = (
+            self._normalize_rate_vector(birth_rate, label="birth")
+            if birth_rate is not None
+            else None
         )
-        self.death_rate: NDArray[np.float64] | None = (
-            self._normalize_rate_vector(death_rate) if death_rate is not None else None
+        self.death_rate: torch.Tensor | None = (
+            self._normalize_rate_vector(death_rate, label="death")
+            if death_rate is not None
+            else None
         )
 
         self._validate_rate_lengths()
@@ -91,9 +103,9 @@ class BirthDeathProcess:
         self.fit_results: dict[str, Any] | None = None
 
     @property
-    def epoch_end_times(self) -> NDArray[np.float64]:
+    def epoch_end_times(self) -> torch.Tensor:
         """Get epoch end times as a vector."""
-        return self._epoch_end_times.copy()
+        return self._epoch_end_times.clone()
 
     @property
     def n_epochs(self) -> int:
@@ -101,76 +113,74 @@ class BirthDeathProcess:
         return len(self._epoch_end_times)
 
     @property
-    def birth_rates(self) -> NDArray[np.float64] | None:
+    def birth_rates(self) -> torch.Tensor | None:
         """Get birth-rate vector (one value per epoch)."""
         if self.birth_rate is None:
             return None
-        return self.birth_rate.copy()
+        return self.birth_rate.clone()
 
     @property
-    def death_rates(self) -> NDArray[np.float64] | None:
+    def death_rates(self) -> torch.Tensor | None:
         """Get death-rate vector (one value per epoch)."""
         if self.death_rate is None:
             return None
-        return self.death_rate.copy()
+        return self.death_rate.clone()
 
     def _normalize_epoch_end_times(
         self,
-        times: float | list[float] | NDArray[np.float64],
-    ) -> NDArray[np.float64]:
+        times: NumericInput,
+    ) -> torch.Tensor:
         """Normalize epoch end times into a strictly increasing vector."""
-        if np.isscalar(times):
-            array = np.array([times], dtype=np.float64)
-        else:
-            array = np.asarray(times, dtype=np.float64)
+        config = ValidationConfig(require_times_positive=False)
+        times_input = self._to_float64_tensor(times)
+        (times_tensor,) = normalize_and_validate_inputs(
+            times=times_input,
+            config=config,
+        )
+        return times_tensor.to(dtype=torch.float64)
 
-        if array.ndim != 1 or len(array) == 0:
-            msg = "epoch_end_times must be a non-empty scalar or 1D vector"
-            raise ValueError(msg)
-        if not np.all(np.isfinite(array)):
-            msg = "epoch_end_times values must be finite"
-            raise ValueError(msg)
-        if np.any(np.diff(array) <= 0):
-            msg = "epoch_end_times values must be strictly increasing"
-            raise ValueError(msg)
-        return array
+    def _to_float64_tensor(self, values: NumericInput) -> torch.Tensor:
+        """Convert numeric input to a float64 tensor."""
+        if isinstance(values, torch.Tensor):
+            return values.to(dtype=torch.float64)
+        if isinstance(values, np.ndarray):
+            return torch.as_tensor(values, dtype=torch.float64)
+        if isinstance(values, list):
+            return torch.tensor(values, dtype=torch.float64)
+        return torch.tensor([values], dtype=torch.float64)
 
     def _normalize_rate_vector(
         self,
-        rates: float | list[float] | NDArray[np.float64],
-    ) -> NDArray[np.float64]:
+        rates: NumericInput,
+        *,
+        label: str,
+    ) -> torch.Tensor:
         """Normalize a scalar/vector rate input into a vector."""
-        if np.isscalar(rates):
-            return np.array([rates], dtype=np.float64)
+        rate_input = self._to_float64_tensor(rates)
 
-        array = np.asarray(rates, dtype=np.float64)
-        if array.ndim != 1 or len(array) == 0:
-            msg = "Rate inputs must be non-empty scalars or 1D vectors"
+        if label == "birth":
+            (rates_tensor,) = normalize_and_validate_inputs(birth_rates=rate_input)
+        elif label == "death":
+            (rates_tensor,) = normalize_and_validate_inputs(death_rates=rate_input)
+        else:
+            msg = f"Unknown rate label: {label}"
             raise ValueError(msg)
-        return array
+        return rates_tensor.to(dtype=torch.float64)
 
     def _validate_rate_lengths(self) -> None:
         """Validate that rate vectors match epoch vector length when provided."""
         n_epochs = self.n_epochs
 
         if self.birth_rate is not None:
-            if len(self.birth_rate) == 1 and n_epochs > 1:
-                self.birth_rate = np.full(
-                    n_epochs,
-                    self.birth_rate[0],
-                    dtype=np.float64,
-                )
+            if self.birth_rate.numel() == 1 and n_epochs > 1:
+                self.birth_rate = self.birth_rate.repeat(n_epochs)
             elif len(self.birth_rate) != n_epochs:
                 msg = "birth_rate length must match number of epoch end times"
                 raise ValueError(msg)
 
         if self.death_rate is not None:
-            if len(self.death_rate) == 1 and n_epochs > 1:
-                self.death_rate = np.full(
-                    n_epochs,
-                    self.death_rate[0],
-                    dtype=np.float64,
-                )
+            if self.death_rate.numel() == 1 and n_epochs > 1:
+                self.death_rate = self.death_rate.repeat(n_epochs)
             elif len(self.death_rate) != n_epochs:
                 msg = "death_rate length must match number of epoch end times"
                 raise ValueError(msg)
@@ -180,25 +190,25 @@ class BirthDeathProcess:
         if not self.creation_times:
             return
 
-        latest_epoch_end_time = float(self._epoch_end_times[-1])
+        latest_epoch_end_time = float(self._epoch_end_times[-1].item())
         self.creation_times = [
             ct for ct in self.creation_times if ct <= latest_epoch_end_time
         ]
 
-    def get_manuscript_ages(self) -> NDArray[np.float64]:
+    def get_manuscript_ages(self) -> torch.Tensor:
         """Calculate manuscript ages from creation times and last epoch end time.
 
         Returns:
             Array of manuscript ages (latest_epoch_end_time - creation_time)
 
         """
-        latest_epoch_end_time = float(self._epoch_end_times[-1])
+        latest_epoch_end_time = self._epoch_end_times[-1]
         if self.creation_times:
-            return np.array(
-                [latest_epoch_end_time - ct for ct in self.creation_times],
-                dtype=np.float64,
+            return latest_epoch_end_time - torch.tensor(
+                self.creation_times,
+                dtype=torch.float64,
             )
-        return np.array([], dtype=np.float64)
+        return torch.tensor([], dtype=torch.float64)
 
     def add_manuscript(self, creation_time: float) -> None:
         """Add a manuscript with given creation time to the process.
@@ -211,7 +221,7 @@ class BirthDeathProcess:
 
     def set_epoch_end_times(
         self,
-        epoch_end_times: float | list[float] | NDArray[np.float64],
+        epoch_end_times: NumericInput,
     ) -> None:
         """Set epoch end times for the process.
 
@@ -239,10 +249,10 @@ class BirthDeathProcess:
 
         # Include parameters if they've been set
         if self.birth_rate is not None:
-            summary["birth_rate"] = float(self.birth_rate[-1])
+            summary["birth_rate"] = float(self.birth_rate[-1].item())
             summary["birth_rates"] = self.birth_rate.tolist()
         if self.death_rate is not None:
-            summary["death_rate"] = float(self.death_rate[-1])
+            summary["death_rate"] = float(self.death_rate[-1].item())
             summary["death_rates"] = self.death_rate.tolist()
 
         ages = self.get_manuscript_ages()
@@ -267,7 +277,7 @@ class BirthDeathProcess:
         if self.birth_rate is None or self.death_rate is None:
             return False
 
-        if np.any(self.birth_rate <= 0) or np.any(self.death_rate <= 0):
+        if torch.any(self.birth_rate <= 0) or torch.any(self.death_rate <= 0):
             return False
 
         if (
@@ -277,14 +287,14 @@ class BirthDeathProcess:
             return False
 
         return bool(
-            np.all(np.isfinite(self.birth_rate))
-            and np.all(np.isfinite(self.death_rate)),
+            torch.all(torch.isfinite(self.birth_rate))
+            and torch.all(torch.isfinite(self.death_rate)),
         )
 
     def update_parameters(
         self,
-        birth_rate: float | list[float] | NDArray[np.float64],
-        death_rate: float | list[float] | NDArray[np.float64],
+        birth_rate: NumericInput,
+        death_rate: NumericInput,
         fit_results: dict[str, Any] | None = None,
     ) -> None:
         """Update the model parameters after fitting.
@@ -298,8 +308,8 @@ class BirthDeathProcess:
             fit_results: Optional fit results dictionary from fitting module
 
         """
-        self.birth_rate = self._normalize_rate_vector(birth_rate)
-        self.death_rate = self._normalize_rate_vector(death_rate)
+        self.birth_rate = self._normalize_rate_vector(birth_rate, label="birth")
+        self.death_rate = self._normalize_rate_vector(death_rate, label="death")
         self._validate_rate_lengths()
         self.fitted = True
         self.fit_results = fit_results

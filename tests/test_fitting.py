@@ -299,9 +299,9 @@ class TestFitting:
             epoch_end_times=500.0,
         )
 
-        original_ages = process.get_manuscript_ages().copy()
+        original_ages = process.get_manuscript_ages().clone()
         original_creation_times = process.creation_times.copy()
-        original_epoch_end_times = process.epoch_end_times.copy()
+        original_epoch_end_times = process.epoch_end_times.clone()
 
         # Fit with external data
         df = pd.DataFrame({"age": [100.0, 200.0, 300.0], "count": [1.0, 1.0, 1.0]})

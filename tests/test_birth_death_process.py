@@ -4,6 +4,7 @@
 
 import numpy as np
 import pytest
+import torch
 from numpy.testing import assert_array_equal
 
 from inf_bp_texts.models import BirthDeathProcess
@@ -21,7 +22,7 @@ class TestBirthDeathProcessInit:
         assert process.birth_rate is None  # Optional, not provided
         assert process.death_rate is None  # Optional, not provided
         assert process.creation_times == []
-        assert process.epoch_end_times[-1] == 1000.0
+        assert process.epoch_end_times[-1].item() == 1000.0
         assert (
             not process.fitted
         )  # Not fitted since birth_rate and death_rate not provided
@@ -41,7 +42,7 @@ class TestBirthDeathProcessInit:
         assert process.birth_rate is None  # Optional, not provided
         assert process.death_rate is None  # Optional, not provided
         assert process.creation_times == creation_times
-        assert process.epoch_end_times[-1] == epoch_end_times
+        assert process.epoch_end_times[-1].item() == epoch_end_times
 
         # Ages should be calculated on-demand
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
@@ -71,7 +72,7 @@ class TestBirthDeathProcessInit:
 
         # Update epoch end time using setter
         process.set_epoch_end_times(500)
-        assert process.epoch_end_times[-1] == 500
+        assert process.epoch_end_times[-1].item() == 500
 
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
         assert_array_equal(process.get_manuscript_ages(), expected_ages)
@@ -142,10 +143,10 @@ class TestBirthDeathProcessInit:
         """Test that attributes maintain correct types."""
         process = BirthDeathProcess([], 1000.0, birth_rate=0.02, death_rate=0.005)
 
-        assert isinstance(process.birth_rate, np.ndarray)
-        assert isinstance(process.death_rate, np.ndarray)
-        assert process.birth_rate.dtype == np.float64
-        assert process.death_rate.dtype == np.float64
+        assert isinstance(process.birth_rate, torch.Tensor)
+        assert isinstance(process.death_rate, torch.Tensor)
+        assert process.birth_rate.dtype == torch.float64
+        assert process.death_rate.dtype == torch.float64
         assert process.birth_rates is not None
         assert process.death_rates is not None
         assert process.n_epochs == 1
@@ -153,8 +154,8 @@ class TestBirthDeathProcessInit:
 
         # Test that get_manuscript_ages returns correct type
         ages = process.get_manuscript_ages()
-        assert isinstance(ages, np.ndarray)
-        assert ages.dtype == np.float64
+        assert isinstance(ages, torch.Tensor)
+        assert ages.dtype == torch.float64
 
     def test_manuscript_filtering_on_epoch_end_time_update(self) -> None:
         """Test that manuscripts after epoch end time are removed when updated."""
@@ -174,7 +175,7 @@ class TestBirthDeathProcessInit:
         # Should have only 3 manuscripts now
         assert len(process.creation_times) == 3
         assert process.creation_times == [100.0, 200.0, 300.0]
-        assert process.epoch_end_times[-1] == 500.0
+        assert process.epoch_end_times[-1].item() == 500.0
 
     def test_vector_epoch_times_and_rates(self) -> None:
         """Test vector epoch end times and vector rates with matching lengths."""
@@ -186,7 +187,7 @@ class TestBirthDeathProcessInit:
         )
 
         assert process.n_epochs == 3
-        assert process.epoch_end_times[-1] == 1200.0
+        assert process.epoch_end_times[-1].item() == 1200.0
         assert_array_equal(process.epoch_end_times, np.array([400.0, 800.0, 1200.0]))
         assert_array_equal(process.birth_rates, np.array([0.02, 0.03, 0.04]))
         assert_array_equal(process.death_rates, np.array([0.005, 0.007, 0.009]))
