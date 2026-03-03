@@ -5,14 +5,16 @@ initialization, and core functionality. Complex mathematical computations and
 fitting procedures are handled by separate modules.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 
+@dataclass
 class BirthDeathProcess:
-    """Birth-death process model for manuscript survival and creation.
+    r"""Birth-death process model for manuscript survival and creation.
 
     This class models manuscript data as a birth-death process where:
     - Birth rate (λ): Rate of manuscript creation
@@ -22,7 +24,7 @@ class BirthDeathProcess:
     The likelihood function implements the proper birth-death process:
     1. P_n(T) = probability of n individuals at time T
     2. f(t) = age density for each manuscript at age t
-    3. Total likelihood = P_n(T) × ∏f(t_i) for all observed ages
+    3. Total likelihood = $P_n(T) * \prod f(t_i)$ for all observed ages
 
     Mathematical formulations are handled by the mathematical_functions module.
 
@@ -30,7 +32,7 @@ class BirthDeathProcess:
         Basic usage with manuscript creation times:
 
         >>> from inf_bp_texts.models import BirthDeathProcess
-        >>> model = BirthDeathProcess([100, 200, 300], final_time=500)
+        >>> model = BirthDeathProcess([100, 200, 300], epoch_end_times=500)
         >>> ages = model.get_manuscript_ages()
         >>> print(ages)
         [400. 300. 200.]
@@ -50,16 +52,16 @@ class BirthDeathProcess:
     def __init__(
         self,
         creation_times: list[float],
-        final_time: float,
+        epoch_end_times: float | list[float] | NDArray[np.float64],
         start_time: float | None = None,
-        birth_rate: float | None = None,
-        death_rate: float | None = None,
-    ):
+        birth_rate: float | list[float] | NDArray[np.float64] | None = None,
+        death_rate: float | list[float] | NDArray[np.float64] | None = None,
+    ) -> None:
         """Initialize birth-death process with observation data.
 
         Args:
             creation_times: List of times when manuscripts were created
-            final_time: Time when the process was terminated/observed
+            epoch_end_times: Scalar or vector of epoch end times
             start_time: Start time of the observation period (optional, defaults to 0)
             birth_rate: Manuscript creation rate (λ) - optional, can be fitted later
             death_rate: Manuscript loss rate (μ) - optional, can be fitted later
@@ -67,17 +69,21 @@ class BirthDeathProcess:
         """
         self.creation_times: list[float] = creation_times.copy()
         self.start_time: float = start_time if start_time is not None else 0.0
-        self._final_time: float = final_time
+        self._epoch_end_times: NDArray[np.float64] = self._normalize_epoch_end_times(
+            epoch_end_times,
+        )
 
         # Parameters can be provided at initialization or fitted later
-        self.birth_rate: np.float64 | None = (
-            np.float64(birth_rate) if birth_rate is not None else None
+        self.birth_rate: NDArray[np.float64] | None = (
+            self._normalize_rate_vector(birth_rate) if birth_rate is not None else None
         )
-        self.death_rate: np.float64 | None = (
-            np.float64(death_rate) if death_rate is not None else None
+        self.death_rate: NDArray[np.float64] | None = (
+            self._normalize_rate_vector(death_rate) if death_rate is not None else None
         )
 
-        # Remove manuscripts created after final_time
+        self._validate_rate_lengths()
+
+        # Remove manuscripts created after last epoch end time
         self._filter_creation_times()
 
         # Set fitted status based on whether parameters were provided
@@ -85,40 +91,111 @@ class BirthDeathProcess:
         self.fit_results: dict[str, Any] | None = None
 
     @property
-    def final_time(self) -> float:
-        """Get the final observation time."""
-        return self._final_time
+    def epoch_end_times(self) -> NDArray[np.float64]:
+        """Get epoch end times as a vector."""
+        return self._epoch_end_times.copy()
 
-    @final_time.setter
-    def final_time(self, value: float) -> None:
-        """Set the final observation time and filter creation times."""
-        self._final_time = value
-        self._filter_creation_times()
+    @property
+    def n_epochs(self) -> int:
+        """Get number of epochs."""
+        return len(self._epoch_end_times)
+
+    @property
+    def birth_rates(self) -> NDArray[np.float64] | None:
+        """Get birth-rate vector (one value per epoch)."""
+        if self.birth_rate is None:
+            return None
+        return self.birth_rate.copy()
+
+    @property
+    def death_rates(self) -> NDArray[np.float64] | None:
+        """Get death-rate vector (one value per epoch)."""
+        if self.death_rate is None:
+            return None
+        return self.death_rate.copy()
+
+    def _normalize_epoch_end_times(
+        self,
+        times: float | list[float] | NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """Normalize epoch end times into a strictly increasing vector."""
+        if np.isscalar(times):
+            array = np.array([times], dtype=np.float64)
+        else:
+            array = np.asarray(times, dtype=np.float64)
+
+        if array.ndim != 1 or len(array) == 0:
+            msg = "epoch_end_times must be a non-empty scalar or 1D vector"
+            raise ValueError(msg)
+        if not np.all(np.isfinite(array)):
+            msg = "epoch_end_times values must be finite"
+            raise ValueError(msg)
+        if np.any(np.diff(array) <= 0):
+            msg = "epoch_end_times values must be strictly increasing"
+            raise ValueError(msg)
+        return array
+
+    def _normalize_rate_vector(
+        self,
+        rates: float | list[float] | NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """Normalize a scalar/vector rate input into a vector."""
+        if np.isscalar(rates):
+            return np.array([rates], dtype=np.float64)
+
+        array = np.asarray(rates, dtype=np.float64)
+        if array.ndim != 1 or len(array) == 0:
+            msg = "Rate inputs must be non-empty scalars or 1D vectors"
+            raise ValueError(msg)
+        return array
+
+    def _validate_rate_lengths(self) -> None:
+        """Validate that rate vectors match epoch vector length when provided."""
+        n_epochs = self.n_epochs
+
+        if self.birth_rate is not None:
+            if len(self.birth_rate) == 1 and n_epochs > 1:
+                self.birth_rate = np.full(
+                    n_epochs,
+                    self.birth_rate[0],
+                    dtype=np.float64,
+                )
+            elif len(self.birth_rate) != n_epochs:
+                msg = "birth_rate length must match number of epoch end times"
+                raise ValueError(msg)
+
+        if self.death_rate is not None:
+            if len(self.death_rate) == 1 and n_epochs > 1:
+                self.death_rate = np.full(
+                    n_epochs,
+                    self.death_rate[0],
+                    dtype=np.float64,
+                )
+            elif len(self.death_rate) != n_epochs:
+                msg = "death_rate length must match number of epoch end times"
+                raise ValueError(msg)
 
     def _filter_creation_times(self) -> None:
-        """Remove manuscripts created after final_time with a warning message."""
+        """Remove manuscripts created after the last epoch end time."""
         if not self.creation_times:
             return
 
-        original_count = len(self.creation_times)
+        latest_epoch_end_time = float(self._epoch_end_times[-1])
         self.creation_times = [
-            ct for ct in self.creation_times if ct <= self._final_time
+            ct for ct in self.creation_times if ct <= latest_epoch_end_time
         ]
-        removed_count = original_count - len(self.creation_times)
-
-        if removed_count > 0:
-            print(f"{removed_count} manuscripts after time {self._final_time} removed")
 
     def get_manuscript_ages(self) -> NDArray[np.float64]:
-        """Calculate manuscript ages from creation times and final time.
+        """Calculate manuscript ages from creation times and last epoch end time.
 
         Returns:
-            Array of manuscript ages (final_time - creation_time for each manuscript)
+            Array of manuscript ages (latest_epoch_end_time - creation_time)
 
         """
+        latest_epoch_end_time = float(self._epoch_end_times[-1])
         if self.creation_times:
             return np.array(
-                [self.final_time - ct for ct in self.creation_times],
+                [latest_epoch_end_time - ct for ct in self.creation_times],
                 dtype=np.float64,
             )
         return np.array([], dtype=np.float64)
@@ -132,14 +209,19 @@ class BirthDeathProcess:
         """
         self.creation_times.append(creation_time)
 
-    def set_final_time(self, final_time: float) -> None:
-        """Set the final observation time for the process.
+    def set_epoch_end_times(
+        self,
+        epoch_end_times: float | list[float] | NDArray[np.float64],
+    ) -> None:
+        """Set epoch end times for the process.
 
         Args:
-            final_time: Time when the process was observed/terminated
+            epoch_end_times: Scalar end time or vector of epoch end times
 
         """
-        self.final_time = final_time
+        self._epoch_end_times = self._normalize_epoch_end_times(epoch_end_times)
+        self._validate_rate_lengths()
+        self._filter_creation_times()
 
     def get_process_summary(self) -> dict[str, Any]:
         """Get a summary of the birth-death process state.
@@ -150,15 +232,18 @@ class BirthDeathProcess:
         """
         summary: dict[str, Any] = {
             "n_manuscripts": len(self.creation_times),
-            "final_time": self.final_time,
+            "epoch_end_times": self.epoch_end_times.tolist(),
+            "n_epochs": self.n_epochs,
             "fitted": self.fitted,
         }
 
         # Include parameters if they've been set
         if self.birth_rate is not None:
-            summary["birth_rate"] = float(self.birth_rate)
+            summary["birth_rate"] = float(self.birth_rate[-1])
+            summary["birth_rates"] = self.birth_rate.tolist()
         if self.death_rate is not None:
-            summary["death_rate"] = float(self.death_rate)
+            summary["death_rate"] = float(self.death_rate[-1])
+            summary["death_rates"] = self.death_rate.tolist()
 
         ages = self.get_manuscript_ages()
         if len(ages) > 0:
@@ -182,15 +267,24 @@ class BirthDeathProcess:
         if self.birth_rate is None or self.death_rate is None:
             return False
 
-        if self.birth_rate <= 0 or self.death_rate <= 0:
+        if np.any(self.birth_rate <= 0) or np.any(self.death_rate <= 0):
             return False
 
-        return bool(np.isfinite(self.birth_rate) and np.isfinite(self.death_rate))
+        if (
+            len(self.birth_rate) != self.n_epochs
+            or len(self.death_rate) != self.n_epochs
+        ):
+            return False
+
+        return bool(
+            np.all(np.isfinite(self.birth_rate))
+            and np.all(np.isfinite(self.death_rate)),
+        )
 
     def update_parameters(
         self,
-        birth_rate: float,
-        death_rate: float,
+        birth_rate: float | list[float] | NDArray[np.float64],
+        death_rate: float | list[float] | NDArray[np.float64],
         fit_results: dict[str, Any] | None = None,
     ) -> None:
         """Update the model parameters after fitting.
@@ -199,13 +293,14 @@ class BirthDeathProcess:
         to update the model state.
 
         Args:
-            birth_rate: Fitted birth rate (λ)
-            death_rate: Fitted death rate (μ)
+            birth_rate: Fitted birth-rate vector (λ), one value per epoch
+            death_rate: Fitted death-rate vector (μ), one value per epoch
             fit_results: Optional fit results dictionary from fitting module
 
         """
-        self.birth_rate = np.float64(birth_rate)
-        self.death_rate = np.float64(death_rate)
+        self.birth_rate = self._normalize_rate_vector(birth_rate)
+        self.death_rate = self._normalize_rate_vector(death_rate)
+        self._validate_rate_lengths()
         self.fitted = True
         self.fit_results = fit_results
 

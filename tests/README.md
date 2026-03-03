@@ -7,7 +7,7 @@ This directory contains comprehensive test suites covering models, inference, si
 ### Core Test Files
 
 - **`test_birth_death_process.py`** - Tests for basic `BirthDeathProcess` class functionality
-  - Initialization with required `creation_times` and `final_time` parameters
+  - Initialization with required `creation_times` and `epoch_end_times` parameters
   - Optional `birth_rate` and `death_rate` parameter handling
   - Manuscript addition and age calculation
   - Process summaries and basic methods
@@ -89,10 +89,10 @@ poetry run python -m pytest tests/ -n auto
 The test suite covers:
 
 ### ✅ Core Functionality
-- Class initialization with required parameters (`creation_times`, `final_time`)
+- Class initialization with required parameters (`creation_times`, `epoch_end_times`)
 - Optional parameter handling (`birth_rate`, `death_rate`, `start_time`)
 - Manuscript addition and age calculation
-- Automatic filtering of manuscripts after `final_time`
+- Automatic filtering of manuscripts after the latest `epoch_end_times` value
 - Process state management
 - Parameter validation
 

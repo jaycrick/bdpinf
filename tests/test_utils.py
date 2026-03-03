@@ -29,40 +29,40 @@ class TestEdgeCases:
         # Zero birth rate should be invalid for log-likelihood
         process = BirthDeathProcess([], 1000.0, birth_rate=0.0, death_rate=0.01)
         process.creation_times = [100.0]
-        process.set_final_time(200.0)
+        process.set_epoch_end_times(200.0)
 
         # Use modular log_likelihood function
         ages = process.get_manuscript_ages()
-        ll = log_likelihood(0.0, 0.01, ages, process.final_time)
+        ll = log_likelihood(0.0, 0.01, ages, process.epoch_end_times[-1])
         assert ll == -np.inf
 
     def test_negative_rates(self) -> None:
         """Test behavior with negative rates."""
         process = BirthDeathProcess([], 1000.0)
         process.creation_times = [100.0]
-        process.set_final_time(200.0)
+        process.set_epoch_end_times(200.0)
 
         # Use modular log_likelihood function
         ages = process.get_manuscript_ages()
 
         # Negative rates should give -inf log-likelihood
-        ll = log_likelihood(-0.01, 0.01, ages, process.final_time)
+        ll = log_likelihood(-0.01, 0.01, ages, process.epoch_end_times[-1])
         assert ll == -np.inf
 
-        ll = log_likelihood(0.01, -0.01, ages, process.final_time)
+        ll = log_likelihood(0.01, -0.01, ages, process.epoch_end_times[-1])
         assert ll == -np.inf
 
     def test_very_large_ages(self) -> None:
         """Test behavior with very large ages."""
         process = BirthDeathProcess([], 1000.0, birth_rate=0.001, death_rate=0.0001)
         process.creation_times = [1.0, 2.0, 3.0]
-        process.set_final_time(100000.0)  # Very large final time
+        process.set_epoch_end_times(100000.0)  # Very large final time
 
         # Use modular log_likelihood function
         ages = process.get_manuscript_ages()
 
         # Should handle large ages without crashing
-        ll = log_likelihood(0.001, 0.0001, ages, process.final_time)
+        ll = log_likelihood(0.001, 0.0001, ages, process.epoch_end_times[-1])
         # Result might be -inf due to numerical limits, but shouldn't crash
         assert np.isfinite(ll) or ll == -np.inf
 
@@ -70,7 +70,7 @@ class TestEdgeCases:
         """Test behavior with single manuscript."""
         process = BirthDeathProcess([], 1000.0, birth_rate=0.01, death_rate=0.005)
         process.add_manuscript(100.0)
-        process.set_final_time(500.0)
+        process.set_epoch_end_times(500.0)
 
         assert len(process.get_manuscript_ages()) == 1
         assert process.get_manuscript_ages()[0] == 400.0
@@ -79,14 +79,14 @@ class TestEdgeCases:
         ages = process.get_manuscript_ages()
 
         # Should be able to calculate log-likelihood
-        ll = log_likelihood(0.01, 0.005, ages, process.final_time)
+        ll = log_likelihood(0.01, 0.005, ages, process.epoch_end_times[-1])
         assert np.isfinite(ll)
 
-    def test_final_time_before_creation_time(self) -> None:
-        """Test behavior when final_time is before creation_time."""
+    def test_epoch_end_time_before_creation_time(self) -> None:
+        """Test behavior when epoch end time is before creation_time."""
         process = BirthDeathProcess([], 1000.0)
         process.add_manuscript(1000.0)
-        process.set_final_time(500.0)  # Before creation time
+        process.set_epoch_end_times(500.0)  # Before creation time
 
         # The manuscript should be filtered out (since creation time > final time)
         # So there should be no manuscripts left

@@ -260,12 +260,12 @@ class TestFitting:
         # Create process
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0],
-            final_time=1000.0,
+            epoch_end_times=1000.0,
         )
 
         # Get ages and fit
         ages = process.get_manuscript_ages()
-        result = fit_birth_death_processes([ages], process.final_time)
+        result = fit_birth_death_processes([ages], process.epoch_end_times[-1])
 
         assert result["success"]
         # Update process with fitted parameters
@@ -296,12 +296,12 @@ class TestFitting:
         """Test that process state is preserved when using external fitting."""
         process = BirthDeathProcess(
             creation_times=[50.0, 150.0, 250.0],
-            final_time=500.0,
+            epoch_end_times=500.0,
         )
 
         original_ages = process.get_manuscript_ages().copy()
         original_creation_times = process.creation_times.copy()
-        original_final_time = process.final_time
+        original_epoch_end_times = process.epoch_end_times.copy()
 
         # Fit with external data
         df = pd.DataFrame({"age": [100.0, 200.0, 300.0], "count": [1.0, 1.0, 1.0]})
@@ -310,7 +310,7 @@ class TestFitting:
         # Original process data should be preserved
         np.testing.assert_array_equal(process.get_manuscript_ages(), original_ages)
         assert process.creation_times == original_creation_times
-        assert process.final_time == original_final_time
+        np.testing.assert_array_equal(process.epoch_end_times, original_epoch_end_times)
 
         # But we can still update it with fit results if desired
         assert result["success"]
@@ -634,7 +634,7 @@ class TestFittingDiagnostics:
 
             model = BirthDeathProcess(
                 creation_times=manuscripts_epoch["midYear"].tolist(),
-                final_time=end_time,
+                epoch_end_times=end_time,
                 start_time=start_time,
             )
             all_ages.extend(model.get_manuscript_ages())
@@ -779,7 +779,7 @@ class TestFittingDiagnostics:
                 creation_times = manuscripts_epoch["midYear"].tolist()
                 model = BirthDeathProcess(
                     creation_times=creation_times,
-                    final_time=end_time,
+                    epoch_end_times=end_time,
                     start_time=start_time,
                 )
                 ages = model.get_manuscript_ages()

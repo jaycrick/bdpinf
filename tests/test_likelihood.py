@@ -8,49 +8,46 @@ import torch
 from inf_bp_texts.inference import likelihood
 
 
-def test_log_likelihood_simple(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test log_likelihood with simple valid input and fixed outputs."""
-    # Patch the mathematical functions to return fixed values
-    monkeypatch.setattr(
-        likelihood,
-        "calculate_populations_log_lik",
-        lambda **kwargs: torch.tensor(1.0),
-    )
-    monkeypatch.setattr(
-        likelihood,
-        "calculate_ages_log_lik",
-        lambda *a, **k: torch.tensor(2.0),
-    )
-    # Simple valid input
+def test_log_likelihood_simple() -> None:
+    """Test log_likelihood with simple valid input and real function outputs."""
+    birth_rates = torch.tensor([0.5])
+    death_rates = torch.tensor([0.2])
+    ages = torch.tensor([1.0])
+    times = torch.tensor([2.0])
+
     result = likelihood.log_likelihood(
-        birth_rates=torch.tensor([0.5]),
-        death_rates=torch.tensor([0.2]),
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        ages=ages,
+        times=times,
+    )
+
+    expected = likelihood.calculate_populations_log_lik(
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        times=times,
+        ns=torch.tensor([1], dtype=torch.int64),
+        starting_population=1,
+    ) + likelihood.calculate_ages_log_lik(
+        birth_rates,
+        death_rates,
+        ages,
+        times=times,
+        are_spines=False,
+    )
+
+    assert torch.isclose(result, expected)
+
+
+def test_log_likelihood_negative_branch() -> None:
+    """Test log_likelihood returns -inf when population log-likelihood is non-finite."""
+    result = likelihood.log_likelihood(
+        birth_rates=torch.tensor([1000.0]),
+        death_rates=torch.tensor([0.1]),
         ages=torch.tensor([1.0]),
         times=torch.tensor([2.0]),
     )
-    assert torch.isclose(result, torch.tensor(3.0))
-
-
-def test_log_likelihood_negative_branch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test log_likelihood returns -inf if population log-lik is -inf."""
-    # Patch to return -inf for population
-    monkeypatch.setattr(
-        likelihood,
-        "calculate_populations_log_lik",
-        lambda **kwargs: torch.tensor(float("-inf")),
-    )
-    monkeypatch.setattr(
-        likelihood,
-        "calculate_ages_log_lik",
-        lambda *a, **k: torch.tensor(2.0),
-    )
-    result = likelihood.log_likelihood(
-        birth_rates=torch.tensor([0.5]),
-        death_rates=torch.tensor([0.2]),
-        ages=torch.tensor([1.0]),
-        times=torch.tensor([2.0]),
-    )
-    assert result == float("-inf") or torch.isclose(result, torch.tensor(float("-inf")))
+    assert torch.isneginf(result)
 
 
 def test_log_likelihood_invalid_params() -> None:
@@ -64,73 +61,123 @@ def test_log_likelihood_invalid_params() -> None:
     assert result == float("-inf") or torch.isclose(result, torch.tensor(float("-inf")))
 
 
-def test_log_likelihood_log_scale(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_log_likelihood_log_scale() -> None:
     """Test log_likelihood with log_scale_params=True."""
-    monkeypatch.setattr(
-        likelihood,
-        "calculate_populations_log_lik",
-        lambda **kwargs: torch.tensor(1.0),
-    )
-    monkeypatch.setattr(
-        likelihood,
-        "calculate_ages_log_lik",
-        lambda *a, **k: torch.tensor(2.0),
-    )
-    # log_scale_params True, so rates are exp'd
+    log_birth_rates = torch.tensor([0.0])
+    log_death_rates = torch.tensor([0.0])
+    ages = torch.tensor([1.0])
+    times = torch.tensor([2.0])
+
     result = likelihood.log_likelihood(
-        birth_rates=torch.tensor([0.0]),
-        death_rates=torch.tensor([0.0]),
-        ages=torch.tensor([1.0]),
-        times=torch.tensor([2.0]),
+        birth_rates=log_birth_rates,
+        death_rates=log_death_rates,
+        ages=ages,
+        times=times,
         log_scale_params=True,
     )
-    assert torch.isclose(result, torch.tensor(3.0))
+
+    birth_rates = torch.exp(log_birth_rates)
+    death_rates = torch.exp(log_death_rates)
+    expected = likelihood.calculate_populations_log_lik(
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        times=times,
+        ns=torch.tensor([1], dtype=torch.int64),
+        starting_population=1,
+    ) + likelihood.calculate_ages_log_lik(
+        birth_rates,
+        death_rates,
+        ages,
+        times=times,
+        are_spines=False,
+    )
+
+    assert torch.isclose(result, expected)
 
 
-def test_log_likelihood_spine_ages(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_log_likelihood_spine_ages() -> None:
     """Test log_likelihood with spine_ages provided."""
-    monkeypatch.setattr(
-        likelihood,
-        "calculate_populations_log_lik",
-        lambda **kwargs: torch.tensor(1.0),
-    )
-    monkeypatch.setattr(
-        likelihood,
-        "calculate_ages_log_lik",
-        lambda *a, **k: torch.tensor(2.0),
-    )
-    # Provide spine_ages
+    birth_rates = torch.tensor([0.5])
+    death_rates = torch.tensor([0.2])
+    ages = torch.tensor([1.0])
+    times = torch.tensor([2.0])
+    spine_ages = torch.tensor([0.5])
+
     result = likelihood.log_likelihood(
-        birth_rates=torch.tensor([0.5]),
-        death_rates=torch.tensor([0.2]),
-        ages=torch.tensor([1.0]),
-        times=torch.tensor([2.0]),
-        spine_ages=torch.tensor([0.5]),
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        ages=ages,
+        times=times,
+        spine_ages=spine_ages,
     )
-    assert torch.isclose(result, torch.tensor(3.0))
+
+    expected = (
+        likelihood.calculate_populations_log_lik(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            ns=torch.tensor([2], dtype=torch.int64),
+            starting_population=1,
+        )
+        + likelihood.calculate_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages=spine_ages,
+            times=times,
+            are_spines=True,
+        )
+        + likelihood.calculate_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages,
+            times=times,
+            are_spines=False,
+        )
+    )
+
+    assert torch.isclose(result, expected)
 
 
-def test_log_likelihood_is_ordered(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_log_likelihood_is_ordered() -> None:
     """Test log_likelihood with is_ordered=True."""
-    monkeypatch.setattr(
-        likelihood,
-        "calculate_populations_log_lik",
-        lambda **kwargs: torch.tensor(1.0),
-    )
-    monkeypatch.setattr(
-        likelihood,
-        "calculate_ages_log_lik",
-        lambda *a, **k: torch.tensor(2.0),
-    )
-    # is_ordered True
+    birth_rates = torch.tensor([0.5])
+    death_rates = torch.tensor([0.2])
+    ages = torch.tensor([1.0, 0.5])
+    times = torch.tensor([2.0])
+
     result = likelihood.log_likelihood(
-        birth_rates=torch.tensor([0.5]),
-        death_rates=torch.tensor([0.2]),
-        ages=torch.tensor([1.0, 0.5]),
-        times=torch.tensor([2.0]),
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        ages=ages,
+        times=times,
         is_ordered=True,
     )
-    assert torch.isclose(result, torch.tensor(3.0))
+
+    expected = (
+        likelihood.calculate_populations_log_lik(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            ns=torch.tensor([2], dtype=torch.int64),
+            starting_population=1,
+        )
+        + likelihood.calculate_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages=torch.tensor([1.0]),
+            times=times,
+            are_spines=True,
+        )
+        + likelihood.calculate_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages=torch.tensor([0.5]),
+            times=times,
+            are_spines=False,
+        )
+    )
+
+    assert torch.isclose(result, expected)
 
 
 def test_log_likelihood_value_errors() -> None:
@@ -162,17 +209,14 @@ def test_log_likelihood_value_errors() -> None:
         )
 
 
-def test_negative_log_likelihood(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_negative_log_likelihood() -> None:
     """Test negative_log_likelihood returns negated log_likelihood value."""
-    monkeypatch.setattr(
-        likelihood,
-        "log_likelihood",
-        lambda **kwargs: torch.tensor(5.0),
-    )
-    result = likelihood.negative_log_likelihood(
-        birth_rates=torch.tensor([0.5]),
-        death_rates=torch.tensor([0.2]),
-        ages=torch.tensor([1.0]),
-        times=torch.tensor([2.0]),
-    )
-    assert torch.isclose(result, torch.tensor(-5.0))
+    kwargs = {
+        "birth_rates": torch.tensor([0.5]),
+        "death_rates": torch.tensor([0.2]),
+        "ages": torch.tensor([1.0]),
+        "times": torch.tensor([2.0]),
+    }
+    result = likelihood.negative_log_likelihood(**kwargs)
+    expected = -likelihood.log_likelihood(**kwargs)
+    assert torch.isclose(result, expected)

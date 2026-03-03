@@ -420,7 +420,7 @@ class TestPopulationProbabilityIntegration:
         # Set up a simple manuscript scenario
         creation_times = [1000.0, 1200.0, 1400.0]  # Three manuscripts
         model.creation_times = creation_times
-        model.set_final_time(1500.0)
+        model.set_epoch_end_times(1500.0)
 
         # Test that log-likelihood calculation doesn't fail using modular function
         ages = model.get_manuscript_ages()

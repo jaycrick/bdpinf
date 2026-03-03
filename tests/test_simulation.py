@@ -36,8 +36,8 @@ class TestSimulation:
             death_rate=0.02,
         )
 
-        # Check that final_time and creation_times were set
-        assert process.final_time == 100.0
+        # Check that epoch_end_times and creation_times were set
+        assert process.epoch_end_times[-1] == 100.0
         assert isinstance(process.creation_times, list)
 
         # Ages should be calculated consistently
@@ -162,7 +162,9 @@ class TestSimulation:
             )
 
             # Check that manual calculation matches process.get_manuscript_ages()
-            manual_ages = [process.final_time - ct for ct in process.creation_times]
+            manual_ages = [
+                process.epoch_end_times[-1] - ct for ct in process.creation_times
+            ]
             np.testing.assert_array_almost_equal(
                 process.get_manuscript_ages(),
                 manual_ages,
@@ -205,7 +207,7 @@ class TestSimulation:
         )
 
         # Check that the process state is still valid
-        assert process.final_time == 1.0
+        assert process.epoch_end_times[-1] == 1.0
         assert isinstance(process.creation_times, list)
         assert isinstance(process.get_manuscript_ages(), np.ndarray)
 
@@ -244,7 +246,7 @@ class TestSimulation:
         )
 
         # New process should have different state from initial process
-        assert new_process.final_time == 50.0
+        assert new_process.epoch_end_times[-1] == 50.0
         # creation_times should be from simulation, not initial values
         assert new_process.creation_times != initial_creation_times
         # ages should be different
