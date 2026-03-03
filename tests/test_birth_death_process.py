@@ -19,13 +19,13 @@ class TestBirthDeathProcessInit:
         epoch_end_times = 1000.0
         process = BirthDeathProcess(creation_times, epoch_end_times)
 
-        assert process.birth_rate is None  # Optional, not provided
-        assert process.death_rate is None  # Optional, not provided
+        assert process.birth_rates is None  # Optional, not provided
+        assert process.death_rates is None  # Optional, not provided
         assert process.creation_times == []
         assert process.epoch_end_times[-1].item() == 1000.0
         assert (
             not process.fitted
-        )  # Not fitted since birth_rate and death_rate not provided
+        )  # Not fitted since birth_rates and death_rates not provided
         assert process.fit_results is None
         assert len(process.get_manuscript_ages()) == 0
 
@@ -39,9 +39,10 @@ class TestBirthDeathProcessInit:
             epoch_end_times=epoch_end_times,
         )
 
-        assert process.birth_rate is None  # Optional, not provided
-        assert process.death_rate is None  # Optional, not provided
+        assert process.birth_rates is None  # Optional, not provided
+        assert process.death_rates is None  # Optional, not provided
         assert process.creation_times == creation_times
+        assert process.start_time == 0.0
         assert process.epoch_end_times[-1].item() == epoch_end_times
 
         # Ages should be calculated on-demand
@@ -109,14 +110,14 @@ class TestBirthDeathProcessInit:
         process = BirthDeathProcess(
             creation_times=[100, 200, 300, 500],
             epoch_end_times=1000,
-            birth_rate=0.02,
-            death_rate=0.005,
+            birth_rates=0.02,
+            death_rates=0.005,
         )
 
         summary = process.get_process_summary()
 
-        assert summary["birth_rate"] == 0.02
-        assert summary["death_rate"] == 0.005
+        assert summary["birth_rates"] == [0.02]
+        assert summary["death_rates"] == [0.005]
         assert summary["n_manuscripts"] == 4
         assert summary["epoch_end_times"] == [1000.0]
         assert summary["min_age"] == 500.0  # 1000 - 500
@@ -127,12 +128,12 @@ class TestBirthDeathProcessInit:
 
     def test_empty_process_summary(self) -> None:
         """Test summary with no manuscripts."""
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.01, death_rate=0.002)
+        process = BirthDeathProcess([], 1000.0, birth_rates=0.01, death_rates=0.002)
 
         summary = process.get_process_summary()
 
-        assert summary["birth_rate"] == 0.01
-        assert summary["death_rate"] == 0.002
+        assert summary["birth_rates"] == [0.01]
+        assert summary["death_rates"] == [0.002]
         assert summary["n_manuscripts"] == 0
         assert summary["epoch_end_times"] == [1000.0]
         assert "min_age" not in summary
@@ -141,12 +142,12 @@ class TestBirthDeathProcessInit:
 
     def test_type_consistency(self) -> None:
         """Test that attributes maintain correct types."""
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.02, death_rate=0.005)
+        process = BirthDeathProcess([], 1000.0, birth_rates=0.02, death_rates=0.005)
 
-        assert isinstance(process.birth_rate, torch.Tensor)
-        assert isinstance(process.death_rate, torch.Tensor)
-        assert process.birth_rate.dtype == torch.float64
-        assert process.death_rate.dtype == torch.float64
+        assert isinstance(process.birth_rates, torch.Tensor)
+        assert isinstance(process.death_rates, torch.Tensor)
+        assert process.birth_rates.dtype == torch.float64
+        assert process.death_rates.dtype == torch.float64
         assert process.birth_rates is not None
         assert process.death_rates is not None
         assert process.n_epochs == 1
@@ -157,8 +158,8 @@ class TestBirthDeathProcessInit:
         assert isinstance(ages, torch.Tensor)
         assert ages.dtype == torch.float64
 
-    def test_manuscript_filtering_on_epoch_end_time_update(self) -> None:
-        """Test that manuscripts after epoch end time are removed when updated."""
+    def test_manuscript_validation_on_epoch_end_time_update(self) -> None:
+        """Test that invalid manuscripts trigger validation on epoch updates."""
         # Start with manuscripts that span before and after a future end time
         creation_times = [100.0, 200.0, 300.0, 600.0, 800.0]
         initial_epoch_end_times = 1000.0
@@ -169,21 +170,51 @@ class TestBirthDeathProcessInit:
         assert len(process.creation_times) == 5
         assert process.creation_times == [100.0, 200.0, 300.0, 600.0, 800.0]
 
-        # Update epoch end time to 500.0 (should remove manuscripts at 600.0 and 800.0)
-        process.set_epoch_end_times(500.0)
+        # Update epoch end time to 500.0 should fail validation
+        with pytest.raises(
+            ValueError,
+            match="creation_times must be less than or equal to latest epoch_end_time",
+        ):
+            process.set_epoch_end_times(500.0)
 
-        # Should have only 3 manuscripts now
-        assert len(process.creation_times) == 3
-        assert process.creation_times == [100.0, 200.0, 300.0]
-        assert process.epoch_end_times[-1].item() == 500.0
+        # State should remain unchanged after failed validation
+        assert len(process.creation_times) == 5
+        assert process.creation_times == [100.0, 200.0, 300.0, 600.0, 800.0]
+        assert process.epoch_end_times[-1].item() == 1000.0
+
+    def test_creation_times_respect_start_time(self) -> None:
+        """Test creation times are validated against start_time at initialization."""
+        with pytest.raises(
+            ValueError,
+            match="creation_times must be greater than or equal to start_time",
+        ):
+            BirthDeathProcess(
+                creation_times=[100.0, 200.0, 300.0],
+                epoch_end_times=500.0,
+                start_time=150.0,
+            )
+
+    def test_add_manuscript_respects_start_time(self) -> None:
+        """Test add_manuscript validates manuscript time against start_time."""
+        process = BirthDeathProcess(
+            creation_times=[200.0, 250.0],
+            epoch_end_times=500.0,
+            start_time=150.0,
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="creation_time must be greater than or equal to start_time",
+        ):
+            process.add_manuscript(100.0)
 
     def test_vector_epoch_times_and_rates(self) -> None:
         """Test vector epoch end times and vector rates with matching lengths."""
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0, 700.0],
             epoch_end_times=[400.0, 800.0, 1200.0],
-            birth_rate=[0.02, 0.03, 0.04],
-            death_rate=[0.005, 0.007, 0.009],
+            birth_rates=[0.02, 0.03, 0.04],
+            death_rates=[0.005, 0.007, 0.009],
         )
 
         assert process.n_epochs == 3
@@ -192,5 +223,5 @@ class TestBirthDeathProcessInit:
         assert_array_equal(process.birth_rates, np.array([0.02, 0.03, 0.04]))
         assert_array_equal(process.death_rates, np.array([0.005, 0.007, 0.009]))
 
-        with pytest.raises(ValueError, match="birth_rate length"):
+        with pytest.raises(ValueError, match="birth_rates length"):
             process.set_epoch_end_times([400.0, 800.0])

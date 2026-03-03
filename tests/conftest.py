@@ -28,8 +28,8 @@ def sample_model(sample_creation_times: list[float]) -> BirthDeathProcess:
     return BirthDeathProcess(
         creation_times=sample_creation_times,
         epoch_end_times=600.0,
-        birth_rate=0.1,
-        death_rate=0.05,
+        birth_rates=0.1,
+        death_rates=0.05,
     )
 
 

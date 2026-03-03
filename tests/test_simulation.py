@@ -33,8 +33,8 @@ class TestSimulation:
         process = BirthDeathProcess(
             creation_times,
             100.0,
-            birth_rate=0.1,
-            death_rate=0.02,
+            birth_rates=0.1,
+            death_rates=0.02,
         )
 
         # Check that epoch_end_times and creation_times were set
@@ -158,8 +158,8 @@ class TestSimulation:
             process = BirthDeathProcess(
                 creation_times,
                 80.0,
-                birth_rate=0.15,
-                death_rate=0.03,
+                birth_rates=0.15,
+                death_rates=0.03,
             )
 
             # Check that manual calculation matches process.get_manuscript_ages()
@@ -203,8 +203,8 @@ class TestSimulation:
         process = BirthDeathProcess(
             creation_times,
             1.0,
-            birth_rate=0.001,
-            death_rate=1.0,
+            birth_rates=0.001,
+            death_rates=1.0,
         )
 
         # Check that the process state is still valid
@@ -219,8 +219,8 @@ class TestSimulation:
         process = BirthDeathProcess(
             initial_creation_times,
             100.0,
-            birth_rate=0.1,
-            death_rate=0.02,
+            birth_rates=0.1,
+            death_rates=0.02,
         )
         initial_ages = process.get_manuscript_ages().clone()
 
@@ -242,8 +242,8 @@ class TestSimulation:
         new_process = BirthDeathProcess(
             new_creation_times,
             50.0,
-            birth_rate=0.1,
-            death_rate=0.02,
+            birth_rates=0.1,
+            death_rates=0.02,
         )
 
         # New process should have different state from initial process
@@ -322,8 +322,8 @@ class TestSimulation:
             process = BirthDeathProcess(
                 creation_times,
                 60.0,
-                birth_rate=0.1,
-                death_rate=0.02,
+                birth_rates=0.1,
+                death_rates=0.02,
             )
 
             # All ages in process.get_manuscript_ages() should be non-negative

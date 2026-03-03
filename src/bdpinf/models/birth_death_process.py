@@ -5,8 +5,7 @@ initialization, and core functionality. Complex mathematical computations and
 fitting procedures are handled by separate modules.
 """
 
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import torch
@@ -18,9 +17,9 @@ from inf_bp_texts.models.validation import (
 )
 
 NumericInput = float | list[float] | NDArray[np.float64] | torch.Tensor
+RateLabel = Literal["birth", "death"]
 
 
-@dataclass
 class BirthDeathProcess:
     r"""Birth-death process model for manuscript survival and creation.
 
@@ -52,8 +51,8 @@ class BirthDeathProcess:
         >>> ages = np.array([100, 150, 200])
         >>> result = fit_birth_death_process(ages, observation_time=250)
         >>> if result['success']:
-        ...     print(f"Birth rate: {result['birth_rate']:.3f}")
-        ...     print(f"Death rate: {result['death_rate']:.3f}")
+        ...     print(f"Birth rates: {result['birth_rates']}")
+        ...     print(f"Death rates: {result['death_rates']}")
 
     """
 
@@ -62,8 +61,8 @@ class BirthDeathProcess:
         creation_times: list[float],
         epoch_end_times: NumericInput,
         start_time: float | None = None,
-        birth_rate: NumericInput | None = None,
-        death_rate: NumericInput | None = None,
+        birth_rates: NumericInput | None = None,
+        death_rates: NumericInput | None = None,
     ) -> None:
         """Initialize birth-death process with observation data.
 
@@ -71,35 +70,37 @@ class BirthDeathProcess:
             creation_times: List of times when manuscripts were created
             epoch_end_times: Scalar or vector of epoch end times
             start_time: Start time of the observation period (optional, defaults to 0)
-            birth_rate: Manuscript creation rate (λ) - optional, can be fitted later
-            death_rate: Manuscript loss rate (μ) - optional, can be fitted later
+            birth_rates: Manuscript creation-rate vector (λ) - optional
+            death_rates: Manuscript loss-rate vector (μ) - optional
 
         """
         self.creation_times: list[float] = creation_times.copy()
-        self.start_time: float = start_time if start_time is not None else 0.0
         self._epoch_end_times: torch.Tensor = self._normalize_epoch_end_times(
             epoch_end_times,
         )
+        self.start_time: float = self._normalize_start_time(start_time)
+        self._validate_start_time_window()
 
         # Parameters can be provided at initialization or fitted later
-        self.birth_rate: torch.Tensor | None = (
-            self._normalize_rate_vector(birth_rate, label="birth")
-            if birth_rate is not None
+        self._birth_rates: torch.Tensor | None = (
+            self._normalize_rate_vector(birth_rates, label="birth")
+            if birth_rates is not None
             else None
         )
-        self.death_rate: torch.Tensor | None = (
-            self._normalize_rate_vector(death_rate, label="death")
-            if death_rate is not None
+        self._death_rates: torch.Tensor | None = (
+            self._normalize_rate_vector(death_rates, label="death")
+            if death_rates is not None
             else None
         )
 
         self._validate_rate_lengths()
 
-        # Remove manuscripts created after last epoch end time
-        self._filter_creation_times()
+        self._validate_creation_times()
 
         # Set fitted status based on whether parameters were provided
-        self.fitted: bool = self.birth_rate is not None and self.death_rate is not None
+        self.fitted: bool = (
+            self._birth_rates is not None and self._death_rates is not None
+        )
         self.fit_results: dict[str, Any] | None = None
 
     @property
@@ -115,16 +116,34 @@ class BirthDeathProcess:
     @property
     def birth_rates(self) -> torch.Tensor | None:
         """Get birth-rate vector (one value per epoch)."""
-        if self.birth_rate is None:
+        if self._birth_rates is None:
             return None
-        return self.birth_rate.clone()
+        return self._birth_rates.clone()
+
+    @birth_rates.setter
+    def birth_rates(self, value: NumericInput | None) -> None:
+        """Set birth-rate vector."""
+        if value is None:
+            self._birth_rates = None
+            return
+        self._birth_rates = self._normalize_rate_vector(value, label="birth")
+        self._validate_rate_lengths()
 
     @property
     def death_rates(self) -> torch.Tensor | None:
         """Get death-rate vector (one value per epoch)."""
-        if self.death_rate is None:
+        if self._death_rates is None:
             return None
-        return self.death_rate.clone()
+        return self._death_rates.clone()
+
+    @death_rates.setter
+    def death_rates(self, value: NumericInput | None) -> None:
+        """Set death-rate vector."""
+        if value is None:
+            self._death_rates = None
+            return
+        self._death_rates = self._normalize_rate_vector(value, label="death")
+        self._validate_rate_lengths()
 
     def _normalize_epoch_end_times(
         self,
@@ -138,6 +157,18 @@ class BirthDeathProcess:
             config=config,
         )
         return times_tensor.to(dtype=torch.float64)
+
+    def _normalize_start_time(self, start_time: float | None) -> float:
+        """Normalize and validate start time."""
+        if start_time is None:
+            return 0.0
+
+        start_time_value = float(start_time)
+        if not np.isfinite(start_time_value):
+            msg = "start_time must be finite"
+            raise ValueError(msg)
+
+        return start_time_value
 
     def _to_float64_tensor(self, values: NumericInput) -> torch.Tensor:
         """Convert numeric input to a float64 tensor."""
@@ -153,47 +184,89 @@ class BirthDeathProcess:
         self,
         rates: NumericInput,
         *,
-        label: str,
+        label: RateLabel,
     ) -> torch.Tensor:
         """Normalize a scalar/vector rate input into a vector."""
         rate_input = self._to_float64_tensor(rates)
 
         if label == "birth":
             (rates_tensor,) = normalize_and_validate_inputs(birth_rates=rate_input)
-        elif label == "death":
-            (rates_tensor,) = normalize_and_validate_inputs(death_rates=rate_input)
         else:
-            msg = f"Unknown rate label: {label}"
-            raise ValueError(msg)
+            (rates_tensor,) = normalize_and_validate_inputs(death_rates=rate_input)
         return rates_tensor.to(dtype=torch.float64)
+
+    def _latest_epoch_end_time(self) -> torch.Tensor:
+        """Get the latest epoch end time as a tensor scalar."""
+        return self._epoch_end_times[-1]
+
+    def _validate_start_time_window(self) -> None:
+        """Validate start-time relative to epoch end times."""
+        latest_epoch_end_time = float(self._latest_epoch_end_time().item())
+        if self.start_time > latest_epoch_end_time:
+            msg = "start_time must be less than or equal to latest epoch_end_time"
+            raise ValueError(msg)
+
+    def _validate_start_time_against_epoch_end_time(
+        self,
+        latest_epoch_end_time: float,
+    ) -> None:
+        """Validate start-time against a candidate latest epoch end time."""
+        if self.start_time > latest_epoch_end_time:
+            msg = "start_time must be less than or equal to latest epoch_end_time"
+            raise ValueError(msg)
+
+    def _validate_and_expand_rate(
+        self,
+        rate: torch.Tensor | None,
+        *,
+        name: str,
+    ) -> torch.Tensor | None:
+        """Validate a rate vector against epoch count, expanding scalar rates."""
+        if rate is None:
+            return None
+
+        if rate.numel() == 1 and self.n_epochs > 1:
+            return rate.repeat(self.n_epochs)
+
+        if len(rate) != self.n_epochs:
+            msg = f"{name} length must match number of epoch end times"
+            raise ValueError(msg)
+
+        return rate
 
     def _validate_rate_lengths(self) -> None:
         """Validate that rate vectors match epoch vector length when provided."""
-        n_epochs = self.n_epochs
+        self._birth_rates = self._validate_and_expand_rate(
+            self._birth_rates,
+            name="birth_rates",
+        )
+        self._death_rates = self._validate_and_expand_rate(
+            self._death_rates,
+            name="death_rates",
+        )
 
-        if self.birth_rate is not None:
-            if self.birth_rate.numel() == 1 and n_epochs > 1:
-                self.birth_rate = self.birth_rate.repeat(n_epochs)
-            elif len(self.birth_rate) != n_epochs:
-                msg = "birth_rate length must match number of epoch end times"
-                raise ValueError(msg)
-
-        if self.death_rate is not None:
-            if self.death_rate.numel() == 1 and n_epochs > 1:
-                self.death_rate = self.death_rate.repeat(n_epochs)
-            elif len(self.death_rate) != n_epochs:
-                msg = "death_rate length must match number of epoch end times"
-                raise ValueError(msg)
-
-    def _filter_creation_times(self) -> None:
-        """Remove manuscripts created after the last epoch end time."""
+    def _validate_creation_times(self) -> None:
+        """Validate manuscripts fall within [start_time, latest epoch end time]."""
         if not self.creation_times:
             return
 
-        latest_epoch_end_time = float(self._epoch_end_times[-1].item())
-        self.creation_times = [
-            ct for ct in self.creation_times if ct <= latest_epoch_end_time
+        creation_times_tensor = self._to_float64_tensor(self.creation_times)
+        normalize_and_validate_inputs(times=creation_times_tensor)
+
+        invalid_before_start = [
+            ct for ct in self.creation_times if ct < self.start_time
         ]
+        if invalid_before_start:
+            msg = "creation_times must be greater than or equal to start_time"
+            raise ValueError(msg)
+
+        latest_epoch_end_time = float(self._latest_epoch_end_time().item())
+        invalid_after_epoch = [
+            ct for ct in self.creation_times if ct > latest_epoch_end_time
+        ]
+        if invalid_after_epoch:
+            msg = "creation_times must be less than or equal to latest epoch_end_time"
+            raise ValueError(msg)
 
     def get_manuscript_ages(self) -> torch.Tensor:
         """Calculate manuscript ages from creation times and last epoch end time.
@@ -202,7 +275,7 @@ class BirthDeathProcess:
             Array of manuscript ages (latest_epoch_end_time - creation_time)
 
         """
-        latest_epoch_end_time = self._epoch_end_times[-1]
+        latest_epoch_end_time = self._latest_epoch_end_time()
         if self.creation_times:
             return latest_epoch_end_time - torch.tensor(
                 self.creation_times,
@@ -217,6 +290,15 @@ class BirthDeathProcess:
             creation_time: Time when the manuscript was created
 
         """
+        if creation_time < self.start_time:
+            msg = "creation_time must be greater than or equal to start_time"
+            raise ValueError(msg)
+
+        latest_epoch_end_time = float(self._latest_epoch_end_time().item())
+        if creation_time > latest_epoch_end_time:
+            msg = "creation_time must be less than or equal to latest epoch_end_time"
+            raise ValueError(msg)
+
         self.creation_times.append(creation_time)
 
     def set_epoch_end_times(
@@ -229,9 +311,18 @@ class BirthDeathProcess:
             epoch_end_times: Scalar end time or vector of epoch end times
 
         """
-        self._epoch_end_times = self._normalize_epoch_end_times(epoch_end_times)
-        self._validate_rate_lengths()
-        self._filter_creation_times()
+        new_epoch_end_times = self._normalize_epoch_end_times(epoch_end_times)
+        previous_epoch_end_times = self._epoch_end_times
+
+        try:
+            self._epoch_end_times = new_epoch_end_times
+            latest_epoch_end_time = float(self._epoch_end_times[-1].item())
+            self._validate_start_time_against_epoch_end_time(latest_epoch_end_time)
+            self._validate_rate_lengths()
+            self._validate_creation_times()
+        except Exception:
+            self._epoch_end_times = previous_epoch_end_times
+            raise
 
     def get_process_summary(self) -> dict[str, Any]:
         """Get a summary of the birth-death process state.
@@ -248,12 +339,10 @@ class BirthDeathProcess:
         }
 
         # Include parameters if they've been set
-        if self.birth_rate is not None:
-            summary["birth_rate"] = float(self.birth_rate[-1].item())
-            summary["birth_rates"] = self.birth_rate.tolist()
-        if self.death_rate is not None:
-            summary["death_rate"] = float(self.death_rate[-1].item())
-            summary["death_rates"] = self.death_rate.tolist()
+        if self.birth_rates is not None:
+            summary["birth_rates"] = self.birth_rates.tolist()
+        if self.death_rates is not None:
+            summary["death_rates"] = self.death_rates.tolist()
 
         ages = self.get_manuscript_ages()
         if len(ages) > 0:
@@ -267,34 +356,10 @@ class BirthDeathProcess:
 
         return summary
 
-    def validate_parameters(self) -> bool:
-        """Validate that model parameters are set and reasonable.
-
-        Returns:
-            True if parameters are valid, False otherwise
-
-        """
-        if self.birth_rate is None or self.death_rate is None:
-            return False
-
-        if torch.any(self.birth_rate <= 0) or torch.any(self.death_rate <= 0):
-            return False
-
-        if (
-            len(self.birth_rate) != self.n_epochs
-            or len(self.death_rate) != self.n_epochs
-        ):
-            return False
-
-        return bool(
-            torch.all(torch.isfinite(self.birth_rate))
-            and torch.all(torch.isfinite(self.death_rate)),
-        )
-
     def update_parameters(
         self,
-        birth_rate: NumericInput,
-        death_rate: NumericInput,
+        birth_rates: NumericInput,
+        death_rates: NumericInput,
         fit_results: dict[str, Any] | None = None,
     ) -> None:
         """Update the model parameters after fitting.
@@ -303,20 +368,19 @@ class BirthDeathProcess:
         to update the model state.
 
         Args:
-            birth_rate: Fitted birth-rate vector (λ), one value per epoch
-            death_rate: Fitted death-rate vector (μ), one value per epoch
+            birth_rates: Fitted birth-rate vector (λ), one value per epoch
+            death_rates: Fitted death-rate vector (μ), one value per epoch
             fit_results: Optional fit results dictionary from fitting module
 
         """
-        self.birth_rate = self._normalize_rate_vector(birth_rate, label="birth")
-        self.death_rate = self._normalize_rate_vector(death_rate, label="death")
+        self._birth_rates = self._normalize_rate_vector(
+            birth_rates,
+            label="birth",
+        )
+        self._death_rates = self._normalize_rate_vector(
+            death_rates,
+            label="death",
+        )
         self._validate_rate_lengths()
         self.fitted = True
         self.fit_results = fit_results
-
-    def reset_parameters(self) -> None:
-        """Reset fitted parameters and status."""
-        self.birth_rate = None
-        self.death_rate = None
-        self.fitted = False
-        self.fit_results = None

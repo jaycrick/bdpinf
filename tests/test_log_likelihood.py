@@ -20,7 +20,7 @@ class TestLogLikelihood:
 
     def test_log_likelihood_empty_ages(self) -> None:
         """Test log-likelihood with no ages raises ValueError."""
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.01)
+        process = BirthDeathProcess([], 1000.0, birth_rates=0.1, death_rates=0.01)
 
         ages = process.get_manuscript_ages()
         result = log_likelihood(
@@ -77,8 +77,8 @@ class TestLogLikelihood:
     def test_log_likelihood_with_explicit_parameters(self) -> None:
         """Test log-likelihood with explicit parameters."""
         process = BirthDeathProcess(
-            birth_rate=0.01,
-            death_rate=0.005,
+            birth_rates=0.01,
+            death_rates=0.005,
             creation_times=[100.0, 200.0, 300.0],
             epoch_end_times=1000.0,
         )
@@ -97,8 +97,8 @@ class TestLogLikelihood:
     def test_log_likelihood_parameter_consistency(self) -> None:
         """Test that same parameters give same results."""
         process = BirthDeathProcess(
-            birth_rate=0.01,
-            death_rate=0.005,
+            birth_rates=0.01,
+            death_rates=0.005,
             creation_times=[100.0, 200.0, 300.0],
             epoch_end_times=1000.0,
         )
@@ -174,7 +174,7 @@ class TestLogLikelihood:
 
     def test_negative_log_likelihood_empty_ages(self) -> None:
         """Test negative log-likelihood with no ages."""
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.01)
+        process = BirthDeathProcess([], 1000.0, birth_rates=0.1, death_rates=0.01)
 
         # Use log-scale parameters as expected by negative_log_likelihood
         birth_rate, death_rate = 0.01, 0.005

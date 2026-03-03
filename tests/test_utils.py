@@ -27,7 +27,7 @@ class TestEdgeCases:
     def test_zero_rates(self) -> None:
         """Test behavior with zero rates."""
         # Zero birth rate should be invalid for log-likelihood
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.0, death_rate=0.01)
+        process = BirthDeathProcess([], 1000.0, birth_rates=0.0, death_rates=0.01)
         process.creation_times = [100.0]
         process.set_epoch_end_times(200.0)
 
@@ -54,7 +54,12 @@ class TestEdgeCases:
 
     def test_very_large_ages(self) -> None:
         """Test behavior with very large ages."""
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.001, death_rate=0.0001)
+        process = BirthDeathProcess(
+            [],
+            1000.0,
+            birth_rates=0.001,
+            death_rates=0.0001,
+        )
         process.creation_times = [1.0, 2.0, 3.0]
         process.set_epoch_end_times(100000.0)  # Very large final time
 
@@ -68,7 +73,7 @@ class TestEdgeCases:
 
     def test_single_manuscript(self) -> None:
         """Test behavior with single manuscript."""
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.01, death_rate=0.005)
+        process = BirthDeathProcess([], 1000.0, birth_rates=0.01, death_rates=0.005)
         process.add_manuscript(100.0)
         process.set_epoch_end_times(500.0)
 

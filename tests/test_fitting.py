@@ -274,8 +274,8 @@ class TestFitting:
         # Process should now be fitted
         assert process.fitted
         assert process.fit_results is not None
-        assert process.birth_rate == result["birth_rates"]
-        assert process.death_rate == result["death_rates"]
+        assert process.birth_rates == result["birth_rates"]
+        assert process.death_rates == result["death_rates"]
 
     def test_fit_from_dataframe_custom_age_column(self) -> None:
         """Test fitting with custom age column name."""
@@ -635,7 +635,6 @@ class TestFittingDiagnostics:
             model = BirthDeathProcess(
                 creation_times=manuscripts_epoch["midYear"].tolist(),
                 epoch_end_times=end_time,
-                start_time=start_time,
             )
             all_ages.extend(model.get_manuscript_ages())
 
@@ -780,7 +779,6 @@ class TestFittingDiagnostics:
                 model = BirthDeathProcess(
                     creation_times=creation_times,
                     epoch_end_times=end_time,
-                    start_time=start_time,
                 )
                 ages = model.get_manuscript_ages()
                 all_ages.extend(ages)
