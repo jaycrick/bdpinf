@@ -163,11 +163,11 @@ import torch
 from inf_bp_texts.models.mathematical_functions import calculate_non_spine_ages_log_lik
 
 ages = torch.tensor([15.0, 60.0, 95.0], dtype=torch.float64)
-birth_rate_val = torch.tensor([0.02], dtype=torch.float64)
-death_rate_val = torch.tensor([0.01], dtype=torch.float64)
+birth_rates_val = torch.tensor([0.02], dtype=torch.float64)
+death_rates_val = torch.tensor([0.01], dtype=torch.float64)
 T = torch.tensor([120.0], dtype=torch.float64)
 
-log_lik = calculate_non_spine_ages_log_lik(birth_rate_val, death_rate_val, ages, T)
+log_lik = calculate_non_spine_ages_log_lik(birth_rates_val, death_rates_val, ages, T)
 ```
 
 ## Related functions

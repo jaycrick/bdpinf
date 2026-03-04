@@ -4,6 +4,7 @@
 
 import numpy as np
 import pandas as pd
+import torch
 
 from inf_bp_texts.models import BirthDeathProcess
 from inf_bp_texts.simulation import simulate_birth_death_process
@@ -32,16 +33,16 @@ class TestSimulation:
         process = BirthDeathProcess(
             creation_times,
             100.0,
-            birth_rate=0.1,
-            death_rate=0.02,
+            birth_rates=0.1,
+            death_rates=0.02,
         )
 
-        # Check that final_time and creation_times were set
-        assert process.final_time == 100.0
+        # Check that epoch_end_times and creation_times were set
+        assert process.epoch_end_times[-1] == 100.0
         assert isinstance(process.creation_times, list)
 
         # Ages should be calculated consistently
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         assert len(ages) == len(process.creation_times)
 
     def test_simulation_with_seed_reproducible(self) -> None:
@@ -157,23 +158,25 @@ class TestSimulation:
             process = BirthDeathProcess(
                 creation_times,
                 80.0,
-                birth_rate=0.15,
-                death_rate=0.03,
+                birth_rates=0.15,
+                death_rates=0.03,
             )
 
-            # Check that manual calculation matches process.get_manuscript_ages()
-            manual_ages = [process.final_time - ct for ct in process.creation_times]
+            # Check that manual calculation matches process.manuscript_ages
+            manual_ages = [
+                process.epoch_end_times[-1] - ct for ct in process.creation_times
+            ]
             np.testing.assert_array_almost_equal(
-                process.get_manuscript_ages(),
+                process.manuscript_ages,
                 manual_ages,
             )
 
-            # Check that ages for surviving manuscripts match process.get_manuscript_ages()
+            # Check that ages for surviving manuscripts match process.manuscript_ages
             df_ages = surviving_manuscripts["age"].values
-            # All surviving manuscripts should have ages that match process.get_manuscript_ages()
+            # All surviving manuscripts should have ages that match process.manuscript_ages
             np.testing.assert_array_almost_equal(
                 sorted(df_ages),
-                sorted(process.get_manuscript_ages()),
+                sorted(process.manuscript_ages),
             )
 
     def test_simulation_empty_result(self) -> None:
@@ -200,14 +203,14 @@ class TestSimulation:
         process = BirthDeathProcess(
             creation_times,
             1.0,
-            birth_rate=0.001,
-            death_rate=1.0,
+            birth_rates=0.001,
+            death_rates=1.0,
         )
 
         # Check that the process state is still valid
-        assert process.final_time == 1.0
+        assert process.epoch_end_times[-1].item() == 1.0
         assert isinstance(process.creation_times, list)
-        assert isinstance(process.get_manuscript_ages(), np.ndarray)
+        assert isinstance(process.manuscript_ages, torch.Tensor)
 
     def test_simulation_resets_process(self) -> None:
         """Test that creating new process with simulation results gives proper state."""
@@ -216,10 +219,10 @@ class TestSimulation:
         process = BirthDeathProcess(
             initial_creation_times,
             100.0,
-            birth_rate=0.1,
-            death_rate=0.02,
+            birth_rates=0.1,
+            death_rates=0.02,
         )
-        initial_ages = process.get_manuscript_ages().copy()
+        initial_ages = process.manuscript_ages.clone()
 
         # Run simulation using modular function - should give new results
         df = simulate_birth_death_process(
@@ -239,17 +242,17 @@ class TestSimulation:
         new_process = BirthDeathProcess(
             new_creation_times,
             50.0,
-            birth_rate=0.1,
-            death_rate=0.02,
+            birth_rates=0.1,
+            death_rates=0.02,
         )
 
         # New process should have different state from initial process
-        assert new_process.final_time == 50.0
+        assert new_process.epoch_end_times[-1] == 50.0
         # creation_times should be from simulation, not initial values
         assert new_process.creation_times != initial_creation_times
         # ages should be different
-        if len(new_process.get_manuscript_ages()) > 0:
-            assert not np.array_equal(new_process.get_manuscript_ages(), initial_ages)
+        if len(new_process.manuscript_ages) > 0:
+            assert not np.array_equal(new_process.manuscript_ages, initial_ages)
 
     def test_simulation_parameter_effects(self) -> None:
         """Test that birth/death rates affect simulation results as expected."""
@@ -319,12 +322,12 @@ class TestSimulation:
             process = BirthDeathProcess(
                 creation_times,
                 60.0,
-                birth_rate=0.1,
-                death_rate=0.02,
+                birth_rates=0.1,
+                death_rates=0.02,
             )
 
-            # All ages in process.get_manuscript_ages() should be non-negative
-            assert all(age >= 0 for age in process.get_manuscript_ages())
+            # All ages in process.manuscript_ages should be non-negative
+            assert all(age >= 0 for age in process.manuscript_ages)
 
         # All ages in DataFrame should be non-negative
         if len(surviving_manuscripts) > 0:

@@ -200,7 +200,7 @@ class TestPopulationProbability:
             f"manual={manual_result}, function={function_result}"
         )
 
-    def test_starting_population_gt_one(self) -> None:
+    def test_initial_population_gt_one(self) -> None:
         """Validate the n0 > 1 branch against the closed-form summation."""
 
         def davison_formula(a: int, k: int, alpha_t: float, beta_t: float) -> float:
@@ -209,7 +209,7 @@ class TestPopulationProbability:
             Parameters
             ----------
             a: int
-                starting population size (n0)
+                initial population size (n0)
             k: int
                 observed population size (n)
             alpha_t: float
@@ -236,7 +236,7 @@ class TestPopulationProbability:
             Parameters
             ----------
             n: int
-                starting population size (n0)
+                initial population size (n0)
             m: int
                 observed population size (n)
             alpha_t: float
@@ -279,7 +279,7 @@ class TestPopulationProbability:
                 death_rate,
                 times=time,
                 ns=n,
-                starting_population=n0,
+                initial_population=n0,
             ),
         )
 
@@ -420,10 +420,10 @@ class TestPopulationProbabilityIntegration:
         # Set up a simple manuscript scenario
         creation_times = [1000.0, 1200.0, 1400.0]  # Three manuscripts
         model.creation_times = creation_times
-        model.set_final_time(1500.0)
+        model.set_epoch_end_times(1500.0)
 
         # Test that log-likelihood calculation doesn't fail using modular function
-        ages = model.get_manuscript_ages()
+        ages = model.manuscript_ages
         log_likelihood_value = log_likelihood(
             birth_rates=0.1,
             death_rates=0.05,

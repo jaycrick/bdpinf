@@ -27,16 +27,19 @@ def sample_model(sample_creation_times: list[float]) -> BirthDeathProcess:
     """Create a sample birth-death process model."""
     return BirthDeathProcess(
         creation_times=sample_creation_times,
-        final_time=600.0,
-        birth_rate=0.1,
-        death_rate=0.05,
+        epoch_end_times=600.0,
+        birth_rates=0.1,
+        death_rates=0.05,
     )
 
 
 @pytest.fixture
 def unfitted_model(sample_creation_times: list[float]) -> BirthDeathProcess:
     """Create an unfitted birth-death process model."""
-    return BirthDeathProcess(creation_times=sample_creation_times, final_time=600.0)
+    return BirthDeathProcess(
+        creation_times=sample_creation_times,
+        epoch_end_times=600.0,
+    )
 
 
 @pytest.fixture

@@ -260,12 +260,12 @@ class TestFitting:
         # Create process
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0],
-            final_time=1000.0,
+            epoch_end_times=1000.0,
         )
 
         # Get ages and fit
-        ages = process.get_manuscript_ages()
-        result = fit_birth_death_processes([ages], process.final_time)
+        ages = process.manuscript_ages
+        result = fit_birth_death_processes([ages], process.epoch_end_times[-1])
 
         assert result["success"]
         # Update process with fitted parameters
@@ -274,8 +274,8 @@ class TestFitting:
         # Process should now be fitted
         assert process.fitted
         assert process.fit_results is not None
-        assert process.birth_rate == result["birth_rates"]
-        assert process.death_rate == result["death_rates"]
+        assert process.birth_rates == result["birth_rates"]
+        assert process.death_rates == result["death_rates"]
 
     def test_fit_from_dataframe_custom_age_column(self) -> None:
         """Test fitting with custom age column name."""
@@ -296,21 +296,21 @@ class TestFitting:
         """Test that process state is preserved when using external fitting."""
         process = BirthDeathProcess(
             creation_times=[50.0, 150.0, 250.0],
-            final_time=500.0,
+            epoch_end_times=500.0,
         )
 
-        original_ages = process.get_manuscript_ages().copy()
+        original_ages = process.manuscript_ages.clone()
         original_creation_times = process.creation_times.copy()
-        original_final_time = process.final_time
+        original_epoch_end_times = process.epoch_end_times.clone()
 
         # Fit with external data
         df = pd.DataFrame({"age": [100.0, 200.0, 300.0], "count": [1.0, 1.0, 1.0]})
         result = fit_from_dataframe(df, age_column="age", times=1000.0)
 
         # Original process data should be preserved
-        np.testing.assert_array_equal(process.get_manuscript_ages(), original_ages)
+        np.testing.assert_array_equal(process.manuscript_ages, original_ages)
         assert process.creation_times == original_creation_times
-        assert process.final_time == original_final_time
+        np.testing.assert_array_equal(process.epoch_end_times, original_epoch_end_times)
 
         # But we can still update it with fit results if desired
         assert result["success"]
@@ -458,8 +458,8 @@ class TestMultiEpochFitting:
             assert len(result["birth_rates"]) == len(times)
             assert len(result["death_rates"]) == len(times)
 
-    def test_multi_epoch_from_dataframe_large_starting_pop(self) -> None:
-        """Test multi-epoch fitting from DataFrame, with starting population sizes."""
+    def test_multi_epoch_from_dataframe_large_initial_pop(self) -> None:
+        """Test multi-epoch fitting from DataFrame, with initial population sizes."""
         ages = [100.0, 200.0, 300.0, 400.0, 500.0]
         df = pd.DataFrame({"age": ages})
         times = np.array([250.0, 550.0])
@@ -468,7 +468,7 @@ class TestMultiEpochFitting:
             df,
             age_column="age",
             times=times,
-            starting_population=10,
+            initial_population=10,
         )
 
         assert isinstance(result, dict)
@@ -506,7 +506,7 @@ class TestConvergenceFlags:
             times_tensor=times_tensor,
             spine_ages_tensor=None,
             population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
-            starting_population=1,
+            initial_population=1,
             convergence_config=convergence_config,
         )
 
@@ -557,7 +557,7 @@ class TestConvergenceFlags:
             times_tensor=times_tensor,
             spine_ages_tensor=None,
             population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
-            starting_population=1,
+            initial_population=1,
             convergence_config=convergence_config,
         )
 
@@ -589,7 +589,7 @@ class TestConvergenceFlags:
             times_tensor=times_tensor,
             spine_ages_tensor=None,
             population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
-            starting_population=1,
+            initial_population=1,
             convergence_config=convergence_config,
         )
 
@@ -634,10 +634,9 @@ class TestFittingDiagnostics:
 
             model = BirthDeathProcess(
                 creation_times=manuscripts_epoch["midYear"].tolist(),
-                final_time=end_time,
-                start_time=start_time,
+                epoch_end_times=end_time,
             )
-            all_ages.extend(model.get_manuscript_ages())
+            all_ages.extend(model.manuscript_ages)
 
         assert len(all_ages) > 0, "No ages prepared from epoch split"
 
@@ -662,7 +661,7 @@ class TestFittingDiagnostics:
                 times=times_tensor,
                 spine_ages=None,
                 ns=population_sizes,
-                starting_population=1,
+                initial_population=1,
                 is_ordered=False,
                 log_scale_params=True,
             ).item(),
@@ -697,7 +696,7 @@ class TestFittingDiagnostics:
                 initial_params=initial_params,
                 n_epochs=len(times_tensor),
                 non_spine_ages=non_spine_ages,
-                starting_population=1,
+                initial_population=1,
                 times_tensor=times_tensor,
                 spine_ages_tensor=None,
                 population_sizes_tensor=population_sizes,
@@ -779,10 +778,9 @@ class TestFittingDiagnostics:
                 creation_times = manuscripts_epoch["midYear"].tolist()
                 model = BirthDeathProcess(
                     creation_times=creation_times,
-                    final_time=end_time,
-                    start_time=start_time,
+                    epoch_end_times=end_time,
                 )
-                ages = model.get_manuscript_ages()
+                ages = model.manuscript_ages
                 all_ages.extend(ages)
                 epoch_counts.append(len(manuscripts_epoch))
                 epoch_metadata.append(

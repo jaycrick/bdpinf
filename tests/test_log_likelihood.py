@@ -20,9 +20,9 @@ class TestLogLikelihood:
 
     def test_log_likelihood_empty_ages(self) -> None:
         """Test log-likelihood with no ages raises ValueError."""
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.01)
+        process = BirthDeathProcess([], 1000.0, birth_rates=0.1, death_rates=0.01)
 
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         result = log_likelihood(
             birth_rates=0.1,
             death_rates=0.01,
@@ -36,10 +36,10 @@ class TestLogLikelihood:
         """Test basic log-likelihood functionality."""
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0],
-            final_time=1000.0,
+            epoch_end_times=1000.0,
         )
 
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         result = log_likelihood(
             birth_rates=0.01,
             death_rates=0.005,
@@ -55,14 +55,14 @@ class TestLogLikelihood:
         """Test log-likelihood when birth_rate ≈ death_rate."""
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0],
-            final_time=1000.0,
+            epoch_end_times=1000.0,
         )
 
         # Very close birth and death rates
         birth_rate = 0.01
         death_rate = 0.01 + 1e-12  # Nearly equal
 
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         result = log_likelihood(
             birth_rates=birth_rate,
             death_rates=death_rate,
@@ -77,14 +77,14 @@ class TestLogLikelihood:
     def test_log_likelihood_with_explicit_parameters(self) -> None:
         """Test log-likelihood with explicit parameters."""
         process = BirthDeathProcess(
-            birth_rate=0.01,
-            death_rate=0.005,
+            birth_rates=0.01,
+            death_rates=0.005,
             creation_times=[100.0, 200.0, 300.0],
-            final_time=1000.0,
+            epoch_end_times=1000.0,
         )
 
         # Use explicit parameters
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         result = log_likelihood(
             birth_rates=0.02,
             death_rates=0.001,
@@ -97,14 +97,14 @@ class TestLogLikelihood:
     def test_log_likelihood_parameter_consistency(self) -> None:
         """Test that same parameters give same results."""
         process = BirthDeathProcess(
-            birth_rate=0.01,
-            death_rate=0.005,
+            birth_rates=0.01,
+            death_rates=0.005,
             creation_times=[100.0, 200.0, 300.0],
-            final_time=1000.0,
+            epoch_end_times=1000.0,
         )
 
         # These should be identical
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         result1 = log_likelihood(
             birth_rates=0.01,
             death_rates=0.005,
@@ -126,10 +126,10 @@ class TestLogLikelihood:
         """Test log-likelihood with invalid (negative) parameters."""
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0],
-            final_time=1000.0,
+            epoch_end_times=1000.0,
         )
 
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
 
         # Negative birth rate should still work (just gives very negative log-likelihood)
         result = log_likelihood(
@@ -155,11 +155,11 @@ class TestLogLikelihood:
         """Test negative log-likelihood in optimization context."""
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0],
-            final_time=1000.0,
+            epoch_end_times=1000.0,
         )
 
         # Use log-scale parameters as expected by negative_log_likelihood
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         result = negative_log_likelihood(
             np.log(0.01),
             np.log(0.005),
@@ -174,11 +174,11 @@ class TestLogLikelihood:
 
     def test_negative_log_likelihood_empty_ages(self) -> None:
         """Test negative log-likelihood with no ages."""
-        process = BirthDeathProcess([], 1000.0, birth_rate=0.1, death_rate=0.01)
+        process = BirthDeathProcess([], 1000.0, birth_rates=0.1, death_rates=0.01)
 
         # Use log-scale parameters as expected by negative_log_likelihood
         birth_rate, death_rate = 0.01, 0.005
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         result = negative_log_likelihood(
             birth_rate,
             death_rate,
@@ -194,7 +194,7 @@ class TestLogLikelihood:
         """Test the external log-likelihood helper method via public interface."""
         ages_data = [100.0, 200.0, 300.0]
         process = BirthDeathProcess(ages_data, 500.0)
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         # Test log likelihood calculation with explicit parameters
         result = log_likelihood(
             birth_rates=0.01,
@@ -210,7 +210,7 @@ class TestLogLikelihood:
         """Test external log-likelihood with invalid parameters."""
         creation_times = [100.0, 200.0, 300.0]
         process = BirthDeathProcess(creation_times, 500.0)
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         # Test with invalid parameters using public interface
         result = log_likelihood(
             birth_rates=-0.01,
@@ -232,10 +232,10 @@ class TestLogLikelihood:
         """Test numerical stability with extreme parameters."""
         process = BirthDeathProcess(
             creation_times=[10.0, 20.0, 30.0],
-            final_time=1000.0,
+            epoch_end_times=1000.0,
         )
 
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
 
         # Very small rates
         result1 = log_likelihood(
@@ -260,9 +260,9 @@ class TestLogLikelihood:
         # Very large ages with small rates - may return -inf due to numerical limits
         process_large = BirthDeathProcess(
             creation_times=[1.0, 2.0, 3.0],
-            final_time=10000.0,
+            epoch_end_times=10000.0,
         )
-        ages_large = process_large.get_manuscript_ages()
+        ages_large = process_large.manuscript_ages
         result3 = log_likelihood(
             birth_rates=0.001,
             death_rates=0.0001,

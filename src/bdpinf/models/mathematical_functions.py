@@ -73,7 +73,7 @@ def _compute_populations_log_lik_multi_start(
     alpha_t: torch.Tensor,
     beta_t: torch.Tensor,
 ) -> torch.Tensor:
-    """Compute log probabilities for populations when starting_population > 1.
+    """Compute log probabilities for populations when initial_population > 1.
 
     Helper function that handles the complex combinatorial calculation for
     the case when the process starts with more than one individual.
@@ -85,7 +85,7 @@ def _compute_populations_log_lik_multi_start(
     nonzero_mask : torch.Tensor
         Boolean mask indicating non-zero population counts.
     n0 : int
-        Initial number of individuals (starting_population).
+        Initial number of individuals (initial_population).
     alpha_t : torch.Tensor
         Extinction probability Pr(Z_T = 0).
     beta_t : torch.Tensor
@@ -175,7 +175,7 @@ def calculate_populations_log_lik(
     ns: torch.Tensor | int,
     times: torch.Tensor | float,
     *,
-    starting_population: int = 1,
+    initial_population: int = 1,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     r"""Calculate log-probability of population counts under birth-death process.
@@ -199,8 +199,8 @@ def calculate_populations_log_lik(
     ns : torch.Tensor | int
         Non-negative population count(s) for which to evaluate
         log-probabilities.
-    starting_population : int
-        The number of starting individuals at time 0. Default is 1.
+    initial_population : int
+        The number of initial individuals at time 0. Default is 1.
 
     Returns
     -------
@@ -259,8 +259,8 @@ def calculate_populations_log_lik(
             msg = "times must be a torch.Tensor"
             raise ValueError(msg)
     (ns,) = ensure_1d_tensors(ns)
-    if starting_population <= 0:
-        msg = "starting_population must be a positive integer."
+    if initial_population <= 0:
+        msg = "initial_population must be a positive integer."
         raise ValueError(msg)
 
     # Input validation
@@ -327,12 +327,12 @@ def calculate_populations_log_lik(
     # Handle n == 0 case
     zero_mask = ns == 0
     if torch.any(zero_mask):
-        log_pr[zero_mask] = torch.log(alpha_t) * starting_population
+        log_pr[zero_mask] = torch.log(alpha_t) * initial_population
 
     # Handle n > 0 case
     nonzero_mask = torch.logical_not(zero_mask)
     if torch.any(nonzero_mask):
-        if starting_population == 1:
+        if initial_population == 1:
             log_term1 = torch.log1p(-alpha_t)
             log_term2 = torch.log1p(-beta_t)
             log_term3 = torch.where(
@@ -352,11 +352,11 @@ def calculate_populations_log_lik(
             # Broadcast full expression then mask to preserve original shape
             log_pr[nonzero_mask] = (log_term1 + log_term2 + log_term3)[nonzero_mask]
         else:
-            # Multi-start case: starting_population > 1
+            # Multi-start case: initial_population > 1
             log_pr = _compute_populations_log_lik_multi_start(
                 ns=ns,
                 nonzero_mask=nonzero_mask,
-                n0=int(starting_population),
+                n0=int(initial_population),
                 alpha_t=alpha_t,
                 beta_t=beta_t,
             )

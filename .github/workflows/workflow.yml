@@ -1,0 +1,46 @@
+name: Tests and Coverage
+
+on:
+  push:
+    branches: [main, fix-ages]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            .venv
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+
+      - name: Install dependencies
+        run: uv sync --all-groups --frozen
+
+      - name: Run tests with coverage
+        continue-on-error: true
+        run: uv run pytest
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Fail if tests failed
+        if: failure()
+        run: exit 1
