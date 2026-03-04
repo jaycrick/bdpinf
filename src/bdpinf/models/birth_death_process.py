@@ -40,7 +40,7 @@ class BirthDeathProcess:
 
         >>> from inf_bp_texts.models import BirthDeathProcess
         >>> model = BirthDeathProcess([100, 200, 300], epoch_end_times=500)
-        >>> ages = model.get_manuscript_ages()
+        >>> ages = model.manuscript_ages
         >>> print(ages)
         [400. 300. 200.]
 
@@ -56,7 +56,7 @@ class BirthDeathProcess:
 
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         creation_times: list[float],
         epoch_end_times: NumericInput,
@@ -101,6 +101,7 @@ class BirthDeathProcess:
         self._validate_rate_lengths()
 
         self._validate_creation_times()
+        self._manuscript_ages: torch.Tensor = self._compute_manuscript_ages()
 
         # Set fitted status based on whether parameters were provided
         self.fitted: bool = (
@@ -112,6 +113,11 @@ class BirthDeathProcess:
     def epoch_end_times(self) -> torch.Tensor:
         """Get epoch end times as a vector."""
         return self._epoch_end_times.clone()
+
+    @property
+    def adjusted_epoch_end_times(self) -> torch.Tensor:
+        """Get epoch end times shifted by start_time."""
+        return self._epoch_end_times - self.start_time
 
     @property
     def n_epochs(self) -> int:
@@ -268,7 +274,9 @@ class BirthDeathProcess:
             return
 
         creation_times_tensor = self._to_float64_tensor(self.creation_times)
-        normalize_and_validate_inputs(times=creation_times_tensor)
+        if not torch.all(torch.isfinite(creation_times_tensor)):
+            msg = "creation_times must be finite"
+            raise ValueError(msg)
 
         invalid_before_start = [
             ct for ct in self.creation_times if ct < self.start_time
@@ -285,13 +293,8 @@ class BirthDeathProcess:
             msg = "creation_times must be less than or equal to latest epoch_end_time"
             raise ValueError(msg)
 
-    def get_manuscript_ages(self) -> torch.Tensor:
-        """Calculate manuscript ages from creation times and last epoch end time.
-
-        Returns:
-            Array of manuscript ages (latest_epoch_end_time - creation_time)
-
-        """
+    def _compute_manuscript_ages(self) -> torch.Tensor:
+        """Compute manuscript ages from creation times and latest epoch end time."""
         latest_epoch_end_time = self._latest_epoch_end_time()
         if self.creation_times:
             return latest_epoch_end_time - torch.tensor(
@@ -299,6 +302,16 @@ class BirthDeathProcess:
                 dtype=torch.float64,
             )
         return torch.tensor([], dtype=torch.float64)
+
+    def _recompute_manuscript_ages(self) -> None:
+        """Recompute and cache manuscript ages."""
+        self._manuscript_ages = self._compute_manuscript_ages()
+
+    @property
+    def manuscript_ages(self) -> torch.Tensor:
+        """Get cached manuscript ages from creation times and latest epoch end time."""
+        self._recompute_manuscript_ages()
+        return self._manuscript_ages.clone()
 
     def add_manuscript(self, creation_time: float) -> None:
         """Add a manuscript with given creation time to the process.
@@ -317,6 +330,7 @@ class BirthDeathProcess:
             raise ValueError(msg)
 
         self.creation_times.append(creation_time)
+        self._recompute_manuscript_ages()
 
     def set_epoch_end_times(
         self,
@@ -337,6 +351,7 @@ class BirthDeathProcess:
             self._validate_start_time_against_epoch_end_time(latest_epoch_end_time)
             self._validate_rate_lengths()
             self._validate_creation_times()
+            self._recompute_manuscript_ages()
         except Exception:
             self._epoch_end_times = previous_epoch_end_times
             raise
@@ -351,6 +366,7 @@ class BirthDeathProcess:
         summary: dict[str, Any] = {
             "n_manuscripts": len(self.creation_times),
             "epoch_end_times": self.epoch_end_times.tolist(),
+            "adjusted_epoch_end_times": self.adjusted_epoch_end_times.tolist(),
             "n_epochs": self.n_epochs,
             "initial_population": self.initial_population,
             "fitted": self.fitted,
@@ -362,7 +378,7 @@ class BirthDeathProcess:
         if self.death_rates is not None:
             summary["death_rates"] = self.death_rates.tolist()
 
-        ages = self.get_manuscript_ages()
+        ages = self.manuscript_ages
         if len(ages) > 0:
             summary.update(
                 {

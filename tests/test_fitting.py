@@ -264,7 +264,7 @@ class TestFitting:
         )
 
         # Get ages and fit
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         result = fit_birth_death_processes([ages], process.epoch_end_times[-1])
 
         assert result["success"]
@@ -299,7 +299,7 @@ class TestFitting:
             epoch_end_times=500.0,
         )
 
-        original_ages = process.get_manuscript_ages().clone()
+        original_ages = process.manuscript_ages.clone()
         original_creation_times = process.creation_times.copy()
         original_epoch_end_times = process.epoch_end_times.clone()
 
@@ -308,7 +308,7 @@ class TestFitting:
         result = fit_from_dataframe(df, age_column="age", times=1000.0)
 
         # Original process data should be preserved
-        np.testing.assert_array_equal(process.get_manuscript_ages(), original_ages)
+        np.testing.assert_array_equal(process.manuscript_ages, original_ages)
         assert process.creation_times == original_creation_times
         np.testing.assert_array_equal(process.epoch_end_times, original_epoch_end_times)
 
@@ -636,7 +636,7 @@ class TestFittingDiagnostics:
                 creation_times=manuscripts_epoch["midYear"].tolist(),
                 epoch_end_times=end_time,
             )
-            all_ages.extend(model.get_manuscript_ages())
+            all_ages.extend(model.manuscript_ages)
 
         assert len(all_ages) > 0, "No ages prepared from epoch split"
 
@@ -780,7 +780,7 @@ class TestFittingDiagnostics:
                     creation_times=creation_times,
                     epoch_end_times=end_time,
                 )
-                ages = model.get_manuscript_ages()
+                ages = model.manuscript_ages
                 all_ages.extend(ages)
                 epoch_counts.append(len(manuscripts_epoch))
                 epoch_metadata.append(

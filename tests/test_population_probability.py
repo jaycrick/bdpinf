@@ -423,7 +423,7 @@ class TestPopulationProbabilityIntegration:
         model.set_epoch_end_times(1500.0)
 
         # Test that log-likelihood calculation doesn't fail using modular function
-        ages = model.get_manuscript_ages()
+        ages = model.manuscript_ages
         log_likelihood_value = log_likelihood(
             birth_rates=0.1,
             death_rates=0.05,

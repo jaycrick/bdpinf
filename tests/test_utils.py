@@ -18,7 +18,7 @@ class TestEdgeCases:
         process = BirthDeathProcess([], 1000.0)
 
         assert len(process.creation_times) == 0
-        assert len(process.get_manuscript_ages()) == 0
+        assert len(process.manuscript_ages) == 0
 
         # Should handle empty state gracefully
         summary = process.get_process_summary()
@@ -32,7 +32,7 @@ class TestEdgeCases:
         process.set_epoch_end_times(200.0)
 
         # Use modular log_likelihood function
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         ll = log_likelihood(0.0, 0.01, ages, process.epoch_end_times[-1])
         assert ll == -np.inf
 
@@ -43,7 +43,7 @@ class TestEdgeCases:
         process.set_epoch_end_times(200.0)
 
         # Use modular log_likelihood function
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
 
         # Negative rates should give -inf log-likelihood
         ll = log_likelihood(-0.01, 0.01, ages, process.epoch_end_times[-1])
@@ -64,7 +64,7 @@ class TestEdgeCases:
         process.set_epoch_end_times(100000.0)  # Very large final time
 
         # Use modular log_likelihood function
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
 
         # Should handle large ages without crashing
         ll = log_likelihood(0.001, 0.0001, ages, process.epoch_end_times[-1])
@@ -77,11 +77,11 @@ class TestEdgeCases:
         process.add_manuscript(100.0)
         process.set_epoch_end_times(500.0)
 
-        assert len(process.get_manuscript_ages()) == 1
-        assert process.get_manuscript_ages()[0] == 400.0
+        assert len(process.manuscript_ages) == 1
+        assert process.manuscript_ages[0] == 400.0
 
         # Use modular log_likelihood function
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
 
         # Should be able to calculate log-likelihood
         ll = log_likelihood(0.01, 0.005, ages, process.epoch_end_times[-1])
@@ -95,7 +95,7 @@ class TestEdgeCases:
 
         # The manuscript should be filtered out (since creation time > final time)
         # So there should be no manuscripts left
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         assert len(ages) == 0
 
 

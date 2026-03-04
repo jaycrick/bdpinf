@@ -28,7 +28,7 @@ class TestBirthDeathProcessInit:
             not process.fitted
         )  # Not fitted since birth_rates and death_rates not provided
         assert process.fit_results is None
-        assert len(process.get_manuscript_ages()) == 0
+        assert len(process.manuscript_ages) == 0
 
     def test_custom_initialization(self) -> None:
         """Test initialization with custom parameters."""
@@ -49,7 +49,26 @@ class TestBirthDeathProcessInit:
 
         # Ages should be calculated on-demand
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
-        assert_array_equal(process.get_manuscript_ages(), expected_ages)
+        assert_array_equal(process.manuscript_ages, expected_ages)
+
+    def test_adjusted_epoch_end_times_property(self) -> None:
+        """Test adjusted epoch end times are shifted by start_time."""
+        scalar_process = BirthDeathProcess(
+            creation_times=[],
+            epoch_end_times=500.0,
+            start_time=100.0,
+        )
+        assert_array_equal(scalar_process.adjusted_epoch_end_times, [400.0])
+
+        vector_process = BirthDeathProcess(
+            creation_times=[],
+            epoch_end_times=[400.0, 800.0, 1200.0],
+            start_time=100.0,
+        )
+        assert_array_equal(
+            vector_process.adjusted_epoch_end_times,
+            [300.0, 700.0, 1100.0],
+        )
 
     def test_add_manuscript(self) -> None:
         """Test adding manuscripts."""
@@ -62,7 +81,7 @@ class TestBirthDeathProcessInit:
 
         assert process.creation_times == creation_times
         expected_ages = np.array([900, 700, 300], dtype=np.float64)
-        assert_array_equal(process.get_manuscript_ages(), expected_ages)
+        assert_array_equal(process.manuscript_ages, expected_ages)
 
     def test_set_epoch_end_times(self) -> None:
         """Test setting epoch end times."""
@@ -71,14 +90,14 @@ class TestBirthDeathProcessInit:
 
         # Initially epoch end time is 1000, so ages should be calculated
         expected_initial_ages = np.array([900, 800, 700], dtype=np.float64)
-        assert_array_equal(process.get_manuscript_ages(), expected_initial_ages)
+        assert_array_equal(process.manuscript_ages, expected_initial_ages)
 
         # Update epoch end time using setter
         process.set_epoch_end_times(500)
         assert process.epoch_end_times[-1].item() == 500
 
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
-        assert_array_equal(process.get_manuscript_ages(), expected_ages)
+        assert_array_equal(process.manuscript_ages, expected_ages)
 
     def test_ages_calculated_on_demand(self) -> None:
         """Test that ages are calculated correctly on-demand when inputs change."""
@@ -86,26 +105,34 @@ class TestBirthDeathProcessInit:
 
         # Add manuscripts and verify ages are calculated correctly
         process.add_manuscript(100)
-        assert_array_equal(process.get_manuscript_ages(), [900])
+        assert_array_equal(process.manuscript_ages, [900])
 
         process.add_manuscript(300)
-        assert_array_equal(process.get_manuscript_ages(), [900, 700])
+        assert_array_equal(process.manuscript_ages, [900, 700])
 
         # Change epoch end time and verify ages are recalculated correctly
         process.set_epoch_end_times(1200)
-        assert_array_equal(process.get_manuscript_ages(), [1100, 900])
+        assert_array_equal(process.manuscript_ages, [1100, 900])
 
-    def test_get_manuscript_ages(self) -> None:
-        """Test get_manuscript_ages method."""
+    def test_manuscript_ages_values(self) -> None:
+        """Test manuscript_ages property values."""
         process = BirthDeathProcess(creation_times=[100, 200, 300], epoch_end_times=500)
 
-        ages = process.get_manuscript_ages()
+        ages = process.manuscript_ages
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
         assert_array_equal(ages, expected_ages)
 
         # Verify multiple calls return consistent results
-        ages2 = process.get_manuscript_ages()
+        ages2 = process.manuscript_ages
         assert_array_equal(ages, ages2)
+
+    def test_manuscript_ages_property(self) -> None:
+        """Test manuscript_ages property returns expected values."""
+        process = BirthDeathProcess(creation_times=[100, 200, 300], epoch_end_times=500)
+
+        expected_ages = np.array([400, 300, 200], dtype=np.float64)
+        assert_array_equal(process.manuscript_ages, expected_ages)
+        assert_array_equal(process.manuscript_ages, expected_ages)
 
     def test_get_process_summary(self) -> None:
         """Test process summary generation."""
@@ -123,6 +150,7 @@ class TestBirthDeathProcessInit:
         assert summary["death_rates"] == [0.005]
         assert summary["n_manuscripts"] == 4
         assert summary["epoch_end_times"] == [1000.0]
+        assert summary["adjusted_epoch_end_times"] == [1000.0]
         assert summary["initial_population"] == 2
         assert summary["min_age"] == 500.0  # 1000 - 500
         assert summary["max_age"] == 900.0  # 1000 - 100
@@ -168,8 +196,8 @@ class TestBirthDeathProcessInit:
         assert process.n_epochs == 1
         assert isinstance(process.creation_times, list)
 
-        # Test that get_manuscript_ages returns correct type
-        ages = process.get_manuscript_ages()
+        # Test that manuscript_ages returns correct type
+        ages = process.manuscript_ages
         assert isinstance(ages, torch.Tensor)
         assert ages.dtype == torch.float64
 
