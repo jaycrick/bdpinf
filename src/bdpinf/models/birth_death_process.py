@@ -56,11 +56,12 @@ class BirthDeathProcess:
 
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         creation_times: list[float],
         epoch_end_times: NumericInput,
-        start_time: float | None = None,
+        start_time: float = 0.0,
+        initial_population: int = 1,
         birth_rates: NumericInput | None = None,
         death_rates: NumericInput | None = None,
     ) -> None:
@@ -69,7 +70,8 @@ class BirthDeathProcess:
         Args:
             creation_times: List of times when manuscripts were created
             epoch_end_times: Scalar or vector of epoch end times
-            start_time: Start time of the observation period (optional, defaults to 0)
+            start_time: Start time of the observation period
+            initial_population: Initial population size (must be a positive integer)
             birth_rates: Manuscript creation-rate vector (λ) - optional
             death_rates: Manuscript loss-rate vector (μ) - optional
 
@@ -79,6 +81,9 @@ class BirthDeathProcess:
             epoch_end_times,
         )
         self.start_time: float = self._normalize_start_time(start_time)
+        self.initial_population: int = self._normalize_initial_population(
+            initial_population,
+        )
         self._validate_start_time_window()
 
         # Parameters can be provided at initialization or fitted later
@@ -158,17 +163,29 @@ class BirthDeathProcess:
         )
         return times_tensor.to(dtype=torch.float64)
 
-    def _normalize_start_time(self, start_time: float | None) -> float:
+    def _normalize_start_time(self, start_time: float) -> float:
         """Normalize and validate start time."""
-        if start_time is None:
-            return 0.0
-
         start_time_value = float(start_time)
         if not np.isfinite(start_time_value):
             msg = "start_time must be finite"
             raise ValueError(msg)
 
         return start_time_value
+
+    def _normalize_initial_population(self, initial_population: int) -> int:
+        """Normalize and validate initial population size."""
+        if isinstance(initial_population, bool) or not isinstance(
+            initial_population,
+            int,
+        ):
+            msg = "initial_population must be an integer"
+            raise TypeError(msg)
+
+        if initial_population <= 0:
+            msg = "initial_population must be a positive integer"
+            raise ValueError(msg)
+
+        return initial_population
 
     def _to_float64_tensor(self, values: NumericInput) -> torch.Tensor:
         """Convert numeric input to a float64 tensor."""
@@ -335,6 +352,7 @@ class BirthDeathProcess:
             "n_manuscripts": len(self.creation_times),
             "epoch_end_times": self.epoch_end_times.tolist(),
             "n_epochs": self.n_epochs,
+            "initial_population": self.initial_population,
             "fitted": self.fitted,
         }
 

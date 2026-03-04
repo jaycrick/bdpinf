@@ -23,6 +23,7 @@ class TestBirthDeathProcessInit:
         assert process.death_rates is None  # Optional, not provided
         assert process.creation_times == []
         assert process.epoch_end_times[-1].item() == 1000.0
+        assert process.initial_population == 1
         assert (
             not process.fitted
         )  # Not fitted since birth_rates and death_rates not provided
@@ -43,6 +44,7 @@ class TestBirthDeathProcessInit:
         assert process.death_rates is None  # Optional, not provided
         assert process.creation_times == creation_times
         assert process.start_time == 0.0
+        assert process.initial_population == 1
         assert process.epoch_end_times[-1].item() == epoch_end_times
 
         # Ages should be calculated on-demand
@@ -110,6 +112,7 @@ class TestBirthDeathProcessInit:
         process = BirthDeathProcess(
             creation_times=[100, 200, 300, 500],
             epoch_end_times=1000,
+            initial_population=2,
             birth_rates=0.02,
             death_rates=0.005,
         )
@@ -120,11 +123,23 @@ class TestBirthDeathProcessInit:
         assert summary["death_rates"] == [0.005]
         assert summary["n_manuscripts"] == 4
         assert summary["epoch_end_times"] == [1000.0]
+        assert summary["initial_population"] == 2
         assert summary["min_age"] == 500.0  # 1000 - 500
         assert summary["max_age"] == 900.0  # 1000 - 100
         assert (
             summary["mean_age"] == 725.0
         )  # Mean of [900, 800, 700, 500] = 2900/4 = 725
+
+    def test_initial_population_validation(self) -> None:
+        """Test initial_population requires a positive integer."""
+        with pytest.raises(TypeError, match="initial_population must be an integer"):
+            BirthDeathProcess([], 1000.0, initial_population=1.0)
+
+        with pytest.raises(
+            ValueError,
+            match="initial_population must be a positive integer",
+        ):
+            BirthDeathProcess([], 1000.0, initial_population=0)
 
     def test_empty_process_summary(self) -> None:
         """Test summary with no manuscripts."""
