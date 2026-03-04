@@ -200,7 +200,7 @@ class TestPopulationProbability:
             f"manual={manual_result}, function={function_result}"
         )
 
-    def test_starting_population_gt_one(self) -> None:
+    def test_initial_population_gt_one(self) -> None:
         """Validate the n0 > 1 branch against the closed-form summation."""
 
         def davison_formula(a: int, k: int, alpha_t: float, beta_t: float) -> float:
@@ -209,7 +209,7 @@ class TestPopulationProbability:
             Parameters
             ----------
             a: int
-                starting population size (n0)
+                initial population size (n0)
             k: int
                 observed population size (n)
             alpha_t: float
@@ -236,7 +236,7 @@ class TestPopulationProbability:
             Parameters
             ----------
             n: int
-                starting population size (n0)
+                initial population size (n0)
             m: int
                 observed population size (n)
             alpha_t: float
@@ -279,7 +279,7 @@ class TestPopulationProbability:
                 death_rate,
                 times=time,
                 ns=n,
-                starting_population=n0,
+                initial_population=n0,
             ),
         )
 

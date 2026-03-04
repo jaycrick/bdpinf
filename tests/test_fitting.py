@@ -458,8 +458,8 @@ class TestMultiEpochFitting:
             assert len(result["birth_rates"]) == len(times)
             assert len(result["death_rates"]) == len(times)
 
-    def test_multi_epoch_from_dataframe_large_starting_pop(self) -> None:
-        """Test multi-epoch fitting from DataFrame, with starting population sizes."""
+    def test_multi_epoch_from_dataframe_large_initial_pop(self) -> None:
+        """Test multi-epoch fitting from DataFrame, with initial population sizes."""
         ages = [100.0, 200.0, 300.0, 400.0, 500.0]
         df = pd.DataFrame({"age": ages})
         times = np.array([250.0, 550.0])
@@ -468,7 +468,7 @@ class TestMultiEpochFitting:
             df,
             age_column="age",
             times=times,
-            starting_population=10,
+            initial_population=10,
         )
 
         assert isinstance(result, dict)
@@ -506,7 +506,7 @@ class TestConvergenceFlags:
             times_tensor=times_tensor,
             spine_ages_tensor=None,
             population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
-            starting_population=1,
+            initial_population=1,
             convergence_config=convergence_config,
         )
 
@@ -557,7 +557,7 @@ class TestConvergenceFlags:
             times_tensor=times_tensor,
             spine_ages_tensor=None,
             population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
-            starting_population=1,
+            initial_population=1,
             convergence_config=convergence_config,
         )
 
@@ -589,7 +589,7 @@ class TestConvergenceFlags:
             times_tensor=times_tensor,
             spine_ages_tensor=None,
             population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
-            starting_population=1,
+            initial_population=1,
             convergence_config=convergence_config,
         )
 
@@ -661,7 +661,7 @@ class TestFittingDiagnostics:
                 times=times_tensor,
                 spine_ages=None,
                 ns=population_sizes,
-                starting_population=1,
+                initial_population=1,
                 is_ordered=False,
                 log_scale_params=True,
             ).item(),
@@ -696,7 +696,7 @@ class TestFittingDiagnostics:
                 initial_params=initial_params,
                 n_epochs=len(times_tensor),
                 non_spine_ages=non_spine_ages,
-                starting_population=1,
+                initial_population=1,
                 times_tensor=times_tensor,
                 spine_ages_tensor=None,
                 population_sizes_tensor=population_sizes,

@@ -27,7 +27,7 @@ def test_log_likelihood_simple() -> None:
         death_rates=death_rates,
         times=times,
         ns=torch.tensor([1], dtype=torch.int64),
-        starting_population=1,
+        initial_population=1,
     ) + likelihood.calculate_ages_log_lik(
         birth_rates,
         death_rates,
@@ -83,7 +83,7 @@ def test_log_likelihood_log_scale() -> None:
         death_rates=death_rates,
         times=times,
         ns=torch.tensor([1], dtype=torch.int64),
-        starting_population=1,
+        initial_population=1,
     ) + likelihood.calculate_ages_log_lik(
         birth_rates,
         death_rates,
@@ -117,7 +117,7 @@ def test_log_likelihood_spine_ages() -> None:
             death_rates=death_rates,
             times=times,
             ns=torch.tensor([2], dtype=torch.int64),
-            starting_population=1,
+            initial_population=1,
         )
         + likelihood.calculate_ages_log_lik(
             birth_rates,
@@ -159,7 +159,7 @@ def test_log_likelihood_is_ordered() -> None:
             death_rates=death_rates,
             times=times,
             ns=torch.tensor([2], dtype=torch.int64),
-            starting_population=1,
+            initial_population=1,
         )
         + likelihood.calculate_ages_log_lik(
             birth_rates,
