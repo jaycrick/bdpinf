@@ -710,6 +710,9 @@ def _get_crude_parameter_estimates(
             msg,
         )
 
+    est_birth_rates = est_birth_rates + (est_death_rates - est_birth_rates) / 4
+    est_death_rates = est_death_rates - (est_death_rates - est_birth_rates) / 4
+
     return (est_birth_rates, est_death_rates)
 
 
