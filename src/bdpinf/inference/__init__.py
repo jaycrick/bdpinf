@@ -4,6 +4,13 @@ This package contains likelihood calculation, optimization, and fitting utilitie
 for birth-death process models.
 """
 
+from .bayesian import (
+    BayesianMCMCConfig,
+    BayesianModelConfig,
+    BayesianPriorConfig,
+    fit_birth_death_processes_bayesian,
+    fit_birth_death_processes_bayesian_from_dataframe,
+)
 from .fitting import (
     _get_crude_parameter_estimates,
     fit_birth_death_processes,
@@ -12,8 +19,13 @@ from .fitting import (
 from .likelihood import log_likelihood, negative_log_likelihood
 
 __all__ = [
+    "BayesianMCMCConfig",
+    "BayesianModelConfig",
+    "BayesianPriorConfig",
     "_get_crude_parameter_estimates",
     "fit_birth_death_processes",
+    "fit_birth_death_processes_bayesian",
+    "fit_birth_death_processes_bayesian_from_dataframe",
     "fit_from_dataframe",
     "log_likelihood",
     "negative_log_likelihood",

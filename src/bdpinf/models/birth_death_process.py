@@ -58,6 +58,7 @@ class BirthDeathProcess:
 
     def __init__(
         self,
+        *,
         creation_times: list[float],
         epoch_end_times: NumericInput,
         start_time: float = 0.0,
@@ -313,6 +314,11 @@ class BirthDeathProcess:
         self._recompute_manuscript_ages()
         return self._manuscript_ages.clone()
 
+    @property
+    def n_manuscripts(self) -> int:
+        """Get the number of manuscripts in the process."""
+        return len(self.manuscript_ages)
+
     def add_manuscript(self, creation_time: float) -> None:
         """Add a manuscript with given creation time to the process.
 
@@ -356,39 +362,46 @@ class BirthDeathProcess:
             self._epoch_end_times = previous_epoch_end_times
             raise
 
-    def get_process_summary(self) -> dict[str, Any]:
-        """Get a summary of the birth-death process state.
+    def log_likelihood(self) -> torch.Tensor:
+        """Compute log-likelihood directly from the current model state.
 
-        Returns:
-            Dictionary with process information
+        Raises
+        ------
+        ValueError
+            If birth/death rates are not set on the instance.
 
         """
-        summary: dict[str, Any] = {
-            "n_manuscripts": len(self.creation_times),
-            "epoch_end_times": self.epoch_end_times.tolist(),
-            "adjusted_epoch_end_times": self.adjusted_epoch_end_times.tolist(),
-            "n_epochs": self.n_epochs,
-            "initial_population": self.initial_population,
-            "fitted": self.fitted,
-        }
+        if self._birth_rates is None or self._death_rates is None:
+            msg = "birth_rates and death_rates must be set before likelihood calls"
+            raise ValueError(msg)
 
-        # Include parameters if they've been set
-        if self.birth_rates is not None:
-            summary["birth_rates"] = self.birth_rates.tolist()
-        if self.death_rates is not None:
-            summary["death_rates"] = self.death_rates.tolist()
+        from inf_bp_texts.inference.likelihood import (  # noqa: PLC0415
+            log_likelihood as _log_likelihood,
+        )
 
-        ages = self.manuscript_ages
-        if len(ages) > 0:
-            summary.update(
-                {
-                    "min_age": float(ages.min()),
-                    "max_age": float(ages.max()),
-                    "mean_age": float(ages.mean()),
-                },
-            )
+        return _log_likelihood(
+            birth_rates=self._birth_rates,
+            death_rates=self._death_rates,
+            ages=self.manuscript_ages,
+            times=self.adjusted_epoch_end_times,
+        )
 
-        return summary
+    def negative_log_likelihood(self) -> torch.Tensor:
+        """Compute negative log-likelihood directly from the current model state."""
+        if self._birth_rates is None or self._death_rates is None:
+            msg = "birth_rates and death_rates must be set before likelihood calls"
+            raise ValueError(msg)
+
+        from inf_bp_texts.inference.likelihood import (  # noqa: PLC0415
+            negative_log_likelihood as _negative_log_likelihood,
+        )
+
+        return _negative_log_likelihood(
+            birth_rates=self._birth_rates,
+            death_rates=self._death_rates,
+            ages=self.manuscript_ages,
+            times=self.adjusted_epoch_end_times,
+        )
 
     def update_parameters(
         self,

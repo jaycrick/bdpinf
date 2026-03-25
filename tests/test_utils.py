@@ -19,10 +19,7 @@ class TestEdgeCases:
 
         assert len(process.creation_times) == 0
         assert len(process.manuscript_ages) == 0
-
-        # Should handle empty state gracefully
-        summary = process.get_process_summary()
-        assert summary["n_manuscripts"] == 0
+        assert process.n_manuscripts == 0
 
     def test_zero_rates(self) -> None:
         """Test behavior with zero rates."""
