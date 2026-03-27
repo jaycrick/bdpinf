@@ -20,7 +20,12 @@ class TestLogLikelihood:
 
     def test_log_likelihood_empty_ages(self) -> None:
         """Test log-likelihood with no ages raises ValueError."""
-        process = BirthDeathProcess([], 1000.0, birth_rates=0.1, death_rates=0.01)
+        process = BirthDeathProcess(
+            creation_times=[],
+            epoch_end_times=1000.0,
+            birth_rates=0.1,
+            death_rates=0.01,
+        )
 
         ages = process.manuscript_ages
         result = log_likelihood(
@@ -174,7 +179,12 @@ class TestLogLikelihood:
 
     def test_negative_log_likelihood_empty_ages(self) -> None:
         """Test negative log-likelihood with no ages."""
-        process = BirthDeathProcess([], 1000.0, birth_rates=0.1, death_rates=0.01)
+        process = BirthDeathProcess(
+            creation_times=[],
+            epoch_end_times=1000.0,
+            birth_rates=0.1,
+            death_rates=0.01,
+        )
 
         # Use log-scale parameters as expected by negative_log_likelihood
         birth_rate, death_rate = 0.01, 0.005
@@ -193,7 +203,7 @@ class TestLogLikelihood:
     def test_external_log_likelihood_helper(self) -> None:
         """Test the external log-likelihood helper method via public interface."""
         ages_data = [100.0, 200.0, 300.0]
-        process = BirthDeathProcess(ages_data, 500.0)
+        process = BirthDeathProcess(creation_times=ages_data, epoch_end_times=500.0)
         ages = process.manuscript_ages
         # Test log likelihood calculation with explicit parameters
         result = log_likelihood(
@@ -209,7 +219,10 @@ class TestLogLikelihood:
     def test_external_log_likelihood_invalid_params(self) -> None:
         """Test external log-likelihood with invalid parameters."""
         creation_times = [100.0, 200.0, 300.0]
-        process = BirthDeathProcess(creation_times, 500.0)
+        process = BirthDeathProcess(
+            creation_times=creation_times,
+            epoch_end_times=500.0,
+        )
         ages = process.manuscript_ages
         # Test with invalid parameters using public interface
         result = log_likelihood(

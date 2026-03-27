@@ -15,7 +15,7 @@ class TestEdgeCases:
 
     def test_empty_creation_times(self) -> None:
         """Test behavior with empty creation times."""
-        process = BirthDeathProcess([], 1000.0)
+        process = BirthDeathProcess(creation_times=[], epoch_end_times=1000.0)
 
         assert len(process.creation_times) == 0
         assert len(process.manuscript_ages) == 0
@@ -24,7 +24,12 @@ class TestEdgeCases:
     def test_zero_rates(self) -> None:
         """Test behavior with zero rates."""
         # Zero birth rate should be invalid for log-likelihood
-        process = BirthDeathProcess([], 1000.0, birth_rates=0.0, death_rates=0.01)
+        process = BirthDeathProcess(
+            creation_times=[],
+            epoch_end_times=1000.0,
+            birth_rates=0.0,
+            death_rates=0.01,
+        )
         process.creation_times = [100.0]
         process.set_epoch_end_times(200.0)
 
@@ -35,7 +40,7 @@ class TestEdgeCases:
 
     def test_negative_rates(self) -> None:
         """Test behavior with negative rates."""
-        process = BirthDeathProcess([], 1000.0)
+        process = BirthDeathProcess(creation_times=[], epoch_end_times=1000.0)
         process.creation_times = [100.0]
         process.set_epoch_end_times(200.0)
 
@@ -52,8 +57,8 @@ class TestEdgeCases:
     def test_very_large_ages(self) -> None:
         """Test behavior with very large ages."""
         process = BirthDeathProcess(
-            [],
-            1000.0,
+            creation_times=[],
+            epoch_end_times=1000.0,
             birth_rates=0.001,
             death_rates=0.0001,
         )
@@ -70,7 +75,12 @@ class TestEdgeCases:
 
     def test_single_manuscript(self) -> None:
         """Test behavior with single manuscript."""
-        process = BirthDeathProcess([], 1000.0, birth_rates=0.01, death_rates=0.005)
+        process = BirthDeathProcess(
+            creation_times=[],
+            epoch_end_times=1000.0,
+            birth_rates=0.01,
+            death_rates=0.005,
+        )
         process.add_manuscript(100.0)
         process.set_epoch_end_times(500.0)
 
@@ -86,7 +96,7 @@ class TestEdgeCases:
 
     def test_epoch_end_time_before_creation_time(self) -> None:
         """Test behavior when epoch end time is before creation_time."""
-        process = BirthDeathProcess([], 1000.0)
+        process = BirthDeathProcess(creation_times=[], epoch_end_times=1000.0)
         process.add_manuscript(1000.0)
         process.set_epoch_end_times(500.0)  # Before creation time
 

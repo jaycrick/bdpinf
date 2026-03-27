@@ -31,8 +31,8 @@ class TestSimulation:
         creation_times = surviving_manuscripts["creation_time"].tolist()
 
         process = BirthDeathProcess(
-            creation_times,
-            100.0,
+            creation_times=creation_times,
+            epoch_end_times=100.0,
             birth_rates=0.1,
             death_rates=0.02,
         )
@@ -156,8 +156,8 @@ class TestSimulation:
         if len(surviving_manuscripts) > 0:
             creation_times = surviving_manuscripts["creation_time"].tolist()
             process = BirthDeathProcess(
-                creation_times,
-                80.0,
+                creation_times=creation_times,
+                epoch_end_times=80.0,
                 birth_rates=0.15,
                 death_rates=0.03,
             )
@@ -201,8 +201,8 @@ class TestSimulation:
         )
 
         process = BirthDeathProcess(
-            creation_times,
-            1.0,
+            creation_times=creation_times,
+            epoch_end_times=1.0,
             birth_rates=0.001,
             death_rates=1.0,
         )
@@ -217,8 +217,8 @@ class TestSimulation:
         # Create initial process with some state
         initial_creation_times = [10.0, 20.0, 30.0]
         process = BirthDeathProcess(
-            initial_creation_times,
-            100.0,
+            creation_times=initial_creation_times,
+            epoch_end_times=100.0,
             birth_rates=0.1,
             death_rates=0.02,
         )
@@ -240,8 +240,8 @@ class TestSimulation:
             else []
         )
         new_process = BirthDeathProcess(
-            new_creation_times,
-            50.0,
+            creation_times=new_creation_times,
+            epoch_end_times=50.0,
             birth_rates=0.1,
             death_rates=0.02,
         )
@@ -320,8 +320,8 @@ class TestSimulation:
         if len(surviving_manuscripts) > 0:
             creation_times = surviving_manuscripts["creation_time"].tolist()
             process = BirthDeathProcess(
-                creation_times,
-                60.0,
+                creation_times=creation_times,
+                epoch_end_times=60.0,
                 birth_rates=0.1,
                 death_rates=0.02,
             )
