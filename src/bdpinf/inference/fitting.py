@@ -1,5 +1,6 @@
 """Maximum likelihood estimation for birth-death process parameters using PyTorch."""
 
+import dataclasses
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, TypedDict, Unpack, cast
@@ -18,6 +19,7 @@ DEFAULT_GRADIENT_THRESHOLD = 1e-5
 DEFAULT_ABSOLUTE_TOLERANCE = 1e-9
 DEFAULT_PATIENCE = 5
 DEFAULT_ITERATIONS = 1000
+MIN_EQUALITY_GROUP_SIZE = 2
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,106 @@ class FitKwargs(TypedDict, total=False):
     optimizer_kwargs: dict[str, dict[str, Any]] | None
     perturb_initial_params_std: float
     random_seed: int | None
+    param_constraints: "ParameterConstraints | None"
+
+
+@dataclass(frozen=True)
+class ParameterConstraints:
+    """Constraints for fitting: fixed parameters and equality groups.
+
+    Attributes
+    ----------
+    fixed_params : dict[int, float]
+        Mapping from parameter index to fixed value.
+        Index i where i < n_epochs refers to birth rates,
+        i >= n_epochs refers to death rates at index (i - n_epochs).
+    equality_groups : list[list[int]]
+        List of groups where each group contains parameter indices
+        that must be equal during fitting. Parameters in the same
+        group will share a single fitted value.
+
+    Examples
+    --------
+    Make first two birth rates equal (indices 0, 1) and fix death rate
+    at epoch 0 (index n_epochs) to 0.1:
+
+        >>> constraints = ParameterConstraints(
+        ...     fixed_params={5: 0.1},  # assuming n_epochs >= 2
+        ...     equality_groups=[[0, 1]]
+        ... )
+
+    """
+
+    fixed_params: dict[int, float] = dataclasses.field(default_factory=dict)
+    equality_groups: list[list[int]] = dataclasses.field(default_factory=list)
+
+    def validate(self, n_total_params: int) -> None:
+        """Validate constraints are consistent with parameter count.
+
+        Parameters
+        ----------
+        n_total_params : int
+            Total number of parameters (2 * n_epochs).
+
+        Raises
+        ------
+        ValueError
+            If indices are out of bounds or constraints are invalid.
+
+        """
+        all_constrained_indices = set(self.fixed_params.keys())
+        for idx, value in self.fixed_params.items():
+            if idx not in range(n_total_params):
+                msg = f"Parameter index {idx} out of range [0, {n_total_params})"
+                raise ValueError(msg)
+            if not np.isfinite(value) or value <= 0:
+                msg = f"Fixed parameter at index {idx} must be positive and finite"
+                raise ValueError(msg)
+
+        for group in self.equality_groups:
+            if len(group) < MIN_EQUALITY_GROUP_SIZE:
+                msg = "Equality groups must have at least 2 elements"
+                raise ValueError(msg)
+            for idx in group:
+                if idx not in range(n_total_params):
+                    msg = f"Parameter index {idx} out of range [0, {n_total_params})"
+                    raise ValueError(msg)
+                if idx in all_constrained_indices:
+                    msg = (
+                        f"Index {idx} appears in both fixed_params and equality_groups"
+                    )
+                    raise ValueError(msg)
+            all_constrained_indices.update(group)
+
+    def get_free_param_indices(self, n_total_params: int) -> list[int]:
+        """Get indices of parameters that will be optimized.
+
+        Parameters
+        ----------
+        n_total_params : int
+            Total number of parameters (2 * n_epochs).
+
+        Returns
+        -------
+        list[int]
+            Indices of free parameters in the original parameter space.
+
+        """
+        self.validate(n_total_params)
+        fixed_set = set(self.fixed_params.keys())
+        equality_set = set()
+        for group in self.equality_groups:
+            equality_set.update(group)
+
+        free_indices = [
+            i
+            for i in range(n_total_params)
+            if i not in fixed_set and i not in equality_set
+        ]
+        # Add one representative from each equality group
+        free_indices.extend([min(group) for group in self.equality_groups])
+
+        return sorted(free_indices)
 
 
 @dataclass(frozen=True)
@@ -76,6 +178,81 @@ class ConvergenceConfig:
         )
 
 
+def _apply_constraints_to_full_params(
+    free_params: torch.Tensor,
+    constraints: ParameterConstraints,
+    n_total_params: int,
+) -> torch.Tensor:
+    """Expand free parameters to full parameter space applying all constraints.
+
+    Parameters
+    ----------
+    free_params : torch.Tensor
+        Parameters corresponding to free indices only.
+    constraints : ParameterConstraints
+        The constraint specification.
+    n_total_params : int
+        Total number of parameters (2 * n_epochs).
+
+    Returns
+    -------
+    torch.Tensor
+        Full parameter vector with constraints applied.
+
+    """
+    free_indices = constraints.get_free_param_indices(n_total_params)
+    free_position_by_index = {idx: pos for pos, idx in enumerate(free_indices)}
+
+    representative_by_index: dict[int, int] = {}
+    for group in constraints.equality_groups:
+        representative_idx = min(group)
+        for idx in group:
+            representative_by_index[idx] = representative_idx
+
+    parts: list[torch.Tensor] = []
+    for idx in range(n_total_params):
+        if idx in constraints.fixed_params:
+            parts.append(
+                torch.tensor(
+                    constraints.fixed_params[idx],
+                    dtype=free_params.dtype,
+                    device=free_params.device,
+                ),
+            )
+            continue
+
+        source_idx = representative_by_index.get(idx, idx)
+        parts.append(free_params[free_position_by_index[source_idx]])
+
+    return torch.stack(parts)
+
+
+def _reduce_to_free_params(
+    full_params: torch.Tensor,
+    constraints: ParameterConstraints,
+    n_total_params: int,
+) -> torch.Tensor:
+    """Extract only free parameters from full parameter space.
+
+    Parameters
+    ----------
+    full_params : torch.Tensor
+        Full parameter vector.
+    constraints : ParameterConstraints
+        The constraint specification.
+    n_total_params : int
+        Total number of parameters (2 * n_epochs).
+
+    Returns
+    -------
+    torch.Tensor
+        Reduced parameter vector containing only free parameters.
+
+    """
+    free_indices = constraints.get_free_param_indices(n_total_params)
+    return full_params[free_indices]
+
+
 def fit_birth_death_processes(
     list_of_ages: list[torch.Tensor],
     times: torch.Tensor | float,
@@ -91,6 +268,7 @@ def fit_birth_death_processes(
     perturb_initial_params_std: float = 0.0,
     random_seed: int | None = None,
     convergence_config: ConvergenceConfig | None = None,
+    param_constraints: ParameterConstraints | None = None,
 ) -> dict[str, Any]:
     """Fit birth-death parameters to grouped age data via PyTorch.
 
@@ -122,6 +300,8 @@ def fit_birth_death_processes(
         Seed for reproducible perturbation.
     convergence_config : ConvergenceConfig | None
         Custom convergence criteria; defaults used if None.
+    param_constraints : ParameterConstraints | None
+        Constraints for fixed/equal parameters; None = no constraints.
 
     Returns
     -------
@@ -163,12 +343,23 @@ def fit_birth_death_processes(
         raise ValueError(
             msg,
         )
+
+    # Initialize and validate constraints
+    if param_constraints is None:
+        param_constraints = ParameterConstraints()
+    param_constraints.validate(len(initial_params))
+
     initial_params = _apply_param_perturbation(
         initial_params=initial_params,
         perturb_initial_params_std=perturb_initial_params_std,
         random_seed=random_seed,
     )
-    log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
+
+    # For constrained params, reduce to free parameter space
+    free_indices = param_constraints.get_free_param_indices(len(initial_params))
+    free_initial_params = initial_params[free_indices]
+    log_params = torch.nn.Parameter(torch.log(free_initial_params.clone().detach()))
+
     convergence_config = convergence_config or ConvergenceConfig.default()
     strategies_map = _build_optimizer_strategies(
         optimizer_kwargs=optimizer_kwargs,
@@ -188,6 +379,7 @@ def fit_birth_death_processes(
         population_sizes_tensor=population_sizes_tensor,
         initial_population=initial_population,
         convergence_config=convergence_config,
+        param_constraints=param_constraints,
     )
 
     log_params = optimizer_run_result.log_params
@@ -226,8 +418,16 @@ def fit_birth_death_processes(
             },
         }
 
+    # Expand log_params from reduced to full space for finalization
+    full_params = _apply_constraints_to_full_params(
+        torch.exp(log_params),
+        param_constraints,
+        2 * n_epochs,
+    )
+    full_log_params = torch.log(full_params).detach()
+
     finalized = _finalize_fit(
-        log_params,
+        full_log_params,
         n_epochs,
         non_spine_ages,
         times_tensor,
@@ -324,14 +524,15 @@ def _run_optimizer_strategies(
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
     convergence_config: ConvergenceConfig,
+    param_constraints: ParameterConstraints | None = None,
 ) -> OptimizerRunResult:
     """Run optimizers sequentially until convergence; return params, history, metadata.
 
     Args:
         strategies_map: Optimizer configs.
         requested_keys: Optimizer names to try sequentially.
-        log_params: Parameter tensor (log-scale).
-        initial_params: Initial params on original scale.
+        log_params: Parameter tensor (log-scale, may be reduced if constraints apply).
+        initial_params: Initial params on original scale (full space).
         n_epochs: Number of time epochs.
         non_spine_ages: Non-spine age data.
         initial_population: Initial population size.
@@ -339,11 +540,17 @@ def _run_optimizer_strategies(
         spine_ages_tensor: Spine ages if provided.
         population_sizes_tensor: Population sizes per group.
         convergence_config: Configuration for convergence criteria.
+        param_constraints: Parameter constraints (fixed/equal params).
 
     Returns:
         OptimizerRunResult with optimized params, history, and metadata.
 
     """
+    if param_constraints is None:
+        param_constraints = ParameterConstraints()
+
+    n_total_params = 2 * n_epochs
+
     converged = False
     iterations: int = 0
     optimizer_used = "Unknown"
@@ -353,9 +560,16 @@ def _run_optimizer_strategies(
 
     def _compute_nll() -> torch.Tensor:
         """Compute negative log likelihood for current log_params."""
+        # Expand from reduced to full parameter space with constraints applied
+        full_log_params = _apply_constraints_to_full_params(
+            torch.exp(log_params),
+            param_constraints,
+            n_total_params,
+        )
+        full_log_params_log = torch.log(full_log_params)
         return negative_log_likelihood(
-            birth_rates=log_params[:n_epochs],
-            death_rates=log_params[n_epochs:],
+            birth_rates=full_log_params_log[:n_epochs],
+            death_rates=full_log_params_log[n_epochs:],
             ages=non_spine_ages,
             times=times_tensor,
             spine_ages=spine_ages_tensor,
@@ -378,6 +592,8 @@ def _run_optimizer_strategies(
             failed_optimizer_histories=failed_optimizer_histories,
             convergence_config=convergence_config,
             compute_nll_fn=_compute_nll,
+            param_constraints=param_constraints,
+            n_total_params=n_total_params,
         )
 
         iterations = opt_iterations
@@ -410,6 +626,8 @@ def _run_single_optimizer(
     failed_optimizer_histories: list[dict[str, Any]],
     convergence_config: ConvergenceConfig,
     compute_nll_fn: Callable[[], torch.Tensor],
+    param_constraints: ParameterConstraints | None = None,
+    n_total_params: int | None = None,
 ) -> tuple[bool, torch.Tensor | None, int]:
     """Run a single optimizer strategy and handle results.
 
@@ -417,12 +635,23 @@ def _run_single_optimizer(
         (success, best_log_params, iterations)
 
     """
+    if param_constraints is None:
+        param_constraints = ParameterConstraints()
+    if n_total_params is None:
+        n_total_params = len(initial_params)
+
     history_start_idx = len(nll_history)
     iterations = 0
 
     try:
         with torch.no_grad():
-            log_params.copy_(torch.log(initial_params.clone().detach()))
+            # Reduce initial_params to free space with constraints applied
+            free_initial_params = _reduce_to_free_params(
+                initial_params,
+                param_constraints,
+                n_total_params,
+            )
+            log_params.copy_(torch.log(free_initial_params.clone().detach()))
         optimizer = strategy.optimizer_class([log_params], **strategy.optimizer_kwargs)
 
         if strategy.name == "LBFGS":
@@ -710,6 +939,9 @@ def _get_crude_parameter_estimates(
             msg,
         )
 
+    est_birth_rates = est_birth_rates + (est_death_rates - est_birth_rates) / 4
+    est_death_rates = est_death_rates - (est_death_rates - est_birth_rates) / 4
+
     return (est_birth_rates, est_death_rates)
 
 
@@ -942,7 +1174,7 @@ def _check_convergence_criteria(
 
 
 def _finalize_fit(
-    log_params: torch.nn.Parameter,
+    log_params: torch.Tensor,
     n_epochs: int,
     non_spine_ages: torch.Tensor,
     times_tensor: torch.Tensor,

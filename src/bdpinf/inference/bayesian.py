@@ -34,7 +34,7 @@ class BayesianMCMCConfig:
     num_samples: int = 800
     warmup_steps: int = 400
     num_chains: int = 1
-    target_accept_prob: float = 0.9
+    target_accept_prob: float = 0.7
     max_tree_depth: int = 10
     jit_compile: bool = False
     disable_progressbar: bool = True
