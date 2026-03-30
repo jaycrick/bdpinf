@@ -27,16 +27,24 @@ website:
         menu:
           - text: "Data Exploration"
             file: qmd_scripts/manuscript_data_exploration.qmd
-          - text: "Birth-Death Inference"
-            file: qmd_scripts/birth_death_inference.qmd
-          - text: "Birth-Death Inference (Multiple Initial Manuscripts)"
-            file: qmd_scripts/birth_death_inference_mult_start.qmd
-          - text: "Methods Validation"
-            file: qmd_scripts/methods_validation.qmd
+          - text: "NTVMR Inference"
+            file: qmd_scripts/ntvmr_birth_death_inference.qmd
+          - text: "NTVMR Inference (Multi-Initial)"
+            file: qmd_scripts/birth_death_inference_multi_initial_population.qmd
+          - text: "Kashouh Classification Analysis"
+            file: qmd_scripts/kashouh_birth_death_analysis.qmd
+          - text: "Kashouh FamilyK Bayesian Inference"
+            file: qmd_scripts/kashouh_familyk_bayesian_inference.qmd
+          - text: "Likelihood Surface Comparison"
+            file: qmd_scripts/likelihood_single_vs_multi_epoch_comparison.qmd
+          - text: "Single-Epoch Validation"
+            file: qmd_scripts/methods_validation_single_epoch.qmd
           - text: "Multi-Epoch Validation"
             file: qmd_scripts/methods_validation_multi_epoch.qmd
-          - text: "Optimiser Comparison"
-            file: qmd_scripts/optimiser_comparison.qmd
+          - text: "Bayesian Multi-Epoch Validation"
+            file: qmd_scripts/methods_validation_multi_epoch_bayesian.qmd
+          - text: "Optimizer Comparison"
+            file: qmd_scripts/optimizer_comparison.qmd
       - text: "Docs"
         menu:
           - text: "Likelihoods"
