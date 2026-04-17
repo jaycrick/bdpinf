@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
 from numpy.typing import NDArray
-from scipy.stats import gaussian_kde
+
+from .validation_helpers import boundary_corrected_kde_at_zero
 
 MIN_KDE_SAMPLES = 2
 
@@ -136,28 +137,13 @@ def create_kde_density_plot(
         msg = "At least two rates are required to build a KDE plot"
         raise ValueError(msg)
 
-    kde = gaussian_kde(values)
-
-    q_low = float(np.quantile(values, config.x_quantile_low))
-    q_high = float(np.quantile(values, config.x_quantile_high))
-    spread = q_high - q_low
-    if spread <= 0:
-        # Fallback for near-constant arrays where quantile range collapses.
-        spread = max(abs(true_rate), float(np.std(values)), 1e-9)
-
-    x_min = q_low - config.x_padding_fraction * spread
-    x_max = q_high + config.x_padding_fraction * spread
-    x_max = min(x_max, config.x_upper_multiplier * true_rate)
-
-    # Ensure true value and data support both fall within the plotting window.
-    x_min = min(x_min, float(np.min(values)), true_rate)
-    x_max = max(x_max, float(np.max(values)), true_rate)
-
-    if x_max <= x_min:
-        x_max = x_min + max(abs(true_rate) * 1e-3, 1e-9)
-
-    x_vals = np.linspace(x_min, x_max, config.n_points)
-    y_vals = kde(x_vals)
+    x_vals, y_vals = boundary_corrected_kde_at_zero(
+        values,
+        n_grid=config.n_points,
+    )
+    if x_vals is None or y_vals is None:
+        msg = "Could not build boundary-corrected KDE from the provided rates"
+        raise ValueError(msg)
 
     fig = go.Figure()
     fig.add_trace(
