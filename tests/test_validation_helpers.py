@@ -39,9 +39,12 @@ def test_first_failed_fits_returns_original_indices() -> None:
     fitted_models = [
         {"success": True},
         None,
-        {"success": False},
+        {"success": False, "error_type": "RuntimeError", "error": "boom"},
         {"success": True},
-        None,
+        {
+            "success": False,
+            "optimization_result": {"converged": False},
+        },
     ]
     ages = [
         np.array([1.0]),
@@ -61,6 +64,11 @@ def test_first_failed_fits_returns_original_indices() -> None:
     assert len(failed) == 3
     assert [item["simulation_index"] for item in failed] == [11, 12, 14]
     assert [item["population"] for item in failed] == [2, 1, 3]
+    assert [item["reason"] for item in failed] == [
+        "fit returned None (empty ages or fitting exception)",
+        "RuntimeError: boom",
+        "optimizer did not converge",
+    ]
 
 
 def test_fit_single_model_handles_empty_input() -> None:

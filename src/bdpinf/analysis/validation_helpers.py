@@ -51,6 +51,36 @@ def first_failed_fits(
     max_items: int = 3,
 ) -> list[dict[str, Any]]:
     """Return metadata for the first failed fits and their simulation vectors."""
+
+    def _failure_reason(model: dict[str, Any] | None) -> str:
+        if model is None:
+            return "fit returned None (empty ages or fitting exception)"
+
+        error_type = model.get("error_type")
+        error = model.get("error")
+        if error_type and error:
+            return f"{error_type}: {error}"
+        if error:
+            return str(error)
+
+        errors = model.get("errors")
+        if isinstance(errors, list) and len(errors) > 0:
+            last_error = errors[-1]
+            if isinstance(last_error, dict):
+                last_type = last_error.get("error_type")
+                last_msg = last_error.get("error")
+                if last_type and last_msg:
+                    return f"{last_type}: {last_msg}"
+                if last_msg:
+                    return str(last_msg)
+
+        optimization_result = model.get("optimization_result")
+        if isinstance(optimization_result, dict):
+            if optimization_result.get("converged") is False:
+                return "optimizer did not converge"
+
+        return "fit marked unsuccessful without error details"
+
     failed: list[dict[str, Any]] = []
     for idx, model in enumerate(fitted_models):
         is_failure = model is None or not model.get("success", False)
@@ -64,6 +94,7 @@ def first_failed_fits(
                 "simulation_index": idx + start_index,
                 "population": len(failed_ages),
                 "ages": failed_ages,
+                "reason": _failure_reason(model),
             },
         )
         if len(failed) >= max_items:
