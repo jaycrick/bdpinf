@@ -62,12 +62,12 @@ def test_first_failed_fits_returns_original_indices() -> None:
     )
 
     assert len(failed) == 3
-    assert [item["simulation_index"] for item in failed] == [11, 12, 14]
-    assert [item["population"] for item in failed] == [2, 1, 3]
+    assert [item["simulation_index"] for item in failed] == [14, 11, 12]
+    assert [item["population"] for item in failed] == [3, 2, 1]
     assert [item["reason"] for item in failed] == [
+        "optimizer did not converge",
         "fit returned None (empty ages or fitting exception)",
         "RuntimeError: boom",
-        "optimizer did not converge",
     ]
 
 

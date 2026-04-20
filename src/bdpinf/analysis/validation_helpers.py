@@ -50,7 +50,7 @@ def first_failed_fits(
     start_index: int = 0,
     max_items: int = 3,
 ) -> list[dict[str, Any]]:
-    """Return metadata for the first failed fits and their simulation vectors."""
+    """Return failed-fit metadata sorted by population size descending."""
 
     def _failure_reason(model: dict[str, Any] | None) -> str:
         if model is None:
@@ -75,9 +75,10 @@ def first_failed_fits(
                     return str(last_msg)
 
         optimization_result = model.get("optimization_result")
-        if isinstance(optimization_result, dict):
-            if optimization_result.get("converged") is False:
-                return "optimizer did not converge"
+        if isinstance(optimization_result, dict) and (
+            optimization_result.get("converged") is False
+        ):
+            return "optimizer did not converge"
 
         return "fit marked unsuccessful without error details"
 
@@ -97,9 +98,9 @@ def first_failed_fits(
                 "reason": _failure_reason(model),
             },
         )
-        if len(failed) >= max_items:
-            break
-    return failed
+
+    failed.sort(key=lambda item: (-int(item["population"]), int(item["local_index"])))
+    return failed[:max_items]
 
 
 def boundary_corrected_kde_on_support(
