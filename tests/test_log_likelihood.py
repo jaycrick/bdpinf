@@ -7,6 +7,10 @@ from numpy.testing import assert_allclose
 
 from inf_bp_texts.inference.likelihood import log_likelihood, negative_log_likelihood
 from inf_bp_texts.models import BirthDeathProcess
+from inf_bp_texts.models.mathematical_functions import (
+    calculate_ages_log_lik,
+    calculate_populations_log_lik,
+)
 
 
 def _as_float(value: object) -> float:
@@ -544,3 +548,52 @@ class TestLogLikelihood:
         assert np.isfinite(_as_float(result_multi))
         # Relaxed tolerance due to known multi-epoch numerical differences
         assert_allclose(result_single, result_multi, rtol=1e-8)
+
+    def test_unknown_spine_default_near_critical_stable(self) -> None:
+        """Unknown-spine default branch remains stable for birth_rate ≈ death_rate."""
+        ages = np.array([120.0, 240.0, 360.0])
+        birth_rate = 0.01
+        death_rate = 0.01 + 1e-12
+
+        result = log_likelihood(
+            birth_rates=birth_rate,
+            death_rates=death_rate,
+            ages=ages,
+            times=500.0,
+        )
+
+        assert np.isfinite(_as_float(result))
+        assert result < 0
+
+    def test_unknown_spine_default_differs_from_all_non_spine(self) -> None:
+        """Default unknown-spine branch should differ from old all-non-spine age sum."""
+        birth_rates = np.array([0.02])
+        death_rates = np.array([0.007])
+        ages = np.array([100.0, 180.0, 320.0])
+        times = np.array([500.0])
+
+        default_result = log_likelihood(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            ages=ages,
+            times=times,
+        )
+
+        all_non_spine_result = calculate_populations_log_lik(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            ns=np.array([len(ages)]),
+            initial_population=1,
+        ) + calculate_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages,
+            times=times,
+            are_spines=False,
+        )
+
+        assert not np.isclose(
+            _as_float(default_result),
+            _as_float(all_non_spine_result),
+        )

@@ -46,6 +46,15 @@ def log_likelihood(
         and log(μ); otherwise they are interpreted on the original (positive) scale.
     - If ns is None, the function assumes each provided age corresponds to
         one individual (i.e., a count of 1 per age) and constructs ns accordingly.
+    - If spine_ages is None and is_ordered is False, the function treats the spine
+        as unknown among the provided ages and marginalizes over all possible
+        spine positions (uniformly) using a numerically stable log-sum-exp term.
+    - Exception: if spine_ages is None and any observed age equals the final
+        observation time, that age is treated as the spine automatically.
+        If more than one age equals the final observation time, a ValueError is
+        raised because the model assumes a unique spine.
+    - Exception: if spine_ages is None and there is exactly one observed age,
+        that individual is treated as the spine automatically.
     - If is_ordered is True, the first provided age is treated as a spine
         (unique conditional distribution)
         and the remaining ages are treated as ordinary observations.
@@ -73,7 +82,9 @@ def log_likelihood(
         Observation times (> 0) at which the population/ages are observed.
     spine_ages : torch.Tensor | None, optional
         Ages to be treated as spines (special conditional observations). If provided,
-        these ages must also satisfy 0 <= age <= observation_time. Mutually exclusive
+        these ages must also satisfy 0 <= age <= observation_time and are used
+        explicitly. If not provided and is_ordered=False, the spine is treated as
+        unknown among the provided ages and marginalized out. Mutually exclusive
         with is_ordered=True.
     ns : torch.Tensor | None, optional
         Counts per population/class that sum to the total number of ages. If None,
@@ -82,7 +93,8 @@ def log_likelihood(
         Initial population size.
     is_ordered : bool, optional
         If True, the first element of ages is treated as a spine and the rest as
-        ordinary observations. Cannot be used together with spine_ages.
+        ordinary observations. Cannot be used together with spine_ages. When False
+        and spine_ages is None, the unknown-spine marginal likelihood is used.
     log_scale_params : bool, optional
         If True, treat birth_rate and death_rate as log-scale parameters.
 
@@ -208,13 +220,73 @@ def log_likelihood(
 
     ages_log_lik = torch.tensor(0.0, dtype=torch.float64)
 
-    if is_ordered or (spine_ages is not None):
+    if spine_ages is None and not is_ordered and len(ages) > 0:
+        at_final_time = torch.isclose(ages, times[-1])
+        num_terminal_ages = int(torch.sum(at_final_time).item())
+        if num_terminal_ages > 1:
+            msg = (
+                "More than one age equals the final observation time. "
+                "Exactly one spine is assumed; provide explicit spine_ages."
+            )
+            raise ValueError(msg)
+        if num_terminal_ages == 1:
+            # If an age is observed at T, it must be the spine by model assumption.
+            spine_ages = ages[at_final_time]
+            ages = ages[~at_final_time]
+        elif len(ages) == 1:
+            # With one observed individual, that individual is the unique spine.
+            spine_ages = ages
+            ages = ages[:0]
+
+    use_unknown_spine_marginal = (not is_ordered) and (spine_ages is None)
+
+    if use_unknown_spine_marginal and len(ages) > 0:
+        # Unknown spine case: exactly one spine among ages, marginalized uniformly.
+        # ell = sum(log f(x_i)) - log n + logsumexp(log g(x_k) - log f(x_k))
+        n_ages = len(ages)
+        sum_log_f = calculate_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages,
+            times=times,
+            are_spines=False,
+        )
+
+        a_terms: list[torch.Tensor] = []
+        for age in ages:
+            age_tensor = torch.as_tensor([age], dtype=torch.float64)
+            log_g = calculate_ages_log_lik(
+                birth_rates,
+                death_rates,
+                ages=age_tensor,
+                times=times,
+                are_spines=True,
+            )
+            log_f = calculate_ages_log_lik(
+                birth_rates,
+                death_rates,
+                ages=age_tensor,
+                times=times,
+                are_spines=False,
+            )
+            a_terms.append(torch.as_tensor(log_g - log_f, dtype=torch.float64))
+
+        a = torch.stack(a_terms)
+        log_sum_exp = torch.logsumexp(a, dim=0)
+        ages_log_lik = (
+            sum_log_f
+            - torch.log(torch.as_tensor(float(n_ages), dtype=torch.float64))
+            + log_sum_exp
+        )
+    elif is_ordered or (spine_ages is not None):
         if is_ordered:
             ages = torch.as_tensor(ages, dtype=torch.float64)
             spine_ages = torch.tensor([ages[0]], dtype=torch.float64)
             ages = ages[1:]
         # Calculate log age density
-        assert spine_ages is not None
+        if spine_ages is None:
+            msg = "spine_ages must be provided when calculating spine age likelihood."
+            raise RuntimeError(msg)
         ages_log_lik += calculate_ages_log_lik(
             birth_rates,
             death_rates,
@@ -222,7 +294,7 @@ def log_likelihood(
             times=times,
             are_spines=True,
         )
-    if len(ages) > 0:
+    if len(ages) > 0 and not use_unknown_spine_marginal:
         ages_log_lik += calculate_ages_log_lik(
             birth_rates,
             death_rates,
