@@ -90,7 +90,12 @@ def apply_professional_styling(
 
     """
     fig.update_layout(
-        title=title,
+        title={
+            "text": title,
+            "y": 0.995,
+            "yanchor": "top",
+            "pad": {"b": 18},
+        },
         xaxis_title=xaxis_title,
         yaxis_title=yaxis_title,
         height=height,
