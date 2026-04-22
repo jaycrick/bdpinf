@@ -9,8 +9,9 @@ import warnings
 import torch
 
 from inf_bp_texts.models.mathematical_functions import (
-    calculate_ages_log_lik,
+    calculate_non_spine_ages_log_lik,
     calculate_populations_log_lik,
+    calculate_spine_ages_log_lik,
 )
 from inf_bp_texts.utils import ensure_1d_tensor, ensure_1d_tensors
 
@@ -244,30 +245,27 @@ def log_likelihood(
         # Unknown spine case: exactly one spine among ages, marginalized uniformly.
         # ell = sum(log f(x_i)) - log n + logsumexp(log g(x_k) - log f(x_k))
         n_ages = len(ages)
-        sum_log_f = calculate_ages_log_lik(
+        sum_log_f = calculate_non_spine_ages_log_lik(
             birth_rates,
             death_rates,
             ages,
             times=times,
-            are_spines=False,
         )
 
         a_terms: list[torch.Tensor] = []
         for age in ages:
             age_tensor = torch.as_tensor([age], dtype=torch.float64)
-            log_g = calculate_ages_log_lik(
+            log_g = calculate_spine_ages_log_lik(
                 birth_rates,
                 death_rates,
                 ages=age_tensor,
                 times=times,
-                are_spines=True,
             )
-            log_f = calculate_ages_log_lik(
+            log_f = calculate_non_spine_ages_log_lik(
                 birth_rates,
                 death_rates,
                 ages=age_tensor,
                 times=times,
-                are_spines=False,
             )
             a_terms.append(torch.as_tensor(log_g - log_f, dtype=torch.float64))
 
@@ -287,20 +285,18 @@ def log_likelihood(
         if spine_ages is None:
             msg = "spine_ages must be provided when calculating spine age likelihood."
             raise RuntimeError(msg)
-        ages_log_lik += calculate_ages_log_lik(
+        ages_log_lik += calculate_spine_ages_log_lik(
             birth_rates,
             death_rates,
             ages=spine_ages,
             times=times,
-            are_spines=True,
         )
     if len(ages) > 0 and not use_unknown_spine_marginal:
-        ages_log_lik += calculate_ages_log_lik(
+        ages_log_lik += calculate_non_spine_ages_log_lik(
             birth_rates,
             death_rates,
             ages,
             times=times,
-            are_spines=False,
         )
 
     # Check if age density calculation succeeded
@@ -314,6 +310,92 @@ def log_likelihood(
         return torch.tensor(-torch.inf, dtype=torch.float64)
 
     return total_log_likelihood
+
+
+def calculate_unknown_spine_mixture_age_density(
+    birth_rates: torch.Tensor | float,
+    death_rates: torch.Tensor | float,
+    age_grid: torch.Tensor | float,
+    times: torch.Tensor | float,
+    num_manuscripts: int,
+) -> torch.Tensor:
+    """Compute age density for a random manuscript when the spine is unknown.
+
+    Assumes exactly one spine among ``num_manuscripts`` observations and uses
+    the mixture
+
+        (1 / n) * ((n - 1) * f_non_spine(a) + f_spine(a)).
+
+    This helper is useful for plotting theoretical age distributions under the
+    same unknown-spine assumption used by the likelihood.
+
+    Parameters
+    ----------
+    birth_rates : torch.Tensor | float
+        Birth rate(s) λ.
+    death_rates : torch.Tensor | float
+        Death rate(s) μ.
+    age_grid : torch.Tensor | float
+        Age grid values where the density is evaluated.
+    times : torch.Tensor | float
+        Observation time(s). Scalar for single epoch or 1D epoch end times.
+    num_manuscripts : int
+        Number of manuscripts ``n`` in the mixture formula. Must be positive.
+
+    Returns
+    -------
+    torch.Tensor
+        Density evaluated at each point in ``age_grid`` (shape matches grid).
+
+    Raises
+    ------
+    ValueError
+        If ``num_manuscripts`` is not positive.
+
+    """
+    if num_manuscripts <= 0:
+        msg = "num_manuscripts must be a positive integer."
+        raise ValueError(msg)
+
+    birth_rates, death_rates, age_grid, times = ensure_1d_tensors(
+        birth_rates,
+        death_rates,
+        age_grid,
+        times,
+    )
+
+    mixture_log_density_vals: list[torch.Tensor] = []
+    log_n = torch.log(torch.as_tensor(float(num_manuscripts), dtype=torch.float64))
+    if num_manuscripts > 1:
+        log_n_minus_one = torch.log(
+            torch.as_tensor(float(num_manuscripts - 1), dtype=torch.float64),
+        )
+    else:
+        log_n_minus_one = torch.tensor(float("-inf"), dtype=torch.float64)
+
+    for age in age_grid:
+        age_tensor = torch.as_tensor([age], dtype=torch.float64)
+        log_non_spine = calculate_non_spine_ages_log_lik(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            ages=age_tensor,
+            times=times,
+        )
+        log_spine = calculate_spine_ages_log_lik(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            ages=age_tensor,
+            times=times,
+        )
+
+        log_mixture_numerator = torch.logsumexp(
+            torch.stack((log_n_minus_one + log_non_spine, log_spine)),
+            dim=0,
+        )
+        mixture_log_density_vals.append(log_mixture_numerator - log_n)
+
+    mixture_log_density = torch.stack(mixture_log_density_vals)
+    return torch.exp(mixture_log_density)
 
 
 def negative_log_likelihood(

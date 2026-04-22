@@ -16,13 +16,18 @@ from .fitting import (
     fit_birth_death_processes,
     fit_from_dataframe,
 )
-from .likelihood import log_likelihood, negative_log_likelihood
+from .likelihood import (
+    calculate_unknown_spine_mixture_age_density,
+    log_likelihood,
+    negative_log_likelihood,
+)
 
 __all__ = [
     "BayesianMCMCConfig",
     "BayesianModelConfig",
     "BayesianPriorConfig",
     "_get_crude_parameter_estimates",
+    "calculate_unknown_spine_mixture_age_density",
     "fit_birth_death_processes",
     "fit_birth_death_processes_bayesian",
     "fit_birth_death_processes_bayesian_from_dataframe",
