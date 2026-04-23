@@ -3,6 +3,7 @@ project:
   output-dir: _output
   render:
     - qmd_scripts/*.qmd
+    - qmd_scripts/core_analysis/**/*.qmd
     - docs/*.qmd
     - reference/*.qmd
 
@@ -23,23 +24,35 @@ website:
     left:
       - text: "Reference"
         file: reference/index.qmd
-      - text: "Data + Core Inference"
+      - text: "Data Exploration"
         menu:
-          - text: "Data Exploration"
-            file: qmd_scripts/manuscript_data_exploration.qmd
-          - text: "NTVMR"
-            file: qmd_scripts/ntvmr_birth_death_inference.qmd
-          - text: "NTVMR (Multi-Initial)"
-            file: qmd_scripts/birth_death_inference_multi_initial_population.qmd
+          - text: "NTVMR Data Exploration"
+            file: qmd_scripts/core_analysis/01_data_exploration/manuscript_data_exploration.qmd
+          - text: "Kashouh Data Exploration"
+            file: qmd_scripts/core_analysis/01_data_exploration/kashouh_data_exploration.qmd
+      - text: "Single-Epoch Analysis"
+        menu:
+          - text: "NTVMR Single-Epoch"
+            file: qmd_scripts/core_analysis/02_single_epoch/ntvmr_single_epoch_inference.qmd
+          - text: "Kashouh Single-Epoch"
+            file: qmd_scripts/core_analysis/02_single_epoch/kashouh_single_epoch_inference.qmd
+      - text: "Multi-Epoch Analysis"
+        menu:
+          - text: "NTVMR Six-Epoch"
+            file: qmd_scripts/core_analysis/03_multi_epoch/ntvmr_birth_death_inference.qmd
+          - text: "NTVMR Multi-Initial"
+            file: qmd_scripts/core_analysis/03_multi_epoch/birth_death_inference_multi_initial_population.qmd
           - text: "Kashouh Classification"
-            file: qmd_scripts/kashouh_birth_death_analysis.qmd
-          - text: "Kashouh FamilyK (Bayesian)"
-            file: qmd_scripts/kashouh_familyk_bayesian_inference.qmd
+            file: qmd_scripts/core_analysis/03_multi_epoch/kashouh_birth_death_analysis.qmd
           - text: "Likelihood Surface"
             file: qmd_scripts/likelihood_single_vs_multi_epoch_comparison.qmd
           - text: "Optimizer"
             file: qmd_scripts/optimizer_comparison.qmd
-      - text: "Single-Epoch"
+      - text: "Bayesian Analysis"
+        menu:
+          - text: "Kashouh FamilyK Bayesian"
+            file: qmd_scripts/core_analysis/04_bayesian/kashouh_familyk_bayesian_inference.qmd
+      - text: "Validation: Single-Epoch"
         menu:
           - text: "Overview"
             file: qmd_scripts/methods_validation_single_epoch.qmd
@@ -51,7 +64,7 @@ website:
             file: qmd_scripts/methods_validation_bulk_inference.qmd
           - text: "Sensitivity + benchmark"
             file: qmd_scripts/methods_validation_sensitivity_benchmark.qmd
-      - text: "Multi-Epoch"
+      - text: "Validation: Multi-Epoch"
         menu:
           - text: "Overview"
             file: qmd_scripts/methods_validation_multi_epoch.qmd
@@ -63,7 +76,7 @@ website:
             file: qmd_scripts/methods_validation_multi_epoch_bulk_inference.qmd
           - text: "Sensitivity + benchmark"
             file: qmd_scripts/methods_validation_multi_epoch_sensitivity_benchmark.qmd
-      - text: "Bayesian Multi-Epoch"
+      - text: "Validation: Bayesian Multi-Epoch"
         menu:
           - text: "Overview"
             file: qmd_scripts/methods_validation_multi_epoch_bayesian.qmd
