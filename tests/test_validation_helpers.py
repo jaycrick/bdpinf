@@ -39,11 +39,32 @@ def test_first_failed_fits_returns_original_indices() -> None:
     fitted_models = [
         {"success": True},
         None,
-        {"success": False, "error_type": "RuntimeError", "error": "boom"},
+        {
+            "success": False,
+            "optimization_result": {
+                "converged": False,
+                "selected_attempt_index": 0,
+                "attempts": [
+                    {
+                        "exception_type": "RuntimeError",
+                        "exception": "boom",
+                    },
+                ],
+            },
+        },
         {"success": True},
         {
             "success": False,
-            "optimization_result": {"converged": False},
+            "optimization_result": {
+                "converged": False,
+                "selected_attempt_index": 0,
+                "attempts": [
+                    {
+                        "exception_type": None,
+                        "exception": None,
+                    },
+                ],
+            },
         },
     ]
     ages = [

@@ -21,6 +21,7 @@ from .likelihood import (
     log_likelihood,
     negative_log_likelihood,
 )
+from .uncertainty import estimate_mle_covariance
 
 __all__ = [
     "BayesianMCMCConfig",
@@ -28,6 +29,7 @@ __all__ = [
     "BayesianPriorConfig",
     "_get_crude_parameter_estimates",
     "calculate_unknown_spine_mixture_age_density",
+    "estimate_mle_covariance",
     "fit_birth_death_processes",
     "fit_birth_death_processes_bayesian",
     "fit_birth_death_processes_bayesian_from_dataframe",

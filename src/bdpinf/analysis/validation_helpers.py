@@ -56,29 +56,37 @@ def first_failed_fits(
         if model is None:
             return "fit returned None (empty ages or fitting exception)"
 
-        error_type = model.get("error_type")
-        error = model.get("error")
-        if error_type and error:
-            return f"{error_type}: {error}"
-        if error:
-            return str(error)
-
-        errors = model.get("errors")
-        if isinstance(errors, list) and len(errors) > 0:
-            last_error = errors[-1]
-            if isinstance(last_error, dict):
-                last_type = last_error.get("error_type")
-                last_msg = last_error.get("error")
-                if last_type and last_msg:
-                    return f"{last_type}: {last_msg}"
-                if last_msg:
-                    return str(last_msg)
-
         optimization_result = model.get("optimization_result")
-        if isinstance(optimization_result, dict) and (
-            optimization_result.get("converged") is False
-        ):
-            return "optimizer did not converge"
+        if isinstance(optimization_result, dict):
+            attempts = optimization_result.get("attempts")
+            if isinstance(attempts, list) and len(attempts) > 0:
+                selected_attempt_index = optimization_result.get(
+                    "selected_attempt_index"
+                )
+                selected_attempt: dict[str, Any] | None = None
+
+                if isinstance(selected_attempt_index, int) and (
+                    0 <= selected_attempt_index < len(attempts)
+                ):
+                    selected = attempts[selected_attempt_index]
+                    if isinstance(selected, dict):
+                        selected_attempt = selected
+
+                if selected_attempt is None:
+                    first_attempt = attempts[0]
+                    if isinstance(first_attempt, dict):
+                        selected_attempt = first_attempt
+
+                if selected_attempt is not None:
+                    exception_type = selected_attempt.get("exception_type")
+                    exception_message = selected_attempt.get("exception")
+                    if exception_type and exception_message:
+                        return f"{exception_type}: {exception_message}"
+                    if exception_message:
+                        return str(exception_message)
+
+            if optimization_result.get("converged") is False:
+                return "optimizer did not converge"
 
         return "fit marked unsuccessful without error details"
 
