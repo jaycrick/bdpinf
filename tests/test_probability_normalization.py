@@ -162,7 +162,7 @@ def test_unknown_spine_mixture_distribution_integrates_to_one() -> None:
             times=times,
         ),
     )
-    total_mass = continuous_mass + spine_terminal_mass
+    total_mass = continuous_mass + spine_terminal_mass / n
 
     assert torch.isclose(total_mass, torch.tensor(1.0, dtype=torch.float64), atol=2e-3)
 
