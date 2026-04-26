@@ -1,6 +1,8 @@
 """Uncertainty estimation helpers for birth-death process MLEs."""
 
+import math
 from collections.abc import Callable
+from contextlib import suppress
 from typing import Any, cast
 
 import torch
@@ -15,10 +17,8 @@ def _invert_observed_fisher(
     if observed_fisher.numel() == 0:
         return observed_fisher.clone()
 
-    try:
+    with suppress(RuntimeError):
         torch.linalg.cond(observed_fisher)
-    except RuntimeError:
-        pass
 
     try:
         return cast("torch.Tensor", torch.linalg.inv(observed_fisher))  # pyright: ignore[reportAnyReturnType]
@@ -53,7 +53,7 @@ def estimate_mle_covariance(
     population_sizes_tensor: torch.Tensor,
     initial_population: int,
 ) -> torch.Tensor:
-    """Estimate covariance of fitted rates using the Hessian in free log space."""
+    """Estimate covariance of fitted log-parameters using the Hessian."""
     theta_hat = cast("Any", free_log_params.detach().clone().to(dtype=torch.float64))
 
     def objective(theta_free: torch.Tensor) -> torch.Tensor:
@@ -79,21 +79,43 @@ def estimate_mle_covariance(
         covariance_log_free + covariance_log_free.transpose(-1, -2)
     )
 
-    with torch.no_grad():
-        theta_hat_detached = theta_hat.detach()
-        full_log_params_hat = full_log_params_fn(theta_hat_detached)
-        full_rates_hat = torch.exp(full_log_params_hat)
-
     jacobian_fn = cast("Any", torch.autograd.functional.jacobian)
+    theta_hat_detached = theta_hat.detach()
     jacobian_full_log = jacobian_fn(full_log_params_fn, theta_hat_detached)
 
-    jacobian_rate_from_log = torch.diag(full_rates_hat)
-    jacobian_full_rate = jacobian_rate_from_log @ jacobian_full_log
-    covariance_rates_full = (
-        jacobian_full_rate @ covariance_log_free @ jacobian_full_rate.T
-    )
-    covariance_rates_full = 0.5 * (
-        covariance_rates_full + covariance_rates_full.transpose(-1, -2)
+    covariance_log_full = jacobian_full_log @ covariance_log_free @ jacobian_full_log.T
+    covariance_log_full = 0.5 * (
+        covariance_log_full + covariance_log_full.transpose(-1, -2)
     )
 
-    return cast("torch.Tensor", covariance_rates_full)
+    return cast("torch.Tensor", covariance_log_full)
+
+
+def confidence_intervals_from_log_covariance(
+    log_parameter_estimates: torch.Tensor,
+    covariance_log_parameters: torch.Tensor,
+    *,
+    confidence_level: float = 0.95,
+) -> torch.Tensor:
+    """Build Wald confidence intervals on the original scale.
+
+    Uses log-scale uncertainty and exponentiates the resulting interval bounds
+    back to the original scale.
+    """
+    if log_parameter_estimates.numel() == 0:
+        return log_parameter_estimates.new_empty((0, 2))
+
+    standard_errors = torch.sqrt(
+        torch.clamp(torch.diag(covariance_log_parameters), min=0.0),
+    )
+    z_value = math.sqrt(2.0) * torch.erfinv(
+        torch.tensor(
+            confidence_level,
+            dtype=log_parameter_estimates.dtype,
+            device=log_parameter_estimates.device,
+        ),
+    )
+
+    lower = torch.exp(log_parameter_estimates - z_value * standard_errors)
+    upper = torch.exp(log_parameter_estimates + z_value * standard_errors)
+    return torch.stack((lower, upper), dim=-1)

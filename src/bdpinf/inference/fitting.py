@@ -16,8 +16,8 @@ from inf_bp_texts.utils import ensure_1d_tensor
 from .likelihood import negative_log_likelihood
 from .uncertainty import estimate_mle_covariance
 
-DEFAULT_GRADIENT_THRESHOLD = 1e-3
-DEFAULT_ABSOLUTE_TOLERANCE = 1e-5
+DEFAULT_GRADIENT_THRESHOLD = 5e-4
+DEFAULT_ABSOLUTE_TOLERANCE = 1e-7
 DEFAULT_PATIENCE = 5
 DEFAULT_ITERATIONS = 10000
 MIN_EQUALITY_GROUP_SIZE = 2
@@ -317,7 +317,8 @@ def fit_birth_death_processes(
         Constraints for fixed/equal parameters; None = no constraints.
     estimate_uncertainty : bool
         If True (default), estimate uncertainty via the observed Fisher
-        information (Hessian of NLL in free log-parameter space).
+        information (Hessian of NLL in free log-parameter space). The returned
+        covariance is in the full log-parameter space.
 
     Returns
     -------

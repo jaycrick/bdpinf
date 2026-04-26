@@ -617,7 +617,7 @@ class TestConvergenceFlags:
         def full_log_params_fn(theta_free: torch.Tensor) -> torch.Tensor:
             return torch.stack(
                 (
-                    theta_free[0],
+                    theta_free[0] + torch.tensor(np.log(2.0), dtype=torch.float64),
                     torch.tensor(np.log(0.5), dtype=torch.float64),
                 ),
             )
@@ -653,10 +653,40 @@ class TestConvergenceFlags:
         )
 
         assert covariance.shape == (2, 2)
-        assert covariance[0, 0] > 0
+        assert covariance[0, 0] == pytest.approx(0.5)
         assert covariance[1, 1] == 0.0
         assert covariance[1, 0] == 0.0
         assert covariance[0, 1] == 0.0
+
+    def test_log_space_confidence_intervals_are_exponentiated(self) -> None:
+        log_parameter_estimates = torch.tensor(
+            [np.log(2.0), np.log(4.0)],
+            dtype=torch.float64,
+        )
+        covariance_log = torch.diag(
+            torch.tensor([0.25, 0.0], dtype=torch.float64),
+        )
+
+        intervals = uncertainty_module.confidence_intervals_from_log_covariance(
+            log_parameter_estimates,
+            covariance_log,
+        )
+
+        z_value = torch.sqrt(torch.tensor(2.0, dtype=torch.float64)) * torch.erfinv(
+            torch.tensor(0.95, dtype=torch.float64),
+        )
+        expected_lower = torch.exp(
+            log_parameter_estimates
+            - z_value * torch.tensor([0.5, 0.0], dtype=torch.float64),
+        )
+        expected_upper = torch.exp(
+            log_parameter_estimates
+            + z_value * torch.tensor([0.5, 0.0], dtype=torch.float64),
+        )
+
+        assert intervals.shape == (2, 2)
+        assert torch.allclose(intervals[:, 0], expected_lower)
+        assert torch.allclose(intervals[:, 1], expected_upper)
 
     def test_max_iters_no_convergence(self) -> None:
         ages = torch.tensor([100.0, 200.0], dtype=torch.float64)
