@@ -34,7 +34,7 @@ website:
         menu:
           - text: "NTVMR Single-Epoch"
             file: qmd_scripts/core_analysis/02_single_epoch/ntvmr_single_epoch_inference.qmd
-          - text: "Kashouh Single-Epoch"
+          - text: "Kashouh Single-Epoch (FamilyK + FamilyJB)"
             file: qmd_scripts/core_analysis/02_single_epoch/kashouh_single_epoch_inference.qmd
       - text: "Multi-Epoch Analysis"
         menu:
