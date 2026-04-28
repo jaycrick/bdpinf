@@ -245,31 +245,23 @@ def log_likelihood(
         # Unknown spine case: exactly one spine among ages, marginalized uniformly.
         # ell = sum(log f(x_i)) - log n + logsumexp(log g(x_k) - log f(x_k))
         n_ages = len(ages)
-        sum_log_f = calculate_non_spine_ages_log_lik(
+        non_spine_log_liks = calculate_non_spine_ages_log_lik(
             birth_rates,
             death_rates,
             ages,
             times=times,
+            return_array=True,
+        )
+        spine_log_liks = calculate_spine_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages=ages,
+            times=times,
+            return_array=True,
         )
 
-        a_terms: list[torch.Tensor] = []
-        for age in ages:
-            age_tensor = torch.as_tensor([age], dtype=torch.float64)
-            log_g = calculate_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                ages=age_tensor,
-                times=times,
-            )
-            log_f = calculate_non_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                ages=age_tensor,
-                times=times,
-            )
-            a_terms.append(torch.as_tensor(log_g - log_f, dtype=torch.float64))
-
-        a = torch.stack(a_terms)
+        sum_log_f = torch.sum(non_spine_log_liks)
+        a = spine_log_liks - non_spine_log_liks
         log_sum_exp = torch.logsumexp(a, dim=0)
         ages_log_lik = (
             sum_log_f

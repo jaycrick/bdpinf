@@ -313,11 +313,17 @@ class TestFitting:
         result = fit_birth_death_processes([ages], 1000.0)
 
         assert result["success"] is False
+        assert "birth_rates" in result
+        assert "death_rates" in result
+        assert "log_likelihood" in result
         assert "error" not in result
         assert "error_type" not in result
         assert "errors" not in result
         assert "failed_optimizer_histories" not in result
         assert "nll_history" not in result
+
+        assert np.all(np.asarray(result["birth_rates"]) > 0)
+        assert np.all(np.asarray(result["death_rates"]) > 0)
 
         optimization_result = result["optimization_result"]
         assert optimization_result["selected_attempt_index"] == 0

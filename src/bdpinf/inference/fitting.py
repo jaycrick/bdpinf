@@ -19,7 +19,7 @@ from .uncertainty import estimate_mle_covariance
 DEFAULT_GRADIENT_THRESHOLD = 5e-4
 DEFAULT_ABSOLUTE_TOLERANCE = 1e-7
 DEFAULT_PATIENCE = 5
-DEFAULT_ITERATIONS = 10000
+DEFAULT_ITERATIONS = 1000
 MIN_EQUALITY_GROUP_SIZE = 2
 
 
@@ -404,12 +404,6 @@ def fit_birth_death_processes(
 
     optimization_result = _build_optimization_result_payload(optimizer_run_result)
 
-    if not converged:
-        return {
-            "success": False,
-            "optimization_result": optimization_result,
-        }
-
     # Expand log_params from reduced to full space for finalization
     full_params = _apply_constraints_to_full_params(
         torch.exp(log_params),
@@ -428,7 +422,10 @@ def fit_birth_death_processes(
         initial_population=initial_population,
     )
     if finalized is None:
-        return {"success": False}
+        return {
+            "success": False,
+            "optimization_result": optimization_result,
+        }
 
     birth_rates, death_rates, final_log_likelihood, final_loss = finalized
     result = {
@@ -1148,7 +1145,7 @@ def _build_optimizer_strategies(
             "Adam",
             torch.optim.Adam,
             DEFAULT_ITERATIONS,
-            {"lr": 0.001},
+            {"lr": 0.1},
         ),
         "lbfgs": OptimizerStrategy(
             "LBFGS",
