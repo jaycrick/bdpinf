@@ -176,6 +176,7 @@ def calculate_populations_log_lik(
     times: torch.Tensor | float,
     *,
     initial_population: int = 1,
+    unbias: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     r"""Calculate log-probability of population counts under birth-death process.
@@ -201,6 +202,10 @@ def calculate_populations_log_lik(
         log-probabilities.
     initial_population : int
         The number of initial individuals at time 0. Default is 1.
+    unbias : bool
+        If True, condition on non-extinction for positive counts when the
+        initial population is 1 by using the geometric mass with parameter
+        ``1 - beta_t`` on the positive integers.
 
     Returns
     -------
@@ -332,7 +337,23 @@ def calculate_populations_log_lik(
     # Handle n > 0 case
     nonzero_mask = torch.logical_not(zero_mask)
     if torch.any(nonzero_mask):
-        if initial_population == 1:
+        if unbias and initial_population == 1:
+            log_one_minus_beta = torch.log1p(-beta_t)
+            log_beta = torch.log(beta_t)
+            log_term3 = torch.where(
+                ns == 1,
+                torch.tensor(0.0, dtype=torch.float64),
+                (ns - 1) * log_beta,
+            )
+
+            if not (
+                torch.isfinite(log_one_minus_beta)
+                and torch.all(torch.isfinite(log_term3[nonzero_mask]))
+            ):
+                return torch.tensor(float("-inf"), dtype=torch.float64)
+
+            log_pr[nonzero_mask] = (log_one_minus_beta + log_term3)[nonzero_mask]
+        elif initial_population == 1:
             log_term1 = torch.log1p(-alpha_t)
             log_term2 = torch.log1p(-beta_t)
             log_term3 = torch.where(

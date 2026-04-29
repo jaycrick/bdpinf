@@ -52,6 +52,7 @@ def estimate_mle_covariance(
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
     initial_population: int,
+    unbias: bool = True,
 ) -> torch.Tensor:
     """Estimate covariance of fitted log-parameters using the Hessian."""
     theta_hat = cast("Any", free_log_params.detach().clone().to(dtype=torch.float64))
@@ -66,6 +67,7 @@ def estimate_mle_covariance(
             spine_ages=spine_ages_tensor,
             ns=population_sizes_tensor,
             initial_population=initial_population,
+            unbias=unbias,
             is_ordered=False,
             log_scale_params=True,
         )

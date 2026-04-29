@@ -71,6 +71,28 @@ class TestPopulationProbability:
         result = calculate_populations_log_lik(0.0, 0.05, times=100.0, ns=10)
         assert result == -torch.inf
 
+    def test_unbias_positive_count_uses_geometric_mass(self) -> None:
+        """Unbiased positive counts follow the conditioned geometric mass."""
+        birth_rate, death_rate, time, n = 0.1, 0.05, 100.0, 5
+        alpha_t = calculate_extinction_pr(
+            birth_rate,
+            death_rate,
+            time,
+            return_log_prob=False,
+        )
+        beta_t = (birth_rate / death_rate) * alpha_t
+
+        result = calculate_populations_log_lik(
+            birth_rate,
+            death_rate,
+            times=time,
+            ns=n,
+            unbias=True,
+        )
+
+        expected = torch.log1p(-beta_t) + (n - 1) * torch.log(beta_t)
+        assert_allclose(result, expected)
+
     def test_finite_results(self) -> None:
         """Test that valid inputs produce finite results."""
         test_cases = [

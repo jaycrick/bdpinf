@@ -18,6 +18,7 @@ class FitModelConfig:
     is_ordered: bool = True
     perturb_initial_params_std: float | None = None
     random_seed: int | None = None
+    unbias: bool = True
 
 
 def fit_single_model(
@@ -37,6 +38,7 @@ def fit_single_model(
         fit_kwargs["perturb_initial_params_std"] = config.perturb_initial_params_std
     if config.random_seed is not None:
         fit_kwargs["random_seed"] = config.random_seed
+    fit_kwargs["unbias"] = config.unbias
 
     try:
         return fit_birth_death_processes(**fit_kwargs)
@@ -61,7 +63,7 @@ def first_failed_fits(
             attempts = optimization_result.get("attempts")
             if isinstance(attempts, list) and len(attempts) > 0:
                 selected_attempt_index = optimization_result.get(
-                    "selected_attempt_index"
+                    "selected_attempt_index",
                 )
                 selected_attempt: dict[str, Any] | None = None
 

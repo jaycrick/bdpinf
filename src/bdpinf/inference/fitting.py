@@ -66,6 +66,7 @@ class FitKwargs(TypedDict, total=False):
     population_sizes: torch.Tensor | None
     initial_population: int
     optimizers: Sequence[str] | str
+    unbias: bool
     optimizer_kwargs: dict[str, dict[str, Any]] | None
     perturb_initial_params_std: float
     random_seed: int | None
@@ -279,6 +280,7 @@ def fit_birth_death_processes(
     optimizer_kwargs: dict[str, dict[str, Any]] | None = None,
     perturb_initial_params_std: float = 0.0,
     random_seed: int | None = None,
+    unbias: bool = True,
     convergence_config: ConvergenceConfig | None = None,
     param_constraints: ParameterConstraints | None = None,
     estimate_uncertainty: bool = True,
@@ -319,6 +321,9 @@ def fit_birth_death_processes(
         If True (default), estimate uncertainty via the observed Fisher
         information (Hessian of NLL in free log-parameter space). The returned
         covariance is in the full log-parameter space.
+    unbias : bool
+        If True (default), use the conditional non-extinction population mass
+        for positive counts when evaluating the likelihood.
 
     Returns
     -------
@@ -395,6 +400,7 @@ def fit_birth_death_processes(
         spine_ages_tensor=spine_ages_tensor,
         population_sizes_tensor=population_sizes_tensor,
         initial_population=initial_population,
+        unbias=unbias,
         convergence_config=convergence_config,
         param_constraints=param_constraints,
     )
@@ -420,6 +426,7 @@ def fit_birth_death_processes(
         spine_ages_tensor=spine_ages_tensor,
         population_sizes_tensor=population_sizes_tensor,
         initial_population=initial_population,
+        unbias=unbias,
     )
     if finalized is None:
         return {
@@ -459,6 +466,7 @@ def fit_birth_death_processes(
             spine_ages_tensor=spine_ages_tensor,
             population_sizes_tensor=population_sizes_tensor,
             initial_population=initial_population,
+            unbias=unbias,
         )
         result["uncertainty"] = covariance.detach().cpu().numpy()
 
@@ -577,12 +585,13 @@ def _run_optimizer_strategies(
     initial_params: torch.Tensor,
     n_epochs: int,
     non_spine_ages: torch.Tensor,
-    initial_population: int,
     times_tensor: torch.Tensor,
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
+    initial_population: int,
     convergence_config: ConvergenceConfig,
     param_constraints: ParameterConstraints | None = None,
+    unbias: bool = True,
 ) -> OptimizerRunResult:
     """Run optimizers sequentially until convergence; return params, history, metadata.
 
@@ -630,6 +639,7 @@ def _run_optimizer_strategies(
             spine_ages=spine_ages_tensor,
             ns=population_sizes_tensor,
             initial_population=initial_population,
+            unbias=unbias,
             is_ordered=False,
             log_scale_params=True,
         )
@@ -1258,6 +1268,7 @@ def _finalize_fit(
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
     initial_population: int = 1,
+    unbias: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, float, float] | None:
     """Convert log params to original scale; return rates + final likelihoods."""
     with torch.no_grad():
@@ -1269,6 +1280,7 @@ def _finalize_fit(
             spine_ages=spine_ages_tensor,
             ns=population_sizes_tensor,
             initial_population=initial_population,
+            unbias=unbias,
             is_ordered=False,
             log_scale_params=True,
         )

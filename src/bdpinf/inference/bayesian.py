@@ -48,6 +48,7 @@ class BayesianModelConfig:
     spine_ages: torch.Tensor | None = None
     population_sizes: torch.Tensor | None = None
     initial_population: int = 1
+    unbias: bool = True
     rng_seed: int | None = None
 
 
@@ -57,6 +58,7 @@ class BayesianFitKwargs(TypedDict, total=False):
     model_config: BayesianModelConfig
     mcmc_config: BayesianMCMCConfig
     prior_config: BayesianPriorConfig
+    unbias: bool
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,7 @@ class BayesianModelData:
     spine_ages_tensor: torch.Tensor | None
     population_sizes_tensor: torch.Tensor
     initial_population: int
+    unbias: bool
 
 
 @dataclass(frozen=True)
@@ -104,6 +107,7 @@ class BayesianLikelihoodModel:
                 spine_ages=self.model_data.spine_ages_tensor,
                 ns=self.model_data.population_sizes_tensor,
                 initial_population=self.model_data.initial_population,
+                unbias=self.model_data.unbias,
                 is_ordered=False,
                 log_scale_params=True,
             )
@@ -271,6 +275,7 @@ def fit_birth_death_processes_bayesian(
     model_config: BayesianModelConfig | None = None,
     mcmc_config: BayesianMCMCConfig | None = None,
     prior_config: BayesianPriorConfig | None = None,
+    unbias: bool | None = None,
 ) -> dict[str, Any]:
     """Fit birth-death rates using Bayesian inference with Pyro NUTS.
 
@@ -294,6 +299,17 @@ def fit_birth_death_processes_bayesian(
 
     """
     model_config = model_config or BayesianModelConfig()
+    # Allow legacy callers to pass `unbias` directly via kwargs; override
+    # the config value if provided.
+    if unbias is not None:
+        model_config = BayesianModelConfig(
+            is_ordered=model_config.is_ordered,
+            spine_ages=model_config.spine_ages,
+            population_sizes=model_config.population_sizes,
+            initial_population=model_config.initial_population,
+            unbias=unbias,
+            rng_seed=model_config.rng_seed,
+        )
     mcmc_config = mcmc_config or BayesianMCMCConfig()
     prior_config = prior_config or BayesianPriorConfig()
 
@@ -317,6 +333,7 @@ def fit_birth_death_processes_bayesian(
         spine_ages_tensor=spine_ages_tensor,
         population_sizes_tensor=population_sizes_tensor,
         initial_population=model_config.initial_population,
+        unbias=model_config.unbias,
     )
     model = _build_pyro_model(
         model_data,

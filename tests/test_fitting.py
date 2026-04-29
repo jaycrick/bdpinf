@@ -3,6 +3,7 @@
 # ruff: noqa: S101
 # ruff: noqa: D101 D102
 
+import inspect
 from pathlib import Path
 
 import numpy as np
@@ -110,6 +111,12 @@ class TestFittingHelpers:
 
 class TestFitting:
     """Test parameter fitting functionality using modular approach."""
+
+    def test_fit_birth_death_processes_defaults_to_unbias_true(self) -> None:
+        assert (
+            inspect.signature(fit_birth_death_processes).parameters["unbias"].default
+            is True
+        )
 
     def test_fit_birth_death_process_with_times_arrays(self) -> None:
         """Test fitting with times as array."""

@@ -25,6 +25,7 @@ def log_likelihood(
     spine_ages: torch.Tensor | None = None,
     ns: torch.Tensor | None = None,
     initial_population: int = 1,
+    unbias: bool = False,
     is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> torch.Tensor:
@@ -211,6 +212,7 @@ def log_likelihood(
         times=times,
         ns=ns,
         initial_population=initial_population,
+        unbias=unbias,
     )
 
     # Check if population probability calculation succeeded
@@ -399,6 +401,7 @@ def negative_log_likelihood(
     spine_ages: torch.Tensor | None = None,
     ns: torch.Tensor | None = None,
     initial_population: int = 1,
+    unbias: bool = False,
     is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> torch.Tensor:
@@ -461,6 +464,7 @@ def negative_log_likelihood(
         spine_ages=spine_ages,
         ns=ns,
         initial_population=initial_population,
+        unbias=unbias,
         is_ordered=is_ordered,
         log_scale_params=log_scale_params,
     )

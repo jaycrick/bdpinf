@@ -4,6 +4,7 @@
 
 import numpy as np
 
+import inf_bp_texts.analysis.validation_helpers as validation_helpers_module
 from inf_bp_texts.analysis import (
     FitModelConfig,
     boundary_corrected_kde_at_zero,
@@ -96,3 +97,29 @@ def test_fit_single_model_handles_empty_input() -> None:
     config = FitModelConfig(times=1000.0)
     result = fit_single_model(np.array([], dtype=np.float64), config)
     assert result is None
+
+
+def test_fit_model_config_defaults_to_unbias_true() -> None:
+    assert FitModelConfig(times=1000.0).unbias is True
+
+
+def test_fit_single_model_forwards_unbias_default(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_fit_birth_death_processes(**kwargs):
+        captured.update(kwargs)
+        return {"success": True}
+
+    monkeypatch.setattr(
+        validation_helpers_module,
+        "fit_birth_death_processes",
+        fake_fit_birth_death_processes,
+    )
+
+    result = fit_single_model(
+        np.array([1.0, 2.0], dtype=np.float64),
+        FitModelConfig(times=10.0),
+    )
+
+    assert result == {"success": True}
+    assert captured["unbias"] is True
