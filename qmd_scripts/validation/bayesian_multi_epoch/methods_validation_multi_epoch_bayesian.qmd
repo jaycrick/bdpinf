@@ -1,0 +1,62 @@
+---
+title: "Bayesian Multi-Epoch Inference Validation"
+subtitle: "Index for Split Bayesian Multi-Epoch Validation Notebooks"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+__compile_start = time.perf_counter()
+```
+
+## Overview
+
+This notebook is now a lightweight index that points to split Bayesian
+multi-epoch validation notebooks.
+
+## Run Order
+
+1. [Simulation checks](methods_validation_multi_epoch_bayesian_simulation_checks.qmd)
+2. [Single-fit debug and profiling](methods_validation_multi_epoch_bayesian_single_fit_debug.qmd)
+3. [Bulk inference](methods_validation_multi_epoch_bayesian_bulk_inference.qmd)
+4. [Diagnostics and benchmark](methods_validation_multi_epoch_bayesian_diagnostics_benchmark.qmd)
+
+## Notes
+
+- Bayesian diagnostics and performance are separated from fit-debug workflow.
+- Profiling artifacts are generated in dedicated single-fit notebooks.
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+from pathlib import Path
+import time
+
+doc_name = "methods_validation_multi_epoch_bayesian.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

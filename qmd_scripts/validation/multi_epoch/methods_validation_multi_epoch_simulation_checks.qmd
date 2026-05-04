@@ -1,0 +1,104 @@
+---
+title: "Multi-Epoch Validation: Simulation Checks"
+subtitle: "Two-Epoch Simulation and Survivorship Summaries"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+__compile_start = time.perf_counter()
+```
+
+## Setup
+
+```{python}
+import numpy as np
+import pandas as pd
+
+from inf_bp_texts.simulation import simulate_birth_death_process
+from joblib import Parallel, delayed
+```
+
+## Two-Epoch Simulation
+
+```{python}
+num_sims = 100
+birth_rates = np.array([0.01, 0.001], dtype=float)
+death_rates = np.array([0.001, 0.001], dtype=float)
+times = np.array([750.0, 1500.0], dtype=float)
+seed = 42
+
+simulated_processes = Parallel(n_jobs=-1)(
+    delayed(simulate_birth_death_process)(
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        times=times,
+        random_seed=seed + i,
+    )
+    for i in range(num_sims)
+)
+
+print(f"Completed simulations: {len(simulated_processes)}")
+```
+
+## Survivorship and Exposure Summary
+
+```{python}
+list_of_ages = []
+rows = []
+for i, sim in enumerate(simulated_processes):
+    alive = sim[sim["death_time"].isna()].sort_values("is_spine", ascending=False)
+    ages = times[-1] - alive["creation_time"].to_numpy(dtype=np.float64)
+    list_of_ages.append(np.asarray(ages, dtype=np.float64))
+
+    rows.append(
+        {
+            "simulation": i,
+            "n_total": int(len(sim)),
+            "n_survivors": int(len(alive)),
+            "n_deaths": int(sim["death_time"].notna().sum()),
+            "mean_age": float(np.mean(ages)) if len(ages) else np.nan,
+        }
+    )
+
+summary_df = pd.DataFrame(rows)
+print(summary_df.describe(include="all").transpose().to_string(float_format="%.3f"))
+print(
+    f"\nFraction extinct at final time: {(summary_df['n_survivors'] == 0).mean():.3f}"
+)
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+from pathlib import Path
+import time
+
+doc_name = "methods_validation_multi_epoch_simulation_checks.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

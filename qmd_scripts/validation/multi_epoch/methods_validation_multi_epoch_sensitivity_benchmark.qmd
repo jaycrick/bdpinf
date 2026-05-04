@@ -1,0 +1,122 @@
+---
+title: "Multi-Epoch Validation: Sensitivity and Benchmark"
+subtitle: "Configuration Sweep and Runtime Diagnostics"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+__compile_start = time.perf_counter()
+```
+
+## Setup
+
+```{python}
+import time
+
+import numpy as np
+import pandas as pd
+
+from inf_bp_texts.analysis import FitModelConfig, fit_single_model
+from inf_bp_texts.simulation import simulate_birth_death_process
+from joblib import Parallel, delayed
+```
+
+## Sensitivity Sweep
+
+```{python}
+num_sims = 60
+times = np.array([750.0, 1500.0], dtype=float)
+
+configs = [
+    {
+        "birth_rates": np.array([0.010, 0.001], dtype=float),
+        "death_rates": np.array([0.001, dr2], dtype=float),
+    }
+    for dr2 in [0.0005, 0.0010, 0.0020]
+]
+
+rows = []
+for cfg_idx, cfg in enumerate(configs):
+    sims = Parallel(n_jobs=-1)(
+        delayed(simulate_birth_death_process)(
+            birth_rates=cfg["birth_rates"],
+            death_rates=cfg["death_rates"],
+            times=times,
+            random_seed=1000 + cfg_idx * 10000 + i,
+        )
+        for i in range(num_sims)
+    )
+
+    ages_list = []
+    for sim in sims:
+        alive = sim[sim["death_time"].isna()].sort_values("is_spine", ascending=False)
+        ages_list.append(
+            (times[-1] - alive["creation_time"].to_numpy(dtype=np.float64)).astype(
+                np.float64
+            )
+        )
+
+    fit_config = FitModelConfig(
+        times=times, is_ordered=True, perturb_initial_params_std=0.1, random_seed=10925
+    )
+    start = time.perf_counter()
+    fits = Parallel(n_jobs=-1)(
+        delayed(fit_single_model)(ages, fit_config) for ages in ages_list
+    )
+    elapsed = time.perf_counter() - start
+
+    successful = [f for f in fits if f is not None and f.get("success", False)]
+    rows.append(
+        {
+            "config": cfg_idx + 1,
+            "death_rate_epoch2_true": float(cfg["death_rates"][1]),
+            "success_rate": len(successful) / len(fits) * 100.0,
+            "mean_runtime_per_fit_ms": elapsed / len(fits) * 1000.0,
+        }
+    )
+
+results_df = pd.DataFrame(rows)
+print(results_df.to_string(index=False, float_format="%.4f"))
+```
+
+## Benchmark Note
+
+This notebook provides runtime and success-rate benchmarking for multi-epoch
+fitting across a small configuration sweep. For deep profiling, run
+[qmd_scripts/methods_validation_multi_epoch_single_fit_debug.qmd](qmd_scripts/methods_validation_multi_epoch_single_fit_debug.qmd).
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+from pathlib import Path
+import time
+
+doc_name = "methods_validation_multi_epoch_sensitivity_benchmark.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

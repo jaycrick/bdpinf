@@ -233,3 +233,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 **/*.quarto_ipynb
+# qmd_scripts metadata
+qmd_scripts/.DS_Store
+qmd_scripts/.jupyter_cache/

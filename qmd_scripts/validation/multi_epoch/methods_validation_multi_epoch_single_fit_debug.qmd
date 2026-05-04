@@ -1,0 +1,117 @@
+---
+title: "Multi-Epoch Validation: Single Fit Debug"
+subtitle: "Single-Simulation Fit and Profiling for Two-Epoch Model"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+__compile_start = time.perf_counter()
+```
+
+## Setup
+
+```{python}
+import numpy as np
+
+from inf_bp_texts.analysis import FitModelConfig, fit_single_model
+from inf_bp_texts.inference import negative_log_likelihood
+from inf_bp_texts.inference.fitting import _get_crude_parameter_estimates
+from inf_bp_texts.simulation import simulate_birth_death_process
+```
+
+## Simulate One Two-Epoch Dataset
+
+```{python}
+birth_rates = np.array([0.01, 0.001], dtype=float)
+death_rates = np.array([0.001, 0.001], dtype=float)
+times = np.array([750.0, 1500.0], dtype=float)
+
+sim = simulate_birth_death_process(
+    birth_rates=birth_rates,
+    death_rates=death_rates,
+    times=times,
+    random_seed=42,
+)
+alive = sim[sim["death_time"].isna()].sort_values("is_spine", ascending=False)
+ages = (times[-1] - alive["creation_time"].to_numpy(dtype=np.float64)).astype(
+    np.float64
+)
+print(f"Population size: {len(ages)}")
+print(f"First 10 ages: {ages[:10].tolist()}")
+```
+
+## Likelihood Sanity Check
+
+```{python}
+init_birth, init_death = _get_crude_parameter_estimates(ages, times)
+if len(ages) > 0 and ages[0] == np.max(ages):
+    spine_ages = np.array([ages[0]], dtype=np.float64)
+    non_spine_ages = ages[1:]
+else:
+    spine_ages = None
+    non_spine_ages = ages
+
+initial_nll = negative_log_likelihood(
+    birth_rates=init_birth,
+    death_rates=init_death,
+    ages=non_spine_ages,
+    times=times,
+    spine_ages=spine_ages,
+    ns=None,
+    is_ordered=False,
+    log_scale_params=False,
+)
+print(f"Initial NLL: {initial_nll}")
+```
+
+## Fit and Profile One Simulation
+
+```{python}
+fit_config = FitModelConfig(
+    times=times, is_ordered=True, perturb_initial_params_std=0.1, random_seed=10925
+)
+single_fit_result = fit_single_model(ages, fit_config)
+print(single_fit_result)
+```
+
+```{python}
+%%prun -s cumulative -q -l 60 -T prof-multi-epoch-single-fit.txt -D prof-multi-epoch-single-fit.prof
+
+_ = fit_single_model(ages, fit_config)
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+from pathlib import Path
+import time
+
+doc_name = "methods_validation_multi_epoch_single_fit_debug.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```
