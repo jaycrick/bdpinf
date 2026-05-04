@@ -27,6 +27,7 @@ import numpy as np
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import torch
+import time
 
 from inf_bp_texts.models.mathematical_functions import (
     calculate_extinction_pr,
@@ -59,7 +60,7 @@ seed = 42
 population_bin_width = 200
 
 
-def sample_age_vector_direct(sim_idx, br, dr, span, base_seed):
+def sample_age_vector_from_distribution(sim_idx, br, dr, span, base_seed):
     rng = np.random.default_rng(base_seed + sim_idx)
     sampled = simulate_bdp_ages_from_distributions(
         birth_rate=torch.tensor(br, dtype=torch.float64),
@@ -70,7 +71,7 @@ def sample_age_vector_direct(sim_idx, br, dr, span, base_seed):
     return np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
 
 
-def sample_age_vector_process(sim_idx, br, dr, span, base_seed):
+def sample_age_vector_full_process(sim_idx, br, dr, span, base_seed):
     run_seed = base_seed + sim_idx
     simulated_df = simulate_birth_death_process(
         birth_rates=float(br),
@@ -92,8 +93,9 @@ def sample_age_vector_process(sim_idx, br, dr, span, base_seed):
     return non_spine_ages.astype(np.float64)
 
 
-list_of_ages_direct = Parallel(n_jobs=-1)(
-    delayed(sample_age_vector_direct)(
+direct_sampling_start = time.perf_counter()
+list_of_ages_from_distribution = Parallel(n_jobs=-1)(
+    delayed(sample_age_vector_from_distribution)(
         sim_idx=i,
         br=birth_rate,
         dr=death_rate,
@@ -102,8 +104,11 @@ list_of_ages_direct = Parallel(n_jobs=-1)(
     )
     for i in range(num_sims)
 )
-list_of_ages_process = Parallel(n_jobs=-1)(
-    delayed(sample_age_vector_process)(
+direct_sampling_seconds = time.perf_counter() - direct_sampling_start
+
+full_process_start = time.perf_counter()
+list_of_ages_full_process = Parallel(n_jobs=-1)(
+    delayed(sample_age_vector_full_process)(
         sim_idx=i,
         br=birth_rate,
         dr=death_rate,
@@ -112,35 +117,40 @@ list_of_ages_process = Parallel(n_jobs=-1)(
     )
     for i in range(num_sims)
 )
+full_process_seconds = time.perf_counter() - full_process_start
 
 population_sizes_direct = np.asarray(
-    [len(ages) for ages in list_of_ages_direct],
+    [len(ages) for ages in list_of_ages_from_distribution],
     dtype=np.int64,
 )
 population_sizes_process = np.asarray(
-    [len(ages) for ages in list_of_ages_process],
+    [len(ages) for ages in list_of_ages_full_process],
     dtype=np.int64,
 )
 
 print(f"Simulations per method: {num_sims}")
-print(f"Direct sampling mean population: {population_sizes_direct.mean():.2f}")
-print(f"Event-process mean population: {population_sizes_process.mean():.2f}")
-print(f"Direct sampling extinct fraction: {(population_sizes_direct == 0).mean():.3f}")
-print(f"Event-process extinct fraction: {(population_sizes_process == 0).mean():.3f}")
+print(f"Sampling time (from distribution): {direct_sampling_seconds:.2f}s")
+print(f"Sampling time (full process): {full_process_seconds:.2f}s")
+print(f"Mean population (from distribution): {population_sizes_direct.mean():.2f}")
+print(f"Mean population (full process): {population_sizes_process.mean():.2f}")
+print(
+    f"Extinct fraction (from distribution): {(population_sizes_direct == 0).mean():.3f}"
+)
+print(f"Extinct fraction (full process): {(population_sizes_process == 0).mean():.3f}")
 print(
     f"Theoretical extinct fraction: {calculate_extinction_pr(birth_rate, death_rate, time_span):.3f}"
 )
 print(
-    f"Direct sampling spine ages count: {sum(1 for ages in list_of_ages_direct if len(ages) > 0 and ages[0] < time_span)}"
+    f"From distribution spine ages count: {sum(1 for ages in list_of_ages_from_distribution if len(ages) > 0 and ages[0] < time_span)}"
 )
 print(
-    f"Event-process spine ages count: {sum(1 for ages in list_of_ages_process if len(ages) > 0 and ages[0] < time_span)}"
+    f"Full process spine ages count: {sum(1 for ages in list_of_ages_full_process if len(ages) > 0 and ages[0] < time_span)}"
 )
 print(
-    f"Direct sampling non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_direct if len(ages) > 1)}"
+    f"From distribution non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_from_distribution if len(ages) > 1)}"
 )
 print(
-    f"Event-process non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_process if len(ages) > 1)}"
+    f"Full process non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_full_process if len(ages) > 1)}"
 )
 ```
 
@@ -199,7 +209,7 @@ fig_population.add_trace(
         x=population_bin_centers,
         y=population_empirical_counts_direct,
         marker=dict(color=ptolqual[0]),
-        name="Observed (direct)",
+        name="Observed (from distribution)",
         opacity=0.65,
     )
 )
@@ -208,7 +218,7 @@ fig_population.add_trace(
         x=population_bin_centers,
         y=population_empirical_counts_process,
         marker=dict(color=ptolqual[2]),
-        name="Observed (event-process)",
+        name="Observed (full process)",
         opacity=0.65,
     )
 )
@@ -224,7 +234,7 @@ fig_population.add_trace(
 )
 fig_population = apply_professional_styling(
     fig_population,
-    "Population Distribution: Direct vs Event-Process",
+    "Population Distribution: From Distribution vs Full Process",
     "Population size",
     "Count",
 )
@@ -287,38 +297,46 @@ def proportion_not_at_upper(
 
 
 spine_age_samples_direct = np.asarray(
-    [arr[0] for arr in list_of_ages_direct if len(arr) > 0 and arr[0] < time_span],
+    [
+        arr[0]
+        for arr in list_of_ages_from_distribution
+        if len(arr) > 0 and arr[0] < time_span
+    ],
     dtype=np.float64,
 )
 spine_age_samples_process = np.asarray(
-    [arr[0] for arr in list_of_ages_process if len(arr) > 0 and arr[0] < time_span],
+    [
+        arr[0]
+        for arr in list_of_ages_full_process
+        if len(arr) > 0 and arr[0] < time_span
+    ],
     dtype=np.float64,
 )
 spine_age_samples_all = np.asarray(
-    [arr[0] for arr in list_of_ages_direct if len(arr) > 0]
-    + [arr[0] for arr in list_of_ages_process if len(arr) > 0],
+    [arr[0] for arr in list_of_ages_from_distribution if len(arr) > 0]
+    + [arr[0] for arr in list_of_ages_full_process if len(arr) > 0],
     dtype=np.float64,
 )
 spine_prop_not_at_max = proportion_not_at_upper(spine_age_samples_all, time_span)
 
 non_spine_age_samples_direct = (
-    np.concatenate([arr[1:] for arr in list_of_ages_direct if len(arr) > 1])
-    if any(len(arr) > 1 for arr in list_of_ages_direct)
+    np.concatenate([arr[1:] for arr in list_of_ages_from_distribution if len(arr) > 1])
+    if any(len(arr) > 1 for arr in list_of_ages_from_distribution)
     else np.array([], dtype=np.float64)
 )
 non_spine_age_samples_process = (
-    np.concatenate([arr[1:] for arr in list_of_ages_process if len(arr) > 1])
-    if any(len(arr) > 1 for arr in list_of_ages_process)
+    np.concatenate([arr[1:] for arr in list_of_ages_full_process if len(arr) > 1])
+    if any(len(arr) > 1 for arr in list_of_ages_full_process)
     else np.array([], dtype=np.float64)
 )
 non_spine_age_samples_all = (
     np.concatenate(
-        [arr[1:] for arr in list_of_ages_direct if len(arr) > 1]
-        + [arr[1:] for arr in list_of_ages_process if len(arr) > 1],
+        [arr[1:] for arr in list_of_ages_from_distribution if len(arr) > 1]
+        + [arr[1:] for arr in list_of_ages_full_process if len(arr) > 1],
     )
     if (
-        any(len(arr) > 1 for arr in list_of_ages_direct)
-        or any(len(arr) > 1 for arr in list_of_ages_process)
+        any(len(arr) > 1 for arr in list_of_ages_from_distribution)
+        or any(len(arr) > 1 for arr in list_of_ages_full_process)
     )
     else np.array([], dtype=np.float64)
 )
@@ -347,7 +365,7 @@ if spine_grid_process is not None:
             mode="lines",
             line=dict(color=ptolqual[2], width=2),
             fill="tozeroy",
-            name="KDE event-process",
+            name="KDE full process",
             showlegend=False,
         ),
         row=2,
@@ -366,7 +384,7 @@ if spine_grid_direct is not None:
             mode="lines",
             line=dict(color=ptolqual[0], width=2),
             fill="tozeroy",
-            name="KDE Direct",
+            name="KDE from distribution",
             showlegend=False,
         ),
         row=2,
@@ -418,7 +436,7 @@ if non_spine_grid_process is not None:
             mode="lines",
             line=dict(color=ptolqual[2], width=2),
             fill="tozeroy",
-            name="KDE event-process",
+            name="KDE full process",
         ),
         row=1,
         col=1,
@@ -436,7 +454,7 @@ if non_spine_grid_direct is not None:
             mode="lines",
             line=dict(color=ptolqual[0], width=2),
             fill="tozeroy",
-            name="KDE Direct",
+            name="KDE from distribution",
         ),
         row=1,
         col=2,
@@ -507,7 +525,7 @@ fig_summary.add_trace(
 
 fig_summary = apply_professional_styling(
     fig_summary,
-    "Age Densities by Generator (Event-Process vs Direct)",
+    "Age Densities by Generator (Full Process vs From Distribution)",
     "",
     "",
 )
@@ -524,10 +542,10 @@ fig_summary.update_layout(
 fig_summary.update_xaxes(range=[0.0, time_span], row=1, col=1)
 fig_summary.update_xaxes(range=[0.0, time_span], row=1, col=2)
 fig_summary.update_xaxes(
-    title_text="Age (event-process)", range=[0.0, time_span], row=2, col=1
+    title_text="Age (full process)", range=[0.0, time_span], row=2, col=1
 )
 fig_summary.update_xaxes(
-    title_text="Age (direct)", range=[0.0, time_span], row=2, col=2
+    title_text="Age (from distribution)", range=[0.0, time_span], row=2, col=2
 )
 fig_summary.update_yaxes(title_text="", row=1, col=2)
 fig_summary.update_yaxes(title_text="Density (spine)", row=2, col=1)
