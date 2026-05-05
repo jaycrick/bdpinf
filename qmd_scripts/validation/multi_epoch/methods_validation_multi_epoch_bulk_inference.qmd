@@ -42,6 +42,8 @@ from inf_bp_texts.visualization.plotting import (
 )
 ```
 
+Only simulations that contain at least one observed age in each fitted epoch are kept. This avoids sending single-epoch samples into a two-epoch fit, which would make the recovered rates harder to interpret.
+
 ```{python}
 # | label: simulate-full-two-rate
 # Simulation: full two-epoch process with different rates per epoch
@@ -61,10 +63,27 @@ simulated_processes = Parallel(n_jobs=-1)(
     for i in range(num_sims)
 )
 
-list_of_ages = []
+def _has_ages_in_each_epoch(ages, times):
+    ages = np.asarray(ages, dtype=np.float64)
+    times = np.asarray(times, dtype=np.float64)
+    if ages.size == 0 or times.size == 0:
+        return False
+
+    first_epoch_end = float(times[0])
+    final_time = float(times[-1])
+    return np.any(ages < first_epoch_end) and np.any(
+        (ages >= first_epoch_end) & (ages <= final_time)
+    )
+
+
+raw_list_of_ages = []
 for sim in simulated_processes:
-    list_of_ages.append(extract_alive_ages(sim, float(times[-1])))
-print(f"Simulations: {len(list_of_ages)}")
+    raw_list_of_ages.append(extract_alive_ages(sim, float(times[-1])))
+
+list_of_ages = [
+    ages for ages in raw_list_of_ages if _has_ages_in_each_epoch(ages, times)
+]
+print(f"Simulations kept for fitting: {len(list_of_ages)} / {len(raw_list_of_ages)}")
 ```
 
 ```{python}

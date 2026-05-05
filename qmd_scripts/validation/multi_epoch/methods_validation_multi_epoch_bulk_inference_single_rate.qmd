@@ -44,6 +44,9 @@ from joblib import Parallel, delayed
 ```
 
 ## Simulate and Fit
+
+Only simulations that contain at least one observed age in each fitted epoch are kept. This prevents a two-epoch fit from being applied to samples that live entirely on one side of the epoch boundary.
+
 ```{python}
 # | label: simulate-sample
 # Simulation: sample age vectors using distribution sampler
@@ -68,7 +71,23 @@ def sample_age_vector(sim_idx, br, dr, span, base_seed):
     return np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
 
 
-list_of_ages = Parallel(n_jobs=-1)(
+fit_times = np.array([time_span / 2.0, time_span], dtype=float)
+
+
+def _has_ages_in_each_epoch(ages, times):
+    ages = np.asarray(ages, dtype=np.float64)
+    times = np.asarray(times, dtype=np.float64)
+    if ages.size == 0 or times.size == 0:
+        return False
+
+    first_epoch_end = float(times[0])
+    final_time = float(times[-1])
+    return np.any(ages < first_epoch_end) and np.any(
+        (ages >= first_epoch_end) & (ages <= final_time)
+    )
+
+
+raw_list_of_ages = Parallel(n_jobs=-1)(
     delayed(sample_age_vector)(
         sim_idx=i,
         br=birth_rate,
@@ -78,7 +97,10 @@ list_of_ages = Parallel(n_jobs=-1)(
     )
     for i in range(num_sims)
 )
-print(f"Simulations: {len(list_of_ages)}")
+list_of_ages = [
+    ages for ages in raw_list_of_ages if _has_ages_in_each_epoch(ages, fit_times)
+]
+print(f"Simulations kept for fitting: {len(list_of_ages)} / {len(raw_list_of_ages)}")
 # True epoch-specific rates for plotting (same in both epochs for this generative scenario)
 birth_rates_true = np.array([birth_rate, birth_rate], dtype=float)
 death_rates_true = np.array([death_rate, death_rate], dtype=float)
@@ -87,9 +109,8 @@ death_rates_true = np.array([death_rate, death_rate], dtype=float)
 ```{python}
 # | label: fit-model
 # Fitting: configure and run model fits
-times = np.array([time_span / 2.0, time_span], dtype=float)
 fit_config = FitModelConfig(
-    times=times, is_ordered=True, perturb_initial_params_std=0.1, random_seed=10925
+    times=fit_times, is_ordered=True, perturb_initial_params_std=0.1, random_seed=10925
 )
 fitted_results = Parallel(n_jobs=-1)(
     delayed(fit_single_model)(ages, fit_config) for ages in list_of_ages
