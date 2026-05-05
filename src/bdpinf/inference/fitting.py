@@ -276,7 +276,7 @@ def fit_birth_death_processes(
     spine_ages: torch.Tensor | None = None,
     population_sizes: torch.Tensor | None = None,
     initial_population: int = 1,
-    optimizers: Sequence[str] | str = ("LBFGS", "Adam", "SGD"),
+    optimizers: Sequence[str] | str = ("LBFGS", "Adam"),
     optimizer_kwargs: dict[str, dict[str, Any]] | None = None,
     perturb_initial_params_std: float = 0.0,
     random_seed: int | None = None,
@@ -287,7 +287,7 @@ def fit_birth_death_processes(
 ) -> dict[str, Any]:
     """Fit birth-death parameters to grouped age data via PyTorch.
 
-    Optimizes log-parameters (LBFGS, Adam, SGD) until convergence.
+    Optimizes log-parameters with requested optimizers (defaults: LBFGS, Adam).
 
     Parameters
     ----------
@@ -307,6 +307,7 @@ def fit_birth_death_processes(
         The number of initial individuals at time 0. Default is 1.
     optimizers : Sequence[str] | str
         Optimizer names ('LBFGS', 'Adam', 'SGD') to try sequentially.
+        Defaults to ('LBFGS', 'Adam').
     optimizer_kwargs : Dict[str, Dict[str, Any]] | None
         Custom per-optimizer hyperparams (e.g. {'adam': {'lr': 0.01}}).
     perturb_initial_params_std : float
