@@ -190,135 +190,360 @@ if failed:
         )
 ```
 
-## Free-Parameter Recovery
+## Fitted Rates vs Population Size
 
 ```{python}
-def _extract_free_parameter_arrays(models):
-    successful_models = [
-        model for model in models if model is not None and model.get("success", False)
-    ]
-    empty = np.array([], dtype=np.float64)
-    if not successful_models:
-        return {
-            "epoch_1_birth": empty,
-            "shared_death": empty,
-        }
+# Extract birth and death rates from successful fits
+final_time = float(times[-1])
+fit_populations = []
+fit_mean_ages = []
+fit_birth_values = []
+fit_death_values = []
+fit_populations_boundary = []
+fit_mean_ages_boundary = []
+fit_birth_values_boundary = []
+fit_death_values_boundary = []
 
-    return {
-        "epoch_1_birth": np.asarray(
-            [
-                float(np.atleast_1d(model["birth_rates"])[0])
-                for model in successful_models
-            ],
-            dtype=np.float64,
-        ),
-        "shared_death": np.asarray(
-            [
-                float(np.atleast_1d(model["death_rates"])[0])
-                for model in successful_models
-            ],
-            dtype=np.float64,
-        ),
-    }
+for model, ages in zip(fitted_results, list_of_ages, strict=False):
+    if model is None or not model.get("success", False):
+        continue
 
+    has_boundary_age = np.max(ages) == final_time
+    birth_val = float(np.atleast_1d(model["birth_rates"])[0])
+    death_val = float(np.atleast_1d(model["death_rates"])[0])
 
-free_parameter_arrays = _extract_free_parameter_arrays(fitted_results)
-parameter_specs = [
-    (
-        r"$\hat{\lambda}_1$",
-        free_parameter_arrays["epoch_1_birth"],
-        birth_rate_epoch_1_true,
-        ptolqual[0],
-    ),
-    (
-        r"$\hat{\mu}$",
-        free_parameter_arrays["shared_death"],
-        death_rate_true,
-        ptolqual[1],
-    ),
-]
+    if has_boundary_age:
+        fit_populations_boundary.append(len(ages))
+        fit_mean_ages_boundary.append(float(np.mean(ages)))
+        fit_birth_values_boundary.append(birth_val)
+        fit_death_values_boundary.append(death_val)
+    else:
+        fit_populations.append(len(ages))
+        fit_mean_ages.append(float(np.mean(ages)))
+        fit_birth_values.append(birth_val)
+        fit_death_values.append(death_val)
 
-if len(successful) > 0:
-    for label, values, true_value, _ in parameter_specs:
-        print(
-            f"{label} mean: {values.mean():.6f} "
-            + f"median: {np.median(values):.6f} (true={true_value:.6f})"
+if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
+    fig_rates_vs_pop = go.Figure()
+    # Non-boundary samples with circle markers
+    if len(fit_populations) > 0:
+        fig_rates_vs_pop.add_trace(
+            go.Scatter(
+                x=fit_populations,
+                y=fit_birth_values,
+                mode="markers",
+                marker=dict(color=ptolqual[0], size=6, opacity=0.7, symbol="circle"),
+                name=r"$\hat{\lambda}_1\quad A^*\neq T$",
+            )
         )
-
-if len(successful) > 0:
-    fig_hist = make_subplots(
-        rows=1,
-        cols=2,
-        subplot_titles=[spec[0] for spec in parameter_specs],
-        horizontal_spacing=0.12,
+        fig_rates_vs_pop.add_trace(
+            go.Scatter(
+                x=fit_populations,
+                y=fit_death_values,
+                mode="markers",
+                marker=dict(color=ptolqual[1], size=6, opacity=0.7, symbol="circle"),
+                name=r"$\hat{\mu}\quad A^*\neq T$",
+            )
+        )
+    # Boundary samples with cross markers
+    if len(fit_populations_boundary) > 0:
+        fig_rates_vs_pop.add_trace(
+            go.Scatter(
+                x=fit_populations_boundary,
+                y=fit_birth_values_boundary,
+                mode="markers",
+                marker=dict(color=ptolqual[0], size=8, opacity=0.7, symbol="x"),
+                name=r"$\hat{\lambda}_1\quad A^{*} =T$",
+                showlegend=True,
+            )
+        )
+        fig_rates_vs_pop.add_trace(
+            go.Scatter(
+                x=fit_populations_boundary,
+                y=fit_death_values_boundary,
+                mode="markers",
+                marker=dict(color=ptolqual[1], size=8, opacity=0.7, symbol="x"),
+                name=r"$\hat{\mu}\quad A^{*} =T$",
+                showlegend=True,
+            )
+        )
+    fig_rates_vs_pop.add_hline(
+        y=birth_rate_epoch_1_true,
+        line_dash="dash",
+        line_color=ptolqual[0],
+        opacity=0.8,
     )
-    for index, (label, values, true_value, color) in enumerate(parameter_specs):
-        fig_hist.add_trace(
-            go.Histogram(
-                x=values,
-                histnorm="probability density",
-                nbinsx=30,
-                marker=dict(color=color),
+    fig_rates_vs_pop.add_hline(
+        y=death_rate_true,
+        line_dash="dash",
+        line_color=ptolqual[1],
                 opacity=0.8,
-                name=label,
-                showlegend=False,
-            ),
-            row=1,
-            col=index + 1,
-        )
-        fig_hist.add_vline(
-            x=true_value,
-            line_color=color,
-            line_dash="dash",
-            row=1,
-            col=index + 1,
-        )
-
-    fig_hist = apply_professional_styling(
-        fig_hist,
-        "Free-Parameter Histograms",
+    )
+    fig_rates_vs_pop = apply_professional_styling(
+        fig_rates_vs_pop,
+        "Fitted Rates vs Population Size",
+        "Population size",
         "Fitted rate",
-        "Density",
     )
-    fig_hist = apply_tufte_axes(fig_hist)
-    fig_hist.update_xaxes(range=[0.0, None])
-    fig_hist.show()
-    saved_hist = save_figure(
-        fig_hist,
-        "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_parameter_histograms",
-        width=800,
-        height=450,
+    fig_rates_vs_pop = apply_tufte_axes(fig_rates_vs_pop)
+    fig_rates_vs_pop.update_layout(
+        legend=dict(
+            x=0.99,
+            y=0.99,
+            xanchor="right",
+            yanchor="top",
+        )
     )
-    print(f"Saved parameter histogram figure: {saved_hist}")
+    fig_rates_vs_pop.update_xaxes(rangemode="tozero")
+    fig_rates_vs_pop.update_yaxes(rangemode="tozero", tickformat=".4f")
+    fig_rates_vs_pop.show()
+    saved_rates_vs_pop = save_figure(
+        fig_rates_vs_pop,
+        "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_population_size",
+        width=400,
+        height=300,
+    )
+    print(f"Saved rates-vs-population figure: {saved_rates_vs_pop}")
+```
+
+## Fitted Rates vs Mean Population Age
+
+```{python}
+if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
+    fig_rates_vs_mean_age = go.Figure()
+    # Non-boundary samples with circle markers
+    if len(fit_mean_ages) > 0:
+        fig_rates_vs_mean_age.add_trace(
+            go.Scatter(
+                x=fit_mean_ages,
+                y=fit_birth_values,
+                mode="markers",
+                marker=dict(color=ptolqual[0], size=6, opacity=0.7, symbol="circle"),
+                name=r"$\hat{\lambda}_1\quad A^*\neq T$",
+            )
+        )
+        fig_rates_vs_mean_age.add_trace(
+            go.Scatter(
+                x=fit_mean_ages,
+                y=fit_death_values,
+                mode="markers",
+                marker=dict(color=ptolqual[1], size=6, opacity=0.7, symbol="circle"),
+                name=r"$\hat{\mu}\quad A^*\neq T$",
+            )
+        )
+    # Boundary samples with cross markers
+    if len(fit_mean_ages_boundary) > 0:
+        fig_rates_vs_mean_age.add_trace(
+            go.Scatter(
+                x=fit_mean_ages_boundary,
+                y=fit_birth_values_boundary,
+                mode="markers",
+                marker=dict(color=ptolqual[0], size=8, opacity=0.7, symbol="x"),
+                name=r"$\hat{\lambda}_1\quad A^{*} =T$",
+                showlegend=True,
+            )
+        )
+        fig_rates_vs_mean_age.add_trace(
+            go.Scatter(
+                x=fit_mean_ages_boundary,
+                y=fit_death_values_boundary,
+                mode="markers",
+                marker=dict(color=ptolqual[1], size=8, opacity=0.7, symbol="x"),
+                name=r"$\hat{\mu}\quad A^{*} =T$",
+                showlegend=True,
+            )
+        )
+    fig_rates_vs_mean_age.add_hline(
+        y=birth_rate_epoch_1_true,
+        line_dash="dash",
+        line_color=ptolqual[0],
+        opacity=0.8,
+    )
+    fig_rates_vs_mean_age.add_hline(
+        y=death_rate_true,
+        line_dash="dash",
+        line_color=ptolqual[1],
+        opacity=0.8,
+        )
+    fig_rates_vs_mean_age = apply_professional_styling(
+        fig_rates_vs_mean_age,
+        "Fitted Rates vs Mean Population Age",
+        "Mean population age",
+        "Fitted rate",
+    )
+    fig_rates_vs_mean_age = apply_tufte_axes(fig_rates_vs_mean_age)
+    fig_rates_vs_mean_age.update_layout(
+        legend=dict(
+            x=0.99,
+            y=0.99,
+            xanchor="right",
+            yanchor="top",
+        )
+    )
+    fig_rates_vs_mean_age.update_xaxes(rangemode="tozero")
+    fig_rates_vs_mean_age.update_yaxes(rangemode="tozero", tickformat=".4f")
+    fig_rates_vs_mean_age.show()
+    saved_rates_vs_mean_age = save_figure(
+        fig_rates_vs_mean_age,
+        "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_mean_population_age",
+        width=400,
+        height=300,
+    )
+    print(f"Saved rates-vs-mean-age figure: {saved_rates_vs_mean_age}")
+```
+
+## Stacked Histograms for Epoch 1 Birth and Shared Death
+
+```{python}
+def build_hist_bins(primary_values, secondary_values, bins=30):
+    combined = np.concatenate(
+        [np.asarray(primary_values), np.asarray(secondary_values)]
+    )
+    if combined.size == 0:
+        return dict(start=0.0, end=1.0, size=1.0 / bins)
+
+    max_x = float(np.max(combined))
+    upper = max_x * 1.05 if max_x > 0 else 1.0
+    return dict(start=0.0, end=upper, size=upper / bins)
 
 
-scatter_data = {
-    label: values for label, values, _, _ in parameter_specs if values.size > 0
-}
+birth_bins = build_hist_bins(fit_birth_values, fit_birth_values_boundary)
+fig_birth_hist = go.Figure()
+fig_birth_hist.add_trace(
+    go.Histogram(
+        x=fit_birth_values,
+        name=r"$\hat{\lambda}_1\quad A^*\neq T$",
+        marker=dict(color=ptolqual[0]),
+        opacity=0.75,
+        xbins=birth_bins,
+        histnorm="probability density",
+    )
+)
+fig_birth_hist.add_trace(
+    go.Histogram(
+        x=fit_birth_values_boundary,
+        name=r"$\hat{\lambda}_1\quad A^{*} =T$",
+        marker=dict(color=ptolqual[1]),
+        opacity=0.75,
+        xbins=birth_bins,
+        histnorm="probability density",
+    )
+)
+fig_birth_hist.update_layout(barmode="stack")
+fig_birth_hist = apply_professional_styling(
+    fig_birth_hist,
+    "Epoch 1 Birth Rate Histograms",
+    "Rate",
+    "Density",
+)
+fig_birth_hist = apply_tufte_axes(fig_birth_hist)
+fig_birth_hist.update_layout(
+    legend=dict(
+        x=0.99,
+        y=0.99,
+        xanchor="right",
+        yanchor="top",
+    )
+)
+fig_birth_hist.add_vline(x=birth_rate_epoch_1_true, line_dash="dash", line_color="black")
+fig_birth_hist.show()
+saved_birth_hist = save_figure(
+    fig_birth_hist,
+    "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_birth_rate_histograms",
+    width=400,
+    height=300,
+)
+print(f"Saved birth-rate histogram figure: {saved_birth_hist}")
 
-if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
-    scatter_df = pd.DataFrame(scatter_data)
-    fig_pairs = px.scatter_matrix(
-        scatter_df,
-        dimensions=list(scatter_df.columns),
-        title="Pairs-Style Scatterplot Matrix of Free Parameters",
+death_bins = build_hist_bins(fit_death_values, fit_death_values_boundary)
+fig_death_hist = go.Figure()
+fig_death_hist.add_trace(
+    go.Histogram(
+        x=fit_death_values,
+        name=r"$\hat{\mu}\quad A^*\neq T$",
+        marker=dict(color=ptolqual[0]),
+        opacity=0.75,
+        xbins=death_bins,
+        histnorm="probability density",
     )
-    fig_pairs.update_traces(marker=dict(size=4, opacity=0.1), diagonal_visible=False)
-    fig_pairs = apply_professional_styling(
-        fig_pairs,
-        "Pairs-Style Scatterplot Matrix of Free Parameters",
-        "Fitted value",
-        "Fitted value",
     )
-    fig_pairs = apply_tufte_axes(fig_pairs)
-    fig_pairs.show()
-    saved_pairs = save_figure(
-        fig_pairs,
-        "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_parameter_pairs_scatter_matrix",
-        width=700,
-        height=700,
+fig_death_hist.add_trace(
+    go.Histogram(
+        x=fit_death_values_boundary,
+        name=r"$\hat{\mu}\quad A^{*} =T$",
+        marker=dict(color=ptolqual[1]),
+        opacity=0.75,
+        xbins=death_bins,
+        histnorm="probability density",
     )
-    print(f"Saved pairs scatter matrix figure: {saved_pairs}")
+)
+fig_death_hist.update_layout(barmode="stack")
+fig_death_hist = apply_professional_styling(
+    fig_death_hist,
+    "Shared Death Rate Histograms",
+    "Rate",
+    "Density",
+    )
+fig_death_hist = apply_tufte_axes(fig_death_hist)
+fig_death_hist.update_layout(
+    legend=dict(
+        x=0.99,
+        y=0.99,
+        xanchor="right",
+        yanchor="top",
+    )
+)
+fig_death_hist.add_vline(x=death_rate_true, line_dash="dash", line_color="black")
+fig_death_hist.show()
+saved_death_hist = save_figure(
+    fig_death_hist,
+    "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_death_rate_histograms",
+    width=400,
+    height=300,
+)
+print(f"Saved death-rate histogram figure: {saved_death_hist}")
+```
+
+## Summary Statistics
+
+```{python}
+def print_rate_summary(label, birth_values, death_values):
+    birth_array = np.asarray(birth_values, dtype=np.float64)
+    death_array = np.asarray(death_values, dtype=np.float64)
+
+    if birth_array.size == 0 or death_array.size == 0:
+        print(f"{label}: no successful fits to summarize.")
+        return
+
+    parameter_matrix = np.column_stack([birth_array, death_array])
+    means = np.mean(parameter_matrix, axis=0)
+    medians = np.median(parameter_matrix, axis=0)
+    covariance_matrix = np.cov(parameter_matrix, rowvar=False)
+
+    print(f"\n{label}")
+    print(f"- Mean epoch 1 birth rate: {means[0]:.6f}")
+    print(f"- Median epoch 1 birth rate: {medians[0]:.6f}")
+    print(f"- Mean shared death rate: {means[1]:.6f}")
+    print(f"- Median shared death rate: {medians[1]:.6f}")
+    print("- Covariance matrix:")
+    print(covariance_matrix)
+
+
+all_birth_values = fit_birth_values + fit_birth_values_boundary
+all_death_values = fit_death_values + fit_death_values_boundary
+print_rate_summary(
+    "Summary statistics for all successful fits", all_birth_values, all_death_values
+)
+```
+
+## Summary Excluding Boundary Individuals
+
+```{python}
+print_rate_summary(
+    "Summary statistics excluding boundary individuals",
+    fit_birth_values,
+    fit_death_values,
+)
 ```
 
 ```{python}
