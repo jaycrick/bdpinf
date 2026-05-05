@@ -22,7 +22,7 @@ __compile_start = time.perf_counter()
 import numpy as np
 from joblib import Parallel, delayed
 
-num_sims = 10
+num_sims = 1000
 birth_rate_epoch_1_true = 0.5
 death_rate_true = birth_rate_epoch_1_true - 0.4
 birth_rate_epoch_2_true = 0.0
@@ -82,8 +82,9 @@ print(f"Simulations: {len(list_of_ages)}")
 import torch
 from collections import Counter
 from inf_bp_texts.analysis.single_epoch import summarize_fit_success
-from inf_bp_texts.analysis.validation_helpers import first_failed_fits
 from inf_bp_texts.analysis.validation_helpers import FitModelConfig
+from inf_bp_texts.analysis.validation_helpers import first_failed_fits
+from inf_bp_texts.analysis.validation_helpers import iqr_plotting_subset
 from inf_bp_texts.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
@@ -223,14 +224,38 @@ for model, ages in zip(fitted_results, list_of_ages, strict=False):
         fit_birth_values.append(birth_val)
         fit_death_values.append(death_val)
 
-if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
+non_boundary_plotting_data, _ = iqr_plotting_subset(
+    {
+        "population": fit_populations,
+        "mean_age": fit_mean_ages,
+        "birth_rate": fit_birth_values,
+        "death_rate": fit_death_values,
+    }
+)
+boundary_plotting_data, _ = iqr_plotting_subset(
+    {
+        "population": fit_populations_boundary,
+        "mean_age": fit_mean_ages_boundary,
+        "birth_rate": fit_birth_values_boundary,
+        "death_rate": fit_death_values_boundary,
+    }
+)
+print(
+    "Plotting subset after IQR filtering: "
+    f"non-boundary {len(non_boundary_plotting_data['population'])} / {len(fit_populations)}, "
+    f"boundary {len(boundary_plotting_data['population'])} / {len(fit_populations_boundary)}"
+)
+
+if len(non_boundary_plotting_data["population"]) > 0 or len(
+    boundary_plotting_data["population"]
+) > 0:
     fig_rates_vs_pop = go.Figure()
     # Non-boundary samples with circle markers
-    if len(fit_populations) > 0:
+    if len(non_boundary_plotting_data["population"]) > 0:
         fig_rates_vs_pop.add_trace(
             go.Scatter(
-                x=fit_populations,
-                y=fit_birth_values,
+                x=non_boundary_plotting_data["population"],
+                y=non_boundary_plotting_data["birth_rate"],
                 mode="markers",
                 marker=dict(color=ptolqual[0], size=6, opacity=0.7, symbol="circle"),
                 name=r"$\hat{\lambda}_1\quad A^*\neq T$",
@@ -238,19 +263,19 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
         )
         fig_rates_vs_pop.add_trace(
             go.Scatter(
-                x=fit_populations,
-                y=fit_death_values,
+                x=non_boundary_plotting_data["population"],
+                y=non_boundary_plotting_data["death_rate"],
                 mode="markers",
                 marker=dict(color=ptolqual[1], size=6, opacity=0.7, symbol="circle"),
                 name=r"$\hat{\mu}\quad A^*\neq T$",
             )
         )
     # Boundary samples with cross markers
-    if len(fit_populations_boundary) > 0:
+    if len(boundary_plotting_data["population"]) > 0:
         fig_rates_vs_pop.add_trace(
             go.Scatter(
-                x=fit_populations_boundary,
-                y=fit_birth_values_boundary,
+                x=boundary_plotting_data["population"],
+                y=boundary_plotting_data["birth_rate"],
                 mode="markers",
                 marker=dict(color=ptolqual[0], size=8, opacity=0.7, symbol="x"),
                 name=r"$\hat{\lambda}_1\quad A^{*} =T$",
@@ -259,8 +284,8 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
         )
         fig_rates_vs_pop.add_trace(
             go.Scatter(
-                x=fit_populations_boundary,
-                y=fit_death_values_boundary,
+                x=boundary_plotting_data["population"],
+                y=boundary_plotting_data["death_rate"],
                 mode="markers",
                 marker=dict(color=ptolqual[1], size=8, opacity=0.7, symbol="x"),
                 name=r"$\hat{\mu}\quad A^{*} =T$",
@@ -277,7 +302,7 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
         y=death_rate_true,
         line_dash="dash",
         line_color=ptolqual[1],
-                opacity=0.8,
+        opacity=0.8,
     )
     fig_rates_vs_pop = apply_professional_styling(
         fig_rates_vs_pop,
@@ -309,14 +334,16 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
 ## Fitted Rates vs Mean Population Age
 
 ```{python}
-if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
+if len(non_boundary_plotting_data["mean_age"]) > 0 or len(
+    boundary_plotting_data["mean_age"]
+) > 0:
     fig_rates_vs_mean_age = go.Figure()
     # Non-boundary samples with circle markers
-    if len(fit_mean_ages) > 0:
+    if len(non_boundary_plotting_data["mean_age"]) > 0:
         fig_rates_vs_mean_age.add_trace(
             go.Scatter(
-                x=fit_mean_ages,
-                y=fit_birth_values,
+                x=non_boundary_plotting_data["mean_age"],
+                y=non_boundary_plotting_data["birth_rate"],
                 mode="markers",
                 marker=dict(color=ptolqual[0], size=6, opacity=0.7, symbol="circle"),
                 name=r"$\hat{\lambda}_1\quad A^*\neq T$",
@@ -324,19 +351,19 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
         )
         fig_rates_vs_mean_age.add_trace(
             go.Scatter(
-                x=fit_mean_ages,
-                y=fit_death_values,
+                x=non_boundary_plotting_data["mean_age"],
+                y=non_boundary_plotting_data["death_rate"],
                 mode="markers",
                 marker=dict(color=ptolqual[1], size=6, opacity=0.7, symbol="circle"),
                 name=r"$\hat{\mu}\quad A^*\neq T$",
             )
         )
     # Boundary samples with cross markers
-    if len(fit_mean_ages_boundary) > 0:
+    if len(boundary_plotting_data["mean_age"]) > 0:
         fig_rates_vs_mean_age.add_trace(
             go.Scatter(
-                x=fit_mean_ages_boundary,
-                y=fit_birth_values_boundary,
+                x=boundary_plotting_data["mean_age"],
+                y=boundary_plotting_data["birth_rate"],
                 mode="markers",
                 marker=dict(color=ptolqual[0], size=8, opacity=0.7, symbol="x"),
                 name=r"$\hat{\lambda}_1\quad A^{*} =T$",
@@ -345,8 +372,8 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
         )
         fig_rates_vs_mean_age.add_trace(
             go.Scatter(
-                x=fit_mean_ages_boundary,
-                y=fit_death_values_boundary,
+                x=boundary_plotting_data["mean_age"],
+                y=boundary_plotting_data["death_rate"],
                 mode="markers",
                 marker=dict(color=ptolqual[1], size=8, opacity=0.7, symbol="x"),
                 name=r"$\hat{\mu}\quad A^{*} =T$",
@@ -364,7 +391,7 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
         line_dash="dash",
         line_color=ptolqual[1],
         opacity=0.8,
-        )
+    )
     fig_rates_vs_mean_age = apply_professional_styling(
         fig_rates_vs_mean_age,
         "Fitted Rates vs Mean Population Age",
@@ -407,11 +434,13 @@ def build_hist_bins(primary_values, secondary_values, bins=30):
     return dict(start=0.0, end=upper, size=upper / bins)
 
 
-birth_bins = build_hist_bins(fit_birth_values, fit_birth_values_boundary)
+birth_bins = build_hist_bins(
+    non_boundary_plotting_data["birth_rate"], boundary_plotting_data["birth_rate"]
+)
 fig_birth_hist = go.Figure()
 fig_birth_hist.add_trace(
     go.Histogram(
-        x=fit_birth_values,
+        x=non_boundary_plotting_data["birth_rate"],
         name=r"$\hat{\lambda}_1\quad A^*\neq T$",
         marker=dict(color=ptolqual[0]),
         opacity=0.75,
@@ -421,7 +450,7 @@ fig_birth_hist.add_trace(
 )
 fig_birth_hist.add_trace(
     go.Histogram(
-        x=fit_birth_values_boundary,
+        x=boundary_plotting_data["birth_rate"],
         name=r"$\hat{\lambda}_1\quad A^{*} =T$",
         marker=dict(color=ptolqual[1]),
         opacity=0.75,
@@ -455,21 +484,23 @@ saved_birth_hist = save_figure(
 )
 print(f"Saved birth-rate histogram figure: {saved_birth_hist}")
 
-death_bins = build_hist_bins(fit_death_values, fit_death_values_boundary)
+death_bins = build_hist_bins(
+    non_boundary_plotting_data["death_rate"], boundary_plotting_data["death_rate"]
+)
 fig_death_hist = go.Figure()
 fig_death_hist.add_trace(
     go.Histogram(
-        x=fit_death_values,
+        x=non_boundary_plotting_data["death_rate"],
         name=r"$\hat{\mu}\quad A^*\neq T$",
         marker=dict(color=ptolqual[0]),
         opacity=0.75,
         xbins=death_bins,
         histnorm="probability density",
     )
-    )
+)
 fig_death_hist.add_trace(
     go.Histogram(
-        x=fit_death_values_boundary,
+        x=boundary_plotting_data["death_rate"],
         name=r"$\hat{\mu}\quad A^{*} =T$",
         marker=dict(color=ptolqual[1]),
         opacity=0.75,
@@ -483,7 +514,7 @@ fig_death_hist = apply_professional_styling(
     "Shared Death Rate Histograms",
     "Rate",
     "Density",
-    )
+)
 fig_death_hist = apply_tufte_axes(fig_death_hist)
 fig_death_hist.update_layout(
     legend=dict(

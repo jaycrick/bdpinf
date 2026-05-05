@@ -17,6 +17,7 @@ from .validation_helpers import (
     boundary_corrected_kde_on_support,
     first_failed_fits,
     fit_single_model,
+    iqr_plotting_subset,
 )
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "extract_rate_arrays",
     "first_failed_fits",
     "fit_single_model",
+    "iqr_plotting_subset",
     "summarize_fit_success",
 ]

@@ -11,6 +11,7 @@ from inf_bp_texts.analysis import (
     boundary_corrected_kde_on_support,
     first_failed_fits,
     fit_single_model,
+    iqr_plotting_subset,
 )
 
 
@@ -123,3 +124,29 @@ def test_fit_single_model_forwards_unbias_default(monkeypatch) -> None:
 
     assert result == {"success": True}
     assert captured["unbias"] is True
+
+
+def test_iqr_plotting_subset_removes_row_outliers() -> None:
+    plotting_data, mask = iqr_plotting_subset(
+        {
+            "x": np.array([1.0, 2.0, 3.0, 100.0], dtype=np.float64),
+            "y": np.array([10.0, 11.0, 99.0, 12.0], dtype=np.float64),
+        },
+    )
+
+    assert mask.tolist() == [True, True, False, False]
+    assert plotting_data["x"].tolist() == [1.0, 2.0]
+    assert plotting_data["y"].tolist() == [10.0, 11.0]
+
+
+def test_iqr_plotting_subset_keeps_constant_series() -> None:
+    plotting_data, mask = iqr_plotting_subset(
+        {
+            "x": np.array([5.0, 5.0, 5.0], dtype=np.float64),
+            "y": np.array([1.0, 2.0, 3.0], dtype=np.float64),
+        },
+    )
+
+    assert mask.tolist() == [True, True, True]
+    assert plotting_data["x"].tolist() == [5.0, 5.0, 5.0]
+    assert plotting_data["y"].tolist() == [1.0, 2.0, 3.0]

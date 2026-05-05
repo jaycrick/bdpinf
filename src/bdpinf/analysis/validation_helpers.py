@@ -1,5 +1,6 @@
 """Shared helpers for validation notebooks and scripts."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -111,6 +112,51 @@ def first_failed_fits(
 
     failed.sort(key=lambda item: (-int(item["population"]), int(item["local_index"])))
     return failed[:max_items]
+
+
+def iqr_plotting_subset(
+    values_by_name: Mapping[str, NDArray[np.float64] | list[float]],
+    whisker_width: float = 1.5,
+) -> tuple[dict[str, NDArray[np.float64]], NDArray[np.bool_]]:
+    """Return a joint plotting subset with IQR outliers removed row-wise."""
+    arrays = {
+        name: np.asarray(values, dtype=np.float64)
+        for name, values in values_by_name.items()
+    }
+    if not arrays:
+        return {}, np.array([], dtype=bool)
+
+    lengths = {array.shape[0] for array in arrays.values()}
+    if len(lengths) != 1:
+        raise ValueError("All plotting arrays must have the same length")
+
+    length = lengths.pop()
+    if length == 0:
+        return {name: array.copy() for name, array in arrays.items()}, np.zeros(
+            0,
+            dtype=bool,
+        )
+
+    mask = np.ones(length, dtype=bool)
+    for array in arrays.values():
+        finite_mask = np.isfinite(array)
+        mask &= finite_mask
+
+        finite_values = array[finite_mask]
+        if finite_values.size == 0:
+            mask &= False
+            continue
+
+        q1, q3 = np.percentile(finite_values, [25.0, 75.0])
+        iqr = float(q3 - q1)
+        if not np.isfinite(iqr) or iqr == 0.0:
+            continue
+
+        lower_bound = float(q1 - whisker_width * iqr)
+        upper_bound = float(q3 + whisker_width * iqr)
+        mask &= (array >= lower_bound) & (array <= upper_bound)
+
+    return {name: array[mask] for name, array in arrays.items()}, mask
 
 
 def boundary_corrected_kde_on_support(

@@ -31,6 +31,7 @@ from inf_bp_texts.analysis import (
     extract_alive_ages,
     first_failed_fits,
     fit_single_model,
+    iqr_plotting_subset,
     summarize_fit_success,
 )
 from inf_bp_texts.simulation import simulate_birth_death_process
@@ -50,7 +51,7 @@ Only simulations that contain at least one observed age in each fitted epoch are
 ```{python}
 # | label: simulate-sample
 # Simulation: sample age vectors using distribution sampler
-num_sims = 10
+num_sims = 1000
 birth_rate = 0.5
 death_rate = birth_rate - 0.4
 time_span = 15.0
@@ -166,6 +167,8 @@ if failed:
 
 ## Epoch-Wise Rate Recovery
 
+The figures below use a joint plotting subset with 1.5×IQR outliers removed across the plotted parameters.
+
 ```{python}
 def _extract_epoch_parameter_arrays(models):
     successful_models = [
@@ -240,22 +243,36 @@ parameter_specs = [
     ),
 ]
 
-if len(successful) > 0:
-    for label, values, true_value, _ in parameter_specs:
+plotting_data, plotting_mask = iqr_plotting_subset(
+    {label: values for label, values, _, _ in parameter_specs}
+)
+plotting_parameter_specs = [
+    (label, plotting_data[label], true_value, color)
+    for label, _, true_value, color in parameter_specs
+]
+plotting_row_count = len(next(iter(plotting_data.values()))) if plotting_data else 0
+print(
+    f"Plotting subset after IQR filtering: {plotting_row_count} / {len(successful)} successful fits"
+)
+
+if plotting_row_count > 0:
+    for label, values, true_value, _ in plotting_parameter_specs:
         print(
             f"{label} mean: {values.mean():.6f} "
             + f"median: {np.median(values):.6f} (true={true_value:.6f})"
         )
 
-if len(successful) > 0:
+if plotting_row_count > 0:
     fig_hist = make_subplots(
         rows=2,
         cols=2,
-        subplot_titles=[spec[0] for spec in parameter_specs],
+        subplot_titles=[spec[0] for spec in plotting_parameter_specs],
         horizontal_spacing=0.08,
         vertical_spacing=0.12,
     )
-    for index, (label, values, true_value, color) in enumerate(parameter_specs):
+    for index, (label, values, true_value, color) in enumerate(
+        plotting_parameter_specs
+    ):
         row = index // 2 + 1
         col = index % 2 + 1
         fig_hist.add_trace(
@@ -298,10 +315,10 @@ if len(successful) > 0:
 
 
 scatter_data = {
-    label: values for label, values, _, _ in parameter_specs if values.size > 0
+    label: values for label, values, _, _ in plotting_parameter_specs if values.size > 0
 }
 
-if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
+if plotting_row_count > 0 and len(scatter_data) == len(parameter_specs):
     scatter_df = pd.DataFrame(scatter_data)
     fig_pairs = px.scatter_matrix(
         scatter_df,

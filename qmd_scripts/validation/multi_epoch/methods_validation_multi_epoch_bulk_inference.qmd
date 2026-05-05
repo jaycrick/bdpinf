@@ -31,6 +31,7 @@ from inf_bp_texts.analysis.validation_helpers import (
     FitModelConfig,
     fit_single_model,
     first_failed_fits,
+    iqr_plotting_subset,
 )
 from inf_bp_texts.analysis.single_epoch import extract_alive_ages, summarize_fit_success
 from inf_bp_texts.simulation import simulate_birth_death_process
@@ -47,7 +48,7 @@ Only simulations that contain at least one observed age in each fitted epoch are
 ```{python}
 # | label: simulate-full-two-rate
 # Simulation: full two-epoch process with different rates per epoch
-num_sims = 10
+num_sims = 1000
 birth_rates_true = np.array([0.5, 0.7], dtype=float)
 death_rates_true = np.array([0.1, 0.15], dtype=float)
 times = np.array([7.5, 15.0], dtype=float)
@@ -62,6 +63,7 @@ simulated_processes = Parallel(n_jobs=-1)(
     )
     for i in range(num_sims)
 )
+
 
 def _has_ages_in_each_epoch(ages, times):
     ages = np.asarray(ages, dtype=np.float64)
@@ -146,6 +148,8 @@ if failed:
 
 ## Epoch-Wise Rate Recovery
 
+The figures below use a joint plotting subset with 1.5×IQR outliers removed across the plotted parameters.
+
 ```{python}
 def _extract_epoch_parameter_arrays(models):
     successful_models = [
@@ -220,22 +224,36 @@ parameter_specs = [
     ),
 ]
 
-if len(successful) > 0:
-    for label, values, true_value, _ in parameter_specs:
+plotting_data, plotting_mask = iqr_plotting_subset(
+    {label: values for label, values, _, _ in parameter_specs}
+)
+plotting_parameter_specs = [
+    (label, plotting_data[label], true_value, color)
+    for label, _, true_value, color in parameter_specs
+]
+plotting_row_count = len(next(iter(plotting_data.values()))) if plotting_data else 0
+print(
+    f"Plotting subset after IQR filtering: {plotting_row_count} / {len(successful)} successful fits"
+)
+
+if plotting_row_count > 0:
+    for label, values, true_value, _ in plotting_parameter_specs:
         print(
             f"{label} mean: {values.mean():.6f} "
             + f"median: {np.median(values):.6f} (true={true_value:.6f})"
         )
 
-if len(successful) > 0:
+if plotting_row_count > 0:
     fig_hist = make_subplots(
         rows=2,
         cols=2,
-        subplot_titles=[spec[0] for spec in parameter_specs],
+        subplot_titles=[spec[0] for spec in plotting_parameter_specs],
         horizontal_spacing=0.08,
         vertical_spacing=0.12,
     )
-    for index, (label, values, true_value, color) in enumerate(parameter_specs):
+    for index, (label, values, true_value, color) in enumerate(
+        plotting_parameter_specs
+    ):
         row = index // 2 + 1
         col = index % 2 + 1
         fig_hist.add_trace(
