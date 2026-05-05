@@ -1,6 +1,6 @@
 ---
 title: "Multi-Epoch Validation: Bulk Inference"
-subtitle: "Epoch-Specific Recovery, Failed Fits, Histograms, and Scatterplot Matrix"
+subtitle: "Scenario 3: Epoch-Specific Recovery, Failed Fits, Histograms, and Scatterplot Matrix"
 author: "JC"
 date: last-modified
 ---
@@ -12,6 +12,7 @@ date: last-modified
 # | include: false
 
 import time
+
 __compile_start = time.perf_counter()
 ```
 
@@ -24,38 +25,38 @@ import plotly.express as px
 import plotly.graph_objs as go
 from collections import Counter
 from plotly.subplots import make_subplots
+from joblib import Parallel, delayed
 
-from inf_bp_texts.analysis import (
+from inf_bp_texts.analysis.validation_helpers import (
     FitModelConfig,
-    extract_alive_ages,
-    first_failed_fits,
     fit_single_model,
-    summarize_fit_success,
+    first_failed_fits,
 )
+from inf_bp_texts.analysis.single_epoch import extract_alive_ages, summarize_fit_success
 from inf_bp_texts.simulation import simulate_birth_death_process
-from inf_bp_texts.visualization import save_figure
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,
     apply_tufte_axes,
     ptolqual,
+    save_figure,
 )
-from joblib import Parallel, delayed
 ```
 
-## Simulate and Fit
-
 ```{python}
-num_sims = 1000
-birth_rates_true = np.array([0.6, 0.1], dtype=float)
-death_rates_true = np.array([0.1, 0.2], dtype=float)
-times = np.array([10.0, 20.0], dtype=float)
+# | label: simulate-full-two-rate
+# Simulation: full two-epoch process with different rates per epoch
+num_sims = 10
+birth_rates_true = np.array([0.5, 0.7], dtype=float)
+death_rates_true = np.array([0.1, 0.15], dtype=float)
+times = np.array([7.5, 15.0], dtype=float)
+seed = 42
 
 simulated_processes = Parallel(n_jobs=-1)(
     delayed(simulate_birth_death_process)(
         birth_rates=birth_rates_true,
         death_rates=death_rates_true,
         times=times,
-        random_seed=42 + i,
+        random_seed=seed + i,
     )
     for i in range(num_sims)
 )
@@ -63,7 +64,12 @@ simulated_processes = Parallel(n_jobs=-1)(
 list_of_ages = []
 for sim in simulated_processes:
     list_of_ages.append(extract_alive_ages(sim, float(times[-1])))
+print(f"Simulations: {len(list_of_ages)}")
+```
 
+```{python}
+# | label: fit-full-two-rate
+# Fitting: configure and fit full two-epoch model
 fit_config = FitModelConfig(
     times=times, is_ordered=True, perturb_initial_params_std=0.1, random_seed=10925
 )
@@ -245,7 +251,7 @@ if len(successful) > 0:
     fig_hist.show()
     saved_hist = save_figure(
         fig_hist,
-        "methods_validation_multi_epoch_bulk_inference_parameter_histograms",
+        "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_histograms",
         width=800,
         height=650,
     )
@@ -274,7 +280,7 @@ if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
     fig_pairs.show()
     saved_pairs = save_figure(
         fig_pairs,
-        "methods_validation_multi_epoch_bulk_inference_parameter_pairs_scatter_matrix",
+        "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_pairs_scatter_matrix",
         width=900,
         height=900,
     )

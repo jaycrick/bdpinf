@@ -90,7 +90,7 @@ print(results_df.to_string(index=False, float_format="%.4f"))
 
 This notebook provides runtime and success-rate benchmarking for multi-epoch
 fitting across a small configuration sweep. For deep profiling, run
-[qmd_scripts/methods_validation_multi_epoch_single_fit_debug.qmd](qmd_scripts/methods_validation_multi_epoch_single_fit_debug.qmd).
+[methods_validation_multi_epoch_single_fit_debug.qmd](methods_validation_multi_epoch_single_fit_debug.qmd).
 
 ```{python}
 # | label: compile-time-report

@@ -1,0 +1,351 @@
+---
+title: "Multi-Epoch Validation: Bulk Inference"
+subtitle: "Structural-Zero Second-Epoch Birth with Shared Death Rate"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+
+__compile_start = time.perf_counter()
+```
+
+```{python}
+# | label: simulate-zero-birth
+# Simulation: generate datasets with zero second-epoch births by simulating first epoch and advancing survivors
+import numpy as np
+from joblib import Parallel, delayed
+
+num_sims = 10
+birth_rate_epoch_1_true = 0.5
+death_rate_true = birth_rate_epoch_1_true - 0.4
+birth_rate_epoch_2_true = 0.0
+times = np.array([7.5, 15.0], dtype=float)
+seed = 42
+
+from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.analysis.single_epoch import extract_alive_ages
+
+
+def simulate_zero_birth_second_epoch(sim_idx, birth_rate_epoch_1, death_rate, times):
+    split_time = float(times[0])
+    final_time = float(times[-1])
+    first_epoch = simulate_birth_death_process(
+        birth_rates=np.array([birth_rate_epoch_1], dtype=float),
+        death_rates=np.array([death_rate], dtype=float),
+        times=np.array([split_time], dtype=float),
+        random_seed=42000 + sim_idx,
+    )
+
+    simulation = first_epoch.copy(deep=True)
+    alive_mask = simulation["death_time"].isna()
+    alive_indices = simulation.index[alive_mask]
+    if len(alive_indices) > 0:
+        rng = np.random.default_rng(52000 + sim_idx)
+        time_to_death = rng.exponential(
+            scale=1.0 / float(death_rate), size=len(alive_indices)
+        )
+        death_times = split_time + time_to_death
+        simulation.loc[alive_indices, "death_time"] = np.where(
+            death_times < final_time,
+            death_times,
+            np.nan,
+        )
+    return simulation
+
+
+simulated_processes = Parallel(n_jobs=-1)(
+    delayed(simulate_zero_birth_second_epoch)(
+        sim_idx=i,
+        birth_rate_epoch_1=birth_rate_epoch_1_true,
+        death_rate=death_rate_true,
+        times=times,
+    )
+    for i in range(num_sims)
+)
+
+list_of_ages = []
+for sim in simulated_processes:
+    list_of_ages.append(extract_alive_ages(sim, float(times[-1])))
+print(f"Simulations: {len(list_of_ages)}")
+```
+
+```{python}
+# | label: fit-constrained-model
+# Fitting: apply parameter constraints (zero second-epoch birth approximated) and fit
+import torch
+from collections import Counter
+from inf_bp_texts.analysis.single_epoch import summarize_fit_success
+from inf_bp_texts.analysis.validation_helpers import first_failed_fits
+from inf_bp_texts.analysis.validation_helpers import FitModelConfig
+from inf_bp_texts.inference.fitting import (
+    ParameterConstraints,
+    fit_birth_death_processes,
+)
+from inf_bp_texts.visualization.plotting import ptolqual
+from plotly.subplots import make_subplots
+import plotly.graph_objs as go
+import plotly.express as px
+import pandas as pd
+from inf_bp_texts.visualization.plotting import (
+    apply_professional_styling,
+    apply_tufte_axes,
+    save_figure,
+)
+
+fit_config = FitModelConfig(
+    times=times, is_ordered=True, perturb_initial_params_std=0.1, random_seed=10925
+)
+param_constraints = ParameterConstraints(
+    fixed_params={1: 1e-12},
+    equality_groups=[[2, 3]],
+)
+
+
+def fit_constrained_model(ages, config, constraints):
+    if len(ages) == 0:
+        return None
+
+    try:
+        result = fit_birth_death_processes(
+            list_of_ages=[torch.as_tensor(ages, dtype=torch.float64)],
+            times=config.times,
+            is_ordered=config.is_ordered,
+            perturb_initial_params_std=config.perturb_initial_params_std or 0.0,
+            random_seed=config.random_seed,
+            unbias=config.unbias,
+            param_constraints=constraints,
+        )
+    except Exception:
+        return None
+
+    if result is not None and result.get("success", False):
+        birth_rates = np.asarray(result.get("birth_rates"), dtype=np.float64)
+        if birth_rates.size >= 2:
+            birth_rates = birth_rates.copy()
+            birth_rates[1] = 0.0
+            result["birth_rates"] = birth_rates
+    return result
+
+
+fitted_results = Parallel(n_jobs=-1)(
+    delayed(fit_constrained_model)(ages, fit_config, param_constraints)
+    for ages in list_of_ages
+)
+
+successful = [r for r in fitted_results if r is not None and r.get("success", False)]
+fit_summary = summarize_fit_success(fitted_results, total_models=len(fitted_results))
+print(f"Successful fits: {fit_summary['successful']}")
+print(f"Failed fits: {fit_summary['failed']}")
+print(f"Success rate: {fit_summary['success_rate']:.1f}%")
+print(
+    f"Second-epoch birth rate fixed for fitting at 1e-12; displayed as {birth_rate_epoch_2_true:.1f} in summaries."
+)
+
+successful_fits_by_optimizer = Counter()
+for model in fitted_results:
+    if model is None or not model.get("success", False):
+        continue
+
+    optimization_result = model.get("optimization_result")
+    if not isinstance(optimization_result, dict):
+        successful_fits_by_optimizer["unknown"] += 1
+        continue
+
+    attempts = optimization_result.get("attempts")
+    selected_attempt_index = optimization_result.get("selected_attempt_index")
+    selected_attempt = None
+
+    if isinstance(attempts, list) and attempts:
+        if isinstance(
+            selected_attempt_index, int
+        ) and 0 <= selected_attempt_index < len(attempts):
+            selected_attempt = attempts[selected_attempt_index]
+        else:
+            selected_attempt = attempts[0]
+
+    optimizer_name = "unknown"
+    if isinstance(selected_attempt, dict):
+        optimizer_name = str(selected_attempt.get("optimizer", "unknown"))
+
+    successful_fits_by_optimizer[optimizer_name] += 1
+
+print("Successful fits by optimizer type:")
+for optimizer_name, count in sorted(successful_fits_by_optimizer.items()):
+    print(f"- {optimizer_name}: {count}")
+
+failed = first_failed_fits(fitted_results, list_of_ages, start_index=0, max_items=3)
+if failed:
+    print("\nFirst failed simulations (up to 3):")
+    for case in failed:
+        print(
+            f"- Simulation {case['simulation_index']}: population={case['population']}, "
+            f"reason={case['reason']}, ages={case['ages'].tolist()}"
+        )
+```
+
+## Free-Parameter Recovery
+
+```{python}
+def _extract_free_parameter_arrays(models):
+    successful_models = [
+        model for model in models if model is not None and model.get("success", False)
+    ]
+    empty = np.array([], dtype=np.float64)
+    if not successful_models:
+        return {
+            "epoch_1_birth": empty,
+            "shared_death": empty,
+        }
+
+    return {
+        "epoch_1_birth": np.asarray(
+            [
+                float(np.atleast_1d(model["birth_rates"])[0])
+                for model in successful_models
+            ],
+            dtype=np.float64,
+        ),
+        "shared_death": np.asarray(
+            [
+                float(np.atleast_1d(model["death_rates"])[0])
+                for model in successful_models
+            ],
+            dtype=np.float64,
+        ),
+    }
+
+
+free_parameter_arrays = _extract_free_parameter_arrays(fitted_results)
+parameter_specs = [
+    (
+        r"$\hat{\lambda}_1$",
+        free_parameter_arrays["epoch_1_birth"],
+        birth_rate_epoch_1_true,
+        ptolqual[0],
+    ),
+    (
+        r"$\hat{\mu}$",
+        free_parameter_arrays["shared_death"],
+        death_rate_true,
+        ptolqual[1],
+    ),
+]
+
+if len(successful) > 0:
+    for label, values, true_value, _ in parameter_specs:
+        print(
+            f"{label} mean: {values.mean():.6f} "
+            + f"median: {np.median(values):.6f} (true={true_value:.6f})"
+        )
+
+if len(successful) > 0:
+    fig_hist = make_subplots(
+        rows=1,
+        cols=2,
+        subplot_titles=[spec[0] for spec in parameter_specs],
+        horizontal_spacing=0.12,
+    )
+    for index, (label, values, true_value, color) in enumerate(parameter_specs):
+        fig_hist.add_trace(
+            go.Histogram(
+                x=values,
+                histnorm="probability density",
+                nbinsx=30,
+                marker=dict(color=color),
+                opacity=0.8,
+                name=label,
+                showlegend=False,
+            ),
+            row=1,
+            col=index + 1,
+        )
+        fig_hist.add_vline(
+            x=true_value,
+            line_color=color,
+            line_dash="dash",
+            row=1,
+            col=index + 1,
+        )
+
+    fig_hist = apply_professional_styling(
+        fig_hist,
+        "Free-Parameter Histograms",
+        "Fitted rate",
+        "Density",
+    )
+    fig_hist = apply_tufte_axes(fig_hist)
+    fig_hist.update_xaxes(range=[0.0, None])
+    fig_hist.show()
+    saved_hist = save_figure(
+        fig_hist,
+        "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_parameter_histograms",
+        width=800,
+        height=450,
+    )
+    print(f"Saved parameter histogram figure: {saved_hist}")
+
+
+scatter_data = {
+    label: values for label, values, _, _ in parameter_specs if values.size > 0
+}
+
+if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
+    scatter_df = pd.DataFrame(scatter_data)
+    fig_pairs = px.scatter_matrix(
+        scatter_df,
+        dimensions=list(scatter_df.columns),
+        title="Pairs-Style Scatterplot Matrix of Free Parameters",
+    )
+    fig_pairs.update_traces(marker=dict(size=4, opacity=0.1), diagonal_visible=False)
+    fig_pairs = apply_professional_styling(
+        fig_pairs,
+        "Pairs-Style Scatterplot Matrix of Free Parameters",
+        "Fitted value",
+        "Fitted value",
+    )
+    fig_pairs = apply_tufte_axes(fig_pairs)
+    fig_pairs.show()
+    saved_pairs = save_figure(
+        fig_pairs,
+        "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_parameter_pairs_scatter_matrix",
+        width=700,
+        height=700,
+    )
+    print(f"Saved pairs scatter matrix figure: {saved_pairs}")
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+from pathlib import Path
+import time
+
+doc_name = "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

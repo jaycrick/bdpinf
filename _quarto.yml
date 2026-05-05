@@ -55,8 +55,6 @@ website:
             file: qmd_scripts/core_analysis/04_bayesian/kashouh_familyk_bayesian_inference.qmd
       - text: "Validation: Single-Epoch"
         menu:
-          - text: "Overview"
-            file: qmd_scripts/validation/single_epoch/methods_validation_single_epoch.qmd
           - text: "Simulation checks"
             file: qmd_scripts/validation/single_epoch/methods_validation_simulation_checks.qmd
           - text: "Single-fit debug"
@@ -67,8 +65,6 @@ website:
             file: qmd_scripts/validation/single_epoch/methods_validation_sensitivity_benchmark.qmd
       - text: "Validation: Multi-Epoch"
         menu:
-          - text: "Overview"
-            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch.qmd
           - text: "Simulation checks"
             file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_simulation_checks.qmd
           - text: "Single-fit debug"
@@ -79,8 +75,6 @@ website:
             file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_sensitivity_benchmark.qmd
       - text: "Validation: Bayesian Multi-Epoch"
         menu:
-          - text: "Overview"
-            file: qmd_scripts/validation/bayesian_multi_epoch/methods_validation_multi_epoch_bayesian.qmd
           - text: "Simulation checks"
             file: qmd_scripts/validation/bayesian_multi_epoch/methods_validation_multi_epoch_bayesian_simulation_checks.qmd
           - text: "Single-fit debug"
