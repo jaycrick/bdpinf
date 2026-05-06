@@ -392,6 +392,67 @@ def calculate_unknown_spine_mixture_age_density(
     return torch.exp(mixture_log_density)
 
 
+def calculate_unknown_spine_mixture_birth_density(
+    birth_rates: torch.Tensor | float,
+    death_rates: torch.Tensor | float,
+    birth_time_grid: torch.Tensor | float,
+    times: torch.Tensor | float,
+    num_manuscripts: int,
+) -> torch.Tensor:
+    """Compute birth-time density for a random manuscript when the spine is unknown.
+
+    This transforms the age-density mixture to a density over birth times by the
+    change of variables birth_time = T - age, where T = times[-1]. The Jacobian
+    is 1 in absolute value, so the birth-time density at b is the age density at
+    age = T - b evaluated with the same mixture formula.
+
+    Parameters
+    ----------
+    birth_rates, death_rates, birth_time_grid, times, num_manuscripts
+        Same semantics as :func:`calculate_unknown_spine_mixture_age_density`,
+        except that ``birth_time_grid`` is interpreted as times since the
+        model `start_time` (i.e., in the same coordinate system as ``times``).
+
+    Returns
+    -------
+    torch.Tensor
+        Density evaluated at each point in ``birth_time_grid`` (shape matches grid).
+
+    """
+    # Validate positive manuscript count
+    if num_manuscripts <= 0:
+        msg = "num_manuscripts must be a positive integer."
+        raise ValueError(msg)
+
+    birth_rates, death_rates, birth_time_grid, times = ensure_1d_tensors(
+        birth_rates,
+        death_rates,
+        birth_time_grid,
+        times,
+    )
+
+    # Observation time (last epoch end) in same units as birth_time_grid
+    T = times[-1]
+
+    # Validate birth times are in [0, T]
+    if torch.any(birth_time_grid < 0) or torch.any(birth_time_grid > T):
+        msg = f"Birth times must be in the range [0, {T}]. Got: {birth_time_grid}"
+        raise ValueError(msg)
+
+    # Map birth times to ages: age = T - birth_time
+    age_grid = T - birth_time_grid
+
+    # Delegate to age-density calculator; returned array corresponds to ages in
+    # the same order as age_grid, which matches the requested birth_time_grid.
+    return calculate_unknown_spine_mixture_age_density(
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        age_grid=age_grid,
+        times=times,
+        num_manuscripts=num_manuscripts,
+    )
+
+
 def negative_log_likelihood(
     birth_rates: torch.Tensor | float,
     death_rates: torch.Tensor | float,
