@@ -71,6 +71,10 @@ website:
             file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_single_fit_debug.qmd
           - text: "Bulk inference"
             file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_bulk_inference.qmd
+          - text: "Bulk inference (single rate)"
+            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_bulk_inference_single_rate.qmd
+          - text: "Bulk inference (zero birth second epoch)"
+            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch.qmd
           - text: "Sensitivity + benchmark"
             file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_sensitivity_benchmark.qmd
       - text: "Validation: Bayesian Multi-Epoch"
