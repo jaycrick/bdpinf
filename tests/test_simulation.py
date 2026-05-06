@@ -7,7 +7,12 @@ import pandas as pd
 import torch
 
 from inf_bp_texts.models import BirthDeathProcess
+from inf_bp_texts.models.mathematical_functions import (
+    calculate_non_spine_ages_log_lik,
+    calculate_spine_ages_log_lik,
+)
 from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.simulation.simulator import simulate_bdp_ages_from_distributions
 
 
 class TestSimulation:
@@ -491,3 +496,130 @@ class TestMultiEpochSimulation:
                 sorted(df_scalar["creation_time"]),
                 sorted(df_array["creation_time"]),
             )
+
+
+class TestBdpAgeDistributionSampling:
+    """Test age sampling from BDP distribution formulas."""
+
+    def test_population_and_age_accounting(self) -> None:
+        """Sampled ages should match one spine plus n-1 non-spine ages."""
+        birth_rate = torch.tensor(0.25)
+        death_rate = torch.tensor(0.1)
+        max_time = torch.tensor(12.0)
+        rng = np.random.default_rng(2026)
+
+        for _ in range(200):
+            ages = simulate_bdp_ages_from_distributions(
+                birth_rate=birth_rate,
+                death_rate=death_rate,
+                max_time=max_time,
+                rng=rng,
+            )
+            pop_size = len(ages["spine"]) + len(ages["non_spine"])
+            assert pop_size >= 0
+            if pop_size == 0:
+                assert ages["spine"] == []
+                assert ages["non_spine"] == []
+            else:
+                assert len(ages["spine"]) == 1
+                assert len(ages["non_spine"]) == pop_size - 1
+
+                spine_age = ages["spine"][0]
+                assert 0.0 <= spine_age <= float(max_time)
+                for age in ages["non_spine"]:
+                    assert 0.0 <= age <= float(max_time)
+
+    def test_sampling_is_reproducible_with_seed(self) -> None:
+        """Sampling should be deterministic with identical seeds."""
+        birth_rate = torch.tensor(0.5)
+        death_rate = torch.tensor(0.3)
+        max_time = torch.tensor(5.0)
+
+        rng1 = np.random.default_rng(42)
+        rng2 = np.random.default_rng(42)
+
+        draws1 = [
+            simulate_bdp_ages_from_distributions(
+                birth_rate=birth_rate,
+                death_rate=death_rate,
+                max_time=max_time,
+                rng=rng1,
+            )
+            for _ in range(20)
+        ]
+        draws2 = [
+            simulate_bdp_ages_from_distributions(
+                birth_rate=birth_rate,
+                death_rate=death_rate,
+                max_time=max_time,
+                rng=rng2,
+            )
+            for _ in range(20)
+        ]
+
+        assert draws1 == draws2
+
+    def test_sampled_ages_have_better_mean_log_likelihood_than_uniform(self) -> None:
+        """Sampled ages should score better than a uniform baseline under matching models."""
+        birth_rate = torch.tensor(0.5)
+        death_rate = torch.tensor(0.2)
+        max_time = torch.tensor(6.0)
+        rng = np.random.default_rng(7)
+
+        sampled_spine: list[float] = []
+        sampled_non_spine: list[float] = []
+
+        for _ in range(900):
+            ages = simulate_bdp_ages_from_distributions(
+                birth_rate=birth_rate,
+                death_rate=death_rate,
+                max_time=max_time,
+                rng=rng,
+            )
+            sampled_spine.extend(ages["spine"])
+            sampled_non_spine.extend(ages["non_spine"])
+
+        assert len(sampled_spine) > 200
+        assert len(sampled_non_spine) > 200
+
+        sampled_spine_tensor = torch.tensor(sampled_spine, dtype=torch.float64)
+        sampled_non_spine_tensor = torch.tensor(sampled_non_spine, dtype=torch.float64)
+
+        baseline_spine_tensor = torch.tensor(
+            rng.uniform(0.0, float(max_time), size=len(sampled_spine)),
+            dtype=torch.float64,
+        )
+        baseline_non_spine_tensor = torch.tensor(
+            rng.uniform(0.0, float(max_time), size=len(sampled_non_spine)),
+            dtype=torch.float64,
+        )
+
+        sampled_spine_mean_ll = calculate_spine_ages_log_lik(
+            birth_rates=birth_rate,
+            death_rates=death_rate,
+            ages=sampled_spine_tensor,
+            times=max_time,
+        ) / len(sampled_spine)
+        baseline_spine_mean_ll = calculate_spine_ages_log_lik(
+            birth_rates=birth_rate,
+            death_rates=death_rate,
+            ages=baseline_spine_tensor,
+            times=max_time,
+        ) / len(sampled_spine)
+        sampled_non_spine_mean_ll = calculate_non_spine_ages_log_lik(
+            birth_rates=birth_rate,
+            death_rates=death_rate,
+            ages=sampled_non_spine_tensor,
+            times=max_time,
+        ) / len(sampled_non_spine)
+        baseline_non_spine_mean_ll = calculate_non_spine_ages_log_lik(
+            birth_rates=birth_rate,
+            death_rates=death_rate,
+            ages=baseline_non_spine_tensor,
+            times=max_time,
+        ) / len(sampled_non_spine)
+
+        assert torch.isfinite(sampled_spine_mean_ll)
+        assert torch.isfinite(sampled_non_spine_mean_ll)
+        assert sampled_spine_mean_ll > baseline_spine_mean_ll
+        assert sampled_non_spine_mean_ll > baseline_non_spine_mean_ll

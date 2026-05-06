@@ -1,0 +1,137 @@
+---
+title: "Bayesian Multi-Epoch Validation: Bulk Inference"
+subtitle: "Replicate Fits, Recovery Metrics, and Coverage"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+__compile_start = time.perf_counter()
+```
+
+## Setup
+
+```{python}
+import numpy as np
+import pandas as pd
+
+from inf_bp_texts.inference import fit_birth_death_processes_bayesian
+from inf_bp_texts.inference.bayesian import (
+    BayesianMCMCConfig,
+    BayesianModelConfig,
+    BayesianPriorConfig,
+)
+from inf_bp_texts.simulation import simulate_birth_death_process
+```
+
+## Run Replicate Fits
+
+```{python}
+num_sims = 4
+true_birth_rates = np.array([0.010, 0.001], dtype=float)
+true_death_rates = np.array([0.0015, 0.0010], dtype=float)
+times = np.array([750.0, 1500.0], dtype=float)
+
+mcmc_config = BayesianMCMCConfig(
+    num_samples=140,
+    warmup_steps=80,
+    num_chains=1,
+    target_accept_prob=0.7,
+    max_tree_depth=8,
+    disable_progressbar=True,
+)
+model_config = BayesianModelConfig(is_ordered=True, rng_seed=2026)
+prior_config = BayesianPriorConfig(loc=-6.0, scale=2.0)
+
+fit_rows = []
+fit_results = {}
+for i in range(num_sims):
+    sim = simulate_birth_death_process(
+        birth_rates=true_birth_rates,
+        death_rates=true_death_rates,
+        times=times,
+        random_seed=1000 + i,
+    )
+    alive = sim[sim["death_time"].isna()].sort_values("is_spine", ascending=False)
+    ages = (times[-1] - alive["creation_time"].to_numpy(dtype=float)).astype(float)
+
+    if len(ages) < 2:
+        fit_rows.append(
+            {"replicate": i, "success": False, "message": "too few survivors"}
+        )
+        continue
+
+    result = fit_birth_death_processes_bayesian(
+        list_of_ages=[ages],
+        times=times,
+        model_config=model_config,
+        mcmc_config=mcmc_config,
+        prior_config=prior_config,
+    )
+    fit_results[i] = result
+    fit_rows.append(
+        {
+            "replicate": i,
+            "success": bool(result.get("success", False)),
+            "divergences": (
+                int(result.get("num_divergences", 0))
+                if result.get("success", False)
+                else np.nan
+            ),
+        }
+    )
+
+fit_df = pd.DataFrame(fit_rows)
+print(fit_df.to_string(index=False))
+```
+
+## Recovery Summary
+
+```{python}
+successful = [r for r in fit_results.values() if r.get("success", False)]
+if successful:
+    birth_e1 = np.asarray([float(r["birth_rates"][0]) for r in successful], dtype=float)
+    birth_e2 = np.asarray([float(r["birth_rates"][1]) for r in successful], dtype=float)
+    death_e1 = np.asarray([float(r["death_rates"][0]) for r in successful], dtype=float)
+    death_e2 = np.asarray([float(r["death_rates"][1]) for r in successful], dtype=float)
+
+    print(f"Epoch1 birth mean: {birth_e1.mean():.6f} (true={true_birth_rates[0]:.6f})")
+    print(f"Epoch2 birth mean: {birth_e2.mean():.6f} (true={true_birth_rates[1]:.6f})")
+    print(f"Epoch1 death mean: {death_e1.mean():.6f} (true={true_death_rates[0]:.6f})")
+    print(f"Epoch2 death mean: {death_e2.mean():.6f} (true={true_death_rates[1]:.6f})")
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+from pathlib import Path
+import time
+
+doc_name = "methods_validation_multi_epoch_bayesian_bulk_inference.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

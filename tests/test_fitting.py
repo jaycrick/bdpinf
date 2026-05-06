@@ -3,6 +3,7 @@
 # ruff: noqa: S101
 # ruff: noqa: D101 D102
 
+import inspect
 from pathlib import Path
 
 import numpy as np
@@ -10,8 +11,11 @@ import pandas as pd
 import pytest
 import torch
 
+from inf_bp_texts.inference import uncertainty as uncertainty_module
 from inf_bp_texts.inference.fitting import (
     ConvergenceConfig,
+    OptimizerAttemptResult,
+    OptimizerRunResult,
     OptimizerStrategy,
     _apply_param_perturbation,
     _build_initial_params,
@@ -107,6 +111,12 @@ class TestFittingHelpers:
 
 class TestFitting:
     """Test parameter fitting functionality using modular approach."""
+
+    def test_fit_birth_death_processes_defaults_to_unbias_true(self) -> None:
+        assert (
+            inspect.signature(fit_birth_death_processes).parameters["unbias"].default
+            is True
+        )
 
     def test_fit_birth_death_process_with_times_arrays(self) -> None:
         """Test fitting with times as array."""
@@ -254,6 +264,82 @@ class TestFitting:
         assert isinstance(result["birth_rates"], (float, np.float64, np.ndarray))
         assert isinstance(result["death_rates"], (float, np.float64, np.ndarray))
         assert isinstance(result["log_likelihood"], (float, np.float64))
+
+        optimization_result = result["optimization_result"]
+        assert "attempts" in optimization_result
+        assert isinstance(optimization_result["attempts"], list)
+        assert "selected_attempt_index" in optimization_result
+        assert "best_attempt_index" in optimization_result
+        assert "nll_history" not in result
+
+    def test_fit_failure_uses_attempt_centric_payload(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Failure payload should expose all attempts and drop legacy error fields."""
+
+        def fake_run_optimizer_strategies(
+            *args: object,
+            **kwargs: object,
+        ) -> OptimizerRunResult:
+            del args, kwargs
+            attempts = [
+                OptimizerAttemptResult(
+                    optimizer="LBFGS",
+                    attempt_index=0,
+                    converged=False,
+                    iterations=2,
+                    nll_history=[10.0, 9.5],
+                    exception_type="RuntimeError",
+                    exception_message="LBFGS failed",
+                ),
+                OptimizerAttemptResult(
+                    optimizer="Adam",
+                    attempt_index=1,
+                    converged=False,
+                    iterations=3,
+                    nll_history=[9.8, 9.7, 9.7],
+                    exception_type="RuntimeError",
+                    exception_message="Adam failed",
+                ),
+            ]
+            fake_log_params = torch.nn.Parameter(torch.log(torch.tensor([0.1, 0.1])))
+            return OptimizerRunResult(
+                log_params=fake_log_params,
+                converged=False,
+                selected_attempt_index=0,
+                attempts=attempts,
+            )
+
+        monkeypatch.setattr(
+            "inf_bp_texts.inference.fitting._run_optimizer_strategies",
+            fake_run_optimizer_strategies,
+        )
+
+        ages = np.array([100.0, 200.0, 300.0], dtype=np.float64)
+        result = fit_birth_death_processes([ages], 1000.0)
+
+        assert result["success"] is False
+        assert "birth_rates" in result
+        assert "death_rates" in result
+        assert "log_likelihood" in result
+        assert "error" not in result
+        assert "error_type" not in result
+        assert "errors" not in result
+        assert "failed_optimizer_histories" not in result
+        assert "nll_history" not in result
+
+        assert np.all(np.asarray(result["birth_rates"]) > 0)
+        assert np.all(np.asarray(result["death_rates"]) > 0)
+
+        optimization_result = result["optimization_result"]
+        assert optimization_result["selected_attempt_index"] == 0
+        assert optimization_result["first_attempt_index"] == 0
+        assert optimization_result["last_attempt_index"] == 1
+        expected_attempt_count = 2
+        assert len(optimization_result["attempts"]) == expected_attempt_count
+        assert optimization_result["attempts"][0]["nll_history"] == [10.0, 9.5]
+        assert optimization_result["attempts"][1]["nll_history"] == [9.8, 9.7, 9.7]
 
     def test_process_integration_with_fitting(self) -> None:
         """Test integration between BirthDeathProcess and fitting functions."""
@@ -481,6 +567,140 @@ class TestMultiEpochFitting:
 
 
 class TestConvergenceFlags:
+    def test_fit_birth_death_process_includes_uncertainty_by_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ages = np.array([100.0, 200.0, 300.0], dtype=np.float64)
+        sentinel_covariance = np.array([[1.0, 0.2], [0.2, 2.0]], dtype=np.float64)
+
+        def fake_estimate_uncertainty(*args: object, **kwargs: object) -> torch.Tensor:
+            del args, kwargs
+            return torch.as_tensor(sentinel_covariance, dtype=torch.float64)
+
+        monkeypatch.setattr(
+            "inf_bp_texts.inference.fitting.estimate_mle_covariance",
+            fake_estimate_uncertainty,
+        )
+
+        result = fit_birth_death_processes([ages], 1000.0)
+
+        assert result["success"]
+        assert "uncertainty" in result
+        uncertainty = np.asarray(result["uncertainty"], dtype=np.float64)
+        assert uncertainty.shape == sentinel_covariance.shape
+        np.testing.assert_allclose(uncertainty, sentinel_covariance)
+
+    def test_fit_birth_death_process_can_skip_uncertainty(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ages = np.array([100.0, 200.0, 300.0], dtype=np.float64)
+
+        called = {"value": False}
+
+        def fake_estimate_uncertainty(
+            *args: object,
+            **kwargs: object,
+        ) -> torch.Tensor:
+            del args, kwargs
+            called["value"] = True
+            return torch.eye(2, dtype=torch.float64)
+
+        monkeypatch.setattr(
+            "inf_bp_texts.inference.fitting.estimate_mle_covariance",
+            fake_estimate_uncertainty,
+        )
+
+        result = fit_birth_death_processes([ages], 1000.0, estimate_uncertainty=False)
+
+        assert result["success"]
+        assert "uncertainty" not in result
+        assert called["value"] is False
+
+    def test_uncertainty_helper_sets_fixed_param_se_zero(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        free_log_params = torch.tensor([0.0], dtype=torch.float64)
+        non_spine_ages = torch.tensor([100.0], dtype=torch.float64)
+        times_tensor = torch.tensor([1000.0], dtype=torch.float64)
+        population_sizes_tensor = torch.tensor([1], dtype=torch.int64)
+
+        def full_log_params_fn(theta_free: torch.Tensor) -> torch.Tensor:
+            return torch.stack(
+                (
+                    theta_free[0] + torch.tensor(np.log(2.0), dtype=torch.float64),
+                    torch.tensor(np.log(0.5), dtype=torch.float64),
+                ),
+            )
+
+        def fake_hessian(objective: object, theta: torch.Tensor) -> torch.Tensor:
+            del objective, theta
+            return torch.tensor([[2.0]], dtype=torch.float64)
+
+        def fake_jacobian(function: object, theta: torch.Tensor) -> torch.Tensor:
+            del function, theta
+            return torch.tensor([[1.0], [0.0]], dtype=torch.float64)
+
+        monkeypatch.setattr(
+            torch.autograd.functional,
+            "hessian",
+            fake_hessian,
+        )
+        monkeypatch.setattr(
+            torch.autograd.functional,
+            "jacobian",
+            fake_jacobian,
+        )
+
+        covariance = uncertainty_module.estimate_mle_covariance(
+            free_log_params=free_log_params,
+            n_epochs=1,
+            full_log_params_fn=full_log_params_fn,
+            non_spine_ages=non_spine_ages,
+            times_tensor=times_tensor,
+            spine_ages_tensor=None,
+            population_sizes_tensor=population_sizes_tensor,
+            initial_population=1,
+        )
+
+        assert covariance.shape == (2, 2)
+        assert covariance[0, 0] == pytest.approx(0.5)
+        assert covariance[1, 1] == 0.0
+        assert covariance[1, 0] == 0.0
+        assert covariance[0, 1] == 0.0
+
+    def test_log_space_confidence_intervals_are_exponentiated(self) -> None:
+        log_parameter_estimates = torch.tensor(
+            [np.log(2.0), np.log(4.0)],
+            dtype=torch.float64,
+        )
+        covariance_log = torch.diag(
+            torch.tensor([0.25, 0.0], dtype=torch.float64),
+        )
+
+        intervals = uncertainty_module.confidence_intervals_from_log_covariance(
+            log_parameter_estimates,
+            covariance_log,
+        )
+
+        z_value = torch.sqrt(torch.tensor(2.0, dtype=torch.float64)) * torch.erfinv(
+            torch.tensor(0.95, dtype=torch.float64),
+        )
+        expected_lower = torch.exp(
+            log_parameter_estimates
+            - z_value * torch.tensor([0.5, 0.0], dtype=torch.float64),
+        )
+        expected_upper = torch.exp(
+            log_parameter_estimates
+            + z_value * torch.tensor([0.5, 0.0], dtype=torch.float64),
+        )
+
+        assert intervals.shape == (2, 2)
+        assert torch.allclose(intervals[:, 0], expected_lower)
+        assert torch.allclose(intervals[:, 1], expected_upper)
+
     def test_max_iters_no_convergence(self) -> None:
         ages = torch.tensor([100.0, 200.0], dtype=torch.float64)
         times_tensor = torch.tensor([1000.0], dtype=torch.float64)
@@ -511,10 +731,12 @@ class TestConvergenceFlags:
         )
 
         assert not run_result.converged
-        assert run_result.iterations == 1, (
-            f"Expected 1 iteration, got {run_result.iterations}"
+        assert len(run_result.attempts) == 1
+        attempt = run_result.attempts[0]
+        assert attempt.iterations == 1, (
+            f"Expected 1 iteration, got {attempt.iterations}"
         )
-        assert len(run_result.nll_history) == 1
+        assert len(attempt.nll_history) == 1
 
     @pytest.mark.parametrize(
         ("opt_key", "opt_class", "opt_kwargs"),
@@ -594,8 +816,51 @@ class TestConvergenceFlags:
         )
 
         assert not run_result.converged
-        assert len(run_result.all_exceptions) == len(strategies_map)
-        assert all(isinstance(exc, Exception) for exc in run_result.all_exceptions)
+        assert len(run_result.attempts) == len(strategies_map)
+        assert all(
+            attempt.exception_type is not None for attempt in run_result.attempts
+        )
+
+    def test_lbfgs_failed_run_reports_nonzero_iterations_regression(self) -> None:
+        """Regression test: failed LBFGS runs should report executed iterations."""
+        ages = torch.tensor([100.0, 200.0], dtype=torch.float64)
+        times_tensor = torch.tensor([1000.0], dtype=torch.float64)
+        initial_params = _build_initial_params(None, None, ages, times_tensor)
+        log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
+
+        strategies_map = {
+            "lbfgs": OptimizerStrategy(
+                "LBFGS",
+                torch.optim.LBFGS,
+                1,
+                {"lr": 1.0, "max_iter": 1},
+            ),
+        }
+        convergence_config = ConvergenceConfig(
+            gradient_threshold=-1.0,
+            absolute_tolerance=1e-12,
+            patience=100,
+        )
+
+        run_result = _run_optimizer_strategies(
+            strategies_map,
+            ["lbfgs"],
+            log_params,
+            initial_params,
+            n_epochs=len(times_tensor),
+            non_spine_ages=ages,
+            times_tensor=times_tensor,
+            spine_ages_tensor=None,
+            population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
+            initial_population=1,
+            convergence_config=convergence_config,
+        )
+
+        assert not run_result.converged
+        assert len(run_result.attempts) == 1
+        attempt = run_result.attempts[0]
+        assert len(attempt.nll_history) >= 1
+        assert attempt.iterations == 1
 
 
 @pytest.mark.slow
@@ -703,10 +968,12 @@ class TestFittingDiagnostics:
                 convergence_config=convergence_config,
             )
 
-            nll_history = run_result.nll_history
-            iterations = run_result.iterations
+            assert len(run_result.attempts) == 1
+            attempt = run_result.attempts[0]
+            nll_history = attempt.nll_history
+            iterations = attempt.iterations
             converged = run_result.converged
-            all_exceptions = run_result.all_exceptions
+            exception_message = attempt.exception_message
 
             any_converged = any_converged or converged
 
@@ -716,7 +983,7 @@ class TestFittingDiagnostics:
                 (
                     f"{optimizer_key}: converged={converged}, iterations={iterations}, "
                     f"history_len={history_len}, final_nll={history_tail}, "
-                    f"all_exceptions={all_exceptions}"
+                    f"exception={exception_message}"
                 ),
             )
 

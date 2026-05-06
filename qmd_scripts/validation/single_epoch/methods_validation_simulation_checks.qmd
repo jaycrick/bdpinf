@@ -1,0 +1,597 @@
+---
+title: "Single-Epoch Validation: Simulation Checks"
+subtitle: "Population, Spine/Non-Spine Ages, and Theory Overlays"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+__compile_start = time.perf_counter()
+```
+
+## Overview
+
+This notebook validates simulation outputs for single-epoch birth-death age sampling,
+including population counts and age distributions against theoretical curves.
+
+## Setup
+
+```{python}
+import numpy as np
+import plotly.graph_objs as go
+from plotly.subplots import make_subplots
+import torch
+import time
+
+from inf_bp_texts.models.mathematical_functions import (
+    calculate_extinction_pr,
+    calculate_non_spine_ages_log_lik,
+    calculate_populations_log_lik,
+    calculate_spine_ages_log_lik,
+)
+from inf_bp_texts.simulation import (
+    simulate_bdp_ages_from_distributions,
+    simulate_birth_death_process,
+)
+from inf_bp_texts.analysis import boundary_corrected_kde_on_support
+from inf_bp_texts.visualization.plotting import (
+    apply_professional_styling,
+    save_figure,
+    apply_tufte_axes,
+    ptolqual,
+)
+from joblib import Parallel, delayed
+```
+
+## Simulate Age Vectors
+
+```{python}
+num_sims = 1000
+birth_rate = 0.005
+death_rate = birth_rate - 0.004
+time_span = 1500.0
+seed = 42
+population_bin_width = 200
+
+
+def sample_age_vector_from_distribution(sim_idx, br, dr, span, base_seed):
+    rng = np.random.default_rng(base_seed + sim_idx)
+    sampled = simulate_bdp_ages_from_distributions(
+        birth_rate=torch.tensor(br, dtype=torch.float64),
+        death_rate=torch.tensor(dr, dtype=torch.float64),
+        max_time=torch.tensor(span, dtype=torch.float64),
+        rng=rng,
+    )
+    return np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
+
+
+def sample_age_vector_full_process(sim_idx, br, dr, span, base_seed):
+    run_seed = base_seed + sim_idx
+    simulated_df = simulate_birth_death_process(
+        birth_rates=float(br),
+        death_rates=float(dr),
+        times=float(span),
+        random_seed=run_seed,
+    )
+    survivors = simulated_df[simulated_df["survived"]]
+    if survivors.empty:
+        return np.array([], dtype=np.float64)
+
+    spine_ages = survivors.loc[survivors["is_spine"], "age"].to_numpy(dtype=np.float64)
+    non_spine_ages = survivors.loc[~survivors["is_spine"], "age"].to_numpy(
+        dtype=np.float64,
+    )
+
+    if spine_ages.size > 0:
+        return np.concatenate([spine_ages[:1], non_spine_ages]).astype(np.float64)
+    return non_spine_ages.astype(np.float64)
+
+
+direct_sampling_start = time.perf_counter()
+list_of_ages_from_distribution = Parallel(n_jobs=-1)(
+    delayed(sample_age_vector_from_distribution)(
+        sim_idx=i,
+        br=birth_rate,
+        dr=death_rate,
+        span=time_span,
+        base_seed=seed,
+    )
+    for i in range(num_sims)
+)
+direct_sampling_seconds = time.perf_counter() - direct_sampling_start
+
+full_process_start = time.perf_counter()
+list_of_ages_full_process = Parallel(n_jobs=-1)(
+    delayed(sample_age_vector_full_process)(
+        sim_idx=i,
+        br=birth_rate,
+        dr=death_rate,
+        span=time_span,
+        base_seed=seed + 100_000,
+    )
+    for i in range(num_sims)
+)
+full_process_seconds = time.perf_counter() - full_process_start
+
+population_sizes_direct = np.asarray(
+    [len(ages) for ages in list_of_ages_from_distribution],
+    dtype=np.int64,
+)
+population_sizes_process = np.asarray(
+    [len(ages) for ages in list_of_ages_full_process],
+    dtype=np.int64,
+)
+
+print(f"Simulations per method: {num_sims}")
+print(f"Sampling time (from distribution): {direct_sampling_seconds:.2f}s")
+print(f"Sampling time (full process): {full_process_seconds:.2f}s")
+print(f"Mean population (from distribution): {population_sizes_direct.mean():.2f}")
+print(f"Mean population (full process): {population_sizes_process.mean():.2f}")
+print(
+    f"Extinct fraction (from distribution): {(population_sizes_direct == 0).mean():.3f}"
+)
+print(f"Extinct fraction (full process): {(population_sizes_process == 0).mean():.3f}")
+print(
+    f"Theoretical extinct fraction: {calculate_extinction_pr(birth_rate, death_rate, time_span):.3f}"
+)
+print(
+    f"From distribution spine ages count: {sum(1 for ages in list_of_ages_from_distribution if len(ages) > 0 and ages[0] < time_span)}"
+)
+print(
+    f"Full process spine ages count: {sum(1 for ages in list_of_ages_full_process if len(ages) > 0 and ages[0] < time_span)}"
+)
+print(
+    f"From distribution non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_from_distribution if len(ages) > 1)}"
+)
+print(
+    f"Full process non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_full_process if len(ages) > 1)}"
+)
+```
+
+## Population Distribution
+
+```{python}
+fig_population = go.Figure()
+
+population_max = int(
+    max(
+        population_sizes_direct.max(),
+        population_sizes_process.max(),
+        1,
+    ),
+)
+population_bin_edges = np.arange(
+    0,
+    population_max + population_bin_width,
+    population_bin_width,
+    dtype=np.float64,
+)
+if population_bin_edges[-1] < population_max + 1:
+    population_bin_edges = np.append(
+        population_bin_edges, population_bin_edges[-1] + population_bin_width
+    )
+population_bin_centers = (population_bin_edges[:-1] + population_bin_edges[1:]) / 2.0
+
+population_empirical_counts_direct, _ = np.histogram(
+    population_sizes_direct,
+    bins=population_bin_edges,
+)
+population_empirical_counts_process, _ = np.histogram(
+    population_sizes_process,
+    bins=population_bin_edges,
+)
+
+population_support = np.arange(0, population_max + 1, dtype=np.int64)
+population_pmf = np.zeros_like(population_support, dtype=np.float64)
+for idx, population_count in enumerate(population_support):
+    log_probability = calculate_populations_log_lik(
+        birth_rates=torch.tensor(birth_rate, dtype=torch.float64),
+        death_rates=torch.tensor(death_rate, dtype=torch.float64),
+        ns=torch.tensor(int(population_count), dtype=torch.int64),
+        times=torch.tensor(time_span, dtype=torch.float64),
+    )
+    population_pmf[idx] = float(torch.exp(log_probability).item())
+
+population_theoretical_counts, _ = np.histogram(
+    population_support,
+    bins=population_bin_edges,
+    weights=population_pmf * num_sims,
+)
+
+fig_population.add_trace(
+    go.Bar(
+        x=population_bin_centers,
+        y=population_empirical_counts_direct,
+        marker=dict(color=ptolqual[0]),
+        name="Observed (from distribution)",
+        opacity=0.65,
+    )
+)
+fig_population.add_trace(
+    go.Bar(
+        x=population_bin_centers,
+        y=population_empirical_counts_process,
+        marker=dict(color=ptolqual[2]),
+        name="Observed (full process)",
+        opacity=0.65,
+    )
+)
+fig_population.add_trace(
+    go.Scatter(
+        x=population_bin_centers,
+        y=population_theoretical_counts,
+        mode="lines+markers",
+        name="Theoretical",
+        line=dict(color=ptolqual[1], width=2, dash="dash"),
+        marker=dict(color=ptolqual[1], size=5),
+    )
+)
+fig_population = apply_professional_styling(
+    fig_population,
+    "Population Distribution: From Distribution vs Full Process",
+    "Population size",
+    "Count",
+)
+fig_population = apply_tufte_axes(fig_population)
+fig_population.update_layout(
+    barmode="group",
+    legend=dict(
+        x=0.99,
+        y=0.99,
+        xanchor="right",
+        yanchor="top",
+    ),
+)
+fig_population.update_xaxes(dtick=population_bin_width)
+fig_population.show()
+saved_population = save_figure(
+    fig_population,
+    "methods_validation_population_distribution",
+    width=400,
+    height=300,
+)
+print(f"Saved population figure: {saved_population}")
+```
+
+## Spine and Non-Spine Age Checks
+
+```{python}
+def theoretical_age_density(
+    log_lik_fn,
+    support_upper: float,
+    n_grid: int = 300,
+    include_endpoint: bool = True,
+    proportion_not_at_upper: float | None = None,
+):
+    x_grid = np.linspace(0.0, support_upper, n_grid, endpoint=include_endpoint)
+    y_vals = []
+    for x_val in x_grid:
+        log_density = log_lik_fn(torch.tensor(float(x_val), dtype=torch.float64))
+        y_vals.append(
+            float(torch.exp(log_density).item()) if torch.isfinite(log_density) else 0.0
+        )
+    y_vals_arr = np.asarray(y_vals, dtype=np.float64)
+    if proportion_not_at_upper is not None:
+        p_not_upper = float(proportion_not_at_upper)
+        if np.isfinite(p_not_upper) and p_not_upper > 0.0:
+            y_vals_arr = y_vals_arr * (1.0 / p_not_upper)
+    return x_grid, y_vals_arr
+
+
+def proportion_not_at_upper(
+    samples: np.ndarray,
+    support_upper: float,
+    tol: float = 1e-12,
+) -> float:
+    samples = np.asarray(samples, dtype=np.float64)
+    finite = samples[np.isfinite(samples)]
+    if len(finite) == 0:
+        return 1.0
+    return float(np.mean(finite < (float(support_upper) - float(tol))))
+
+
+spine_age_samples_direct = np.asarray(
+    [
+        arr[0]
+        for arr in list_of_ages_from_distribution
+        if len(arr) > 0 and arr[0] < time_span
+    ],
+    dtype=np.float64,
+)
+spine_age_samples_process = np.asarray(
+    [
+        arr[0]
+        for arr in list_of_ages_full_process
+        if len(arr) > 0 and arr[0] < time_span
+    ],
+    dtype=np.float64,
+)
+spine_age_samples_all = np.asarray(
+    [arr[0] for arr in list_of_ages_from_distribution if len(arr) > 0]
+    + [arr[0] for arr in list_of_ages_full_process if len(arr) > 0],
+    dtype=np.float64,
+)
+spine_prop_not_at_max = proportion_not_at_upper(spine_age_samples_all, time_span)
+
+non_spine_age_samples_direct = (
+    np.concatenate([arr[1:] for arr in list_of_ages_from_distribution if len(arr) > 1])
+    if any(len(arr) > 1 for arr in list_of_ages_from_distribution)
+    else np.array([], dtype=np.float64)
+)
+non_spine_age_samples_process = (
+    np.concatenate([arr[1:] for arr in list_of_ages_full_process if len(arr) > 1])
+    if any(len(arr) > 1 for arr in list_of_ages_full_process)
+    else np.array([], dtype=np.float64)
+)
+non_spine_age_samples_all = (
+    np.concatenate(
+        [arr[1:] for arr in list_of_ages_from_distribution if len(arr) > 1]
+        + [arr[1:] for arr in list_of_ages_full_process if len(arr) > 1],
+    )
+    if (
+        any(len(arr) > 1 for arr in list_of_ages_from_distribution)
+        or any(len(arr) > 1 for arr in list_of_ages_full_process)
+    )
+    else np.array([], dtype=np.float64)
+)
+non_spine_prop_not_at_max = proportion_not_at_upper(
+    non_spine_age_samples_all, time_span
+)
+
+fig_summary = make_subplots(
+    rows=2,
+    cols=2,
+    horizontal_spacing=0.08,
+    vertical_spacing=0.08,
+    shared_xaxes="columns",
+    shared_yaxes="rows",
+)
+
+spine_grid_process, spine_kde_process = boundary_corrected_kde_on_support(
+    spine_age_samples_process,
+    support_upper=time_span,
+)
+if spine_grid_process is not None:
+    fig_summary.add_trace(
+        go.Scatter(
+            x=spine_grid_process,
+            y=spine_kde_process,
+            mode="lines",
+            line=dict(color=ptolqual[2], width=2),
+            fill="tozeroy",
+            name="KDE full process",
+            showlegend=False,
+        ),
+        row=2,
+        col=1,
+    )
+
+spine_grid_direct, spine_kde_direct = boundary_corrected_kde_on_support(
+    spine_age_samples_direct,
+    support_upper=time_span,
+)
+if spine_grid_direct is not None:
+    fig_summary.add_trace(
+        go.Scatter(
+            x=spine_grid_direct,
+            y=spine_kde_direct,
+            mode="lines",
+            line=dict(color=ptolqual[0], width=2),
+            fill="tozeroy",
+            name="KDE from distribution",
+            showlegend=False,
+        ),
+        row=2,
+        col=2,
+    )
+
+spine_theory_x, spine_theory_y = theoretical_age_density(
+    lambda age: calculate_spine_ages_log_lik(
+        birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
+    ),
+    time_span,
+    include_endpoint=False,
+    proportion_not_at_upper=spine_prop_not_at_max,
+)
+fig_summary.add_trace(
+    go.Scatter(
+        x=spine_theory_x,
+        y=spine_theory_y,
+        mode="lines",
+        line=dict(color=ptolqual[1], width=2, dash="dash"),
+        name="Theoretical Density",
+        showlegend=False,
+    ),
+    row=2,
+    col=1,
+)
+fig_summary.add_trace(
+    go.Scatter(
+        x=spine_theory_x,
+        y=spine_theory_y,
+        mode="lines",
+        line=dict(color=ptolqual[1], width=2, dash="dash"),
+        name="Theoretical Density",
+        showlegend=False,
+    ),
+    row=2,
+    col=2,
+)
+
+non_spine_grid_process, non_spine_kde_process = boundary_corrected_kde_on_support(
+    non_spine_age_samples_process,
+    support_upper=time_span,
+)
+if non_spine_grid_process is not None:
+    fig_summary.add_trace(
+        go.Scatter(
+            x=non_spine_grid_process,
+            y=non_spine_kde_process,
+            mode="lines",
+            line=dict(color=ptolqual[2], width=2),
+            fill="tozeroy",
+            name="KDE full process",
+        ),
+        row=1,
+        col=1,
+    )
+
+non_spine_grid_direct, non_spine_kde_direct = boundary_corrected_kde_on_support(
+    non_spine_age_samples_direct,
+    support_upper=time_span,
+)
+if non_spine_grid_direct is not None:
+    fig_summary.add_trace(
+        go.Scatter(
+            x=non_spine_grid_direct,
+            y=non_spine_kde_direct,
+            mode="lines",
+            line=dict(color=ptolqual[0], width=2),
+            fill="tozeroy",
+            name="KDE from distribution",
+        ),
+        row=1,
+        col=2,
+    )
+
+non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
+    lambda age: calculate_non_spine_ages_log_lik(
+        birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
+    ),
+    time_span,
+    proportion_not_at_upper=non_spine_prop_not_at_max,
+)
+
+
+def robust_ymax(
+    arrays: list[np.ndarray | None],
+    quantile: float = 99.0,
+    pad: float = 1.1,
+) -> float:
+    finite_parts: list[np.ndarray] = []
+    for arr in arrays:
+        if arr is None:
+            continue
+        values = np.asarray(arr, dtype=np.float64)
+        finite = values[np.isfinite(values)]
+        if finite.size > 0:
+            finite_parts.append(finite)
+    if not finite_parts:
+        return 1.0
+
+    joined = np.concatenate(finite_parts)
+    q = float(np.nanpercentile(joined, quantile))
+    if not np.isfinite(q) or q <= 0.0:
+        q = float(np.nanmax(joined)) if joined.size > 0 else 1.0
+    if not np.isfinite(q) or q <= 0.0:
+        q = 1.0
+    return q * float(pad)
+
+
+spine_ymax = robust_ymax([spine_kde_process, spine_kde_direct, spine_theory_y])
+non_spine_ymax = robust_ymax(
+    [non_spine_kde_process, non_spine_kde_direct, non_spine_theory_y]
+)
+
+fig_summary.add_trace(
+    go.Scatter(
+        x=non_spine_theory_x,
+        y=non_spine_theory_y,
+        mode="lines",
+        line=dict(color=ptolqual[1], width=2, dash="dash"),
+        name="Theoretical Density",
+    ),
+    row=1,
+    col=1,
+)
+fig_summary.add_trace(
+    go.Scatter(
+        x=non_spine_theory_x,
+        y=non_spine_theory_y,
+        mode="lines",
+        line=dict(color=ptolqual[1], width=2, dash="dash"),
+        name="Theoretical Density",
+        showlegend=False,
+    ),
+    row=1,
+    col=2,
+)
+
+fig_summary = apply_professional_styling(
+    fig_summary,
+    "Age Densities by Generator (Full Process vs From Distribution)",
+    "",
+    "",
+)
+fig_summary = apply_tufte_axes(fig_summary)
+fig_summary.update_layout(
+    margin=dict(t=50),
+    legend=dict(
+        x=0.99,
+        y=0.99,
+        xanchor="right",
+        yanchor="top",
+    ),
+)
+fig_summary.update_xaxes(range=[0.0, time_span], row=1, col=1)
+fig_summary.update_xaxes(range=[0.0, time_span], row=1, col=2)
+fig_summary.update_xaxes(
+    title_text="Age (full process)", range=[0.0, time_span], row=2, col=1
+)
+fig_summary.update_xaxes(
+    title_text="Age (from distribution)", range=[0.0, time_span], row=2, col=2
+)
+fig_summary.update_yaxes(title_text="", row=1, col=2)
+fig_summary.update_yaxes(title_text="Density (spine)", row=2, col=1)
+fig_summary.update_yaxes(title_text="", row=2, col=2)
+fig_summary.update_yaxes(title_text="Density (non-spine)", row=1, col=1)
+fig_summary.update_yaxes(range=[0.0, non_spine_ymax], row=1, col=1)
+fig_summary.update_yaxes(range=[0.0, non_spine_ymax], row=1, col=2)
+fig_summary.update_yaxes(range=[0.0, spine_ymax], row=2, col=1)
+fig_summary.update_yaxes(range=[0.0, spine_ymax], row=2, col=2)
+fig_summary.show()
+saved_age_densities = save_figure(
+    fig_summary,
+    "methods_validation_age_densities",
+    width=400,
+    height=350,
+)
+print(f"Saved age-density figure: {saved_age_densities}")
+```
+
+The density of the spine age distribution does not include the point mass at the maximum time span.
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+from pathlib import Path
+import time
+
+doc_name = "methods_validation_simulation_checks.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

@@ -176,6 +176,7 @@ def calculate_populations_log_lik(
     times: torch.Tensor | float,
     *,
     initial_population: int = 1,
+    unbias: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     r"""Calculate log-probability of population counts under birth-death process.
@@ -201,6 +202,10 @@ def calculate_populations_log_lik(
         log-probabilities.
     initial_population : int
         The number of initial individuals at time 0. Default is 1.
+    unbias : bool
+        If True, condition on non-extinction for positive counts when the
+        initial population is 1 by using the geometric mass with parameter
+        ``1 - beta_t`` on the positive integers.
 
     Returns
     -------
@@ -332,7 +337,23 @@ def calculate_populations_log_lik(
     # Handle n > 0 case
     nonzero_mask = torch.logical_not(zero_mask)
     if torch.any(nonzero_mask):
-        if initial_population == 1:
+        if unbias and initial_population == 1:
+            log_one_minus_beta = torch.log1p(-beta_t)
+            log_beta = torch.log(beta_t)
+            log_term3 = torch.where(
+                ns == 1,
+                torch.tensor(0.0, dtype=torch.float64),
+                (ns - 1) * log_beta,
+            )
+
+            if not (
+                torch.isfinite(log_one_minus_beta)
+                and torch.all(torch.isfinite(log_term3[nonzero_mask]))
+            ):
+                return torch.tensor(float("-inf"), dtype=torch.float64)
+
+            log_pr[nonzero_mask] = (log_one_minus_beta + log_term3)[nonzero_mask]
+        elif initial_population == 1:
             log_term1 = torch.log1p(-alpha_t)
             log_term2 = torch.log1p(-beta_t)
             log_term3 = torch.where(
@@ -374,6 +395,7 @@ def calculate_non_spine_ages_log_lik(
     ages: torch.Tensor | float,
     times: torch.Tensor | float,
     *,
+    return_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     """Calculate log-likelihood of the ages of the "non-spine" individual(s).
@@ -397,6 +419,9 @@ def calculate_non_spine_ages_log_lik(
         Age(s) *a*. All ages must satisfy 0 ≤ *a* ≤ *T*.
     times : torch.Tensor | float
         Observation time(s) *T*. For multi-epoch case, the end of each epoch.
+    return_array : bool, optional
+        If True, return the per-age log-likelihood contributions instead of
+        the summed value. Default False.
 
     Returns
     -------
@@ -445,6 +470,7 @@ def calculate_non_spine_ages_log_lik(
             reflected_birth_rates,
             reflected_death_rates,
             inverted_times,
+            as_array=return_array,
             _skip_normalization=True,
         )
 
@@ -494,16 +520,24 @@ def calculate_non_spine_ages_log_lik(
         if not (
             torch.all(torch.isfinite(log_numerator)) and torch.isfinite(log_denominator)
         ):
-            return torch.tensor(float("-inf"), dtype=torch.float64)
+            return (
+                torch.full_like(ages, float("-inf"), dtype=torch.float64)
+                if return_array
+                else torch.tensor(float("-inf"), dtype=torch.float64)
+            )
 
-    # Calculate final log density
-    log_density = torch.sum(log_numerator - log_denominator)
+    # Calculate final log density contributions
+    log_density = log_numerator - log_denominator
 
     # Final numerical check
-    if not torch.isfinite(log_density):
-        return torch.tensor(float("-inf"), dtype=torch.float64)
+    if not torch.all(torch.isfinite(log_density)):
+        return (
+            torch.full_like(ages, float("-inf"), dtype=torch.float64)
+            if return_array
+            else torch.tensor(float("-inf"), dtype=torch.float64)
+        )
 
-    return log_density
+    return log_density if return_array else torch.sum(log_density)
 
 
 def calculate_spine_ages_log_lik(
@@ -512,6 +546,7 @@ def calculate_spine_ages_log_lik(
     ages: torch.Tensor | float,
     times: torch.Tensor | float,
     *,
+    return_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     """Calculate log-likelihood of the age(s) of the special "spine" individual(s).
@@ -536,6 +571,9 @@ def calculate_spine_ages_log_lik(
         Age(s) a. All ages must satisfy 0 ≤ a ≤ T.
     times : torch.Tensor | float
         Observation time(s) T. For multi-epoch case, the end of each epoch.
+    return_array : bool, optional
+        If True, return the per-age log-likelihood contributions instead of
+        the summed value. Default False.
 
     Returns
     -------
@@ -584,6 +622,7 @@ def calculate_spine_ages_log_lik(
             birth_rates=reflected_birth_rates,
             death_rates=reflected_death_rates,
             times=inverted_times,
+            as_array=return_array,
             _skip_normalization=True,
         )
 
@@ -607,7 +646,7 @@ def calculate_spine_ages_log_lik(
             boundary_val,
             2 * torch.log(avg_rate) + torch.log(ages) - avg_rate * ages,
         )
-        return torch.sum(log_density)
+        return log_density if return_array else torch.sum(log_density)
     # General case: λ ≠ μ
     log_numerator = torch.zeros_like(ages, dtype=torch.float64)
     denom_t = birth_rate - death_rate
@@ -640,16 +679,24 @@ def calculate_spine_ages_log_lik(
     if not (
         torch.all(torch.isfinite(log_numerator)) and torch.isfinite(log_denominator)
     ):
-        return torch.tensor(float("-inf"), dtype=torch.float64)
+        return (
+            torch.full_like(ages, float("-inf"), dtype=torch.float64)
+            if return_array
+            else torch.tensor(float("-inf"), dtype=torch.float64)
+        )
 
-    # Calculate final log density (sum across all ages)
-    log_density = torch.sum(log_numerator - log_denominator)
+    # Calculate final log density contributions
+    log_density = log_numerator - log_denominator
 
     # Final numerical check
-    if not torch.isfinite(log_density):
-        return torch.tensor(float("-inf"), dtype=torch.float64)
+    if not torch.all(torch.isfinite(log_density)):
+        return (
+            torch.full_like(ages, float("-inf"), dtype=torch.float64)
+            if return_array
+            else torch.tensor(float("-inf"), dtype=torch.float64)
+        )
 
-    return log_density
+    return log_density if return_array else torch.sum(log_density)
 
 
 def calculate_ages_log_lik(
@@ -810,6 +857,7 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
     death_rates: torch.Tensor,
     times: torch.Tensor,
     *,
+    as_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     """Calculate log-likelihood of initial lifetime(s) given extinction.
@@ -826,12 +874,16 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
         1D tensor of death rates μ per epoch; same length as ``birth_rates``.
     times : torch.Tensor
         1D, strictly increasing tensor of epoch end times matching rate arrays.
+    as_array : bool, optional
+        If True, return the per-lifetime contributions aligned with
+        ``lifetimes`` instead of summing them. Default False.
 
     Returns
     -------
     torch.Tensor
-        Scalar tensor (shape ()) containing summed log-likelihood values.
-        dtype: torch.float64.
+        Scalar tensor (shape ()) containing summed log-likelihood values when
+        ``as_array`` is False. If ``as_array`` is True, returns per-lifetime
+        contributions aligned with ``lifetimes``. dtype: torch.float64.
 
     """
     if not _skip_normalization:
@@ -870,6 +922,7 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
         lifetimes=lifetimes,
         death_rates=death_rates,
         times=times,
+        as_array=as_array,
         _skip_normalization=True,
     )
     log_extinction_prob = calculate_extinction_pr(
@@ -881,6 +934,13 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
     )
 
     # Compute conditional log likelihood
+    if as_array:
+        return (
+            log_prs_extinction_given_lifetimes
+            + log_liks_lifetimes
+            - log_extinction_prob
+        )
+
     return (
         torch.sum(log_prs_extinction_given_lifetimes)
         + log_liks_lifetimes
@@ -894,6 +954,7 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     death_rates: torch.Tensor,
     times: torch.Tensor,
     *,
+    as_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     """Calculate log-likelihood of initial lifetime(s) given non-extinction.
@@ -911,12 +972,16 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
         1D tensor of death rates μ per epoch; same length as ``birth_rates``.
     times : torch.Tensor
         1D, strictly increasing tensor of epoch end times matching rate arrays.
+    as_array : bool, optional
+        If True, return the per-lifetime contributions aligned with
+        ``lifetimes`` instead of summing them. Default False.
 
     Returns
     -------
     torch.Tensor
-        Scalar tensor (shape ()) containing summed log-likelihood values
-        in torch.float64.
+        Scalar tensor (shape ()) containing summed log-likelihood values when
+        ``as_array`` is False. If ``as_array`` is True, returns per-lifetime
+        contributions aligned with ``lifetimes``. dtype: torch.float64.
 
     """
     if not _skip_normalization:
@@ -956,6 +1021,7 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
         lifetimes=lifetimes,
         death_rates=death_rates,
         times=times,
+        as_array=as_array,
         _skip_normalization=True,
     )
     log_extinction_prob = calculate_extinction_pr(
@@ -971,6 +1037,13 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     )
 
     # Compute conditional log likelihood
+    if as_array:
+        return (
+            log_prs_non_extinction_given_lifetimes
+            + log_liks_lifetimes
+            - torch.log(-torch.expm1(log_extinction_prob))
+        )
+
     return (
         torch.sum(log_prs_non_extinction_given_lifetimes)
         + log_liks_lifetimes
@@ -1145,6 +1218,7 @@ def calculate_log_lik_lifetimes(
     death_rates: torch.Tensor,
     times: torch.Tensor,
     *,
+    as_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
     """Calculate log-likelihood of manuscript lifetime(s).
@@ -1161,12 +1235,17 @@ def calculate_log_lik_lifetimes(
     times : torch.Tensor
         1D, strictly increasing tensor of epoch end times (shape: (n_epochs,),
         dtype: torch.float64).
+    as_array : bool, optional
+        If True, return the per-lifetime contributions aligned with
+        ``lifetimes`` instead of summing them. Default False.
 
     Returns
     -------
     torch.Tensor
-        Scalar tensor containing sum of log-likelihood values.
-        Shape: (), dtype: torch.float64.
+        Scalar tensor containing sum of log-likelihood values when
+        ``as_array`` is False. If ``as_array`` is True, returns the per-lifetime
+        contributions aligned with ``lifetimes``. Shape: (), or (n,).
+        dtype: torch.float64.
 
     """
     # Convert inputs to tensors
@@ -1221,7 +1300,7 @@ def calculate_log_lik_lifetimes(
 
         log_liks[i] = torch.log(current_mu) - cum_growth
 
-    return torch.sum(log_liks)
+    return log_liks if as_array else torch.sum(log_liks)
 
 
 def _population_geometric_parameter(

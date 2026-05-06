@@ -1,14 +1,17 @@
 ---
-title: "Age Likelihoods (Non-Spine)"
+title: "Non-Spine Age Likelihood"
+subtitle: "Formulation, Multi-Epoch Reduction, and Numerical Stability"
 ---
 
-This page documents the non-spine age log-likelihood function used in the birth-death
-model:
+## Overview
+
+This page documents the non-spine age log-likelihood used in the birth-death
+model, including the single-epoch closed form, the multi-epoch reduction, and
+stability safeguards in implementation.
+
+Core function:
 
 - `calculate_non_spine_ages_log_lik(birth_rates, death_rates, ages_t, times)`
-
-It covers the single-epoch closed form, the multi-epoch transformation, and the
-numerical-stability behavior.
 
 ## Purpose
 
@@ -175,3 +178,30 @@ log_lik = calculate_non_spine_ages_log_lik(birth_rates_val, death_rates_val, age
 - `calculate_spine_ages_log_lik`: spine age likelihood (includes boundary mass at $t=T$).
 - `calculate_ages_log_lik`: dispatches to spine or non-spine likelihood.
 - `calculate_log_lik_initial_lifetimes_given_extinction`: used in the multi-epoch path.
+
+## Unknown Spine (Default Inference Path)
+
+In `log_likelihood`, when `spine_ages` is not provided and `is_ordered=False`,
+the spine is treated as unknown among the provided ages. The implementation
+assumes exactly one spine with a uniform prior over the $n$ observed ages.
+
+Let $f(x_i;\theta)$ be the non-spine age density and $g(x_i;\theta)$ be the
+spine age density. The age-component log-likelihood is
+
+$$
+\ell(\theta)= \sum_{i=1}^n \log f(x_i;\theta) - \log n + \log \left( \sum_{k=1}^n \exp\big( \log g(x_k;\theta) - \log f(x_k;\theta) \big) \right).
+$$
+
+Define
+
+$$
+a_k = \log g(x_k;\theta) - \log f(x_k;\theta).
+$$
+
+Then compute the summation term with a stable log-sum-exp transform:
+
+$$
+\log \sum_{k=1}^n e^{a_k}= m + \log \sum_{k=1}^n e^{a_k - m},\quad m = \max_k a_k.
+$$
+
+This avoids underflow/overflow and is numerically robust for optimization.

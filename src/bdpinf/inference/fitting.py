@@ -14,11 +14,12 @@ from inf_bp_texts.models.validation import normalize_and_validate_inputs
 from inf_bp_texts.utils import ensure_1d_tensor
 
 from .likelihood import negative_log_likelihood
+from .uncertainty import estimate_mle_covariance
 
-DEFAULT_GRADIENT_THRESHOLD = 1e-5
-DEFAULT_ABSOLUTE_TOLERANCE = 1e-9
+DEFAULT_GRADIENT_THRESHOLD = 5e-4
+DEFAULT_ABSOLUTE_TOLERANCE = 1e-7
 DEFAULT_PATIENCE = 5
-DEFAULT_ITERATIONS = 1000
+DEFAULT_ITERATIONS = 10000
 MIN_EQUALITY_GROUP_SIZE = 2
 
 
@@ -37,12 +38,22 @@ class OptimizerRunResult:
     """Result payload from running optimizer strategies."""
 
     log_params: torch.nn.Parameter
-    nll_history: list[float]
-    optimizer_used: str
-    iterations: int
     converged: bool
-    all_exceptions: list[Exception]
-    failed_optimizer_histories: list[dict[str, Any]]
+    selected_attempt_index: int | None
+    attempts: list["OptimizerAttemptResult"]
+
+
+@dataclass(frozen=True)
+class OptimizerAttemptResult:
+    """Result payload for a single optimizer attempt."""
+
+    optimizer: str
+    attempt_index: int
+    converged: bool
+    iterations: int
+    nll_history: list[float]
+    exception_type: str | None = None
+    exception_message: str | None = None
 
 
 class FitKwargs(TypedDict, total=False):
@@ -55,10 +66,12 @@ class FitKwargs(TypedDict, total=False):
     population_sizes: torch.Tensor | None
     initial_population: int
     optimizers: Sequence[str] | str
+    unbias: bool
     optimizer_kwargs: dict[str, dict[str, Any]] | None
     perturb_initial_params_std: float
     random_seed: int | None
     param_constraints: "ParameterConstraints | None"
+    estimate_uncertainty: bool
 
 
 @dataclass(frozen=True)
@@ -263,16 +276,18 @@ def fit_birth_death_processes(
     spine_ages: torch.Tensor | None = None,
     population_sizes: torch.Tensor | None = None,
     initial_population: int = 1,
-    optimizers: Sequence[str] | str = ("LBFGS", "Adam", "SGD"),
+    optimizers: Sequence[str] | str = ("LBFGS", "Adam"),
     optimizer_kwargs: dict[str, dict[str, Any]] | None = None,
     perturb_initial_params_std: float = 0.0,
     random_seed: int | None = None,
+    unbias: bool = True,
     convergence_config: ConvergenceConfig | None = None,
     param_constraints: ParameterConstraints | None = None,
+    estimate_uncertainty: bool = True,
 ) -> dict[str, Any]:
     """Fit birth-death parameters to grouped age data via PyTorch.
 
-    Optimizes log-parameters (LBFGS, Adam, SGD) until convergence.
+    Optimizes log-parameters with requested optimizers (defaults: LBFGS, Adam).
 
     Parameters
     ----------
@@ -292,6 +307,7 @@ def fit_birth_death_processes(
         The number of initial individuals at time 0. Default is 1.
     optimizers : Sequence[str] | str
         Optimizer names ('LBFGS', 'Adam', 'SGD') to try sequentially.
+        Defaults to ('LBFGS', 'Adam').
     optimizer_kwargs : Dict[str, Dict[str, Any]] | None
         Custom per-optimizer hyperparams (e.g. {'adam': {'lr': 0.01}}).
     perturb_initial_params_std : float
@@ -302,6 +318,13 @@ def fit_birth_death_processes(
         Custom convergence criteria; defaults used if None.
     param_constraints : ParameterConstraints | None
         Constraints for fixed/equal parameters; None = no constraints.
+    estimate_uncertainty : bool
+        If True (default), estimate uncertainty via the observed Fisher
+        information (Hessian of NLL in free log-parameter space). The returned
+        covariance is in the full log-parameter space.
+    unbias : bool
+        If True (default), use the conditional non-extinction population mass
+        for positive counts when evaluating the likelihood.
 
     Returns
     -------
@@ -378,45 +401,15 @@ def fit_birth_death_processes(
         spine_ages_tensor=spine_ages_tensor,
         population_sizes_tensor=population_sizes_tensor,
         initial_population=initial_population,
+        unbias=unbias,
         convergence_config=convergence_config,
         param_constraints=param_constraints,
     )
 
     log_params = optimizer_run_result.log_params
-    nll_history = optimizer_run_result.nll_history
-    optimizer_used = optimizer_run_result.optimizer_used
-    iterations = optimizer_run_result.iterations
     converged = optimizer_run_result.converged
-    all_exceptions = optimizer_run_result.all_exceptions
-    failed_optimizer_histories = optimizer_run_result.failed_optimizer_histories
 
-    if not converged:
-        last_exception = all_exceptions[-1] if all_exceptions else None
-        error_message = str(last_exception) if last_exception is not None else None
-        error_type = (
-            type(last_exception).__name__ if last_exception is not None else None
-        )
-        errors = [
-            {"error": str(exc), "error_type": type(exc).__name__}
-            for exc in all_exceptions
-        ]
-        final_nll = nll_history[-1] if nll_history else None
-        return {
-            "success": False,
-            "error": error_message,
-            "error_type": error_type,
-            "errors": errors,
-            "nll_history": nll_history,
-            "failed_optimizer_histories": failed_optimizer_histories,
-            "optimization_result": {
-                "optimizer": optimizer_used,
-                "iterations": iterations,
-                "converged": converged,
-                "nll_history_length": len(nll_history),
-                "final_nll": final_nll,
-                "exceptions_count": len(all_exceptions),
-            },
-        }
+    optimization_result = _build_optimization_result_payload(optimizer_run_result)
 
     # Expand log_params from reduced to full space for finalization
     full_params = _apply_constraints_to_full_params(
@@ -434,22 +427,96 @@ def fit_birth_death_processes(
         spine_ages_tensor=spine_ages_tensor,
         population_sizes_tensor=population_sizes_tensor,
         initial_population=initial_population,
+        unbias=unbias,
     )
     if finalized is None:
-        return {"success": False}
+        return {
+            "success": False,
+            "optimization_result": optimization_result,
+        }
 
     birth_rates, death_rates, final_log_likelihood, final_loss = finalized
-    return {
+    result = {
         "success": converged,
         "birth_rates": birth_rates,
         "death_rates": death_rates,
         "log_likelihood": final_log_likelihood,
-        "nll_history": nll_history,
         "optimization_result": {
-            "optimizer": optimizer_used,
-            "iterations": iterations,
+            **optimization_result,
             "final_loss": final_loss,
         },
+    }
+
+    if estimate_uncertainty:
+
+        def full_log_params_fn(theta_free: torch.Tensor) -> torch.Tensor:
+            return torch.log(
+                _apply_constraints_to_full_params(
+                    torch.exp(theta_free),
+                    param_constraints,
+                    2 * n_epochs,
+                ),
+            )
+
+        covariance = estimate_mle_covariance(
+            free_log_params=log_params.detach(),
+            n_epochs=n_epochs,
+            full_log_params_fn=full_log_params_fn,
+            non_spine_ages=non_spine_ages,
+            times_tensor=times_tensor,
+            spine_ages_tensor=spine_ages_tensor,
+            population_sizes_tensor=population_sizes_tensor,
+            initial_population=initial_population,
+            unbias=unbias,
+        )
+        result["uncertainty"] = covariance.detach().cpu().numpy()
+
+    return result
+
+
+def _build_optimization_result_payload(
+    optimizer_run_result: OptimizerRunResult,
+) -> dict[str, Any]:
+    """Create attempt-centric optimization payload for fit results."""
+    attempts_payload: list[dict[str, Any]] = []
+    for attempt in optimizer_run_result.attempts:
+        first_nll = attempt.nll_history[0] if attempt.nll_history else None
+        best_nll = min(attempt.nll_history) if attempt.nll_history else None
+        final_nll = attempt.nll_history[-1] if attempt.nll_history else None
+        attempts_payload.append(
+            {
+                "optimizer": attempt.optimizer,
+                "attempt_index": attempt.attempt_index,
+                "converged": attempt.converged,
+                "iterations": attempt.iterations,
+                "nll_history": attempt.nll_history,
+                "first_nll": first_nll,
+                "best_nll": best_nll,
+                "final_nll": final_nll,
+                "exception_type": attempt.exception_type,
+                "exception": attempt.exception_message,
+            },
+        )
+
+    best_attempt_index: int | None = None
+    best_attempt_value = float("inf")
+    for attempt_payload in attempts_payload:
+        if attempt_payload["best_nll"] is None:
+            continue
+        if attempt_payload["best_nll"] < best_attempt_value:
+            best_attempt_value = attempt_payload["best_nll"]
+            best_attempt_index = attempt_payload["attempt_index"]
+
+    first_attempt_index = 0 if attempts_payload else None
+    last_attempt_index = len(attempts_payload) - 1 if attempts_payload else None
+
+    return {
+        "converged": optimizer_run_result.converged,
+        "selected_attempt_index": optimizer_run_result.selected_attempt_index,
+        "first_attempt_index": first_attempt_index,
+        "last_attempt_index": last_attempt_index,
+        "best_attempt_index": best_attempt_index,
+        "attempts": attempts_payload,
     }
 
 
@@ -519,12 +586,13 @@ def _run_optimizer_strategies(
     initial_params: torch.Tensor,
     n_epochs: int,
     non_spine_ages: torch.Tensor,
-    initial_population: int,
     times_tensor: torch.Tensor,
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
+    initial_population: int,
     convergence_config: ConvergenceConfig,
     param_constraints: ParameterConstraints | None = None,
+    unbias: bool = True,
 ) -> OptimizerRunResult:
     """Run optimizers sequentially until convergence; return params, history, metadata.
 
@@ -552,11 +620,8 @@ def _run_optimizer_strategies(
     n_total_params = 2 * n_epochs
 
     converged = False
-    iterations: int = 0
-    optimizer_used = "Unknown"
-    nll_history: list[float] = []
-    all_exceptions: list[Exception] = []
-    failed_optimizer_histories: list[dict[str, Any]] = []
+    selected_attempt_index: int | None = None
+    attempts: list[OptimizerAttemptResult] = []
 
     def _compute_nll() -> torch.Tensor:
         """Compute negative log likelihood for current log_params."""
@@ -575,64 +640,60 @@ def _run_optimizer_strategies(
             spine_ages=spine_ages_tensor,
             ns=population_sizes_tensor,
             initial_population=initial_population,
+            unbias=unbias,
             is_ordered=False,
             log_scale_params=True,
         )
 
-    for key in requested_keys:
+    for idx, key in enumerate(requested_keys):
         strategy = strategies_map[key]
-        optimizer_used = strategy.name
 
-        success, best_log_params, opt_iterations = _run_single_optimizer(
+        attempt, best_log_params = _run_single_optimizer(
             strategy=strategy,
+            attempt_index=idx,
             log_params=log_params,
             initial_params=initial_params,
-            nll_history=nll_history,
-            all_exceptions=all_exceptions,
-            failed_optimizer_histories=failed_optimizer_histories,
             convergence_config=convergence_config,
             compute_nll_fn=_compute_nll,
             param_constraints=param_constraints,
             n_total_params=n_total_params,
         )
-
-        iterations = opt_iterations
+        attempts.append(attempt)
 
         if best_log_params is not None:
             with torch.no_grad():
                 log_params.copy_(best_log_params)
 
-        if success:
+        if attempt.converged:
             converged = True
+            selected_attempt_index = idx
             break
+
+    if not converged and attempts:
+        selected_attempt_index = 0
 
     return OptimizerRunResult(
         log_params=log_params,
-        nll_history=nll_history,
-        optimizer_used=optimizer_used,
-        iterations=iterations,
         converged=converged,
-        all_exceptions=all_exceptions,
-        failed_optimizer_histories=failed_optimizer_histories,
+        selected_attempt_index=selected_attempt_index,
+        attempts=attempts,
     )
 
 
 def _run_single_optimizer(
     strategy: OptimizerStrategy,
+    attempt_index: int,
     log_params: torch.nn.Parameter,
     initial_params: torch.Tensor,
-    nll_history: list[float],
-    all_exceptions: list[Exception],
-    failed_optimizer_histories: list[dict[str, Any]],
     convergence_config: ConvergenceConfig,
     compute_nll_fn: Callable[[], torch.Tensor],
     param_constraints: ParameterConstraints | None = None,
     n_total_params: int | None = None,
-) -> tuple[bool, torch.Tensor | None, int]:
+) -> tuple[OptimizerAttemptResult, torch.Tensor | None]:
     """Run a single optimizer strategy and handle results.
 
     Returns:
-        (success, best_log_params, iterations)
+        (attempt_result, best_log_params)
 
     """
     if param_constraints is None:
@@ -640,7 +701,7 @@ def _run_single_optimizer(
     if n_total_params is None:
         n_total_params = len(initial_params)
 
-    history_start_idx = len(nll_history)
+    attempt_nll_history: list[float] = []
     iterations = 0
 
     try:
@@ -656,12 +717,12 @@ def _run_single_optimizer(
 
         if strategy.name == "LBFGS":
             lbfgs_optimizer = cast("torch.optim.LBFGS", optimizer)
-            did_converge, exc, best_log_params = _run_lbfgs_optimizer(
+            did_converge, exc, best_log_params, iterations = _run_lbfgs_optimizer(
                 strategy=strategy,
                 log_params=log_params,
                 optimizer=lbfgs_optimizer,
                 max_iters=strategy.max_iters,
-                nll_history=nll_history,
+                nll_history=attempt_nll_history,
                 convergence_config=convergence_config,
                 compute_nll_fn=compute_nll_fn,
             )
@@ -671,26 +732,48 @@ def _run_single_optimizer(
                 log_params=log_params,
                 optimizer=optimizer,
                 max_iters=strategy.max_iters,
-                nll_history=nll_history,
+                nll_history=attempt_nll_history,
                 convergence_config=convergence_config,
                 compute_nll_fn=compute_nll_fn,
             )
     except (RuntimeError, ValueError) as exc:
-        all_exceptions.append(exc)
-        return False, None, iterations
+        return (
+            OptimizerAttemptResult(
+                optimizer=strategy.name,
+                attempt_index=attempt_index,
+                converged=False,
+                iterations=iterations,
+                nll_history=attempt_nll_history,
+                exception_type=type(exc).__name__,
+                exception_message=str(exc),
+            ),
+            None,
+        )
     else:
         if exc is not None:
-            all_exceptions.append(exc)
-            optimizer_history = nll_history[history_start_idx:]
-            failed_optimizer_histories.append(
-                {
-                    "optimizer": strategy.name,
-                    "nll_history": optimizer_history,
-                },
+            return (
+                OptimizerAttemptResult(
+                    optimizer=strategy.name,
+                    attempt_index=attempt_index,
+                    converged=False,
+                    iterations=iterations,
+                    nll_history=attempt_nll_history,
+                    exception_type=type(exc).__name__,
+                    exception_message=str(exc),
+                ),
+                None,
             )
-            return False, None, iterations
 
-        return did_converge, best_log_params, iterations
+        return (
+            OptimizerAttemptResult(
+                optimizer=strategy.name,
+                attempt_index=attempt_index,
+                converged=did_converge,
+                iterations=iterations,
+                nll_history=attempt_nll_history,
+            ),
+            best_log_params,
+        )
 
 
 def _run_lbfgs_optimizer(
@@ -701,11 +784,11 @@ def _run_lbfgs_optimizer(
     nll_history: list[float],
     convergence_config: ConvergenceConfig,
     compute_nll_fn: Callable[[], torch.Tensor],
-) -> tuple[bool, Exception | None, torch.Tensor | None]:
+) -> tuple[bool, Exception | None, torch.Tensor | None, int]:
     """Run LBFGS optimization loop.
 
     Returns:
-        (did_converge, current_exception, best_log_params)
+        (did_converge, current_exception, best_log_params, iterations)
 
     """
     last_nll_value: float | None = None
@@ -715,8 +798,10 @@ def _run_lbfgs_optimizer(
     first_nll: float | None = None
     improved_once = False
     current_exception: Exception | None = None
+    iterations = 0
 
-    for _ in range(max_iters):
+    for iteration in range(max_iters):
+        iterations = iteration + 1
 
         def closure() -> torch.Tensor:
             nonlocal last_nll_value
@@ -752,7 +837,7 @@ def _run_lbfgs_optimizer(
             nll_history=nll_history,
             convergence_config=convergence_config,
         ):
-            return True, None, best_log_params
+            return True, None, best_log_params, iterations
 
         last_grad_norm = (
             float(torch.norm(log_params.grad).item())
@@ -766,7 +851,7 @@ def _run_lbfgs_optimizer(
         )
 
     if current_exception is not None:
-        return False, current_exception, best_log_params
+        return False, current_exception, best_log_params, iterations
 
     first_nll_value = first_nll if first_nll is not None else float("nan")
     final_nll_value = last_nll_value if last_nll_value is not None else float("nan")
@@ -781,7 +866,7 @@ def _run_lbfgs_optimizer(
         f"last_grad_norm={last_grad_norm}, "
         f"gradient_threshold={convergence_config.gradient_threshold}",
     )
-    return False, current_exception, best_log_params
+    return False, current_exception, best_log_params, iterations
 
 
 def _run_first_order_optimizer(
@@ -807,8 +892,10 @@ def _run_first_order_optimizer(
     improved_once = False
     current_exception: Exception | None = None
     absolute_tolerance = convergence_config.absolute_tolerance
+    iterations = 0
 
     for iteration in range(max_iters):
+        iterations = iteration + 1
         nll = compute_nll_fn()
         optimizer.zero_grad()
 
@@ -817,7 +904,7 @@ def _run_first_order_optimizer(
                 f"Non-finite objective encountered during optimization with "
                 f"{strategy.name}.",
             )
-            return False, current_exception, None, iteration
+            return False, current_exception, None, iterations
 
         nll.backward()  # type: ignore[no-untyped-call]
         optimizer.step()
@@ -849,7 +936,7 @@ def _run_first_order_optimizer(
             convergence_config=convergence_config,
             iterations_without_improvement=iterations_without_improvement,
         ):
-            return True, None, best_log_params, iteration
+            return True, None, best_log_params, iterations
 
         last_grad_norm = (
             float(torch.norm(log_params.grad).item())
@@ -861,7 +948,7 @@ def _run_first_order_optimizer(
         current_exception = RuntimeError(
             f"Objective did not improve from initial value with {strategy.name}.",
         )
-        return False, current_exception, None, iteration
+        return False, current_exception, None, iterations
 
     first_nll_value = first_nll if first_nll is not None else float("nan")
     final_nll_value = nll_history[-1] if nll_history else float("nan")
@@ -869,7 +956,7 @@ def _run_first_order_optimizer(
     current_exception = RuntimeError(
         "Convergence not reached with "
         f"{strategy.name}: max_iters={max_iters}, "
-        f"iterations={iteration}, "
+        f"iterations={iterations}, "
         f"history_len={len(nll_history)}, "
         f"first_nll={first_nll_value:.6f}, "
         f"best_nll={best_nll:.6f}, "
@@ -880,7 +967,7 @@ def _run_first_order_optimizer(
         f"patience={convergence_config.patience}, "
         f"gradient_threshold={convergence_config.gradient_threshold}",
     )
-    return False, current_exception, best_log_params, iteration
+    return False, current_exception, best_log_params, iterations
 
 
 def _get_crude_parameter_estimates(
@@ -1069,7 +1156,7 @@ def _build_optimizer_strategies(
             "Adam",
             torch.optim.Adam,
             DEFAULT_ITERATIONS,
-            {"lr": 0.001},
+            {"lr": 0.1},
         ),
         "lbfgs": OptimizerStrategy(
             "LBFGS",
@@ -1182,6 +1269,7 @@ def _finalize_fit(
     spine_ages_tensor: torch.Tensor | None,
     population_sizes_tensor: torch.Tensor,
     initial_population: int = 1,
+    unbias: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, float, float] | None:
     """Convert log params to original scale; return rates + final likelihoods."""
     with torch.no_grad():
@@ -1193,6 +1281,7 @@ def _finalize_fit(
             spine_ages=spine_ages_tensor,
             ns=population_sizes_tensor,
             initial_population=initial_population,
+            unbias=unbias,
             is_ordered=False,
             log_scale_params=True,
         )

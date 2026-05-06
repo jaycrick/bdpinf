@@ -584,6 +584,24 @@ class TestMultiEpochEqualsSingleEpoch:
         assert torch.isfinite(multi)
         assert_close(actual=multi, expected=single)
 
+    def test_spine_ages_log_lik_return_array_matches_sum(self) -> None:
+        ages = torch.tensor([20.0, 40.0, 110.0], dtype=torch.float64)
+        birth_rates = torch.tensor([0.018], dtype=torch.float64)
+        death_rates = torch.tensor([0.009], dtype=torch.float64)
+        times = torch.tensor([120.0], dtype=torch.float64)
+
+        per_age = calculate_spine_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages,
+            times,
+            return_array=True,
+        )
+        summed = calculate_spine_ages_log_lik(birth_rates, death_rates, ages, times)
+
+        assert per_age.shape == ages.shape
+        assert_close(actual=per_age.sum(), expected=summed)
+
     def test_ages_log_lik_multi_equals_single_non_spine(self) -> None:
         ages = torch.tensor([10.0, 55.0, 90.0], dtype=torch.float64)
         birth_rate_val, death_rate_val, times = (
@@ -619,6 +637,29 @@ class TestMultiEpochEqualsSingleEpoch:
         assert torch.isfinite(single)
         assert torch.isfinite(multi)
         assert_close(actual=multi, expected=single)
+
+    def test_non_spine_ages_log_lik_return_array_matches_sum(self) -> None:
+        ages = torch.tensor([10.0, 55.0, 90.0], dtype=torch.float64)
+        birth_rates = torch.tensor([0.02], dtype=torch.float64)
+        death_rates = torch.tensor([0.01], dtype=torch.float64)
+        times = torch.tensor([120.0], dtype=torch.float64)
+
+        per_age = calculate_non_spine_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages,
+            times,
+            return_array=True,
+        )
+        summed = calculate_non_spine_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages,
+            times,
+        )
+
+        assert per_age.shape == ages.shape
+        assert_close(actual=per_age.sum(), expected=summed)
 
     def test_ages_log_lik_multi_equals_single_spine(self) -> None:
         ages = torch.tensor([15.0, 120.0], dtype=torch.float64)

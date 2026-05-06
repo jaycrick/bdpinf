@@ -362,7 +362,7 @@ class BirthDeathProcess:
             self._epoch_end_times = previous_epoch_end_times
             raise
 
-    def log_likelihood(self) -> torch.Tensor:
+    def log_likelihood(self, unbias: bool = True) -> torch.Tensor:
         """Compute log-likelihood directly from the current model state.
 
         Raises
@@ -384,9 +384,10 @@ class BirthDeathProcess:
             death_rates=self._death_rates,
             ages=self.manuscript_ages,
             times=self.adjusted_epoch_end_times,
+            unbias=unbias,
         )
 
-    def negative_log_likelihood(self) -> torch.Tensor:
+    def negative_log_likelihood(self, unbias: bool = True) -> torch.Tensor:
         """Compute negative log-likelihood directly from the current model state."""
         if self._birth_rates is None or self._death_rates is None:
             msg = "birth_rates and death_rates must be set before likelihood calls"
@@ -401,6 +402,7 @@ class BirthDeathProcess:
             death_rates=self._death_rates,
             ages=self.manuscript_ages,
             times=self.adjusted_epoch_end_times,
+            unbias=unbias,
         )
 
     def update_parameters(

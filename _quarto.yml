@@ -3,6 +3,8 @@ project:
   output-dir: _output
   render:
     - qmd_scripts/*.qmd
+    - qmd_scripts/validation/**/*.qmd
+    - qmd_scripts/core_analysis/**/*.qmd
     - docs/*.qmd
     - reference/*.qmd
 
@@ -23,20 +25,68 @@ website:
     left:
       - text: "Reference"
         file: reference/index.qmd
-      - text: "Analysis Scripts"
+      - text: "Data Exploration"
         menu:
-          - text: "Data Exploration"
-            file: qmd_scripts/manuscript_data_exploration.qmd
-          - text: "Birth-Death Inference"
-            file: qmd_scripts/birth_death_inference.qmd
-          - text: "Birth-Death Inference (Multiple Initial Manuscripts)"
-            file: qmd_scripts/birth_death_inference_mult_start.qmd
-          - text: "Methods Validation"
-            file: qmd_scripts/methods_validation.qmd
-          - text: "Multi-Epoch Validation"
-            file: qmd_scripts/methods_validation_multi_epoch.qmd
-          - text: "Optimiser Comparison"
-            file: qmd_scripts/optimiser_comparison.qmd
+          - text: "NTVMR Data Exploration"
+            file: qmd_scripts/core_analysis/01_data_exploration/manuscript_data_exploration.qmd
+          - text: "Kashouh Data Exploration"
+            file: qmd_scripts/core_analysis/01_data_exploration/kashouh_data_exploration.qmd
+      - text: "Single-Epoch Analysis"
+        menu:
+          - text: "NTVMR Single-Epoch"
+            file: qmd_scripts/core_analysis/02_single_epoch/ntvmr_single_epoch_inference.qmd
+          - text: "Kashouh Single-Epoch (FamilyK + FamilyJB)"
+            file: qmd_scripts/core_analysis/02_single_epoch/kashouh_single_epoch_inference.qmd
+      - text: "Multi-Epoch Analysis"
+        menu:
+          - text: "NTVMR Six-Epoch"
+            file: qmd_scripts/core_analysis/03_multi_epoch/ntvmr_birth_death_inference.qmd
+          - text: "NTVMR Multi-Initial"
+            file: qmd_scripts/core_analysis/03_multi_epoch/birth_death_inference_multi_initial_population.qmd
+          - text: "Kashouh Classification"
+            file: qmd_scripts/core_analysis/03_multi_epoch/kashouh_birth_death_analysis.qmd
+          - text: "Likelihood Surface"
+            file: qmd_scripts/core_analysis/03_multi_epoch/likelihood_single_vs_multi_epoch_comparison.qmd
+          - text: "Optimizer"
+            file: qmd_scripts/core_analysis/03_multi_epoch/optimizer_comparison.qmd
+      - text: "Bayesian Analysis"
+        menu:
+          - text: "Kashouh FamilyK Bayesian"
+            file: qmd_scripts/core_analysis/04_bayesian/kashouh_familyk_bayesian_inference.qmd
+      - text: "Validation: Single-Epoch"
+        menu:
+          - text: "Simulation checks"
+            file: qmd_scripts/validation/single_epoch/methods_validation_simulation_checks.qmd
+          - text: "Single-fit debug"
+            file: qmd_scripts/validation/single_epoch/methods_validation_single_fit_debug.qmd
+          - text: "Bulk inference"
+            file: qmd_scripts/validation/single_epoch/methods_validation_bulk_inference.qmd
+          - text: "Sensitivity + benchmark"
+            file: qmd_scripts/validation/single_epoch/methods_validation_sensitivity_benchmark.qmd
+      - text: "Validation: Multi-Epoch"
+        menu:
+          - text: "Simulation checks"
+            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_simulation_checks.qmd
+          - text: "Single-fit debug"
+            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_single_fit_debug.qmd
+          - text: "Bulk inference"
+            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_bulk_inference.qmd
+          - text: "Bulk inference (single rate)"
+            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_bulk_inference_single_rate.qmd
+          - text: "Bulk inference (zero birth second epoch)"
+            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch.qmd
+          - text: "Sensitivity + benchmark"
+            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_sensitivity_benchmark.qmd
+      - text: "Validation: Bayesian Multi-Epoch"
+        menu:
+          - text: "Simulation checks"
+            file: qmd_scripts/validation/bayesian_multi_epoch/methods_validation_multi_epoch_bayesian_simulation_checks.qmd
+          - text: "Single-fit debug"
+            file: qmd_scripts/validation/bayesian_multi_epoch/methods_validation_multi_epoch_bayesian_single_fit_debug.qmd
+          - text: "Bulk inference"
+            file: qmd_scripts/validation/bayesian_multi_epoch/methods_validation_multi_epoch_bayesian_bulk_inference.qmd
+          - text: "Diagnostics + benchmark"
+            file: qmd_scripts/validation/bayesian_multi_epoch/methods_validation_multi_epoch_bayesian_diagnostics_benchmark.qmd
       - text: "Docs"
         menu:
           - text: "Likelihoods"

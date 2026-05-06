@@ -4,8 +4,12 @@ This package contains simulation and prediction utilities for birth-death
 process models.
 """
 
-from .simulator import simulate_birth_death_process
+from .simulator import (
+    simulate_bdp_ages_from_distributions,
+    simulate_birth_death_process,
+)
 
 __all__ = [
+    "simulate_bdp_ages_from_distributions",
     "simulate_birth_death_process",
 ]

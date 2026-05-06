@@ -12,6 +12,10 @@ from inf_bp_texts.inference import (
 from inf_bp_texts.inference.bayesian import BayesianMCMCConfig, BayesianModelConfig
 
 
+def test_bayesian_model_config_defaults_to_unbias_true() -> None:
+    assert BayesianModelConfig().unbias is True
+
+
 def test_fit_birth_death_processes_bayesian_returns_expected_structure() -> None:
     ages = np.array([50.0, 120.0, 180.0, 220.0], dtype=np.float64)
 
