@@ -5,6 +5,8 @@ project:
     - qmd_scripts/*.qmd
     - qmd_scripts/validation/**/*.qmd
     - qmd_scripts/core_analysis/**/*.qmd
+    - "!qmd_scripts/validation/bayesian_multi_epoch/**/*.qmd"
+    - "!qmd_scripts/core_analysis/04_bayesian/**/*.qmd"
     - docs/*.qmd
     - reference/*.qmd
 
