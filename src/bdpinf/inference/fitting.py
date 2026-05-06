@@ -123,8 +123,8 @@ class ParameterConstraints:
             if idx not in range(n_total_params):
                 msg = f"Parameter index {idx} out of range [0, {n_total_params})"
                 raise ValueError(msg)
-            if not np.isfinite(value) or value <= 0:
-                msg = f"Fixed parameter at index {idx} must be positive and finite"
+            if not np.isfinite(value) or value < 0:
+                msg = f"Fixed parameter at index {idx} must be non-negative and finite"
                 raise ValueError(msg)
 
         for group in self.equality_groups:
