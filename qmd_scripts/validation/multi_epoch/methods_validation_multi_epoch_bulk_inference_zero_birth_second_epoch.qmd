@@ -23,8 +23,8 @@ import numpy as np
 from joblib import Parallel, delayed
 
 num_sims = 1000
-birth_rate_epoch_1_true = 0.5
-death_rate_true = birth_rate_epoch_1_true - 0.4
+birth_rate_epoch_1_true = 1.0
+death_rate_true = birth_rate_epoch_1_true - 0.9
 birth_rate_epoch_2_true = 0.0
 times = np.array([7.5, 15.0], dtype=float)
 seed = 42
