@@ -259,7 +259,7 @@ if plotting_row_count > 0:
         fig_hist.add_trace(
             go.Histogram(
                 x=values,
-                histnorm="probability density",
+                histnorm="count",
                 nbinsx=30,
                 marker=dict(color=color),
                 opacity=0.8,
@@ -281,7 +281,7 @@ if plotting_row_count > 0:
         fig_hist,
         "Epoch-Specific Parameter Histograms",
         "Fitted rate",
-        "Density",
+        "Count",
     )
     fig_hist = apply_tufte_axes(fig_hist)
     fig_hist.update_xaxes(range=[0.0, None])
