@@ -445,7 +445,6 @@ fig_birth_hist.add_trace(
         marker=dict(color=ptolqual[0]),
         opacity=0.75,
         xbins=birth_bins,
-        histnorm="count",
     )
 )
 fig_birth_hist.add_trace(
@@ -455,7 +454,6 @@ fig_birth_hist.add_trace(
         marker=dict(color=ptolqual[1]),
         opacity=0.75,
         xbins=birth_bins,
-        histnorm="count",
     )
 )
 fig_birth_hist.update_layout(barmode="stack")
@@ -495,7 +493,6 @@ fig_death_hist.add_trace(
         marker=dict(color=ptolqual[0]),
         opacity=0.75,
         xbins=death_bins,
-        histnorm="count",
     )
 )
 fig_death_hist.add_trace(
@@ -505,7 +502,6 @@ fig_death_hist.add_trace(
         marker=dict(color=ptolqual[1]),
         opacity=0.75,
         xbins=death_bins,
-        histnorm="count",
     )
 )
 fig_death_hist.update_layout(barmode="stack")

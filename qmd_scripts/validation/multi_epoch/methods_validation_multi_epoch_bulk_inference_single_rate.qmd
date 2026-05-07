@@ -278,7 +278,6 @@ if plotting_row_count > 0:
         fig_hist.add_trace(
             go.Histogram(
                 x=values,
-                histnorm="count",
                 nbinsx=30,
                 marker=dict(color=color),
                 opacity=0.8,
