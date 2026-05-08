@@ -420,12 +420,12 @@ fig_birth_hist.add_trace(
     )
 )
 fig_birth_hist.update_layout(barmode="stack")
-    fig_birth_hist = apply_professional_styling(
-        fig_birth_hist,
-        "Birth Rate Histograms",
-        "Rate",
-        "Count",
-    )
+fig_birth_hist = apply_professional_styling(
+    fig_birth_hist,
+    "Birth Rate Histograms",
+    "Rate",
+    "Count",
+)
 fig_birth_hist = apply_tufte_axes(fig_birth_hist)
 fig_birth_hist.update_layout(
     legend=dict(
@@ -466,7 +466,7 @@ fig_death_hist.add_trace(
     )
 )
 fig_death_hist.update_layout(barmode="stack")
-    fig_death_hist = apply_professional_styling(
+fig_death_hist = apply_professional_styling(
     fig_death_hist,
     "Death Rate Histograms",
     "Rate",

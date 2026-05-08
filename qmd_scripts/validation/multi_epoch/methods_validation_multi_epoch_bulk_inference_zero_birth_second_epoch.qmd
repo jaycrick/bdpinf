@@ -457,12 +457,12 @@ fig_birth_hist.add_trace(
     )
 )
 fig_birth_hist.update_layout(barmode="stack")
-    fig_birth_hist = apply_professional_styling(
-        fig_birth_hist,
-        "Epoch 1 Birth Rate Histograms",
-        "Rate",
-        "Count",
-    )
+fig_birth_hist = apply_professional_styling(
+    fig_birth_hist,
+    "Epoch 1 Birth Rate Histograms",
+    "Rate",
+    "Count",
+)
 fig_birth_hist = apply_tufte_axes(fig_birth_hist)
 fig_birth_hist.update_layout(
     legend=dict(
@@ -472,7 +472,9 @@ fig_birth_hist.update_layout(
         yanchor="top",
     )
 )
-fig_birth_hist.add_vline(x=birth_rate_epoch_1_true, line_dash="dash", line_color="black")
+fig_birth_hist.add_vline(
+    x=birth_rate_epoch_1_true, line_dash="dash", line_color="black"
+)
 fig_birth_hist.show()
 saved_birth_hist = save_figure(
     fig_birth_hist,
