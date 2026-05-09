@@ -45,6 +45,8 @@ import plotly.graph_objs as go
 
 from pathlib import Path
 
+from itables import show as show_table
+
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.inference.fitting import fit_birth_death_processes, ConvergenceConfig
 from inf_bp_texts.visualization.plotting import (
@@ -87,7 +89,7 @@ print(f"Population size: {len(ages)}")
 ## Optimiser configurations
 
 ```{python}
-# We'll compare three runs: LBFGS default, LBFGS with strong_wolfe, and Adam.
+# Benchmark learning rates on a log scale for both LBFGS and Adam.
 base_fit_kwargs = dict(
     list_of_ages=[torch.as_tensor(ages, dtype=torch.float64)],
     times=float(time_span),
@@ -99,32 +101,55 @@ base_fit_kwargs = dict(
 
 configs = []
 
-# LBFGS default (no explicit line_search_fn)
-configs.append(
-    {
-        "label": "LBFGS_default",
-        "optimizers": ["lbfgs"],
-        "optimizer_kwargs": {"lbfgs": {"lr": 1.0}},
-    }
-)
+lbfgs_lrs = [1e-2, 1e-1, 1.0, 10.0]
+adam_lrs = [1e-1, 1e-2, 1e-3, 1e-4]
 
-# LBFGS with strong_wolfe line search
-configs.append(
-    {
-        "label": "LBFGS_strong_wolfe",
-        "optimizers": ["lbfgs"],
-        "optimizer_kwargs": {"lbfgs": {"lr": 1.0, "line_search_fn": "strong_wolfe"}},
-    }
-)
+# LBFGS without strong_wolfe
+for lr in lbfgs_lrs:
+    configs.append(
+        {
+            "label": f"LBFGS_default_lr_{lr:.0e}",
+            "optimizers": ["lbfgs"],
+            "optimizer_kwargs": {
+                "lbfgs": {
+                    "lr": lr,
+                    "min_iterations": 10,
+                }
+            },
+        }
+    )
 
-# Adam baseline
-configs.append(
-    {
-        "label": "Adam",
-        "optimizers": ["adam"],
-        "optimizer_kwargs": {"adam": {"lr": 1e-2}},
-    }
-)
+# LBFGS with strong_wolfe
+for lr in lbfgs_lrs:
+    configs.append(
+        {
+            "label": f"LBFGS_strong_wolfe_lr_{lr:.0e}",
+            "optimizers": ["lbfgs"],
+            "optimizer_kwargs": {
+                "lbfgs": {
+                    "lr": lr,
+                    "line_search_fn": "strong_wolfe",
+                    "min_iterations": 10,
+                }
+            },
+        }
+    )
+
+# Adam log-scale learning-rate sweep
+for lr in adam_lrs:
+    configs.append(
+        {
+            "label": f"Adam_lr_{lr:.0e}",
+            "optimizers": ["adam"],
+            "optimizer_kwargs": {
+                "adam": {
+                    "lr": lr,
+                }
+            },
+        }
+    )
+
+print(f"Configured {len(configs)} runs")
 
 results = []
 ```
@@ -142,7 +167,7 @@ for cfg in configs:
             "optimizer_kwargs": cfg.get("optimizer_kwargs"),
             # tighten convergence to keep runs quick for debugging
             "convergence_config": ConvergenceConfig(
-                gradient_threshold=5e-4, absolute_tolerance=1e-7, patience=5
+                gradient_threshold=1e-6, absolute_tolerance=1e-10, patience=10
             ),
         }
     )
@@ -243,7 +268,7 @@ for r in results:
                 go.Scatter(
                     x=list(range(1, len(grad_norms) + 1)),
                     y=grad_norms,
-                    mode="lines",
+                    mode="lines+markers",
                     name="GradNorm",
                     line=dict(color=ptolqual[2], width=2),
                 )
@@ -280,7 +305,7 @@ for r in results:
                         go.Scatter(
                             x=list(range(1, params_nat.shape[0] + 1)),
                             y=params_nat[:, p].tolist(),
-                            mode="lines",
+                            mode="lines+markers",
                             name=f"param_{p}",
                             line=dict(width=2),
                         )
@@ -324,11 +349,14 @@ def _fmt_array(values, ndigits: int = 6) -> str:
 summary_rows = []
 for r in results:
     method = r.get("label", "unknown")
+    runtime_s = float(r.get("runtime_s", np.nan))
 
     if r.get("error"):
         summary_rows.append(
             {
                 "method": method,
+                "runtime_s": runtime_s,
+                "nll_iterations": np.nan,
                 "final_log_likelihood": np.nan,
                 "final_parameter_estimates": f"error: {r.get('error')}",
             }
@@ -349,6 +377,9 @@ for r in results:
     if best_attempt is None and attempts:
         best_attempt = attempts[-1]
 
+    nll_iterations = (
+        len(best_attempt.get("nll_history") or []) if best_attempt is not None else 0
+    )
     final_nll = best_attempt.get("final_nll") if best_attempt is not None else None
     final_log_likelihood = (
         -float(final_nll)
@@ -363,6 +394,8 @@ for r in results:
     summary_rows.append(
         {
             "method": method,
+            "runtime_s": runtime_s,
+            "nll_iterations": nll_iterations,
             "final_log_likelihood": final_log_likelihood,
             "final_parameter_estimates": param_summary,
         }
@@ -370,7 +403,15 @@ for r in results:
 
 
 summary_df = pd.DataFrame(summary_rows)
-summary_df
+summary_df = summary_df.sort_values("final_log_likelihood", ascending=False)
+
+ll_col_index = summary_df.columns.get_loc("final_log_likelihood")
+show_table(
+    summary_df,
+    order=[[ll_col_index, "desc"]],
+    paging=True,
+    pageLength=25,
+)
 ```
 
 ## Save results

@@ -723,9 +723,10 @@ def _run_single_optimizer(
                 n_total_params,
             )
             log_params.copy_(torch.log(free_initial_params.clone().detach()))
-        # remove internal-only kwargs (like record_every) before constructing optimizer
+        # remove internal-only kwargs before constructing torch optimizer
         opt_kwargs = {k: v for k, v in strategy.optimizer_kwargs.items()}
         opt_kwargs.pop("record_every", None)
+        opt_kwargs.pop("min_iterations", None)
         optimizer = strategy.optimizer_class([log_params], **opt_kwargs)
 
         if strategy.name == "LBFGS":
@@ -828,6 +829,7 @@ def _run_lbfgs_optimizer(
     last_param_snapshot_local: list[float] | None = None
     start_time = time.perf_counter()
     record_every = int(strategy.optimizer_kwargs.get("record_every", 1))
+    min_iterations = max(1, int(strategy.optimizer_kwargs.get("min_iterations", 1)))
     best_nll = float("inf")
     best_log_params: torch.Tensor | None = None
     first_nll: float | None = None
@@ -917,11 +919,15 @@ def _run_lbfgs_optimizer(
         elif last_nll_value < first_nll - convergence_config.absolute_tolerance:
             improved_once = True
 
-        if improved_once and _check_convergence_criteria(
-            optimizer_name=strategy.name,
-            log_params=log_params,
-            nll_history=nll_history,
-            convergence_config=convergence_config,
+        if (
+            improved_once
+            and iterations >= min_iterations
+            and _check_convergence_criteria(
+                optimizer_name=strategy.name,
+                log_params=log_params,
+                nll_history=nll_history,
+                convergence_config=convergence_config,
+            )
         ):
             return True, None, best_log_params, iterations
 
