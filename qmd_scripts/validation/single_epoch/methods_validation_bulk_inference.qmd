@@ -27,7 +27,7 @@ from inf_bp_texts.analysis import (
     FitModelConfig,
     extract_rate_arrays,
     first_failed_fits,
-    fit_single_model,
+    iqr_plotting_subset,
     summarize_fit_success,
 )
 from inf_bp_texts.inference.fitting import ConvergenceConfig, fit_birth_death_processes
@@ -148,18 +148,18 @@ def fit_single_model_with_optimizers(ages, config):
         "unbias": config.unbias,
         "optimizers": ["lbfgs", "adam"],
         "optimizer_kwargs": {
-        "lbfgs": {
-            "lr": 1.0,
-            "line_search_fn": "strong_wolfe",
-            "min_iterations": 10,
+            "lbfgs": {
+                "lr": 1.0,
+                "line_search_fn": "strong_wolfe",
+                "min_iterations": 10,
+            },
+            "adam": {
+                "lr": 1e-3,
+            },
         },
-        "adam": {
-            "lr": 1e-3,
-        },
-    },
         "convergence_config": ConvergenceConfig(
-        gradient_threshold=1e-6, absolute_tolerance=1e-10, patience=10
-    ),
+            gradient_threshold=1e-6, absolute_tolerance=1e-10, patience=10
+        ),
     }
     if config.perturb_initial_params_std is not None:
         fit_kwargs["perturb_initial_params_std"] = config.perturb_initial_params_std
@@ -447,11 +447,39 @@ def build_hist_bins(primary_values, secondary_values, bins=30):
     return dict(start=0.0, end=upper, size=upper / bins)
 
 
-birth_bins = build_hist_bins(fit_birth_values, fit_birth_values_boundary)
+def _iqr_filter_1d(values):
+    filtered, mask = iqr_plotting_subset(
+        {"values": np.asarray(values, dtype=np.float64)}
+    )
+    return filtered["values"], int(mask.sum())
+
+
+fit_birth_values_iqr, birth_kept = _iqr_filter_1d(fit_birth_values)
+fit_birth_values_boundary_iqr, birth_boundary_kept = _iqr_filter_1d(
+    fit_birth_values_boundary
+)
+fit_death_values_iqr, death_kept = _iqr_filter_1d(fit_death_values)
+fit_death_values_boundary_iqr, death_boundary_kept = _iqr_filter_1d(
+    fit_death_values_boundary
+)
+
+print(
+    "Birth histogram IQR subset: "
+    f"non-boundary={birth_kept}/{len(fit_birth_values)}, "
+    f"boundary={birth_boundary_kept}/{len(fit_birth_values_boundary)}"
+)
+print(
+    "Death histogram IQR subset: "
+    f"non-boundary={death_kept}/{len(fit_death_values)}, "
+    f"boundary={death_boundary_kept}/{len(fit_death_values_boundary)}"
+)
+
+
+birth_bins = build_hist_bins(fit_birth_values_iqr, fit_birth_values_boundary_iqr)
 fig_birth_hist = go.Figure()
 fig_birth_hist.add_trace(
     go.Histogram(
-        x=fit_birth_values,
+        x=fit_birth_values_iqr,
         name=r"$\hat{\lambda}\quad A^*\neq T$",
         marker=dict(color=ptolqual[0]),
         opacity=0.75,
@@ -460,7 +488,7 @@ fig_birth_hist.add_trace(
 )
 fig_birth_hist.add_trace(
     go.Histogram(
-        x=fit_birth_values_boundary,
+        x=fit_birth_values_boundary_iqr,
         name=r"$\hat{\lambda}\quad A^{*} =T$",
         marker=dict(color=ptolqual[1]),
         opacity=0.75,
@@ -493,11 +521,11 @@ saved_birth_hist = save_figure(
 )
 print(f"Saved birth-rate histogram figure: {saved_birth_hist}")
 
-death_bins = build_hist_bins(fit_death_values, fit_death_values_boundary)
+death_bins = build_hist_bins(fit_death_values_iqr, fit_death_values_boundary_iqr)
 fig_death_hist = go.Figure()
 fig_death_hist.add_trace(
     go.Histogram(
-        x=fit_death_values,
+        x=fit_death_values_iqr,
         name=r"$\hat{\mu}\quad A^*\neq T$",
         marker=dict(color=ptolqual[0]),
         opacity=0.75,
@@ -506,7 +534,7 @@ fig_death_hist.add_trace(
 )
 fig_death_hist.add_trace(
     go.Histogram(
-        x=fit_death_values_boundary,
+        x=fit_death_values_boundary_iqr,
         name=r"$\hat{\mu}\quad A^{*} =T$",
         marker=dict(color=ptolqual[1]),
         opacity=0.75,
