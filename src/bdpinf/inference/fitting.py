@@ -313,7 +313,7 @@ def fit_birth_death_processes(
         Optimizer names ('LBFGS', 'Adam', 'SGD') to try sequentially.
         Defaults to ('LBFGS', 'Adam').
     optimizer_kwargs : Dict[str, Dict[str, Any]] | None
-        Custom per-optimizer hyperparams (e.g. {'adam': {'lr': 0.01}}).
+        Custom per-optimizer hyperparameters (e.g. {'adam': {'lr': 0.01}}).
     perturb_initial_params_std : float
         Noise std as fraction of initial params; 0 = no noise.
     random_seed : int | None
@@ -527,7 +527,7 @@ def _build_optimization_result_payload(
     }
 
 
-def fit_from_dataframe(
+def fit_from_data_frame(
     df: pd.DataFrame,
     times: float | NDArray[np.float64] | torch.Tensor,
     *,
@@ -539,7 +539,7 @@ def fit_from_dataframe(
     Parameters
     ----------
     df : pd.DataFrame
-        Input dataframe containing age data.
+        Input data_frame containing age data.
     times : float | NDArray | torch.Tensor
         Observation time(s).
     age_column : str | None

@@ -419,7 +419,7 @@ def fit_birth_death_processes_bayesian(
     }
 
 
-def fit_birth_death_processes_bayesian_from_dataframe(
+def fit_birth_death_processes_bayesian_from_data_frame(
     df: pd.DataFrame,
     times: float | NDArray[np.float64] | torch.Tensor,
     *,

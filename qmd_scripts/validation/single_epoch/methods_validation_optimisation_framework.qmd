@@ -284,7 +284,9 @@ for r in results:
             fig_g = apply_tufte_axes(fig_g)
             fig_g.update_xaxes(showgrid=True, gridcolor=gridcolor)
             fig_g.update_yaxes(showgrid=True, gridcolor=gridcolor)
-            out_html = Path("_output") / f"gradnorm_history_{r['label']}_{att_idx}.html"
+            out_html = (
+                Path("_output") / f"grad_norm_history_{r['label']}_{att_idx}.html"
+            )
             fig_g.write_html(str(out_html))
             try:
                 fig_g.show()
@@ -339,11 +341,11 @@ for r in results:
 ## Summary table
 
 ```{python}
-def _fmt_array(values, ndigits: int = 6) -> str:
+def _fmt_array(values, n_digits: int = 6) -> str:
     if values is None:
         return "NA"
     arr = np.asarray(values, dtype=float)
-    return np.array2string(np.round(arr, ndigits), separator=", ")
+    return np.array2string(np.round(arr, n_digits), separator=", ")
 
 
 summary_rows = []

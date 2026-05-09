@@ -103,7 +103,7 @@ class TestSimulation:
             creation_times2 = surviving2["creation_time"].tolist()
             assert not df1.equals(df2) or len(creation_times1) != len(creation_times2)
 
-    def test_simulation_dataframe_structure(self) -> None:
+    def test_simulation_data_frame_structure(self) -> None:
         """Test that simulation returns properly structured DataFrame."""
         # Run simulation using modular function
         df = simulate_birth_death_process(
@@ -410,7 +410,7 @@ class TestMultiEpochSimulation:
             assert all(df["creation_time"] >= 0)
             assert all(df["creation_time"] <= times[-1])
 
-    def test_multi_epoch_dataframe_structure(self) -> None:
+    def test_multi_epoch_data_frame_structure(self) -> None:
         """Test that multi-epoch simulation returns properly structured DataFrame."""
         birth_rates = np.array([0.2, 0.15])
         death_rates = np.array([0.01, 0.02])

@@ -10,7 +10,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from inf_bp_texts.inference.fitting import fit_birth_death_processes, fit_from_dataframe
+from inf_bp_texts.inference.fitting import (
+    fit_birth_death_processes,
+    fit_from_data_frame,
+)
 from inf_bp_texts.inference.likelihood import log_likelihood
 from inf_bp_texts.simulation import simulate_birth_death_process
 
@@ -41,7 +44,7 @@ class TestIntegration:
             surviving_data = simulated_df[simulated_df["survived"]]
             if len(surviving_data) > 0:
                 fit_df = pd.DataFrame({"age": surviving_data["age"].values})
-                result = fit_from_dataframe(fit_df, age_column="age", times=200.0)
+                result = fit_from_data_frame(fit_df, age_column="age", times=200.0)
                 if result["success"]:
                     fitted_birth = result["birth_rates"]
                     fitted_death = result["death_rates"]
@@ -130,7 +133,7 @@ class TestIntegration:
         assert summary["min_age"] == 100
         assert summary["max_age"] == 900
         fit_df = pd.DataFrame({"age": ages})
-        result = fit_from_dataframe(fit_df, age_column="age", times=1000.0)
+        result = fit_from_data_frame(fit_df, age_column="age", times=1000.0)
         assert isinstance(result, dict)
         assert "success" in result
         test_ages = np.array([100, 200, 300, 400, 500])
@@ -176,7 +179,7 @@ class TestIntegration:
 
         # Fit model
 
-        result = fit_from_dataframe(prepared_df, age_column="age", times=2000.0)
+        result = fit_from_data_frame(prepared_df, age_column="age", times=2000.0)
         assert result["success"]
         age_range = np.linspace(100, 1000, 10)
         predictions = [
@@ -204,13 +207,13 @@ class TestIntegration:
         # Create models with more reasonable initial parameters
         max_age = float(ages.max())
         final_time = max_age + 50.0  # Smaller buffer
-        from inf_bp_texts.inference.fitting import fit_from_dataframe
+        from inf_bp_texts.inference.fitting import fit_from_data_frame
 
         initial_params_list = [(0.01, 0.005), (0.02, 0.001)]
         results = []
         for i, (init_birth, init_death) in enumerate(initial_params_list):
             try:
-                fit_result = fit_from_dataframe(
+                fit_result = fit_from_data_frame(
                     df,
                     age_column="age",
                     times=final_time,

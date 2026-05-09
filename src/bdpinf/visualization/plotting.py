@@ -186,7 +186,7 @@ def apply_tufte_axes(
 ) -> Any:
     """Apply Tufte-style minimalist axes to all subplots in a Plotly figure.
 
-    - Removes gridlines and zero lines
+    - Removes grid lines and zero lines
     - Uses thin, subtle axis lines
     - Small outward ticks with muted color
     - Keeps automargins enabled

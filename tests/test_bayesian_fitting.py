@@ -7,7 +7,7 @@ import pandas as pd
 
 from inf_bp_texts.inference import (
     fit_birth_death_processes_bayesian,
-    fit_birth_death_processes_bayesian_from_dataframe,
+    fit_birth_death_processes_bayesian_from_data_frame,
 )
 from inf_bp_texts.inference.bayesian import BayesianMCMCConfig, BayesianModelConfig
 
@@ -41,10 +41,10 @@ def test_fit_birth_death_processes_bayesian_returns_expected_structure() -> None
     assert result["death_rates"].shape == (1,)
 
 
-def test_fit_birth_death_processes_bayesian_from_dataframe_auto_age_column() -> None:
+def test_fit_birth_death_processes_bayesian_from_data_frame_auto_age_column() -> None:
     df = pd.DataFrame({"age": [40.0, 75.0, 110.0, 160.0]})
 
-    result = fit_birth_death_processes_bayesian_from_dataframe(
+    result = fit_birth_death_processes_bayesian_from_data_frame(
         df=df,
         times=250.0,
         model_config=BayesianModelConfig(rng_seed=11),

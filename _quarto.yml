@@ -54,7 +54,7 @@ website:
       - text: "Bayesian Analysis"
         menu:
           - text: "Kashouh FamilyK Bayesian"
-            file: qmd_scripts/core_analysis/04_bayesian/kashouh_familyk_bayesian_inference.qmd
+            file: qmd_scripts/core_analysis/04_bayesian/kashouh_family_k_bayesian_inference.qmd
       - text: "Validation: Single-Epoch"
         menu:
           - text: "Simulation checks"
@@ -141,4 +141,4 @@ quartodoc:
         - inference
         - inference.fitting
         - inference.fitting.fit_birth_death_processes
-        - inference.fitting.fit_from_dataframe
+        - inference.fitting.fit_from_data_frame

@@ -15,8 +15,8 @@ from inf_bp_texts.models.mathematical_functions import (
 )
 
 
-def _pointwise_density_from_loglik(
-    loglik_fn: Callable[
+def _pointwise_density_from_log_lik(
+    log_lik_fn: Callable[
         [torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
         torch.Tensor,
     ],
@@ -28,7 +28,7 @@ def _pointwise_density_from_loglik(
     """Evaluate exp(log-likelihood) at each point in a 1D grid."""
     vals = []
     for age in grid:
-        log_val = loglik_fn(
+        log_val = log_lik_fn(
             birth_rates,
             death_rates,
             torch.tensor([age], dtype=torch.float64),
@@ -66,7 +66,7 @@ def test_non_spine_age_density_integrates_to_one() -> None:
     times = torch.tensor([3.0], dtype=torch.float64)
 
     grid = torch.linspace(0.0, float(times[-1].item()), steps=4000, dtype=torch.float64)
-    density_vals = _pointwise_density_from_loglik(
+    density_vals = _pointwise_density_from_log_lik(
         calculate_non_spine_ages_log_lik,
         birth_rates,
         death_rates,
@@ -88,7 +88,7 @@ def test_spine_age_distribution_integrates_to_one_with_terminal_mass() -> None:
     eps = 1e-5
     grid = torch.linspace(0.0, t_end - eps, steps=4000, dtype=torch.float64)
 
-    cont_density_vals = _pointwise_density_from_loglik(
+    cont_density_vals = _pointwise_density_from_log_lik(
         calculate_spine_ages_log_lik,
         birth_rates,
         death_rates,
@@ -195,7 +195,7 @@ def test_non_spine_age_density_integrates_to_one_multi_epoch() -> None:
     times = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
 
     grid = torch.linspace(0.0, float(times[-1].item()), steps=4000, dtype=torch.float64)
-    density_vals = _pointwise_density_from_loglik(
+    density_vals = _pointwise_density_from_log_lik(
         calculate_non_spine_ages_log_lik,
         birth_rates,
         death_rates,

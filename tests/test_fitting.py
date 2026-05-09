@@ -26,7 +26,7 @@ from inf_bp_texts.inference.fitting import (
     _prepare_population_sizes,
     _run_optimizer_strategies,
     fit_birth_death_processes,
-    fit_from_dataframe,
+    fit_from_data_frame,
 )
 from inf_bp_texts.inference.likelihood import negative_log_likelihood
 from inf_bp_texts.models import BirthDeathProcess
@@ -176,14 +176,14 @@ class TestFitting:
         assert result["success"]
         assert "success" in result
 
-    def test_fit_from_dataframe_success(self) -> None:
+    def test_fit_from_data_frame_success(self) -> None:
         """Test successful fitting with external DataFrame."""
         # Create test data
         rng = np.random.default_rng(42)
         ages = rng.exponential(scale=200, size=50)
         df = pd.DataFrame({"age": ages, "count": np.ones(len(ages))})
 
-        result = fit_from_dataframe(df, age_column="age", times=1000.0)
+        result = fit_from_data_frame(df, age_column="age", times=1000.0)
 
         # Should return valid result structure
         assert isinstance(result, dict)
@@ -196,7 +196,7 @@ class TestFitting:
             assert result["birth_rates"] > 0
             assert result["death_rates"] > 0
 
-    def test_fit_from_dataframe_individual_records(self) -> None:
+    def test_fit_from_data_frame_individual_records(self) -> None:
         """Test fitting with individual manuscript records."""
         # Create individual manuscript records instead of aggregated counts
         ages = []
@@ -205,27 +205,27 @@ class TestFitting:
 
         df = pd.DataFrame({"age": ages})
 
-        result = fit_from_dataframe(df, age_column="age", times=1000.0)
+        result = fit_from_data_frame(df, age_column="age", times=1000.0)
 
         # Should return valid result structure
         assert result["success"]
         assert isinstance(result, dict)
         assert "success" in result
 
-    def test_fit_from_dataframe_no_valid_data_points(self) -> None:
+    def test_fit_from_data_frame_no_valid_data_points(self) -> None:
         """Test fitting fails with no valid data points."""
         # DataFrame with no data
         df = pd.DataFrame({"age": []})
 
         with pytest.raises(ValueError, match="No valid data points for fitting"):
-            fit_from_dataframe(df, age_column="age", times=1000.0)
+            fit_from_data_frame(df, age_column="age", times=1000.0)
 
-    def test_fit_from_dataframe_missing_age_column(self) -> None:
+    def test_fit_from_data_frame_missing_age_column(self) -> None:
         """Test fitting fails when age column is missing."""
         df = pd.DataFrame({"wrong_column": [1, 2, 3]})
 
         with pytest.raises(ValueError, match="Column 'age' not found"):
-            fit_from_dataframe(df, age_column="age", times=1000.0)
+            fit_from_data_frame(df, age_column="age", times=1000.0)
 
     def test_fit_birth_death_process_different_methods(self) -> None:
         """Test fitting with the default optimization strategy."""
@@ -363,7 +363,7 @@ class TestFitting:
         assert process.birth_rates == result["birth_rates"]
         assert process.death_rates == result["death_rates"]
 
-    def test_fit_from_dataframe_custom_age_column(self) -> None:
+    def test_fit_from_data_frame_custom_age_column(self) -> None:
         """Test fitting with custom age column name."""
         df = pd.DataFrame(
             {
@@ -372,7 +372,7 @@ class TestFitting:
             },
         )
 
-        result = fit_from_dataframe(df, age_column="manuscript_age", times=1000.0)
+        result = fit_from_data_frame(df, age_column="manuscript_age", times=1000.0)
 
         assert isinstance(result, dict)
         assert result["success"]
@@ -391,7 +391,7 @@ class TestFitting:
 
         # Fit with external data
         df = pd.DataFrame({"age": [100.0, 200.0, 300.0], "count": [1.0, 1.0, 1.0]})
-        result = fit_from_dataframe(df, age_column="age", times=1000.0)
+        result = fit_from_data_frame(df, age_column="age", times=1000.0)
 
         # Original process data should be preserved
         np.testing.assert_array_equal(process.manuscript_ages, original_ages)
@@ -528,13 +528,13 @@ class TestMultiEpochFitting:
             # Log-likelihood should be negative (log of probability < 1)
             assert result["log_likelihood"] < 0
 
-    def test_multi_epoch_from_dataframe(self) -> None:
+    def test_multi_epoch_from_data_frame(self) -> None:
         """Test multi-epoch fitting from DataFrame."""
         ages = [100.0, 200.0, 300.0, 400.0, 500.0]
         df = pd.DataFrame({"age": ages})
         times = np.array([250.0, 550.0])
 
-        result = fit_from_dataframe(df, age_column="age", times=times)
+        result = fit_from_data_frame(df, age_column="age", times=times)
 
         assert isinstance(result, dict)
         assert "success" in result
@@ -544,13 +544,13 @@ class TestMultiEpochFitting:
             assert len(result["birth_rates"]) == len(times)
             assert len(result["death_rates"]) == len(times)
 
-    def test_multi_epoch_from_dataframe_large_initial_pop(self) -> None:
+    def test_multi_epoch_from_data_frame_large_initial_pop(self) -> None:
         """Test multi-epoch fitting from DataFrame, with initial population sizes."""
         ages = [100.0, 200.0, 300.0, 400.0, 500.0]
         df = pd.DataFrame({"age": ages})
         times = np.array([250.0, 550.0])
 
-        result = fit_from_dataframe(
+        result = fit_from_data_frame(
             df,
             age_column="age",
             times=times,

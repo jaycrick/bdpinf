@@ -469,7 +469,7 @@ non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
 )
 
 
-def robust_ymax(
+def robust_y_max(
     arrays: list[np.ndarray | None],
     quantile: float = 99.0,
     pad: float = 1.1,
@@ -494,8 +494,8 @@ def robust_ymax(
     return q * float(pad)
 
 
-spine_ymax = robust_ymax([spine_kde_process, spine_kde_direct, spine_theory_y])
-non_spine_ymax = robust_ymax(
+spine_y_max = robust_y_max([spine_kde_process, spine_kde_direct, spine_theory_y])
+non_spine_y_max = robust_y_max(
     [non_spine_kde_process, non_spine_kde_direct, non_spine_theory_y]
 )
 
@@ -551,10 +551,10 @@ fig_summary.update_yaxes(title_text="", row=1, col=2)
 fig_summary.update_yaxes(title_text="Density (spine)", row=2, col=1)
 fig_summary.update_yaxes(title_text="", row=2, col=2)
 fig_summary.update_yaxes(title_text="Density (non-spine)", row=1, col=1)
-fig_summary.update_yaxes(range=[0.0, non_spine_ymax], row=1, col=1)
-fig_summary.update_yaxes(range=[0.0, non_spine_ymax], row=1, col=2)
-fig_summary.update_yaxes(range=[0.0, spine_ymax], row=2, col=1)
-fig_summary.update_yaxes(range=[0.0, spine_ymax], row=2, col=2)
+fig_summary.update_yaxes(range=[0.0, non_spine_y_max], row=1, col=1)
+fig_summary.update_yaxes(range=[0.0, non_spine_y_max], row=1, col=2)
+fig_summary.update_yaxes(range=[0.0, spine_y_max], row=2, col=1)
+fig_summary.update_yaxes(range=[0.0, spine_y_max], row=2, col=2)
 fig_summary.show()
 saved_age_densities = save_figure(
     fig_summary,
