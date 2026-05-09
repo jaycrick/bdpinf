@@ -61,6 +61,8 @@ website:
             file: qmd_scripts/validation/single_epoch/methods_validation_simulation_checks.qmd
           - text: "Single-fit debug"
             file: qmd_scripts/validation/single_epoch/methods_validation_single_fit_debug.qmd
+          - text: "Optimisation framework"
+            file: qmd_scripts/validation/single_epoch/methods_validation_optimisation_framework.qmd
           - text: "Bulk inference"
             file: qmd_scripts/validation/single_epoch/methods_validation_bulk_inference.qmd
           - text: "Sensitivity + benchmark"
