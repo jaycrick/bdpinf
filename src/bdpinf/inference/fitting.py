@@ -1,6 +1,7 @@
 """Maximum likelihood estimation for birth-death process parameters using PyTorch."""
 
 import dataclasses
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, TypedDict, Unpack, cast
@@ -54,6 +55,9 @@ class OptimizerAttemptResult:
     nll_history: list[float]
     exception_type: str | None = None
     exception_message: str | None = None
+    grad_norms: list[float] | None = None
+    param_history: list[list[float]] | None = None
+    timestamps: list[float] | None = None
 
 
 class FitKwargs(TypedDict, total=False):
@@ -490,6 +494,9 @@ def _build_optimization_result_payload(
                 "converged": attempt.converged,
                 "iterations": attempt.iterations,
                 "nll_history": attempt.nll_history,
+                "grad_norms": attempt.grad_norms,
+                "param_history": attempt.param_history,
+                "timestamps": attempt.timestamps,
                 "first_nll": first_nll,
                 "best_nll": best_nll,
                 "final_nll": final_nll,
@@ -702,6 +709,9 @@ def _run_single_optimizer(
         n_total_params = len(initial_params)
 
     attempt_nll_history: list[float] = []
+    attempt_grad_norms: list[float] = []
+    attempt_param_history: list[list[float]] = []
+    attempt_timestamps: list[float] = []
     iterations = 0
 
     try:
@@ -713,7 +723,10 @@ def _run_single_optimizer(
                 n_total_params,
             )
             log_params.copy_(torch.log(free_initial_params.clone().detach()))
-        optimizer = strategy.optimizer_class([log_params], **strategy.optimizer_kwargs)
+        # remove internal-only kwargs (like record_every) before constructing optimizer
+        opt_kwargs = {k: v for k, v in strategy.optimizer_kwargs.items()}
+        opt_kwargs.pop("record_every", None)
+        optimizer = strategy.optimizer_class([log_params], **opt_kwargs)
 
         if strategy.name == "LBFGS":
             lbfgs_optimizer = cast("torch.optim.LBFGS", optimizer)
@@ -723,6 +736,9 @@ def _run_single_optimizer(
                 optimizer=lbfgs_optimizer,
                 max_iters=strategy.max_iters,
                 nll_history=attempt_nll_history,
+                grad_norms=attempt_grad_norms,
+                param_history=attempt_param_history,
+                timestamps=attempt_timestamps,
                 convergence_config=convergence_config,
                 compute_nll_fn=compute_nll_fn,
             )
@@ -733,6 +749,9 @@ def _run_single_optimizer(
                 optimizer=optimizer,
                 max_iters=strategy.max_iters,
                 nll_history=attempt_nll_history,
+                grad_norms=attempt_grad_norms,
+                param_history=attempt_param_history,
+                timestamps=attempt_timestamps,
                 convergence_config=convergence_config,
                 compute_nll_fn=compute_nll_fn,
             )
@@ -746,6 +765,9 @@ def _run_single_optimizer(
                 nll_history=attempt_nll_history,
                 exception_type=type(exc).__name__,
                 exception_message=str(exc),
+                grad_norms=attempt_grad_norms or None,
+                param_history=attempt_param_history or None,
+                timestamps=attempt_timestamps or None,
             ),
             None,
         )
@@ -760,6 +782,9 @@ def _run_single_optimizer(
                     nll_history=attempt_nll_history,
                     exception_type=type(exc).__name__,
                     exception_message=str(exc),
+                    grad_norms=attempt_grad_norms or None,
+                    param_history=attempt_param_history or None,
+                    timestamps=attempt_timestamps or None,
                 ),
                 None,
             )
@@ -771,6 +796,9 @@ def _run_single_optimizer(
                 converged=did_converge,
                 iterations=iterations,
                 nll_history=attempt_nll_history,
+                grad_norms=attempt_grad_norms or None,
+                param_history=attempt_param_history or None,
+                timestamps=attempt_timestamps or None,
             ),
             best_log_params,
         )
@@ -782,6 +810,9 @@ def _run_lbfgs_optimizer(
     optimizer: torch.optim.LBFGS,
     max_iters: int,
     nll_history: list[float],
+    grad_norms: list[float],
+    param_history: list[list[float]],
+    timestamps: list[float],
     convergence_config: ConvergenceConfig,
     compute_nll_fn: Callable[[], torch.Tensor],
 ) -> tuple[bool, Exception | None, torch.Tensor | None, int]:
@@ -793,6 +824,10 @@ def _run_lbfgs_optimizer(
     """
     last_nll_value: float | None = None
     last_grad_norm: float | None = None
+    last_grad_norm_local: float | None = None
+    last_param_snapshot_local: list[float] | None = None
+    start_time = time.perf_counter()
+    record_every = int(strategy.optimizer_kwargs.get("record_every", 1))
     best_nll = float("inf")
     best_log_params: torch.Tensor | None = None
     first_nll: float | None = None
@@ -808,10 +843,25 @@ def _run_lbfgs_optimizer(
             nonlocal nll_history
             nonlocal best_nll
             nonlocal best_log_params
+            nonlocal last_grad_norm_local
+            nonlocal last_param_snapshot_local
             optimizer.zero_grad()
             nll = compute_nll_fn()
             nll.backward()  # type: ignore[no-untyped-call]
             last_nll_value = float(nll.item())
+            # capture grad norm and parameter snapshot inside closure
+            try:
+                last_grad_norm_local = (
+                    float(torch.norm(log_params.grad).item())
+                    if log_params.grad is not None
+                    else float("inf")
+                )
+            except Exception:
+                last_grad_norm_local = float("inf")
+            try:
+                last_param_snapshot_local = log_params.detach().cpu().numpy().tolist()
+            except Exception:
+                last_param_snapshot_local = None
             if last_nll_value < best_nll:
                 best_nll = last_nll_value
                 best_log_params = log_params.detach().clone()
@@ -819,6 +869,42 @@ def _run_lbfgs_optimizer(
             return nll
 
         optimizer.step(closure)  # type: ignore[no-untyped-call]
+
+        # append diagnostics once per iteration according to record_every
+        if (iteration % record_every) == 0:
+            grad_to_append = (
+                float(last_grad_norm_local)
+                if last_grad_norm_local is not None
+                else (
+                    float(torch.norm(log_params.grad).item())
+                    if log_params.grad is not None
+                    else float("inf")
+                )
+            )
+            param_to_append = (
+                last_param_snapshot_local
+                if last_param_snapshot_local is not None
+                else log_params.detach().cpu().numpy().tolist()
+            )
+            grad_norms.append(grad_to_append)
+            param_history.append(param_to_append)
+            timestamps.append(time.perf_counter() - start_time)
+
+        # LBFGS may evaluate the closure multiple times per "iteration"
+        # (for line-search). Use the recorded `nll_history` to detect
+        # whether the objective has improved relative to the initial
+        # recorded value. This is more robust than relying on the last
+        # closure evaluation alone.
+        try:
+            if nll_history:
+                if first_nll is None:
+                    first_nll = float(nll_history[0])
+                if min(nll_history) < first_nll - convergence_config.absolute_tolerance:
+                    improved_once = True
+        except Exception:
+            # If anything goes wrong inspecting history, do not crash;
+            # leave improved_once as-is and continue.
+            pass
 
         if last_nll_value is None:
             current_exception = RuntimeError(
@@ -875,6 +961,9 @@ def _run_first_order_optimizer(
     optimizer: torch.optim.Optimizer,
     max_iters: int,
     nll_history: list[float],
+    grad_norms: list[float],
+    param_history: list[list[float]],
+    timestamps: list[float],
     convergence_config: ConvergenceConfig,
     compute_nll_fn: Callable[[], torch.Tensor],
 ) -> tuple[bool, Exception | None, torch.Tensor | None, int]:
@@ -907,10 +996,36 @@ def _run_first_order_optimizer(
             return False, current_exception, None, iterations
 
         nll.backward()  # type: ignore[no-untyped-call]
+
+        # record gradient norm (pre-step) and optional parameter snapshot (post-step)
+        try:
+            grad_norm_pre = (
+                float(torch.norm(log_params.grad).item())
+                if log_params.grad is not None
+                else float("inf")
+            )
+        except Exception:
+            grad_norm_pre = float("inf")
+
         optimizer.step()
 
-        nll_value = float(nll.item())
+        try:
+            nll_value = float(nll.item())
+        except Exception:
+            nll_value = float("nan")
         nll_history.append(nll_value)
+
+        # append diagnostics
+        record_every = int(strategy.optimizer_kwargs.get("record_every", 1))
+        if (iteration % record_every) == 0:
+            grad_to_append = grad_norm_pre
+            try:
+                param_snapshot = log_params.detach().cpu().numpy().tolist()
+            except Exception:
+                param_snapshot = None
+            grad_norms.append(grad_to_append)
+            param_history.append(param_snapshot if param_snapshot is not None else [])
+            timestamps.append(time.perf_counter())
 
         if first_nll is None:
             first_nll = nll_value

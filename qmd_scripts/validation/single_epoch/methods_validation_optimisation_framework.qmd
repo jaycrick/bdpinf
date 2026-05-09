@@ -1,0 +1,412 @@
+---
+title: "Single-Epoch Validation: Optimisation Framework"
+subtitle: "Compare Adam vs LBFGS (with/without strong_wolfe) on a single simulated dataset"
+author: "JC"
+date: last-modified
+---
+
+This document implements a lightweight optimisation benchmarking workflow for single-epoch validation fits. It runs configurable optimiser strategies (Adam, LBFGS, and sequential strategies), captures per-iteration diagnostics (NLL, gradient norms, parameter snapshots, timestamps), and emits diagnostic plots and structured results to `_output/` for further analysis.
+
+**TODO (from mle_optimisation_framework_prompt)**
+
+- [ ] Implement configurable optimiser strategy objects and defaults (Adam, LBFGS).
+- [ ] Support sequential strategies (e.g., Adam warm-start → LBFGS refinement).
+- [ ] Record per-iteration diagnostics: `nll_history`, `grad_norms`, `param_history`, `timestamps`.
+- [ ] Add reproducible multi-start support (seeded random initialisations, configurable n_starts).
+- [ ] Add convergence diagnostics and robust checks (gradient thresholds, tolerance, patience).
+- [ ] Export results in tabular and columnar formats (JSON, CSV/Parquet) with one row per run.
+- [ ] Plot diagnostics: NLL traces, gradient norms, parameter trajectories, final NLL distributions.
+- [ ] Add numerical stability safeguards (NaN/Inf detection, early stopping, retries).
+- [ ] Add utilities for Hessian / Fisher information diagnostics (autograd + finite differences).
+- [ ] Provide experiment runner API to iterate optimisers, starts, and store summaries.
+- [ ] Document configuration options and reproducibility steps (seeds, dtypes).
+
+
+```{python}
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+
+__compile_start = time.perf_counter()
+```
+
+## Setup
+
+```{python}
+import json
+import numpy as np
+import os
+import pandas as pd
+import torch
+import plotly.graph_objs as go
+
+from pathlib import Path
+
+from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
+from inf_bp_texts.inference.fitting import fit_birth_death_processes, ConvergenceConfig
+from inf_bp_texts.visualization.plotting import (
+    apply_professional_styling,
+    apply_tufte_axes,
+    gridcolor,
+    paper_bgcolor,
+    plot_bgcolor,
+    ptolqual,
+)
+
+torch.set_default_dtype(torch.float64)
+
+
+def set_seeds(seed: int) -> None:
+    np.random.seed(seed)
+    torch.manual_seed(int(seed))
+```
+
+## Simulate One Dataset
+
+```{python}
+birth_rate = 0.005
+death_rate = birth_rate - 0.004
+time_span = 1500.0
+seed = 42
+
+rng = np.random.default_rng(seed)
+sampled = simulate_bdp_ages_from_distributions(
+    birth_rate=torch.tensor(birth_rate, dtype=torch.float64),
+    death_rate=torch.tensor(death_rate, dtype=torch.float64),
+    max_time=torch.tensor(time_span, dtype=torch.float64),
+    rng=rng,
+)
+ages = np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
+
+print(f"Population size: {len(ages)}")
+```
+
+## Optimiser configurations
+
+```{python}
+# We'll compare three runs: LBFGS default, LBFGS with strong_wolfe, and Adam.
+base_fit_kwargs = dict(
+    list_of_ages=[torch.as_tensor(ages, dtype=torch.float64)],
+    times=float(time_span),
+    is_ordered=True,
+    perturb_initial_params_std=0.0,
+    random_seed=seed,
+    unbias=True,
+)
+
+configs = []
+
+# LBFGS default (no explicit line_search_fn)
+configs.append(
+    {
+        "label": "LBFGS_default",
+        "optimizers": ["lbfgs"],
+        "optimizer_kwargs": {"lbfgs": {"lr": 1.0}},
+    }
+)
+
+# LBFGS with strong_wolfe line search
+configs.append(
+    {
+        "label": "LBFGS_strong_wolfe",
+        "optimizers": ["lbfgs"],
+        "optimizer_kwargs": {"lbfgs": {"lr": 1.0, "line_search_fn": "strong_wolfe"}},
+    }
+)
+
+# Adam baseline
+configs.append(
+    {
+        "label": "Adam",
+        "optimizers": ["adam"],
+        "optimizer_kwargs": {"adam": {"lr": 1e-2}},
+    }
+)
+
+results = []
+```
+
+## Run small experiments
+
+```{python}
+for cfg in configs:
+    label = cfg["label"]
+    print(f"Running: {label}")
+    fit_kwargs = {**base_fit_kwargs}
+    fit_kwargs.update(
+        {
+            "optimizers": cfg["optimizers"],
+            "optimizer_kwargs": cfg.get("optimizer_kwargs"),
+            # tighten convergence to keep runs quick for debugging
+            "convergence_config": ConvergenceConfig(
+                gradient_threshold=5e-4, absolute_tolerance=1e-7, patience=5
+            ),
+        }
+    )
+
+    start = time.perf_counter()
+    try:
+        res = fit_birth_death_processes(**fit_kwargs)
+    except Exception as e:
+        elapsed = time.perf_counter() - start
+        print(f"Exception during fit {label}: {type(e).__name__}: {e}")
+        results.append({"label": label, "error": str(e), "runtime_s": elapsed})
+        continue
+
+    elapsed = time.perf_counter() - start
+    optimization_result = res.get("optimization_result", {})
+    attempts = (
+        optimization_result.get("attempts", [])
+        if isinstance(optimization_result, dict)
+        else []
+    )
+
+    # collect full attempt-level diagnostics (nll_history, grad_norms, param_history)
+    attempt_summaries = attempts
+
+    results.append(
+        {
+            "label": label,
+            "success": res.get("success", False),
+            "birth_rates": res.get("birth_rates"),
+            "death_rates": res.get("death_rates"),
+            "optimization": attempt_summaries,
+            "runtime_s": elapsed,
+        }
+    )
+
+print("Done runs")
+```
+
+## Show NLL histories and check for strong_wolfe issues
+
+```{python}
+for r in results:
+    print("-" * 60)
+    print(r["label"])
+    if r.get("error"):
+        print("  error:", r["error"])
+        continue
+    print("  success:", r.get("success"))
+    print("  runtime (s):", f"{r.get('runtime_s'):.3f}")
+    for att_idx, att in enumerate(r.get("optimization", [])):
+        print(
+            f"    optimizer={att.get('optimizer')}, converged={att.get('converged')}, iterations={att.get('iterations')}"
+        )
+        print(
+            f"      first_nll={att.get('first_nll')}, best_nll={att.get('best_nll')}, final_nll={att.get('final_nll')}"
+        )
+        if att.get("exception"):
+            print(f"      exception: {att.get('exception')}")
+
+        # Plot per-iteration diagnostics if available
+        nll_history = att.get("nll_history") or []
+        grad_norms = att.get("grad_norms") or []
+        param_history = att.get("param_history") or []
+
+        if nll_history:
+            fig_nll = go.Figure()
+            fig_nll.add_trace(
+                go.Scatter(
+                    x=list(range(1, len(nll_history) + 1)),
+                    y=nll_history,
+                    mode="lines",
+                    name="NLL",
+                    line=dict(color=ptolqual[1], width=2),
+                )
+            )
+            fig_nll.update_layout(
+                title=f"NLL vs Iteration ({r['label']}:{att.get('optimizer')})",
+                xaxis_title="Iteration",
+                yaxis_title="Negative Log-Likelihood",
+                plot_bgcolor=plot_bgcolor,
+                paper_bgcolor=paper_bgcolor,
+            )
+            fig_nll = apply_professional_styling(fig_nll, None, "Iteration", "NLL")
+            fig_nll = apply_tufte_axes(fig_nll)
+            fig_nll.update_xaxes(showgrid=True, gridcolor=gridcolor)
+            fig_nll.update_yaxes(showgrid=True, gridcolor=gridcolor)
+            out_html = Path("_output") / f"nll_history_{r['label']}_{att_idx}.html"
+            out_html.parent.mkdir(parents=True, exist_ok=True)
+            fig_nll.write_html(str(out_html))
+            try:
+                fig_nll.show()
+            except Exception:
+                pass
+
+        if grad_norms:
+            fig_g = go.Figure()
+            fig_g.add_trace(
+                go.Scatter(
+                    x=list(range(1, len(grad_norms) + 1)),
+                    y=grad_norms,
+                    mode="lines",
+                    name="GradNorm",
+                    line=dict(color=ptolqual[2], width=2),
+                )
+            )
+            fig_g.update_layout(
+                title=f"Gradient Norm vs Iteration ({r['label']}:{att.get('optimizer')})",
+                xaxis_title="Iteration",
+                yaxis_title="Gradient Norm",
+                plot_bgcolor=plot_bgcolor,
+                paper_bgcolor=paper_bgcolor,
+            )
+            fig_g = apply_professional_styling(fig_g, None, "Iteration", "Grad Norm")
+            fig_g = apply_tufte_axes(fig_g)
+            fig_g.update_xaxes(showgrid=True, gridcolor=gridcolor)
+            fig_g.update_yaxes(showgrid=True, gridcolor=gridcolor)
+            out_html = Path("_output") / f"gradnorm_history_{r['label']}_{att_idx}.html"
+            fig_g.write_html(str(out_html))
+            try:
+                fig_g.show()
+            except Exception:
+                pass
+
+        if param_history:
+            try:
+                import numpy as _np
+
+                ph = _np.asarray(param_history, dtype=float)
+                # ph: (n_iters, n_params) in log-space
+                params_nat = _np.exp(ph)
+                n_params = params_nat.shape[1]
+                for p in range(n_params):
+                    fig_p = go.Figure()
+                    fig_p.add_trace(
+                        go.Scatter(
+                            x=list(range(1, params_nat.shape[0] + 1)),
+                            y=params_nat[:, p].tolist(),
+                            mode="lines",
+                            name=f"param_{p}",
+                            line=dict(width=2),
+                        )
+                    )
+                    fig_p.update_layout(
+                        title=f"Parameter {p} trajectory ({r['label']}:{att.get('optimizer')})",
+                        xaxis_title="Iteration",
+                        yaxis_title="Parameter (natural scale)",
+                        plot_bgcolor=plot_bgcolor,
+                        paper_bgcolor=paper_bgcolor,
+                    )
+                    fig_p = apply_professional_styling(
+                        fig_p, None, "Iteration", f"param_{p}"
+                    )
+                    fig_p = apply_tufte_axes(fig_p)
+                    fig_p.update_xaxes(showgrid=True, gridcolor=gridcolor)
+                    fig_p.update_yaxes(showgrid=True, gridcolor=gridcolor)
+                    out_html = (
+                        Path("_output")
+                        / f"param_{p}_history_{r['label']}_{att_idx}.html"
+                    )
+                    fig_p.write_html(str(out_html))
+                    try:
+                        fig_p.show()
+                    except Exception:
+                        pass
+            except Exception as _exc:
+                print("  failed to plot parameter trajectories:", _exc)
+```
+
+## Summary table
+
+```{python}
+def _fmt_array(values, ndigits: int = 6) -> str:
+    if values is None:
+        return "NA"
+    arr = np.asarray(values, dtype=float)
+    return np.array2string(np.round(arr, ndigits), separator=", ")
+
+
+summary_rows = []
+for r in results:
+    method = r.get("label", "unknown")
+
+    if r.get("error"):
+        summary_rows.append(
+            {
+                "method": method,
+                "final_log_likelihood": np.nan,
+                "final_parameter_estimates": f"error: {r.get('error')}",
+            }
+        )
+        continue
+
+    attempts = r.get("optimization", []) or []
+    best_attempt = None
+    best_nll = np.inf
+    for att in attempts:
+        att_best = att.get("best_nll")
+        if att_best is None:
+            continue
+        if float(att_best) < best_nll:
+            best_nll = float(att_best)
+            best_attempt = att
+
+    if best_attempt is None and attempts:
+        best_attempt = attempts[-1]
+
+    final_nll = best_attempt.get("final_nll") if best_attempt is not None else None
+    final_log_likelihood = (
+        -float(final_nll)
+        if final_nll is not None and np.isfinite(final_nll)
+        else np.nan
+    )
+
+    birth_rates = r.get("birth_rates")
+    death_rates = r.get("death_rates")
+    param_summary = f"birth={_fmt_array(birth_rates)}; death={_fmt_array(death_rates)}"
+
+    summary_rows.append(
+        {
+            "method": method,
+            "final_log_likelihood": final_log_likelihood,
+            "final_parameter_estimates": param_summary,
+        }
+    )
+
+
+summary_df = pd.DataFrame(summary_rows)
+summary_df
+```
+
+## Save results
+
+```{python}
+out_path = Path("_output/optimisation_framework_results.json")
+out_path.parent.mkdir(parents=True, exist_ok=True)
+out_path.write_text(
+    json.dumps(
+        results, default=lambda o: o.tolist() if hasattr(o, "tolist") else o, indent=2
+    )
+)
+print(f"Saved results to {out_path}")
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+duration_seconds = time.perf_counter() - __compile_start
+doc_name = "methods_validation_optimisation_framework.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {
+    "duration_seconds": duration_seconds,
+    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```
