@@ -245,10 +245,12 @@ fit_populations = []
 fit_mean_ages = []
 fit_birth_values = []
 fit_death_values = []
+fit_growth_values = []
 fit_populations_boundary = []
 fit_mean_ages_boundary = []
 fit_birth_values_boundary = []
 fit_death_values_boundary = []
+fit_growth_values_boundary = []
 for model, ages in zip(fitted_models, remaining_ages, strict=False):
     if model is None or not model.get("success", False):
         continue
@@ -262,11 +264,13 @@ for model, ages in zip(fitted_models, remaining_ages, strict=False):
         fit_mean_ages_boundary.append(float(np.mean(ages)))
         fit_birth_values_boundary.append(birth_val)
         fit_death_values_boundary.append(death_val)
+        fit_growth_values_boundary.append(birth_val - death_val)
     else:
         fit_populations.append(len(ages))
         fit_mean_ages.append(float(np.mean(ages)))
         fit_birth_values.append(birth_val)
         fit_death_values.append(death_val)
+        fit_growth_values.append(birth_val - death_val)
 
 print(f"Non-boundary samples: {len(fit_populations)}")
 print(f"Boundary samples: {len(fit_populations_boundary)}")
@@ -297,6 +301,15 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
                 name=r"$\hat{\mu}\quad A^*\neq T$",
             )
         )
+        fig_rates_vs_pop.add_trace(
+            go.Scatter(
+                x=fit_populations,
+                y=fit_growth_values,
+                mode="markers",
+                marker=dict(color=ptolqual[2], size=4, opacity=0.25, symbol="circle"),
+                name=r"$\hat{\lambda} - \hat{\mu}\quad A^*\neq T$",
+            )
+        )
     # Boundary samples with cross markers
     if len(fit_populations_boundary) > 0:
         fig_rates_vs_pop.add_trace(
@@ -316,6 +329,16 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
                 mode="markers",
                 marker=dict(color=ptolqual[1], size=6, opacity=0.25, symbol="x"),
                 name=r"$\hat{\mu}\quad A^{*} =T$",
+                showlegend=True,
+            )
+        )
+        fig_rates_vs_pop.add_trace(
+            go.Scatter(
+                x=fit_populations_boundary,
+                y=fit_growth_values_boundary,
+                mode="markers",
+                marker=dict(color=ptolqual[2], size=6, opacity=0.25, symbol="x"),
+                name=r"$\hat{\lambda} - \hat{\mu}\quad A^{*} =T$",
                 showlegend=True,
             )
         )
