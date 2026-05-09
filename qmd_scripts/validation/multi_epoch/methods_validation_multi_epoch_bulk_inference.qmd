@@ -92,7 +92,12 @@ print(f"Simulations kept for fitting: {len(list_of_ages)} / {len(raw_list_of_age
 # | label: fit-full-two-rate
 # Fitting: configure and fit full two-epoch model
 fit_config = FitModelConfig(
-    times=times, is_ordered=True, perturb_initial_params_std=0.1, random_seed=10925
+    times=times,
+    is_ordered=True,
+    perturb_initial_params_std=0.0,
+    random_seed=10925,
+    initial_birth_rates=birth_rates_true,
+    initial_death_rates=death_rates_true,
 )
 fitted_results = Parallel(n_jobs=-1)(
     delayed(fit_single_model)(ages, fit_config) for ages in list_of_ages

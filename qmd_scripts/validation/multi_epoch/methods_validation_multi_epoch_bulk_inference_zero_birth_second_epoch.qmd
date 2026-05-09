@@ -100,8 +100,16 @@ from inf_bp_texts.visualization.plotting import (
     save_figure,
 )
 
+birth_rates_true = np.array([birth_rate_epoch_1_true, birth_rate_epoch_2_true], dtype=float)
+death_rates_true = np.array([death_rate_true, death_rate_true], dtype=float)
+
 fit_config = FitModelConfig(
-    times=times, is_ordered=True, perturb_initial_params_std=0.1, random_seed=10925
+    times=times,
+    is_ordered=True,
+    perturb_initial_params_std=0.0,
+    random_seed=10925,
+    initial_birth_rates=birth_rates_true,
+    initial_death_rates=death_rates_true,
 )
 param_constraints = ParameterConstraints(
     fixed_params={1: 1e-12},

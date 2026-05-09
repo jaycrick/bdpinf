@@ -75,7 +75,12 @@ print(f"Initial NLL: {initial_nll}")
 
 ```{python}
 fit_config = FitModelConfig(
-    times=times, is_ordered=True, perturb_initial_params_std=0.1, random_seed=10925
+    times=times,
+    is_ordered=True,
+    perturb_initial_params_std=0.0,
+    random_seed=10925,
+    initial_birth_rates=birth_rates,
+    initial_death_rates=death_rates,
 )
 single_fit_result = fit_single_model(ages, fit_config)
 print(single_fit_result)

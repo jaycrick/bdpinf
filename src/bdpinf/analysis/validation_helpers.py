@@ -19,6 +19,8 @@ class FitModelConfig:
     is_ordered: bool = True
     perturb_initial_params_std: float | None = None
     random_seed: int | None = None
+    initial_birth_rates: NDArray[np.float64] | None = None
+    initial_death_rates: NDArray[np.float64] | None = None
     unbias: bool = True
 
 
@@ -39,6 +41,10 @@ def fit_single_model(
         fit_kwargs["perturb_initial_params_std"] = config.perturb_initial_params_std
     if config.random_seed is not None:
         fit_kwargs["random_seed"] = config.random_seed
+    if config.initial_birth_rates is not None:
+        fit_kwargs["initial_birth_rates"] = config.initial_birth_rates
+    if config.initial_death_rates is not None:
+        fit_kwargs["initial_death_rates"] = config.initial_death_rates
     fit_kwargs["unbias"] = config.unbias
 
     try:

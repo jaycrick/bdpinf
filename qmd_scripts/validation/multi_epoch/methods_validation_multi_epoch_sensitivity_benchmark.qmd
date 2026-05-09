@@ -64,7 +64,12 @@ for cfg_idx, cfg in enumerate(configs):
         )
 
     fit_config = FitModelConfig(
-        times=times, is_ordered=True, perturb_initial_params_std=0.1, random_seed=10925
+        times=times,
+        is_ordered=True,
+        perturb_initial_params_std=0.0,
+        random_seed=10925,
+        initial_birth_rates=cfg["birth_rates"],
+        initial_death_rates=cfg["death_rates"],
     )
     start = time.perf_counter()
     fits = Parallel(n_jobs=-1)(

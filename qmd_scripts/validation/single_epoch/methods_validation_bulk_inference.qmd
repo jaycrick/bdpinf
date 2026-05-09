@@ -127,7 +127,13 @@ $$
 ## Fit Remaining Models
 
 ```{python}
-fit_config = FitModelConfig(times=time_span, is_ordered=True)
+fit_config = FitModelConfig(
+    times=time_span,
+    is_ordered=True,
+    perturb_initial_params_std=0.0,
+    initial_birth_rates=np.array([birth_rate], dtype=float),
+    initial_death_rates=np.array([death_rate], dtype=float),
+)
 
 remaining_ages = list_of_ages[1:]
 fitted_models = Parallel(n_jobs=-1)(

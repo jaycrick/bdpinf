@@ -85,7 +85,13 @@ for config_idx, config in enumerate(parameter_configs):
         for i in range(config["num_sims"])
     )
 
-    fit_config = FitModelConfig(times=config["time_span"], is_ordered=True)
+    fit_config = FitModelConfig(
+        times=config["time_span"],
+        is_ordered=True,
+        perturb_initial_params_std=0.0,
+        initial_birth_rates=np.array([config["birth_rate"]], dtype=float),
+        initial_death_rates=np.array([config["death_rate"]], dtype=float),
+    )
     fitted_models = Parallel(n_jobs=-1)(
         delayed(fit_single_model)(ages, fit_config) for ages in list_of_ages
     )
