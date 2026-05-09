@@ -52,7 +52,7 @@ from joblib import Parallel, delayed
 ## Simulate Age Vectors
 
 ```{python}
-num_sims = 1000
+num_sims = 5000
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500.0
