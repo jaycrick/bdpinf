@@ -5,6 +5,10 @@ author: "JC"
 date: last-modified
 ---
 
+**TODOs:**
+
+- [ ] Ensure that this is being fit with the same default parameters as other files.
+
 ```{python}
 # | label: compile-time-start
 # | cache: false

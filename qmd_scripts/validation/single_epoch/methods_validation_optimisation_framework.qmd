@@ -9,14 +9,11 @@ This document implements a lightweight optimisation benchmarking workflow for si
 
 **TODO (from mle_optimisation_framework_prompt)**
 
-- [ ] Implement configurable optimiser strategy objects and defaults (Adam, LBFGS).
+- [ ] Investigate why Adam lr=1e-01 seems to converge but the graphs seems to say it hasn't.
 - [ ] Support sequential strategies (e.g., Adam warm-start → LBFGS refinement).
-- [ ] Record per-iteration diagnostics: `nll_history`, `grad_norms`, `param_history`, `timestamps`.
 - [ ] Add reproducible multi-start support (seeded random initialisations, configurable n_starts).
 - [ ] Add convergence diagnostics and robust checks (gradient thresholds, tolerance, patience).
 - [ ] Export results in tabular and columnar formats (JSON, CSV/Parquet) with one row per run.
-- [ ] Plot diagnostics: NLL traces, gradient norms, parameter trajectories, final NLL distributions.
-- [ ] Add numerical stability safeguards (NaN/Inf detection, early stopping, retries).
 - [ ] Add utilities for Hessian / Fisher information diagnostics (autograd + finite differences).
 - [ ] Provide experiment runner API to iterate optimisers, starts, and store summaries.
 - [ ] Document configuration options and reproducibility steps (seeds, dtypes).

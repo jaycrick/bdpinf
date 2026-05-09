@@ -5,6 +5,14 @@ author: "JC"
 date: last-modified
 ---
 
+**TODOs:**
+
+- [ ] Do some IQR-based outlier removal on the fitted rates vs ... plots. Alternative to filtering, look at limiting the x and y axes to the correct range
+- [ ] Add true line for growth rate (λ-μ) to the rates vs population/mean age plots
+- [ ] Include a correlation matrix in addition to covariance matrix
+- [ ] Add labels to all simulations such that they can be reproduced and debugged separately (including on plots)
+- [ ] for the birth rate histogram, make the bin sizes smaller
+
 ```{python}
 # | label: compile-time-start
 # | cache: false

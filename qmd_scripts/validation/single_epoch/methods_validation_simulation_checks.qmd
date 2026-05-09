@@ -20,6 +20,11 @@ __compile_start = time.perf_counter()
 This notebook validates simulation outputs for single-epoch birth-death age sampling,
 including population counts and age distributions against theoretical curves.
 
+**TODOs:**
+
+- [ ] Make the population distribution plot smaller by making the x-axis go to 2400, and adjusting bin width to 100.
+- [ ] Do a Anderson-Darling test for both spine and non-spine age samples against theoretical distributions or each other.
+
 ## Setup
 
 ```{python}
