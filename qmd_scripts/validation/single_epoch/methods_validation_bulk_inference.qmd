@@ -235,7 +235,9 @@ if failed_cases:
         )
 ```
 
-## Fitted Rates vs Population Size
+## Fitted Rates vs Population Size/Mean Age
+
+### Prepare Boundary-Aware Data for Visualization
 
 ```{python}
 birth_rates, death_rates = extract_rate_arrays(fitted_models)
@@ -247,7 +249,6 @@ fit_populations_boundary = []
 fit_mean_ages_boundary = []
 fit_birth_values_boundary = []
 fit_death_values_boundary = []
-
 for model, ages in zip(fitted_models, remaining_ages, strict=False):
     if model is None or not model.get("success", False):
         continue
@@ -267,6 +268,13 @@ for model, ages in zip(fitted_models, remaining_ages, strict=False):
         fit_birth_values.append(birth_val)
         fit_death_values.append(death_val)
 
+print(f"Non-boundary samples: {len(fit_populations)}")
+print(f"Boundary samples: {len(fit_populations_boundary)}")
+```
+
+### Fitted Rates vs Population Size
+
+```{python}
 if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
     fig_rates_vs_pop = go.Figure()
     # Non-boundary samples with circle markers
@@ -276,7 +284,7 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
                 x=fit_populations,
                 y=fit_birth_values,
                 mode="markers",
-                marker=dict(color=ptolqual[0], size=6, opacity=0.7, symbol="circle"),
+                marker=dict(color=ptolqual[0], size=4, opacity=0.25, symbol="circle"),
                 name=r"$\hat{\lambda}\quad A^*\neq T$",
             )
         )
@@ -285,7 +293,7 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
                 x=fit_populations,
                 y=fit_death_values,
                 mode="markers",
-                marker=dict(color=ptolqual[1], size=6, opacity=0.7, symbol="circle"),
+                marker=dict(color=ptolqual[1], size=4, opacity=0.25, symbol="circle"),
                 name=r"$\hat{\mu}\quad A^*\neq T$",
             )
         )
@@ -296,7 +304,7 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
                 x=fit_populations_boundary,
                 y=fit_birth_values_boundary,
                 mode="markers",
-                marker=dict(color=ptolqual[0], size=8, opacity=0.7, symbol="x"),
+                marker=dict(color=ptolqual[0], size=6, opacity=0.25, symbol="x"),
                 name=r"$\hat{\lambda}\quad A^{*} =T$",
                 showlegend=True,
             )
@@ -306,7 +314,7 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
                 x=fit_populations_boundary,
                 y=fit_death_values_boundary,
                 mode="markers",
-                marker=dict(color=ptolqual[1], size=8, opacity=0.7, symbol="x"),
+                marker=dict(color=ptolqual[1], size=6, opacity=0.25, symbol="x"),
                 name=r"$\hat{\mu}\quad A^{*} =T$",
                 showlegend=True,
             )
@@ -348,7 +356,11 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
         height=300,
     )
     print(f"Saved rates-vs-population figure: {saved_rates_vs_pop}")
+```
 
+### Mean Fitted Rates vs Population Size
+
+```{python}
 if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
     fig_rates_vs_mean_age = go.Figure()
     # Non-boundary samples with circle markers
@@ -358,7 +370,7 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
                 x=fit_mean_ages,
                 y=fit_birth_values,
                 mode="markers",
-                marker=dict(color=ptolqual[0], size=6, opacity=0.7, symbol="circle"),
+                marker=dict(color=ptolqual[0], size=4, opacity=0.25, symbol="circle"),
                 name=r"$\hat{\lambda}\quad A^*\neq T$",
             )
         )
@@ -367,7 +379,7 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
                 x=fit_mean_ages,
                 y=fit_death_values,
                 mode="markers",
-                marker=dict(color=ptolqual[1], size=6, opacity=0.7, symbol="circle"),
+                marker=dict(color=ptolqual[1], size=4, opacity=0.25, symbol="circle"),
                 name=r"$\hat{\mu}\quad A^*\neq T$",
             )
         )
@@ -378,7 +390,7 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
                 x=fit_mean_ages_boundary,
                 y=fit_birth_values_boundary,
                 mode="markers",
-                marker=dict(color=ptolqual[0], size=8, opacity=0.7, symbol="x"),
+                marker=dict(color=ptolqual[0], size=6, opacity=0.25, symbol="x"),
                 name=r"$\hat{\lambda}\quad A^{*} =T$",
                 showlegend=True,
             )
@@ -388,7 +400,7 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
                 x=fit_mean_ages_boundary,
                 y=fit_death_values_boundary,
                 mode="markers",
-                marker=dict(color=ptolqual[1], size=8, opacity=0.7, symbol="x"),
+                marker=dict(color=ptolqual[1], size=6, opacity=0.25, symbol="x"),
                 name=r"$\hat{\mu}\quad A^{*} =T$",
                 showlegend=True,
             )
