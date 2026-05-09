@@ -127,7 +127,7 @@ def apply_professional_styling(
             "bgcolor": "rgba(250,250,250,0.6)",
             "bordercolor": "rgba(0,0,0,0.08)",
             "borderwidth": 0.5,
-            "font": {"size": 9, "color": "black"},
+            "font": {"size": FONT_SIZE - 2, "color": "black"},
             "traceorder": "normal",
         },
         margin={"l": 50, "r": 15, "t": 15 if title else 8, "b": 40, "pad": 4},
@@ -141,7 +141,7 @@ def apply_tufte_legend(
     position: str = "top right",
     bgcolor: str = "rgba(250,250,250,0.6)",
     bordercolor: str = "rgba(0,0,0,0.08)",
-    font_size: int = 9,
+    font_size: int = FONT_SIZE - 2,
     *,
     showlegend: bool = True,
 ) -> Any:
@@ -261,7 +261,7 @@ def save_figure(
         fig.update_layout(
             width=width,
             height=height,
-            font={"size": 11},  # Ensure readable font size
+            font={"size": FONT_SIZE},  # Ensure readable font size
             margin=margin_dict,
             autosize=False,
         )
