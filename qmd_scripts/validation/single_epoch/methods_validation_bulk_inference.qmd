@@ -30,6 +30,7 @@ from inf_bp_texts.analysis import (
     fit_single_model,
     summarize_fit_success,
 )
+from inf_bp_texts.inference.fitting import ConvergenceConfig, fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.visualization import save_figure
 from inf_bp_texts.visualization.plotting import (
@@ -135,9 +136,50 @@ fit_config = FitModelConfig(
     initial_death_rates=np.array([death_rate], dtype=float),
 )
 
+
+def fit_single_model_with_optimizers(ages, config):
+    if len(ages) == 0:
+        return None
+
+    fit_kwargs = {
+        "list_of_ages": [ages],
+        "times": config.times,
+        "is_ordered": config.is_ordered,
+        "unbias": config.unbias,
+        "optimizers": ["lbfgs", "adam"],
+        "optimizer_kwargs": {
+        "lbfgs": {
+            "lr": 1.0,
+            "line_search_fn": "strong_wolfe",
+            "min_iterations": 10,
+        },
+        "adam": {
+            "lr": 1e-3,
+        },
+    },
+        "convergence_config": ConvergenceConfig(
+        gradient_threshold=1e-6, absolute_tolerance=1e-10, patience=10
+    ),
+    }
+    if config.perturb_initial_params_std is not None:
+        fit_kwargs["perturb_initial_params_std"] = config.perturb_initial_params_std
+    if config.random_seed is not None:
+        fit_kwargs["random_seed"] = config.random_seed
+    if config.initial_birth_rates is not None:
+        fit_kwargs["initial_birth_rates"] = config.initial_birth_rates
+    if config.initial_death_rates is not None:
+        fit_kwargs["initial_death_rates"] = config.initial_death_rates
+
+    try:
+        return fit_birth_death_processes(**fit_kwargs)
+    except Exception:
+        return None
+
+
 remaining_ages = list_of_ages[1:]
 fitted_models = Parallel(n_jobs=-1)(
-    delayed(fit_single_model)(ages, fit_config) for ages in remaining_ages
+    delayed(fit_single_model_with_optimizers)(ages, fit_config)
+    for ages in remaining_ages
 )
 
 fit_summary = summarize_fit_success(fitted_models, total_models=len(fitted_models))
