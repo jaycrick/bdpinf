@@ -1,6 +1,6 @@
 ---
 title: "Multi-Epoch Validation: Simulation Checks"
-subtitle: "Two-Epoch Simulation and Survivorship Summaries"
+subtitle: "Single-Epoch Process and Three-Epoch Process Comparisons"
 author: "JC"
 date: last-modified
 ---
@@ -12,67 +12,581 @@ date: last-modified
 # | include: false
 
 import time
+
 __compile_start = time.perf_counter()
 ```
+
+## Overview
+
+This notebook validates that simulating a birth-death process with a single birth
+and death rate agrees with simulating the same process over three epochs when the
+birth and death rates are identical in each epoch.
 
 ## Setup
 
 ```{python}
 import numpy as np
 import pandas as pd
+import plotly.graph_objs as go
+from plotly.subplots import make_subplots
+import torch
 
+from inf_bp_texts.analysis import boundary_corrected_kde_on_support
+from inf_bp_texts.models.mathematical_functions import (
+    calculate_extinction_pr,
+    calculate_non_spine_ages_log_lik,
+    calculate_populations_log_lik,
+    calculate_spine_ages_log_lik,
+)
 from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.visualization.plotting import (
+    apply_professional_styling,
+    apply_tufte_axes,
+    ptolqual,
+    save_figure,
+)
 from joblib import Parallel, delayed
 ```
 
-## Two-Epoch Simulation
+## Simulate Age Vectors
 
 ```{python}
-num_sims = 100
-birth_rates = np.array([0.01, 0.001], dtype=float)
-death_rates = np.array([0.001, 0.001], dtype=float)
-times = np.array([750.0, 1500.0], dtype=float)
+num_sims = 10000
+birth_rate = 0.005
+death_rate = birth_rate - 0.004
+time_span = 1500.0
 seed = 42
+population_bin_width = 200
 
-simulated_processes = Parallel(n_jobs=-1)(
-    delayed(simulate_birth_death_process)(
-        birth_rates=birth_rates,
-        death_rates=death_rates,
-        times=times,
-        random_seed=seed + i,
+single_epoch_birth_rates = birth_rate
+single_epoch_death_rates = death_rate
+single_epoch_times = time_span
+
+three_epoch_birth_rates = np.array([birth_rate, birth_rate, birth_rate], dtype=float)
+three_epoch_death_rates = np.array([death_rate, death_rate, death_rate], dtype=float)
+three_epoch_times = np.array([500.0, 1000.0, 1500.0], dtype=float)
+
+
+def sample_age_vector_process(sim_idx, br, dr, span, base_seed):
+    run_seed = base_seed + sim_idx
+    simulated_df = simulate_birth_death_process(
+        birth_rates=br,
+        death_rates=dr,
+        times=span,
+        random_seed=run_seed,
+    )
+    survivors = simulated_df[simulated_df["death_time"].isna()]
+    if survivors.empty:
+        return np.array([], dtype=np.float64)
+
+    spine_ages = survivors.loc[survivors["is_spine"], "age"].to_numpy(
+        dtype=np.float64,
+    )
+    non_spine_ages = survivors.loc[~survivors["is_spine"], "age"].to_numpy(
+        dtype=np.float64,
+    )
+
+    if spine_ages.size > 0:
+        return np.concatenate([spine_ages[:1], non_spine_ages]).astype(np.float64)
+    return non_spine_ages.astype(np.float64)
+
+
+single_epoch_start = time.perf_counter()
+list_of_ages_single_epoch = Parallel(n_jobs=-1)(
+    delayed(sample_age_vector_process)(
+        sim_idx=i,
+        br=single_epoch_birth_rates,
+        dr=single_epoch_death_rates,
+        span=single_epoch_times,
+        base_seed=seed,
     )
     for i in range(num_sims)
 )
+single_epoch_seconds = time.perf_counter() - single_epoch_start
 
-print(f"Completed simulations: {len(simulated_processes)}")
-```
+three_epoch_start = time.perf_counter()
+list_of_ages_three_epoch = Parallel(n_jobs=-1)(
+    delayed(sample_age_vector_process)(
+        sim_idx=i,
+        br=three_epoch_birth_rates,
+        dr=three_epoch_death_rates,
+        span=three_epoch_times,
+        base_seed=seed + 100_000,
+    )
+    for i in range(num_sims)
+)
+three_epoch_seconds = time.perf_counter() - three_epoch_start
 
-## Survivorship and Exposure Summary
+population_sizes_single_epoch = np.asarray(
+    [len(ages) for ages in list_of_ages_single_epoch],
+    dtype=np.int64,
+)
+population_sizes_three_epoch = np.asarray(
+    [len(ages) for ages in list_of_ages_three_epoch],
+    dtype=np.int64,
+)
 
-```{python}
-list_of_ages = []
 rows = []
-for i, sim in enumerate(simulated_processes):
-    alive = sim[sim["death_time"].isna()].sort_values("is_spine", ascending=False)
-    ages = times[-1] - alive["creation_time"].to_numpy(dtype=np.float64)
-    list_of_ages.append(np.asarray(ages, dtype=np.float64))
-
+for method_name, ages_list, population_sizes in [
+    (
+        "single-epoch process",
+        list_of_ages_single_epoch,
+        population_sizes_single_epoch,
+    ),
+    (
+        "three-epoch process",
+        list_of_ages_three_epoch,
+        population_sizes_three_epoch,
+    ),
+]:
     rows.append(
         {
-            "simulation": i,
-            "n_total": int(len(sim)),
-            "n_survivors": int(len(alive)),
-            "n_deaths": int(sim["death_time"].notna().sum()),
-            "mean_age": float(np.mean(ages)) if len(ages) else np.nan,
+            "method": method_name,
+            "n_sims": int(len(ages_list)),
+            "mean_population": float(np.mean(population_sizes)),
+            "extinct_fraction": float((population_sizes == 0).mean()),
+            "mean_age": float(
+                np.nanmean(
+                    [
+                        float(np.mean(ages)) if len(ages) else np.nan
+                        for ages in ages_list
+                    ]
+                )
+            ),
         }
     )
 
 summary_df = pd.DataFrame(rows)
-print(summary_df.describe(include="all").transpose().to_string(float_format="%.3f"))
+
+print(f"Simulations per method: {num_sims}")
+print(f"Sampling time (single-epoch process): {single_epoch_seconds:.2f}s")
+print(f"Sampling time (three-epoch process): {three_epoch_seconds:.2f}s")
 print(
-    f"\nFraction extinct at final time: {(summary_df['n_survivors'] == 0).mean():.3f}"
+    f"Theoretical extinct fraction: {calculate_extinction_pr(birth_rate, death_rate, time_span):.3f}"
+)
+print(summary_df.to_string(index=False, float_format="%.3f"))
+print(
+    f"\nSingle-epoch spine ages count: {sum(1 for ages in list_of_ages_single_epoch if len(ages) > 0 and ages[0] < time_span)}"
+)
+print(
+    f"Three-epoch spine ages count: {sum(1 for ages in list_of_ages_three_epoch if len(ages) > 0 and ages[0] < time_span)}"
+)
+print(
+    f"Single-epoch non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_single_epoch if len(ages) > 1)}"
+)
+print(
+    f"Three-epoch non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_three_epoch if len(ages) > 1)}"
 )
 ```
+
+## Population Distribution
+
+```{python}
+fig_population = go.Figure()
+
+population_max = int(
+    max(
+        population_sizes_single_epoch.max(),
+        population_sizes_three_epoch.max(),
+        1,
+    ),
+)
+population_bin_edges = np.arange(
+    0,
+    population_max + population_bin_width,
+    population_bin_width,
+    dtype=np.float64,
+)
+if population_bin_edges[-1] < population_max + 1:
+    population_bin_edges = np.append(
+        population_bin_edges, population_bin_edges[-1] + population_bin_width
+    )
+population_bin_centers = (population_bin_edges[:-1] + population_bin_edges[1:]) / 2.0
+
+population_empirical_counts_single, _ = np.histogram(
+    population_sizes_single_epoch,
+    bins=population_bin_edges,
+)
+population_empirical_counts_three, _ = np.histogram(
+    population_sizes_three_epoch,
+    bins=population_bin_edges,
+)
+
+population_support = np.arange(0, population_max + 1, dtype=np.int64)
+population_pmf = np.zeros_like(population_support, dtype=np.float64)
+for idx, population_count in enumerate(population_support):
+    log_probability = calculate_populations_log_lik(
+        birth_rates=torch.tensor(birth_rate, dtype=torch.float64),
+        death_rates=torch.tensor(death_rate, dtype=torch.float64),
+        ns=torch.tensor(int(population_count), dtype=torch.int64),
+        times=torch.tensor(time_span, dtype=torch.float64),
+    )
+    population_pmf[idx] = float(torch.exp(log_probability).item())
+
+population_theoretical_counts, _ = np.histogram(
+    population_support,
+    bins=population_bin_edges,
+    weights=population_pmf * num_sims,
+)
+
+fig_population.add_trace(
+    go.Bar(
+        x=population_bin_centers,
+        y=population_empirical_counts_single,
+        marker=dict(color=ptolqual[0]),
+        name="Observed (single-epoch process)",
+        opacity=0.65,
+    )
+)
+fig_population.add_trace(
+    go.Bar(
+        x=population_bin_centers,
+        y=population_empirical_counts_three,
+        marker=dict(color=ptolqual[2]),
+        name="Observed (three-epoch process)",
+        opacity=0.65,
+    )
+)
+fig_population.add_trace(
+    go.Scatter(
+        x=population_bin_centers,
+        y=population_theoretical_counts,
+        mode="lines+markers",
+        name="Theoretical",
+        line=dict(color=ptolqual[1], width=2, dash="dash"),
+        marker=dict(color=ptolqual[1], size=5),
+    )
+)
+fig_population = apply_professional_styling(
+    fig_population,
+    "Population Distribution: Single-Epoch Process vs Three-Epoch Process",
+    "Population size",
+    "Count",
+)
+fig_population = apply_tufte_axes(fig_population)
+fig_population.update_layout(
+    barmode="group",
+    legend=dict(
+        x=0.99,
+        y=0.99,
+        xanchor="right",
+        yanchor="top",
+    ),
+)
+fig_population.update_xaxes(dtick=population_bin_width)
+fig_population.show()
+saved_population = save_figure(
+    fig_population,
+    "methods_validation_population_distribution",
+    width=400,
+    height=300,
+)
+print(f"Saved population figure: {saved_population}")
+```
+
+## Spine and Non-Spine Age Checks
+
+```{python}
+def theoretical_age_density(
+    log_lik_fn,
+    support_upper: float,
+    n_grid: int = 300,
+    include_endpoint: bool = True,
+    proportion_not_at_upper: float | None = None,
+):
+    x_grid = np.linspace(0.0, support_upper, n_grid, endpoint=include_endpoint)
+    y_vals = []
+    for x_val in x_grid:
+        log_density = log_lik_fn(torch.tensor(float(x_val), dtype=torch.float64))
+        y_vals.append(
+            float(torch.exp(log_density).item()) if torch.isfinite(log_density) else 0.0
+        )
+    y_vals_arr = np.asarray(y_vals, dtype=np.float64)
+    if proportion_not_at_upper is not None:
+        p_not_upper = float(proportion_not_at_upper)
+        if np.isfinite(p_not_upper) and p_not_upper > 0.0:
+            y_vals_arr = y_vals_arr * (1.0 / p_not_upper)
+    return x_grid, y_vals_arr
+
+
+def proportion_not_at_upper(
+    samples: np.ndarray,
+    support_upper: float,
+    tol: float = 1e-12,
+) -> float:
+    samples = np.asarray(samples, dtype=np.float64)
+    finite = samples[np.isfinite(samples)]
+    if len(finite) == 0:
+        return 1.0
+    return float(np.mean(finite < (float(support_upper) - float(tol))))
+
+
+spine_age_samples_single = np.asarray(
+    [
+        arr[0]
+        for arr in list_of_ages_single_epoch
+        if len(arr) > 0 and arr[0] < time_span
+    ],
+    dtype=np.float64,
+)
+spine_age_samples_three = np.asarray(
+    [arr[0] for arr in list_of_ages_three_epoch if len(arr) > 0 and arr[0] < time_span],
+    dtype=np.float64,
+)
+spine_age_samples_all = np.asarray(
+    [arr[0] for arr in list_of_ages_single_epoch if len(arr) > 0]
+    + [arr[0] for arr in list_of_ages_three_epoch if len(arr) > 0],
+    dtype=np.float64,
+)
+spine_prop_not_at_max = proportion_not_at_upper(spine_age_samples_all, time_span)
+
+non_spine_age_samples_single = (
+    np.concatenate([arr[1:] for arr in list_of_ages_single_epoch if len(arr) > 1])
+    if any(len(arr) > 1 for arr in list_of_ages_single_epoch)
+    else np.array([], dtype=np.float64)
+)
+non_spine_age_samples_three = (
+    np.concatenate([arr[1:] for arr in list_of_ages_three_epoch if len(arr) > 1])
+    if any(len(arr) > 1 for arr in list_of_ages_three_epoch)
+    else np.array([], dtype=np.float64)
+)
+non_spine_age_samples_all = (
+    np.concatenate(
+        [arr[1:] for arr in list_of_ages_single_epoch if len(arr) > 1]
+        + [arr[1:] for arr in list_of_ages_three_epoch if len(arr) > 1],
+    )
+    if (
+        any(len(arr) > 1 for arr in list_of_ages_single_epoch)
+        or any(len(arr) > 1 for arr in list_of_ages_three_epoch)
+    )
+    else np.array([], dtype=np.float64)
+)
+non_spine_prop_not_at_max = proportion_not_at_upper(
+    non_spine_age_samples_all, time_span
+)
+
+fig_summary = make_subplots(
+    rows=2,
+    cols=2,
+    horizontal_spacing=0.08,
+    vertical_spacing=0.08,
+    shared_xaxes="columns",
+    shared_yaxes="rows",
+)
+
+non_spine_grid_single, non_spine_kde_single = boundary_corrected_kde_on_support(
+    non_spine_age_samples_single,
+    support_upper=time_span,
+)
+if non_spine_grid_single is not None:
+    fig_summary.add_trace(
+        go.Scatter(
+            x=non_spine_grid_single,
+            y=non_spine_kde_single,
+            mode="lines",
+            line=dict(color=ptolqual[0], width=2),
+            fill="tozeroy",
+            name="KDE single-epoch process",
+        ),
+        row=1,
+        col=1,
+    )
+
+non_spine_grid_three, non_spine_kde_three = boundary_corrected_kde_on_support(
+    non_spine_age_samples_three,
+    support_upper=time_span,
+)
+if non_spine_grid_three is not None:
+    fig_summary.add_trace(
+        go.Scatter(
+            x=non_spine_grid_three,
+            y=non_spine_kde_three,
+            mode="lines",
+            line=dict(color=ptolqual[2], width=2),
+            fill="tozeroy",
+            name="KDE three-epoch process",
+        ),
+        row=1,
+        col=2,
+    )
+
+non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
+    lambda age: calculate_non_spine_ages_log_lik(
+        birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
+    ),
+    time_span,
+    proportion_not_at_upper=non_spine_prop_not_at_max,
+)
+
+
+def robust_y_max(
+    arrays: list[np.ndarray | None],
+    quantile: float = 99.0,
+    pad: float = 1.1,
+) -> float:
+    finite_parts: list[np.ndarray] = []
+    for arr in arrays:
+        if arr is None:
+            continue
+        values = np.asarray(arr, dtype=np.float64)
+        finite = values[np.isfinite(values)]
+        if finite.size > 0:
+            finite_parts.append(finite)
+    if not finite_parts:
+        return 1.0
+
+    joined = np.concatenate(finite_parts)
+    q = float(np.nanpercentile(joined, quantile))
+    if not np.isfinite(q) or q <= 0.0:
+        q = float(np.nanmax(joined)) if joined.size > 0 else 1.0
+    if not np.isfinite(q) or q <= 0.0:
+        q = 1.0
+    return q * float(pad)
+
+
+spine_grid_single, spine_kde_single = boundary_corrected_kde_on_support(
+    spine_age_samples_single,
+    support_upper=time_span,
+)
+if spine_grid_single is not None:
+    fig_summary.add_trace(
+        go.Scatter(
+            x=spine_grid_single,
+            y=spine_kde_single,
+            mode="lines",
+            line=dict(color=ptolqual[0], width=2),
+            fill="tozeroy",
+            name="KDE single-epoch process",
+            showlegend=False,
+        ),
+        row=2,
+        col=1,
+    )
+
+spine_grid_three, spine_kde_three = boundary_corrected_kde_on_support(
+    spine_age_samples_three,
+    support_upper=time_span,
+)
+if spine_grid_three is not None:
+    fig_summary.add_trace(
+        go.Scatter(
+            x=spine_grid_three,
+            y=spine_kde_three,
+            mode="lines",
+            line=dict(color=ptolqual[2], width=2),
+            fill="tozeroy",
+            name="KDE three-epoch process",
+            showlegend=False,
+        ),
+        row=2,
+        col=2,
+    )
+
+spine_theory_x, spine_theory_y = theoretical_age_density(
+    lambda age: calculate_spine_ages_log_lik(
+        birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
+    ),
+    time_span,
+    include_endpoint=False,
+    proportion_not_at_upper=spine_prop_not_at_max,
+)
+
+non_spine_y_max = robust_y_max(
+    [non_spine_kde_single, non_spine_kde_three, non_spine_theory_y]
+)
+spine_y_max = robust_y_max([spine_kde_single, spine_kde_three, spine_theory_y])
+
+fig_summary.add_trace(
+    go.Scatter(
+        x=non_spine_theory_x,
+        y=non_spine_theory_y,
+        mode="lines",
+        line=dict(color=ptolqual[1], width=2, dash="dash"),
+        name="Theoretical Density",
+    ),
+    row=1,
+    col=1,
+)
+fig_summary.add_trace(
+    go.Scatter(
+        x=non_spine_theory_x,
+        y=non_spine_theory_y,
+        mode="lines",
+        line=dict(color=ptolqual[1], width=2, dash="dash"),
+        name="Theoretical Density",
+        showlegend=False,
+    ),
+    row=1,
+    col=2,
+)
+fig_summary.add_trace(
+    go.Scatter(
+        x=spine_theory_x,
+        y=spine_theory_y,
+        mode="lines",
+        line=dict(color=ptolqual[1], width=2, dash="dash"),
+        name="Theoretical Density",
+        showlegend=False,
+    ),
+    row=2,
+    col=1,
+)
+fig_summary.add_trace(
+    go.Scatter(
+        x=spine_theory_x,
+        y=spine_theory_y,
+        mode="lines",
+        line=dict(color=ptolqual[1], width=2, dash="dash"),
+        name="Theoretical Density",
+        showlegend=False,
+    ),
+    row=2,
+    col=2,
+)
+
+fig_summary = apply_professional_styling(
+    fig_summary,
+    "Age Densities by Generator (Single-Epoch vs Three-Epoch Process)",
+    "",
+    "",
+)
+fig_summary = apply_tufte_axes(fig_summary)
+fig_summary.update_layout(
+    margin=dict(t=50),
+    legend=dict(
+        x=0.99,
+        y=0.99,
+        xanchor="right",
+        yanchor="top",
+    ),
+)
+fig_summary.update_xaxes(range=[0.0, time_span], row=1, col=1)
+fig_summary.update_xaxes(range=[0.0, time_span], row=1, col=2)
+fig_summary.update_xaxes(
+    title_text="Age (single-epoch process)", range=[0.0, time_span], row=2, col=1
+)
+fig_summary.update_xaxes(
+    title_text="Age (three-epoch process)", range=[0.0, time_span], row=2, col=2
+)
+fig_summary.update_yaxes(title_text="Density (non-spine)", row=1, col=1)
+fig_summary.update_yaxes(title_text="", row=1, col=2)
+fig_summary.update_yaxes(title_text="Density (spine)", row=2, col=1)
+fig_summary.update_yaxes(title_text="", row=2, col=2)
+fig_summary.update_yaxes(range=[0.0, non_spine_y_max], row=1, col=1)
+fig_summary.update_yaxes(range=[0.0, non_spine_y_max], row=1, col=2)
+fig_summary.update_yaxes(range=[0.0, spine_y_max], row=2, col=1)
+fig_summary.update_yaxes(range=[0.0, spine_y_max], row=2, col=2)
+fig_summary.show()
+saved_age_densities = save_figure(
+    fig_summary,
+    "methods_validation_age_densities",
+    width=400,
+    height=350,
+)
+print(f"Saved age-density figure: {saved_age_densities}")
+```
+
+The density of the spine age distribution does not include the point mass at the maximum time span.
 
 ```{python}
 # | label: compile-time-report
