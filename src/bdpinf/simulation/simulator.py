@@ -460,6 +460,7 @@ def simulate_bdp_ages_from_distributions(
     death_rate: torch.Tensor,
     max_time: torch.Tensor,
     rng: np.random.Generator,
+    ensure_non_extinct: bool = False,
 ) -> dict[str, list[float]]:
     """Sample population size and manuscript ages from BDP-derived distributions.
 
@@ -472,6 +473,8 @@ def simulate_bdp_ages_from_distributions(
         death_rate: Scalar death-rate tensor.
         max_time: Scalar observation-time tensor.
         rng: NumPy random number generator.
+        ensure_non_extinct: If True, force a non-zero population draw by sampling
+            from the conditional geometric component only.
 
     Returns:
         A dictionary ``ages`` with keys ``"spine"`` and ``"non_spine"``.
@@ -497,11 +500,19 @@ def simulate_bdp_ages_from_distributions(
     max_time_tensor = torch.tensor(max_time_val, dtype=torch.float64)
 
     pop_size: int
-    if rng.uniform() < calculate_extinction_pr(birth_rate, death_rate, max_time):
+    if ensure_non_extinct:
+        pop_size = rng.geometric(
+            _population_geometric_parameter(birth_rate, death_rate, max_time).item(),
+        )
+    elif rng.uniform() < calculate_extinction_pr(birth_rate, death_rate, max_time):
         pop_size = 0
     else:
         pop_size = rng.geometric(
-            _population_geometric_parameter(birth_rate, death_rate, max_time).item(),
+            _population_geometric_parameter(
+                birth_rate,
+                death_rate,
+                max_time,
+            ).item(),
         )
 
     ages: dict[str, list[float]] = {"spine": [], "non_spine": []}

@@ -57,6 +57,8 @@ website:
             file: qmd_scripts/core_analysis/04_bayesian/kashouh_family_k_bayesian_inference.qmd
       - text: "Validation: Single-Epoch"
         menu:
+          - text: "Asymptotic consistency"
+            file: qmd_scripts/validation/single_epoch/methods_validation_asymptotic_consistency.qmd
           - text: "Simulation checks"
             file: qmd_scripts/validation/single_epoch/methods_validation_simulation_checks.qmd
           - text: "Single-fit debug"

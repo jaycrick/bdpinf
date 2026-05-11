@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+import inf_bp_texts.simulation.simulator as simulator_module
 from inf_bp_texts.models import BirthDeathProcess
 from inf_bp_texts.models.mathematical_functions import (
     calculate_non_spine_ages_log_lik,
@@ -258,6 +259,70 @@ class TestSimulation:
         # ages should be different
         if len(new_process.manuscript_ages) > 0:
             assert not np.array_equal(new_process.manuscript_ages, initial_ages)
+
+    def test_bdp_distribution_sampler_defaults_to_extinction_branch(
+        self,
+        monkeypatch,
+    ) -> None:
+        class DummyRng:
+            def uniform(self):
+                return 0.0
+
+            def geometric(self, _):
+                raise AssertionError("geometric should not be called when extinct")
+
+        monkeypatch.setattr(
+            simulator_module,
+            "calculate_extinction_pr",
+            lambda *args, **kwargs: 1.0,
+        )
+
+        sampled = simulate_bdp_ages_from_distributions(
+            birth_rate=torch.tensor(0.5, dtype=torch.float64),
+            death_rate=torch.tensor(0.3, dtype=torch.float64),
+            max_time=torch.tensor(5.0, dtype=torch.float64),
+            rng=DummyRng(),
+        )
+
+        assert sampled == {"spine": [], "non_spine": []}
+
+    def test_bdp_distribution_sampler_can_force_non_extinction(
+        self,
+        monkeypatch,
+    ) -> None:
+        class DummyRng:
+            def uniform(self):
+                return 0.0
+
+            def geometric(self, _):
+                return np.array(2)
+
+        monkeypatch.setattr(
+            simulator_module,
+            "_population_geometric_parameter",
+            lambda *args, **kwargs: torch.tensor(0.5, dtype=torch.float64),
+        )
+        monkeypatch.setattr(
+            simulator_module,
+            "_sample_spine_ages",
+            lambda **kwargs: [1.23],
+        )
+        monkeypatch.setattr(
+            simulator_module,
+            "_sample_non_spine_ages",
+            lambda **kwargs: [4.56],
+        )
+
+        sampled = simulate_bdp_ages_from_distributions(
+            birth_rate=torch.tensor(0.5, dtype=torch.float64),
+            death_rate=torch.tensor(0.3, dtype=torch.float64),
+            max_time=torch.tensor(5.0, dtype=torch.float64),
+            rng=DummyRng(),
+            ensure_non_extinct=True,
+        )
+
+        assert sampled["spine"] == [1.23]
+        assert sampled["non_spine"] == [4.56]
 
     def test_simulation_parameter_effects(self) -> None:
         """Test that birth/death rates affect simulation results as expected."""
