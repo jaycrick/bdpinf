@@ -349,15 +349,26 @@ print(
 # | label: consistency-plots
 def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title):
     regime_order = [regime_config["name"] for regime_config in regime_configs]
+
+    def _fill_color(color):
+        fill_color = "rgba(0,0,0,0.12)"
+        try:
+            if isinstance(color, str) and color.startswith("rgb"):
+                nums = [int(x) for x in color.strip("rgb()").split(",")]
+                fill_color = f"rgba({nums[0]},{nums[1]},{nums[2]},0.12)"
+        except Exception:
+            fill_color = "rgba(0,0,0,0.12)"
+        return fill_color
+
     fig = make_subplots(
         rows=len(regime_order),
-        cols=2,
+        cols=3,
         vertical_spacing=0.08,
         horizontal_spacing=0.08,
         subplot_titles=[
             title
             for regime in regime_order
-            for title in (f"{regime} mean", f"{regime} variance")
+            for title in (f"{regime} mean", f"{regime} median", f"{regime} variance")
         ],
     )
 
@@ -370,12 +381,16 @@ def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title
         ]
         true_value = float(regime_lookup[regime_name][true_rate_key])
         mean_color = ptolqual[(row_index - 1) % len(ptolqual)]
+        median_color = ptolqual[(row_index) % len(ptolqual)]
         variance_color = ptolqual[(row_index + 2) % len(ptolqual)]
 
-        # Precompute bootstrap percentile CIs for mean and variance per T
+        # Precompute bootstrap percentile CIs for mean, median, and variance per T
         t_values = []
         mean_lower = []
         mean_upper = []
+        median_lower = []
+        median_upper = []
+        median_estimates = []
         var_lower = []
         var_upper = []
         for t in regime_summary["T"]:
@@ -388,6 +403,9 @@ def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title
             if reps.size == 0:
                 mean_lower.append(np.nan)
                 mean_upper.append(np.nan)
+                median_lower.append(np.nan)
+                median_upper.append(np.nan)
+                median_estimates.append(np.nan)
                 var_lower.append(np.nan)
                 var_upper.append(np.nan)
                 continue
@@ -401,6 +419,12 @@ def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title
                     for _ in range(bootstrap_samples)
                 ]
             )
+            boot_stats_median = np.array(
+                [
+                    np.median(rng_bs.choice(reps, size=reps.size, replace=True))
+                    for _ in range(bootstrap_samples)
+                ]
+            )
             boot_stats_var = np.array(
                 [
                     np.var(rng_bs.choice(reps, size=reps.size, replace=True), ddof=1)
@@ -410,6 +434,9 @@ def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title
 
             mean_lower.append(float(np.percentile(boot_stats_mean, 2.5)))
             mean_upper.append(float(np.percentile(boot_stats_mean, 97.5)))
+            median_lower.append(float(np.percentile(boot_stats_median, 2.5)))
+            median_upper.append(float(np.percentile(boot_stats_median, 97.5)))
+            median_estimates.append(float(np.median(reps)))
             var_lower.append(float(np.percentile(boot_stats_var, 2.5)))
             var_upper.append(float(np.percentile(boot_stats_var, 97.5)))
 
@@ -426,22 +453,13 @@ def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title
             col=1,
         )
 
-        # derive fill color from mean_color when possible
-        fill_color_mean = "rgba(0,0,0,0.12)"
-        try:
-            if isinstance(mean_color, str) and mean_color.startswith("rgb"):
-                nums = [int(x) for x in mean_color.strip("rgb()").split(",")]
-                fill_color_mean = f"rgba({nums[0]},{nums[1]},{nums[2]},0.12)"
-        except Exception:
-            fill_color_mean = "rgba(0,0,0,0.12)"
-
         fig.add_trace(
             go.Scatter(
                 x=t_values,
                 y=mean_upper,
                 mode="lines",
                 fill="tonexty",
-                fillcolor=fill_color_mean,
+                fillcolor=_fill_color(mean_color),
                 line=dict(width=0),
                 showlegend=False,
             ),
@@ -476,6 +494,60 @@ def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title
             col=1,
         )
 
+        # Median panel: CI band then median line
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=median_lower,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+            ),
+            row=row_index,
+            col=2,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=median_upper,
+                mode="lines",
+                fill="tonexty",
+                fillcolor=_fill_color(median_color),
+                line=dict(width=0),
+                showlegend=False,
+            ),
+            row=row_index,
+            col=2,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=median_estimates,
+                mode="lines+markers",
+                line=dict(color=median_color, width=2),
+                marker=dict(size=7),
+                name=f"{regime_name} median",
+                showlegend=row_index == 1,
+            ),
+            row=row_index,
+            col=2,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=[true_value] * len(t_values),
+                mode="lines",
+                line=dict(color="black", width=2, dash="dash"),
+                name=f"{regime_name} true median",
+                showlegend=False,
+            ),
+            row=row_index,
+            col=2,
+        )
+
         # Variance panel: CI band then variance line
         fig.add_trace(
             go.Scatter(
@@ -486,16 +558,8 @@ def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title
                 showlegend=False,
             ),
             row=row_index,
-            col=2,
+            col=3,
         )
-
-        fill_color_var = "rgba(0,0,0,0.12)"
-        try:
-            if isinstance(variance_color, str) and variance_color.startswith("rgb"):
-                nums = [int(x) for x in variance_color.strip("rgb()").split(",")]
-                fill_color_var = f"rgba({nums[0]},{nums[1]},{nums[2]},0.12)"
-        except Exception:
-            fill_color_var = "rgba(0,0,0,0.12)"
 
         fig.add_trace(
             go.Scatter(
@@ -503,12 +567,12 @@ def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title
                 y=var_upper,
                 mode="lines",
                 fill="tonexty",
-                fillcolor=fill_color_var,
+                fillcolor=_fill_color(variance_color),
                 line=dict(width=0),
                 showlegend=False,
             ),
             row=row_index,
-            col=2,
+            col=3,
         )
 
         fig.add_trace(
@@ -522,14 +586,16 @@ def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title
                 showlegend=row_index == 1,
             ),
             row=row_index,
-            col=2,
+            col=3,
         )
 
     for row_index in range(1, len(regime_order) + 1):
         fig.update_xaxes(type="log", title_text="T", row=row_index, col=1)
         fig.update_xaxes(type="log", title_text="T", row=row_index, col=2)
+        fig.update_xaxes(type="log", title_text="T", row=row_index, col=3)
         fig.update_yaxes(title_text="Mean estimate", row=row_index, col=1)
-        fig.update_yaxes(title_text="Variance", row=row_index, col=2)
+        fig.update_yaxes(title_text="Median estimate", row=row_index, col=2)
+        fig.update_yaxes(title_text="Variance", row=row_index, col=3)
 
     fig.update_layout(
         title=title,
@@ -564,259 +630,6 @@ fig_death = _plot_parameter_consistency(
 fig_death.show()
 
 
-def _plot_parameter_consistency_median(
-    summary_df, parameter_name, true_rate_key, title
-):
-    regime_order = [regime_config["name"] for regime_config in regime_configs]
-    fig = make_subplots(
-        rows=len(regime_order),
-        cols=2,
-        vertical_spacing=0.08,
-        horizontal_spacing=0.08,
-        subplot_titles=[
-            title
-            for regime in regime_order
-            for title in (f"{regime} median", f"{regime} variance")
-        ],
-    )
-
-    for row_index, regime_name in enumerate(regime_order, start=1):
-        regime_summary = summary_df[summary_df["regime"] == regime_name].sort_values(
-            "T",
-        )
-        regime_raw = results_df[
-            (results_df["regime"] == regime_name) & (results_df["success"])
-        ]
-        true_value = float(regime_lookup[regime_name][true_rate_key])
-        median_color = ptolqual[(row_index - 1) % len(ptolqual)]
-        variance_color = ptolqual[(row_index + 2) % len(ptolqual)]
-
-        # Precompute bootstrap percentile CIs for median and variance per T
-        t_values = []
-        median_lower = []
-        median_upper = []
-        var_lower = []
-        var_upper = []
-        median_estimates = []
-
-        for t in regime_summary["T"]:
-            t = float(t)
-            t_values.append(t)
-            reps = regime_raw.loc[
-                regime_raw["T"] == t, f"{parameter_name}_estimate"
-            ].to_numpy()
-            reps = reps[np.isfinite(reps)]
-            if reps.size == 0:
-                median_lower.append(np.nan)
-                median_upper.append(np.nan)
-                var_lower.append(np.nan)
-                var_upper.append(np.nan)
-                median_estimates.append(np.nan)
-                continue
-
-            rng_bs = np.random.default_rng(
-                _seed_from_parts(
-                    seed, "bootstrap", regime_name, parameter_name, t, "median"
-                )
-            )
-            boot_stats_median = np.array(
-                [
-                    np.median(rng_bs.choice(reps, size=reps.size, replace=True))
-                    for _ in range(bootstrap_samples)
-                ]
-            )
-            boot_stats_var = np.array(
-                [
-                    np.var(rng_bs.choice(reps, size=reps.size, replace=True), ddof=1)
-                    for _ in range(bootstrap_samples)
-                ]
-            )
-
-            median_lower.append(float(np.percentile(boot_stats_median, 2.5)))
-            median_upper.append(float(np.percentile(boot_stats_median, 97.5)))
-            var_lower.append(float(np.percentile(boot_stats_var, 2.5)))
-            var_upper.append(float(np.percentile(boot_stats_var, 97.5)))
-            median_estimates.append(float(np.median(reps)))
-
-        # Median panel: CI band then median line
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=median_lower,
-                mode="lines",
-                line=dict(width=0),
-                showlegend=False,
-            ),
-            row=row_index,
-            col=1,
-        )
-
-        fill_color_median = "rgba(0,0,0,0.12)"
-        try:
-            if isinstance(median_color, str) and median_color.startswith("rgb"):
-                nums = [int(x) for x in median_color.strip("rgb()").split(",")]
-                fill_color_median = f"rgba({nums[0]},{nums[1]},{nums[2]},0.12)"
-        except Exception:
-            fill_color_median = "rgba(0,0,0,0.12)"
-
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=median_upper,
-                mode="lines",
-                fill="tonexty",
-                fillcolor=fill_color_median,
-                line=dict(width=0),
-                showlegend=False,
-            ),
-            row=row_index,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=median_estimates,
-                mode="lines+markers",
-                line=dict(color=median_color, width=2),
-                marker=dict(size=7),
-                name=f"{regime_name} median",
-                showlegend=row_index == 1,
-            ),
-            row=row_index,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=[true_value] * len(t_values),
-                mode="lines",
-                line=dict(color="black", width=2, dash="dash"),
-                name=f"{regime_name} true",
-                showlegend=row_index == 1,
-            ),
-            row=row_index,
-            col=1,
-        )
-
-        # Variance panel: CI band then variance line
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=var_lower,
-                mode="lines",
-                line=dict(width=0),
-                showlegend=False,
-            ),
-            row=row_index,
-            col=2,
-        )
-
-        fill_color_var = "rgba(0,0,0,0.12)"
-        try:
-            if isinstance(variance_color, str) and variance_color.startswith("rgb"):
-                nums = [int(x) for x in variance_color.strip("rgb()").split(",")]
-                fill_color_var = f"rgba({nums[0]},{nums[1]},{nums[2]},0.12)"
-        except Exception:
-            fill_color_var = "rgba(0,0,0,0.12)"
-
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=var_upper,
-                mode="lines",
-                fill="tonexty",
-                fillcolor=fill_color_var,
-                line=dict(width=0),
-                showlegend=False,
-            ),
-            row=row_index,
-            col=2,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=[
-                    (
-                        np.var(
-                            regime_raw.loc[
-                                regime_raw["T"] == t, f"{parameter_name}_estimate"
-                            ].to_numpy()[
-                                np.isfinite(
-                                    regime_raw.loc[
-                                        regime_raw["T"] == t,
-                                        f"{parameter_name}_estimate",
-                                    ].to_numpy()
-                                )
-                            ],
-                            ddof=1,
-                        )
-                        if len(
-                            regime_raw.loc[
-                                regime_raw["T"] == t, f"{parameter_name}_estimate"
-                            ].to_numpy()[
-                                np.isfinite(
-                                    regime_raw.loc[
-                                        regime_raw["T"] == t,
-                                        f"{parameter_name}_estimate",
-                                    ].to_numpy()
-                                )
-                            ]
-                        )
-                        > 1
-                        else np.nan
-                    )
-                    for t in t_values
-                ],
-                mode="lines+markers",
-                line=dict(color=variance_color, width=2),
-                marker=dict(size=7),
-                name=f"{regime_name} variance",
-                showlegend=row_index == 1,
-            ),
-            row=row_index,
-            col=2,
-        )
-
-    for row_index in range(1, len(regime_order) + 1):
-        fig.update_xaxes(type="log", title_text="T", row=row_index, col=1)
-        fig.update_xaxes(type="log", title_text="T", row=row_index, col=2)
-        fig.update_yaxes(title_text="Median estimate", row=row_index, col=1)
-        fig.update_yaxes(title_text="Variance", row=row_index, col=2)
-
-    fig.update_layout(
-        title=title,
-        height=280 * len(regime_order),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0.0,
-        ),
-        margin=dict(t=90, l=40, r=20, b=40),
-    )
-    fig = apply_tufte_axes(fig)
-    return fig
-
-
-fig_birth_median = _plot_parameter_consistency_median(
-    summary_df=summary_df,
-    parameter_name="birth",
-    true_rate_key="birth_rate",
-    title="Birth-rate consistency (median) across observation time",
-)
-fig_birth_median.show()
-
-fig_death_median = _plot_parameter_consistency_median(
-    summary_df=summary_df,
-    parameter_name="death",
-    true_rate_key="death_rate",
-    title="Death-rate consistency (median) across observation time",
-)
-fig_death_median.show()
 ```
 
 ```{python}
