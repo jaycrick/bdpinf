@@ -28,7 +28,7 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import torch
 import time
-from scipy.stats import anderson_ksamp, ks_2samp
+from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
 from inf_bp_texts.models.mathematical_functions import (
     calculate_extinction_pr,
@@ -573,23 +573,32 @@ The density of the spine age distribution does not include the point mass at the
 ```{python}
 # Anderson-Darling test comparing direct vs full process methods
 
+ad_method = PermutationMethod(
+    n_resamples=1_111, batch=101, rng=np.random.default_rng(33943)
+)
+
 # Spine age samples
-spine_ad_statistic, spine_critical_values, spine_p_value = anderson_ksamp(
-    [spine_age_samples_direct, spine_age_samples_process]
+spine_ad_result = anderson_ksamp(
+    [spine_age_samples_direct, spine_age_samples_process],
+    variant="midrank",
+    method=ad_method,
 )
 
 # Non-spine age samples
 if (non_spine_age_samples_direct.size > 0) and (non_spine_age_samples_process.size > 0):
-    non_spine_ad_statistic, non_spine_critical_values, non_spine_p_value = (
-        anderson_ksamp([non_spine_age_samples_direct, non_spine_age_samples_process])
+    non_spine_ad_result = anderson_ksamp(
+        [non_spine_age_samples_direct, non_spine_age_samples_process],
+        variant="midrank",
+        method=ad_method,
     )
 else:
-    non_spine_ad_statistic = None
-    non_spine_p_value = None
+    non_spine_ad_result = None
 
 # Population distributions
-pop_ad_statistic, pop_critical_values, pop_p_value = anderson_ksamp(
-    [population_sizes_direct, population_sizes_process]
+pop_ad_result = anderson_ksamp(
+    [population_sizes_direct, population_sizes_process],
+    variant="midrank",
+    method=ad_method,
 )
 
 # Kolmogorov-Smirnov test comparing methods for age distributions
@@ -613,21 +622,21 @@ print("=" * 70)
 print("ANDERSON-DARLING TESTS (Direct vs Full Process)")
 print("=" * 70)
 print(f"\nSpine Ages:")
-print(f"  Anderson-Darling statistic: {spine_ad_statistic:.6f}")
-print(f"  p-value: {spine_p_value:.6f}")
+print(f"  Anderson-Darling statistic: {spine_ad_result.statistic:.6f}")
+print(f"  p-value: {spine_ad_result.pvalue:.6f}")
 print(f"  Samples (direct): {len(spine_age_samples_direct)}")
 print(f"  Samples (process): {len(spine_age_samples_process)}")
 
-if non_spine_ad_statistic is not None:
+if non_spine_ad_result is not None:
     print(f"\nNon-Spine Ages:")
-    print(f"  Anderson-Darling statistic: {non_spine_ad_statistic:.6f}")
-    print(f"  p-value: {non_spine_p_value:.6f}")
+    print(f"  Anderson-Darling statistic: {non_spine_ad_result.statistic:.6f}")
+    print(f"  p-value: {non_spine_ad_result.pvalue:.6f}")
     print(f"  Samples (direct): {len(non_spine_age_samples_direct)}")
     print(f"  Samples (process): {len(non_spine_age_samples_process)}")
 
 print(f"\nPopulation Distributions:")
-print(f"  Anderson-Darling statistic: {pop_ad_statistic:.6f}")
-print(f"  p-value: {pop_p_value:.6f}")
+print(f"  Anderson-Darling statistic: {pop_ad_result.statistic:.6f}")
+print(f"  p-value: {pop_ad_result.pvalue:.6f}")
 print(f"  Samples: {len(population_sizes_direct)} each")
 
 print("\n" + "=" * 70)
