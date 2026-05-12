@@ -67,8 +67,7 @@ website:
             file: qmd_scripts/validation/single_epoch/methods_validation_optimisation_framework.qmd
           - text: "Bulk inference"
             file: qmd_scripts/validation/single_epoch/methods_validation_bulk_inference.qmd
-          - text: "Sensitivity + benchmark"
-            file: qmd_scripts/validation/single_epoch/methods_validation_sensitivity_benchmark.qmd
+          # Sensitivity + benchmark entry removed
       - text: "Validation: Multi-Epoch"
         menu:
           - text: "Simulation checks"
