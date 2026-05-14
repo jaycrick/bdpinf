@@ -53,8 +53,8 @@ from inf_bp_texts.visualization.plotting import apply_tufte_axes, ptolqual
 ```{python}
 # | label: experiment-design
 seed = 42
-num_simulations = 1000
-time_grid = np.logspace(1.0, 3.4, num=20)
+num_simulations = 100
+time_grid = np.logspace(-0.5, 0.5, num=5)
 # Note that the mean number of survivors at time T in a birth-death process
 # with birth rate λ and death rate μ is approximately exp((λ - μ) * T) for large T,
 # so the chosen time grid should yield a range of survivor counts across regimes.
@@ -64,26 +64,26 @@ regime_configs = [
     {
         "name": "Supercritical",
         "sampling": "process",
-        "birth_rate": 0.005,
-        "death_rate": 0.001,
+        "birth_rate": 5.0,
+        "death_rate": 2.0,
     },
     {
         "name": "Almost critical",
         "sampling": "process",
-        "birth_rate": 0.005,
-        "death_rate": 0.004,
+        "birth_rate": 5.0,
+        "death_rate": 4.0,
     },
     {
         "name": "Critical",
         "sampling": "process",
-        "birth_rate": 0.005,
-        "death_rate": 0.005,
+        "birth_rate": 5.0,
+        "death_rate": 5.0,
     },
     {
         "name": "Subcritical",
         "sampling": "distribution",
-        "birth_rate": 0.004,
-        "death_rate": 0.005,
+        "birth_rate": 5.0,
+        "death_rate": 6.0,
     },
 ]
 regime_lookup = {
