@@ -449,13 +449,41 @@ print(
         ]
     ].to_string(index=False, float_format="%.6f")
 )
+```
 
+### Summary Table
+
+```{python}
+# | label: summary-table
 show_table(summary_df)
+```
+
+### CI Width Table
+
+```{python}
+# | label: ci-width-table
 show_table(ci_width_df)
+```
+
+### Target Times Table
+
+```{python}
+# | label: target-times-table
 show_table(target_times_df)
+```
+
+### Spike Selection Table
+
+```{python}
+# | label: spike-selection-table
 show_table(spike_selection_unique_df)
+```
+
+### Debug Records Table
+
+```{python}
+# | label: debug-records-table
 show_table(debug_records_df)
-show_table(results_df)
 ```
 
 ```{python}
@@ -756,8 +784,6 @@ fig_death = _plot_parameter_consistency(
     title="Death-rate consistency across observation time",
 )
 fig_death.show()
-
-
 ```
 
 ```{python}
