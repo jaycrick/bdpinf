@@ -38,7 +38,13 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import torch
 from joblib import Parallel, delayed
+from itables import show as show_table
 
+from inf_bp_texts.analysis.spike_detection import (
+    compute_ci_width_table,
+    select_extreme_replicates,
+    select_max_ci_times,
+)
 from inf_bp_texts.inference import fit_birth_death_processes
 from inf_bp_texts.inference.fitting import ConvergenceConfig
 from inf_bp_texts.simulation import (
@@ -53,7 +59,7 @@ from inf_bp_texts.visualization.plotting import apply_tufte_axes, ptolqual
 ```{python}
 # | label: experiment-design
 seed = 42
-num_simulations = 100
+num_simulations = 500
 time_grid = np.logspace(-0.5, 0.5, num=5)
 # Note that the mean number of survivors at time T in a birth-death process
 # with birth rate λ and death rate μ is approximately exp((λ - μ) * T) for large T,
@@ -125,21 +131,23 @@ def _seed_from_parts(*parts):
     return int.from_bytes(digest, "little", signed=False) & ((1 << 63) - 1)
 
 
-def _replicate_seed(regime_config, observation_time, simulation_index, purpose):
+def _replicate_seed(regime_config, observation_time, simulation_index):
     return _seed_from_parts(
         seed,
         regime_config["name"],
         regime_config["sampling"],
         np.float64(observation_time).hex(),
         int(simulation_index),
-        purpose,
     )
+
+
+def _bootstrap_seed(replicate_seed):
+    return _seed_from_parts(replicate_seed, "bootstrap")
 
 
 def _sample_age_vector(regime_config, observation_time, simulation_index):
-    rng = np.random.default_rng(
-        _replicate_seed(regime_config, observation_time, simulation_index, "sample")
-    )
+    replicate_seed = _replicate_seed(regime_config, observation_time, simulation_index)
+    rng = np.random.default_rng(replicate_seed)
 
     birth_rate = float(regime_config["birth_rate"])
     death_rate = float(regime_config["death_rate"])
@@ -158,12 +166,7 @@ def _sample_age_vector(regime_config, observation_time, simulation_index):
         birth_rates=birth_rate,
         death_rates=death_rate,
         times=observation_time,
-        random_seed=_replicate_seed(
-            regime_config,
-            observation_time,
-            simulation_index,
-            "process",
-        ),
+        random_seed=replicate_seed,
     )
     survivors = simulated_df[simulated_df["survived"]]
     if len(survivors) == 0:
@@ -172,6 +175,7 @@ def _sample_age_vector(regime_config, observation_time, simulation_index):
 
 
 def _fit_replicate(regime_config, observation_time, ages, simulation_index):
+    replicate_seed = _replicate_seed(regime_config, observation_time, simulation_index)
     ages = np.array(ages, dtype=np.float64, copy=True)
     if ages.size == 0:
         return {
@@ -179,6 +183,10 @@ def _fit_replicate(regime_config, observation_time, ages, simulation_index):
             "sampling": regime_config["sampling"],
             "T": float(observation_time),
             "simulation_index": int(simulation_index),
+            "replicate_seed": int(replicate_seed),
+            "sample_seed": int(replicate_seed),
+            "fit_seed": int(replicate_seed),
+            "bootstrap_seed": int(_bootstrap_seed(replicate_seed)),
             "success": False,
             "population_size": 0,
             "birth_estimate": np.nan,
@@ -190,12 +198,7 @@ def _fit_replicate(regime_config, observation_time, ages, simulation_index):
         times=torch.tensor(float(observation_time), dtype=torch.float64),
         is_ordered=True,
         perturb_initial_params_std=0.0,
-        random_seed=_replicate_seed(
-            regime_config,
-            observation_time,
-            simulation_index,
-            "fit",
-        ),
+        random_seed=replicate_seed,
         initial_birth_rates=torch.tensor(
             [float(regime_config["birth_rate"])], dtype=torch.float64
         ),
@@ -213,6 +216,10 @@ def _fit_replicate(regime_config, observation_time, ages, simulation_index):
             "sampling": regime_config["sampling"],
             "T": float(observation_time),
             "simulation_index": int(simulation_index),
+            "replicate_seed": int(replicate_seed),
+            "sample_seed": int(replicate_seed),
+            "fit_seed": int(replicate_seed),
+            "bootstrap_seed": int(_bootstrap_seed(replicate_seed)),
             "success": False,
             "population_size": int(len(ages)),
             "birth_estimate": np.nan,
@@ -227,6 +234,10 @@ def _fit_replicate(regime_config, observation_time, ages, simulation_index):
         "sampling": regime_config["sampling"],
         "T": float(observation_time),
         "simulation_index": int(simulation_index),
+        "replicate_seed": int(replicate_seed),
+        "sample_seed": int(replicate_seed),
+        "fit_seed": int(replicate_seed),
+        "bootstrap_seed": int(_bootstrap_seed(replicate_seed)),
         "success": True,
         "population_size": int(len(ages)),
         "birth_estimate": birth_estimate,
@@ -312,6 +323,116 @@ summary_df = (
     pd.DataFrame(summary_rows).sort_values(["regime", "T"]).reset_index(drop=True)
 )
 
+ci_width_df = compute_ci_width_table(
+    results_df=results_df,
+    regime_configs=regime_configs,
+    bootstrap_samples=bootstrap_samples,
+    seed=seed,
+)
+target_times_df = select_max_ci_times(ci_width_df)
+spike_selection_df = select_extreme_replicates(
+    results_df=results_df,
+    target_times_df=target_times_df,
+    num_simulations=num_simulations,
+    include_lowest=True,
+)
+spike_selection_unique_df = spike_selection_df.drop_duplicates(
+    subset=["regime", "sampling", "T", "simulation_index"],
+).reset_index(drop=True)
+
+debug_output_dir = (
+    Path("_output") / "validation_debug" / "methods_validation_asymptotic_consistency"
+)
+debug_output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _json_safe(value):
+    if isinstance(value, (np.integer, int)):
+        return int(value)
+    if isinstance(value, (np.floating, float)):
+        return float(value)
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().numpy().tolist()
+    if isinstance(value, (pd.Timestamp,)):
+        return value.isoformat()
+    if value is None:
+        return None
+    return value
+
+
+def reproduce_replicate(row):
+    regime_config = regime_lookup[row["regime"]]
+    observation_time = float(row["T"])
+    simulation_index = int(row["simulation_index"])
+    replicate_seed = int(row["replicate_seed"])
+    ages = _sample_age_vector(
+        regime_config=regime_config,
+        observation_time=observation_time,
+        simulation_index=simulation_index,
+    )
+    fit_result = fit_birth_death_processes(
+        list_of_ages=[torch.tensor(ages, dtype=torch.float64)],
+        times=torch.tensor(observation_time, dtype=torch.float64),
+        is_ordered=True,
+        perturb_initial_params_std=0.0,
+        random_seed=replicate_seed,
+        initial_birth_rates=torch.tensor(
+            [float(regime_config["birth_rate"])], dtype=torch.float64
+        ),
+        initial_death_rates=torch.tensor(
+            [float(regime_config["death_rate"])], dtype=torch.float64
+        ),
+        optimizers=fit_optimizers,
+        optimizer_kwargs=fit_optimizer_kwargs,
+        convergence_config=fit_convergence_config,
+    )
+
+    payload = {
+        "regime": row["regime"],
+        "sampling": row["sampling"],
+        "T": observation_time,
+        "simulation_index": simulation_index,
+        "population_size": int(len(ages)),
+        "replicate_seed": replicate_seed,
+        "sample_seed": replicate_seed,
+        "fit_seed": replicate_seed,
+        "bootstrap_seed": int(_bootstrap_seed(replicate_seed)),
+        "true_birth_rate": float(regime_config["birth_rate"]),
+        "true_death_rate": float(regime_config["death_rate"]),
+        "ages": np.asarray(ages, dtype=np.float64),
+        "fit_result": fit_result,
+    }
+    return payload
+
+
+debug_records = []
+for _, row in spike_selection_unique_df.iterrows():
+    record = reproduce_replicate(row)
+    debug_records.append(record)
+    debug_path = debug_output_dir / (
+        f"{row['regime'].replace(' ', '_')}_{row['sampling']}_T{float(row['T']):.6f}"
+        f"_sim{int(row['simulation_index'])}.json"
+    )
+    fit_result = record["fit_result"]
+    debug_payload = {
+        key: _json_safe(value) for key, value in record.items() if key != "fit_result"
+    }
+    debug_payload["fit_result"] = fit_result
+    debug_path.write_text(json.dumps(debug_payload, indent=2, default=_json_safe))
+
+debug_records_df = pd.DataFrame(
+    [
+        {
+            key: value
+            for key, value in record.items()
+            if key not in {"ages", "fit_result"}
+        }
+        for record in debug_records
+    ],
+)
+
 print(
     summary_df[
         [
@@ -328,6 +449,13 @@ print(
         ]
     ].to_string(index=False, float_format="%.6f")
 )
+
+show_table(summary_df)
+show_table(ci_width_df)
+show_table(target_times_df)
+show_table(spike_selection_unique_df)
+show_table(debug_records_df)
+show_table(results_df)
 ```
 
 ```{python}
