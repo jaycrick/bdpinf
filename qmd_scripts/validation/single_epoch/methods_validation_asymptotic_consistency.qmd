@@ -167,6 +167,7 @@ def _sample_age_vector(regime_config, observation_time, simulation_index):
         death_rates=death_rate,
         times=observation_time,
         random_seed=replicate_seed,
+        ensure_non_extinct=True,
     )
     survivors = simulated_df[simulated_df["survived"]]
     if len(survivors) == 0:
