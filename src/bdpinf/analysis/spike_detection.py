@@ -217,7 +217,7 @@ def select_extreme_replicates(
     if target_times_df.empty:
         return target_times_df.iloc[0:0].copy()
 
-    k = max(5, int(np.ceil(num_simulations * 0.025)))
+    k = min(max(5, int(np.ceil(num_simulations * 0.025))), 20)
     selection_rows: list[dict[str, Any]] = []
     sides = ["highest", "lowest"] if include_lowest else ["highest"]
 
