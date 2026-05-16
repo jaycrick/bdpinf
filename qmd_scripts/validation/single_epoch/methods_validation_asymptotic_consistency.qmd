@@ -59,8 +59,8 @@ from inf_bp_texts.visualization.plotting import apply_tufte_axes, ptolqual
 ```{python}
 # | label: experiment-design
 seed = 42
-num_simulations = 500
-time_grid = np.logspace(-0.5, 0.5, num=5)
+num_simulations = 1_000
+time_grid = np.logspace(-0.5, 0.5, num=15)
 # Note that the mean number of survivors at time T in a birth-death process
 # with birth rate λ and death rate μ is approximately exp((λ - μ) * T) for large T,
 # so the chosen time grid should yield a range of survivor counts across regimes.
@@ -81,7 +81,7 @@ regime_configs = [
     },
     {
         "name": "Critical",
-        "sampling": "process",
+        "sampling": "distribution",
         "birth_rate": 5.0,
         "death_rate": 5.0,
     },

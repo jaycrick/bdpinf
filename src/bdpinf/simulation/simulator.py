@@ -48,7 +48,8 @@ Examples:
 """
 
 from collections.abc import Callable
-from typing import Any, NamedTuple
+from dataclasses import dataclass
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 import pandas as pd
@@ -72,6 +73,120 @@ class _NonSpineSamplingContext(NamedTuple):
     birth_rate: float
     denom_lambda: float
     envelope_constant: float
+
+
+@dataclass(frozen=True, slots=True)
+class BirthDeathLineage:
+    """Explicit parent-preserving representation of a simulated lineage tree."""
+
+    nodes: pd.DataFrame
+    children_by_parent: dict[int, tuple[int, ...]]
+    root_id: int
+
+    def dfs_order(self) -> list[int]:
+        """Return manuscript ids in depth-first, left-to-right order."""
+        order: list[int] = []
+
+        def visit(node_id: int) -> None:
+            order.append(node_id)
+            for child_id in self.children_by_parent.get(node_id, ()):
+                visit(child_id)
+
+        visit(self.root_id)
+        return order
+
+    def depth_map(self) -> dict[int, int]:
+        """Return a manuscript-id to depth mapping for display layouts."""
+        depths: dict[int, int] = {self.root_id: 0}
+
+        def visit(node_id: int, depth: int) -> None:
+            for child_id in self.children_by_parent.get(node_id, ()):
+                child_depth = depth + 1
+                depths[child_id] = child_depth
+                visit(child_id, child_depth)
+
+        visit(self.root_id, 0)
+        return depths
+
+    def to_display_frame(self) -> pd.DataFrame:
+        """Return a DFS-ordered frame suitable for tree plotting or inspection."""
+        order = self.dfs_order()
+        depth_by_id = self.depth_map()
+        frame = self.nodes.loc[order].copy().reset_index(drop=True)
+        frame["dfs_order"] = np.arange(len(frame), dtype=np.int64)
+        frame["depth"] = frame["manuscript_id"].map(depth_by_id).astype(int)
+        frame["label"] = frame["manuscript_id"].map(lambda node_id: f"m{int(node_id)}")
+        return frame
+
+    def to_newick(self) -> str:
+        """Return a Newick string for the lineage while preserving parent ids separately."""
+
+        def render(node_id: int) -> str:
+            children = self.children_by_parent.get(node_id, ())
+            label = f"m{node_id}"
+            if not children:
+                return label
+            rendered_children = ",".join(render(child_id) for child_id in children)
+            return f"({rendered_children}){label}"
+
+        return f"{render(self.root_id)};"
+
+
+def build_birth_death_lineage(manuscripts: pd.DataFrame) -> BirthDeathLineage:
+    """Build a parent-preserving lineage tree from a simulated manuscript table."""
+    required_columns = {"manuscript_id", "parent_id", "creation_time"}
+    missing_columns = required_columns.difference(manuscripts.columns)
+    if missing_columns:
+        missing_text = ", ".join(sorted(missing_columns))
+        msg = f"manuscripts is missing required columns: {missing_text}"
+        raise ValueError(msg)
+
+    lineage_nodes = manuscripts.copy()
+    lineage_nodes["manuscript_id"] = lineage_nodes["manuscript_id"].astype(int)
+    lineage_nodes["parent_id"] = lineage_nodes["parent_id"].astype("Int64")
+    lineage_nodes = lineage_nodes.sort_values(
+        ["creation_time", "manuscript_id"],
+        kind="mergesort",
+    ).set_index("manuscript_id", drop=False)
+
+    root_rows = lineage_nodes[lineage_nodes["parent_id"].isna()]
+    if len(root_rows) != 1:
+        msg = "Expected exactly one root manuscript in the lineage table"
+        raise ValueError(msg)
+
+    root_id = int(root_rows.iloc[0]["manuscript_id"])
+    children_by_parent: dict[int, tuple[int, ...]] = {}
+
+    for parent_id, children in lineage_nodes[
+        ~lineage_nodes["parent_id"].isna()
+    ].groupby(
+        "parent_id",
+        sort=False,
+    ):
+        child_ids = tuple(
+            int(manuscript_id)
+            for manuscript_id in children.reset_index(drop=True).sort_values(
+                ["creation_time", "manuscript_id"],
+                kind="mergesort",
+            )["manuscript_id"]
+        )
+        children_by_parent[int(cast("int", parent_id))] = child_ids
+
+    return BirthDeathLineage(
+        nodes=lineage_nodes,
+        children_by_parent=children_by_parent,
+        root_id=root_id,
+    )
+
+
+def birth_death_lineage_to_newick(lineage: BirthDeathLineage) -> str:
+    """Serialize a lineage tree to Newick format."""
+    return lineage.to_newick()
+
+
+def birth_death_lineage_to_display_frame(lineage: BirthDeathLineage) -> pd.DataFrame:
+    """Return a DFS-ordered frame for plotting or display."""
+    return lineage.to_display_frame()
 
 
 def _as_scalar_float(value: torch.Tensor | float, *, name: str) -> float:
