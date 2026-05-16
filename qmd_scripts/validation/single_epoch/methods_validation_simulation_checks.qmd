@@ -6,12 +6,14 @@ date: last-modified
 ---
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false
 # | include: false
 
 import time
+
 __compile_start = time.perf_counter()
 ```
 
@@ -24,11 +26,9 @@ including population counts and age distributions against theoretical curves.
 
 ```{python}
 import numpy as np
-# ruff: noqa: E402
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import torch
-import time
 from typing import Any, Callable
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
@@ -55,7 +55,7 @@ from joblib import Parallel, delayed
 ## Simulate Age Vectors
 
 ```{python}
-num_sims = 50
+num_sims = 5_000
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500.0

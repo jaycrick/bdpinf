@@ -11,12 +11,14 @@ date: last-modified
 Plot the mean parameter estimates vs T, and the parameter variance vs T.
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false
 # | include: false
 
 import time
+
 __compile_start = time.perf_counter()
 ```
 
@@ -24,8 +26,6 @@ __compile_start = time.perf_counter()
 # | label: compile-time-report
 # | cache: false
 # | echo: false
-
-# ruff: noqa: E402
 
 import json
 import os

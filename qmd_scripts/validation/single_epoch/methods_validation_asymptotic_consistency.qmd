@@ -12,6 +12,7 @@ Output all the information necessary to reproduce the spike in a single fit,
 and then investigate that fit in isolation.
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false
@@ -26,13 +27,12 @@ __compile_start = time.perf_counter()
 
 ```{python}
 # | label: setup
-# ruff: noqa: E402
 import json
 import hashlib
 import os
 from pathlib import Path
 import time
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast, Sequence
 
 import numpy as np
 import pandas as pd
@@ -61,6 +61,8 @@ class RegimeConfig(TypedDict):
     sampling: str
     birth_rate: float
     death_rate: float
+
+
 ```
 
 ## Experiment Design
@@ -68,7 +70,7 @@ class RegimeConfig(TypedDict):
 ```{python}
 # | label: experiment-design
 seed = 42
-num_simulations = 10
+num_simulations = 1_000
 time_grid = np.logspace(-0.5, 0.5, num=15)
 # Note that the mean number of survivors at time T in a birth-death process
 # with birth rate λ and death rate μ is approximately exp((λ - μ) * T) for large T,
@@ -385,7 +387,7 @@ def _json_safe(value: object) -> object:
     return value
 
 
-def reproduce_replicate(row: pd.Series) -> dict[str, Any]:
+def reproduce_replicate(row: Sequence[Any]) -> dict[str, Any]:
     regime_config = regime_lookup[str(cast(str, row["regime"]))]
     observation_time = float(cast(float, row["T"]))
     simulation_index = int(cast(int, row["simulation_index"]))

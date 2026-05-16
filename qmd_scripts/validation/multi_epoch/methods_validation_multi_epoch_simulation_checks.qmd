@@ -6,6 +6,7 @@ date: last-modified
 ---
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false
@@ -25,6 +26,7 @@ birth and death rates are identical in each epoch.
 ## Setup
 
 ```{python}
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
@@ -596,7 +598,6 @@ The density of the spine age distribution does not include the point mass at the
 import json
 import os
 from pathlib import Path
-import time
 
 doc_name = "methods_validation_multi_epoch_simulation_checks.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

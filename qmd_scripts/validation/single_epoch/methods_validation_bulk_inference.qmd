@@ -14,12 +14,14 @@ date: last-modified
 - [ ] for the birth rate histogram, make the bin sizes smaller
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false
 # | include: false
 
 import time
+
 __compile_start = time.perf_counter()
 ```
 
@@ -30,9 +32,7 @@ import numpy as np
 import plotly.graph_objs as go
 import torch
 from collections import Counter
-from typing import Any, cast
-
-# ruff: noqa: E402
+from typing import Any
 
 from inf_bp_texts.analysis import (
     FitModelConfig,

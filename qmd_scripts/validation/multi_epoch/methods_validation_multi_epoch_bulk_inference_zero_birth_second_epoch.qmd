@@ -6,6 +6,7 @@ date: last-modified
 ---
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false
@@ -90,10 +91,7 @@ from inf_bp_texts.inference.fitting import (
     fit_birth_death_processes,
 )
 from inf_bp_texts.visualization.plotting import ptolqual
-from plotly.subplots import make_subplots
 import plotly.graph_objs as go
-import plotly.express as px
-import pandas as pd
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,
     apply_tufte_axes,
