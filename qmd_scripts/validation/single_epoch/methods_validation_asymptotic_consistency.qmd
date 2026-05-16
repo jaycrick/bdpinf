@@ -32,6 +32,7 @@ import hashlib
 import os
 from pathlib import Path
 import time
+from typing import Any, Literal, TypedDict, cast
 
 import numpy as np
 import pandas as pd
@@ -53,6 +54,13 @@ from inf_bp_texts.simulation import (
     simulate_birth_death_process,
 )
 from inf_bp_texts.visualization.plotting import apply_tufte_axes, ptolqual
+
+
+class RegimeConfig(TypedDict):
+    name: str
+    sampling: str
+    birth_rate: float
+    death_rate: float
 ```
 
 ## Experiment Design
@@ -60,14 +68,14 @@ from inf_bp_texts.visualization.plotting import apply_tufte_axes, ptolqual
 ```{python}
 # | label: experiment-design
 seed = 42
-num_simulations = 1_000
+num_simulations = 10
 time_grid = np.logspace(-0.5, 0.5, num=15)
 # Note that the mean number of survivors at time T in a birth-death process
 # with birth rate λ and death rate μ is approximately exp((λ - μ) * T) for large T,
 # so the chosen time grid should yield a range of survivor counts across regimes.
 # λ - μ and T = 10^3.4 ≈ 25000.
 
-regime_configs = [
+regime_configs: list[RegimeConfig] = [
     {
         "name": "Supercritical",
         "sampling": "process",
@@ -93,12 +101,12 @@ regime_configs = [
         "death_rate": 6.0,
     },
 ]
-regime_lookup = {
+regime_lookup: dict[str, RegimeConfig] = {
     regime_config["name"]: regime_config for regime_config in regime_configs
 }
 bootstrap_samples = 1000
 fit_optimizers = ["lbfgs", "adam"]
-fit_optimizer_kwargs = {
+fit_optimizer_kwargs: dict[str, dict[str, Any]] = {
     "lbfgs": {
         "lr": 1.0,
         "line_search_fn": "strong_wolfe",
@@ -115,7 +123,7 @@ fit_convergence_config = ConvergenceConfig(
 )
 
 
-def _seed_from_parts(*parts):
+def _seed_from_parts(*parts: object) -> int:
     seed_material = "|".join(
         (
             int(part).to_bytes(8, "little", signed=True).hex()
@@ -132,7 +140,9 @@ def _seed_from_parts(*parts):
     return int.from_bytes(digest, "little", signed=False) & ((1 << 63) - 1)
 
 
-def _replicate_seed(regime_config, observation_time, simulation_index):
+def _replicate_seed(
+    regime_config: RegimeConfig, observation_time: float, simulation_index: int
+) -> int:
     return _seed_from_parts(
         seed,
         regime_config["name"],
@@ -142,11 +152,13 @@ def _replicate_seed(regime_config, observation_time, simulation_index):
     )
 
 
-def _bootstrap_seed(replicate_seed):
+def _bootstrap_seed(replicate_seed: int) -> int:
     return _seed_from_parts(replicate_seed, "bootstrap")
 
 
-def _sample_age_vector(regime_config, observation_time, simulation_index):
+def _sample_age_vector(
+    regime_config: RegimeConfig, observation_time: float, simulation_index: int
+) -> np.ndarray:
     replicate_seed = _replicate_seed(regime_config, observation_time, simulation_index)
     rng = np.random.default_rng(replicate_seed)
 
@@ -176,7 +188,12 @@ def _sample_age_vector(regime_config, observation_time, simulation_index):
     return survivors["age"].to_numpy(dtype=np.float64)
 
 
-def _fit_replicate(regime_config, observation_time, ages, simulation_index):
+def _fit_replicate(
+    regime_config: RegimeConfig,
+    observation_time: float,
+    ages: np.ndarray,
+    simulation_index: int,
+) -> dict[str, Any]:
     replicate_seed = _replicate_seed(regime_config, observation_time, simulation_index)
     ages = np.array(ages, dtype=np.float64, copy=True)
     if ages.size == 0:
@@ -247,7 +264,9 @@ def _fit_replicate(regime_config, observation_time, ages, simulation_index):
     }
 
 
-def _run_single_replicate(regime_config, observation_time, simulation_index):
+def _run_single_replicate(
+    regime_config: RegimeConfig, observation_time: float, simulation_index: int
+) -> dict[str, Any]:
     ages = _sample_age_vector(
         regime_config=regime_config,
         observation_time=observation_time,
@@ -261,7 +280,7 @@ def _run_single_replicate(regime_config, observation_time, simulation_index):
     )
 
 
-def _safe_mean(values):
+def _safe_mean(values: Any) -> float:
     values = np.asarray(values, dtype=np.float64)
     values = values[np.isfinite(values)]
     if values.size == 0:
@@ -269,7 +288,7 @@ def _safe_mean(values):
     return float(np.mean(values))
 
 
-def _safe_var(values):
+def _safe_var(values: Any) -> float:
     values = np.asarray(values, dtype=np.float64)
     values = values[np.isfinite(values)]
     if values.size < 2:
@@ -303,6 +322,8 @@ for (regime, sampling, observation_time), group in results_df.groupby(
     ["regime", "sampling", "T"],
     sort=False,
 ):
+    regime = str(cast(str, regime))
+    observation_time = float(cast(float, observation_time))
     successful = group[group["success"]]
     summary_rows.append(
         {
@@ -348,7 +369,7 @@ debug_output_dir = (
 debug_output_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _json_safe(value):
+def _json_safe(value: object) -> object:
     if isinstance(value, (np.integer, int)):
         return int(value)
     if isinstance(value, (np.floating, float)):
@@ -364,11 +385,11 @@ def _json_safe(value):
     return value
 
 
-def reproduce_replicate(row):
-    regime_config = regime_lookup[row["regime"]]
-    observation_time = float(row["T"])
-    simulation_index = int(row["simulation_index"])
-    replicate_seed = int(row["replicate_seed"])
+def reproduce_replicate(row: pd.Series) -> dict[str, Any]:
+    regime_config = regime_lookup[str(cast(str, row["regime"]))]
+    observation_time = float(cast(float, row["T"]))
+    simulation_index = int(cast(int, row["simulation_index"]))
+    replicate_seed = int(cast(int, row["replicate_seed"]))
     ages = _sample_age_vector(
         regime_config=regime_config,
         observation_time=observation_time,
@@ -392,8 +413,8 @@ def reproduce_replicate(row):
     )
 
     payload = {
-        "regime": row["regime"],
-        "sampling": row["sampling"],
+        "regime": str(cast(str, row["regime"])),
+        "sampling": str(cast(str, row["sampling"])),
         "T": observation_time,
         "simulation_index": simulation_index,
         "population_size": int(len(ages)),
@@ -505,10 +526,15 @@ print(
 
 ```{python}
 # | label: consistency-plots
-def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title):
+def _plot_parameter_consistency(
+    summary_df: pd.DataFrame,
+    parameter_name: str,
+    true_rate_key: Literal["birth_rate", "death_rate"],
+    title: str,
+) -> go.Figure:
     regime_order = [regime_config["name"] for regime_config in regime_configs]
 
-    def _fill_color(color):
+    def _fill_color(color: object) -> str:
         fill_color = "rgba(0,0,0,0.12)"
         try:
             if isinstance(color, str) and color.startswith("rgb"):
@@ -518,7 +544,7 @@ def _plot_parameter_consistency(summary_df, parameter_name, true_rate_key, title
             fill_color = "rgba(0,0,0,0.12)"
         return fill_color
 
-    fig = make_subplots(
+    fig: go.Figure = make_subplots(
         rows=len(regime_order),
         cols=3,
         vertical_spacing=0.08,

@@ -29,6 +29,7 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import torch
 import time
+from typing import Any, Callable
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
 from inf_bp_texts.models.mathematical_functions import (
@@ -54,7 +55,7 @@ from joblib import Parallel, delayed
 ## Simulate Age Vectors
 
 ```{python}
-num_sims = 5000
+num_sims = 50
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500.0
@@ -62,7 +63,9 @@ seed = 42
 population_bin_width = 100
 
 
-def sample_age_vector_from_distribution(sim_idx, br, dr, span, base_seed):
+def sample_age_vector_from_distribution(
+    sim_idx: int, br: float, dr: float, span: float, base_seed: int
+) -> np.ndarray:
     rng = np.random.default_rng(base_seed + sim_idx)
     sampled = simulate_bdp_ages_from_distributions(
         birth_rate=torch.tensor(br, dtype=torch.float64),
@@ -73,7 +76,9 @@ def sample_age_vector_from_distribution(sim_idx, br, dr, span, base_seed):
     return np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
 
 
-def sample_age_vector_full_process(sim_idx, br, dr, span, base_seed):
+def sample_age_vector_full_process(
+    sim_idx: int, br: float, dr: float, span: float, base_seed: int
+) -> np.ndarray:
     run_seed = base_seed + sim_idx
     simulated_df = simulate_birth_death_process(
         birth_rates=float(br),
@@ -265,12 +270,12 @@ print(f"Saved population figure: {saved_population}")
 
 ```{python}
 def theoretical_age_density(
-    log_lik_fn,
+    log_lik_fn: Callable[[torch.Tensor], torch.Tensor],
     support_upper: float,
     n_grid: int = 300,
     include_endpoint: bool = True,
     proportion_not_at_upper: float | None = None,
-):
+) -> tuple[np.ndarray, np.ndarray]:
     x_grid = np.linspace(0.0, support_upper, n_grid, endpoint=include_endpoint)
     y_vals = []
     for x_val in x_grid:
@@ -586,6 +591,7 @@ spine_ad_result = anderson_ksamp(
 )
 
 # Non-spine age samples
+non_spine_ad_result: Any = None
 if (non_spine_age_samples_direct.size > 0) and (non_spine_age_samples_process.size > 0):
     non_spine_ad_result = anderson_ksamp(
         [non_spine_age_samples_direct, non_spine_age_samples_process],

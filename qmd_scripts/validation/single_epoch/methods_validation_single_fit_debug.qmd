@@ -27,6 +27,7 @@ __compile_start = time.perf_counter()
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
+from typing import Any, cast
 
 # ruff: noqa: E402
 
@@ -46,6 +47,10 @@ from inf_bp_texts.visualization.plotting import (
     ptolqual,
     lineage_to_figure,
 )
+
+
+def _to_int(value: Any) -> int:
+    return int(value)
 ```
 
 ## Simulate One Dataset
@@ -91,7 +96,7 @@ print(f"Newick: {birth_death_lineage_to_newick(lineage)}")
 print(tree_table.head(25).to_string(index=False))
 
 tree_coordinates = {
-    int(row.manuscript_id): (int(row.dfs_order), int(row.depth))
+    _to_int(row.manuscript_id): (_to_int(row.dfs_order), _to_int(row.depth))
     for row in lineage_display.itertuples(index=False)
 }
 
@@ -100,31 +105,31 @@ edge_y: list[float | None] = []
 for row in lineage_display.itertuples(index=False):
     if pd.isna(row.parent_id):
         continue
-    parent_x, parent_y = tree_coordinates[int(row.parent_id)]
-    child_x, child_y = tree_coordinates[int(row.manuscript_id)]
+    parent_x, parent_y = tree_coordinates[_to_int(row.parent_id)]
+    child_x, child_y = tree_coordinates[_to_int(row.manuscript_id)]
     edge_x.extend([parent_x, child_x, None])
     edge_y.extend([parent_y, child_y, None])
 
 node_x = [
-    tree_coordinates[int(row.manuscript_id)][0]
+    tree_coordinates[_to_int(row.manuscript_id)][0]
     for row in lineage_display.itertuples(index=False)
 ]
 node_y = [
-    tree_coordinates[int(row.manuscript_id)][1]
+    tree_coordinates[_to_int(row.manuscript_id)][1]
     for row in lineage_display.itertuples(index=False)
 ]
-node_text = [f"m{int(node_id)}" for node_id in lineage_display["manuscript_id"]]
+node_text = [f"m{_to_int(node_id)}" for node_id in lineage_display["manuscript_id"]]
 node_colors = [
     ptolqual[0] if bool(is_spine) else ptolqual[2]
     for is_spine in lineage_display["is_spine"]
 ]
 node_hover = [
     (
-        f"m{int(row.manuscript_id)}"
-        f"<br>parent: {'root' if pd.isna(row.parent_id) else f'm{int(row.parent_id)}'}"
-        f"<br>dfs order: {int(row.dfs_order)}"
-        f"<br>depth: {int(row.depth)}"
-        f"<br>creation time: {float(row.creation_time):.2f}"
+        f"m{_to_int(row.manuscript_id)}"
+        f"<br>parent: {'root' if pd.isna(row.parent_id) else f'm{_to_int(row.parent_id)}'}"
+        f"<br>dfs order: {_to_int(row.dfs_order)}"
+        f"<br>depth: {_to_int(row.depth)}"
+        f"<br>creation time: {float(cast(float, row.creation_time)):.2f}"
     )
     for row in lineage_display.itertuples(index=False)
 ]
@@ -223,9 +228,7 @@ if nll_history:
         plot_bgcolor=plot_bgcolor,
         paper_bgcolor=paper_bgcolor,
     )
-    fig_nll = apply_professional_styling(
-        fig_nll, None, "Step", "Negative Log-Likelihood"
-    )
+    fig_nll = apply_professional_styling(fig_nll, "", "Step", "Negative Log-Likelihood")
     fig_nll = apply_tufte_axes(fig_nll)
     fig_nll.update_xaxes(showgrid=True, gridcolor=gridcolor)
     fig_nll.update_yaxes(showgrid=True, gridcolor=gridcolor)

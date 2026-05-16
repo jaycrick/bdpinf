@@ -30,6 +30,7 @@ import numpy as np
 import plotly.graph_objs as go
 import torch
 from collections import Counter
+from typing import Any, cast
 
 # ruff: noqa: E402
 
@@ -61,7 +62,9 @@ time_span = 15.0
 seed = 42
 
 
-def sample_age_vector(sim_idx, br, dr, span, base_seed):
+def sample_age_vector(
+    sim_idx: int, br: float, dr: float, span: float, base_seed: int
+) -> np.ndarray:
     rng = np.random.default_rng(base_seed + sim_idx)
     sampled = simulate_bdp_ages_from_distributions(
         birth_rate=torch.tensor(br, dtype=torch.float64),
@@ -147,11 +150,13 @@ fit_config = FitModelConfig(
 )
 
 
-def fit_single_model_with_optimizers(ages, config):
+def fit_single_model_with_optimizers(
+    ages: np.ndarray, config: FitModelConfig
+) -> dict[str, Any] | None:
     if len(ages) == 0:
         return None
 
-    fit_kwargs = {
+    fit_kwargs: dict[str, Any] = {
         "list_of_ages": [ages],
         "times": config.times,
         "is_ordered": config.is_ordered,
@@ -197,7 +202,7 @@ print(f"Successful fits: {fit_summary['successful']}")
 print(f"Failed fits: {fit_summary['failed']}")
 print(f"Success rate: {fit_summary['success_rate']:.1f}%")
 
-successful_fits_by_optimizer = Counter()
+successful_fits_by_optimizer: Counter[str] = Counter()
 for model in fitted_models:
     if model is None or not model.get("success", False):
         continue
@@ -480,7 +485,9 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
 ## Stacked Histograms for λ and μ
 
 ```{python}
-def build_hist_bins(primary_values, secondary_values, bins=30):
+def build_hist_bins(
+    primary_values: Any, secondary_values: Any, bins: int = 30
+) -> dict[str, float]:
     combined = np.concatenate(
         [np.asarray(primary_values), np.asarray(secondary_values)]
     )
@@ -492,7 +499,7 @@ def build_hist_bins(primary_values, secondary_values, bins=30):
     return dict(start=0.0, end=upper, size=upper / bins)
 
 
-def _iqr_filter_1d(values):
+def _iqr_filter_1d(values: Any) -> tuple[np.ndarray, int]:
     filtered, mask = iqr_plotting_subset(
         {"values": np.asarray(values, dtype=np.float64)}
     )
@@ -613,7 +620,7 @@ saved_death_hist = save_figure(
 print(f"Saved death-rate histogram figure: {saved_death_hist}")
 
 
-def print_rate_summary(label, birth_values, death_values):
+def print_rate_summary(label: str, birth_values: Any, death_values: Any) -> None:
     birth_array = np.asarray(birth_values, dtype=np.float64)
     death_array = np.asarray(death_values, dtype=np.float64)
 
