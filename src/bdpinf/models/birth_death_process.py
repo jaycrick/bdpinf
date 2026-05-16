@@ -11,6 +11,10 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
+from inf_bp_texts.inference.likelihood import log_likelihood as _log_likelihood
+from inf_bp_texts.inference.likelihood import (
+    negative_log_likelihood as _negative_log_likelihood,
+)
 from inf_bp_texts.models.validation import (
     ValidationConfig,
     normalize_and_validate_inputs,
@@ -375,10 +379,6 @@ class BirthDeathProcess:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
 
-        from inf_bp_texts.inference.likelihood import (  # noqa: PLC0415
-            log_likelihood as _log_likelihood,
-        )
-
         return _log_likelihood(
             birth_rates=self._birth_rates,
             death_rates=self._death_rates,
@@ -392,10 +392,6 @@ class BirthDeathProcess:
         if self._birth_rates is None or self._death_rates is None:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
-
-        from inf_bp_texts.inference.likelihood import (  # noqa: PLC0415
-            negative_log_likelihood as _negative_log_likelihood,
-        )
 
         return _negative_log_likelihood(
             birth_rates=self._birth_rates,
