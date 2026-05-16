@@ -27,7 +27,8 @@ __compile_start = time.perf_counter()
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
-import torch
+
+# ruff: noqa: E402
 
 from inf_bp_texts.analysis import FitModelConfig, fit_single_model
 from inf_bp_texts.simulation import (
@@ -149,9 +150,26 @@ print(single_fit_result)
 ## Profile One Fit
 
 ```{python}
-%%prun -s cumulative -q -l 30 -T prof-single-fit.txt -D prof-single-fit.prof
+# Profile the fit using cProfile/pstats (replaces the %%prun cell magic)
+import cProfile
+import pstats
+import io
 
+profiler = cProfile.Profile()
+profiler.enable()
 _ = fit_single_model(ages, fit_config)
+profiler.disable()
+
+# Dump binary stats (compatible with graphical viewers)
+profiler.dump_stats("prof-single-fit.prof")
+
+# Write a short text report sorted by cumulative time (top 30 lines)
+buf = io.StringIO()
+ps = pstats.Stats(profiler, stream=buf).sort_stats("cumulative")
+ps.print_stats(30)
+report = buf.getvalue()
+open("prof-single-fit.txt", "w").write(report)
+print(report)
 ```
 
 ## NLL Convergence

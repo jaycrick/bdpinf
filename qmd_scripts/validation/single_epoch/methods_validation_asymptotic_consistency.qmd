@@ -26,6 +26,7 @@ __compile_start = time.perf_counter()
 
 ```{python}
 # | label: setup
+# ruff: noqa: E402
 import json
 import hashlib
 import os

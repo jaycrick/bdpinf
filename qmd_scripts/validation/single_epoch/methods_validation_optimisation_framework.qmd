@@ -42,6 +42,8 @@ import plotly.graph_objs as go
 
 from pathlib import Path
 
+# ruff: noqa: E402
+
 from itables import show as show_table
 
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions

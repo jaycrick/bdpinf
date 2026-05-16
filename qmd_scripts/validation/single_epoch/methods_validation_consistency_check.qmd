@@ -25,6 +25,8 @@ __compile_start = time.perf_counter()
 # | cache: false
 # | echo: false
 
+# ruff: noqa: E402
+
 import json
 import os
 from pathlib import Path

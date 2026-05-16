@@ -31,6 +31,8 @@ import plotly.graph_objs as go
 import torch
 from collections import Counter
 
+# ruff: noqa: E402
+
 from inf_bp_texts.analysis import (
     FitModelConfig,
     extract_rate_arrays,
@@ -46,7 +48,7 @@ from inf_bp_texts.visualization.plotting import (
     apply_tufte_axes,
     ptolqual,
 )
-from joblib import Parallel, delayed, cpu_count
+from joblib import Parallel, delayed
 ```
 
 ## Simulate Data
