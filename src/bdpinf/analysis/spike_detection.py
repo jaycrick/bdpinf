@@ -10,7 +10,12 @@ import pandas as pd
 MIN_VARIANCE_SAMPLE_SIZE = 2
 
 
-def _seed_from_parts(*parts: object) -> int:
+def seed_from_parts(*parts: object) -> int:
+    """Create a stable integer seed from arbitrary parts.
+
+    This replaces the previous internal `_seed_from_parts` and is used
+    across validation modules to derive deterministic RNG seeds.
+    """
     seed_material = "|".join(
         (
             int(part).to_bytes(8, "little", signed=True).hex()
@@ -25,6 +30,31 @@ def _seed_from_parts(*parts: object) -> int:
     )
     digest = hashlib.blake2b(seed_material.encode("utf-8"), digest_size=8).digest()
     return int.from_bytes(digest, "little", signed=False) & ((1 << 63) - 1)
+
+
+def replicate_seed(
+    seed: int,
+    regime: str,
+    sampling: str,
+    observation_time: float,
+    simulation_index: int,
+) -> int:
+    """Return the replicate-level seed used for sampling and fitting.
+
+    Parameters mirror how seeds were constructed in the notebooks.
+    """
+    return seed_from_parts(
+        seed,
+        regime,
+        sampling,
+        np.float64(observation_time).hex(),
+        int(simulation_index),
+    )
+
+
+def bootstrap_seed(replicate_seed: int) -> int:
+    """Return a bootstrap seed derived from a replicate seed."""
+    return seed_from_parts(replicate_seed, "bootstrap")
 
 
 def bootstrap_percentile_ci(
@@ -138,7 +168,7 @@ def compute_ci_width_table(
                 ci_summary = bootstrap_percentile_ci(
                     estimates,
                     bootstrap_samples=bootstrap_samples,
-                    seed=_seed_from_parts(
+                    seed=seed_from_parts(
                         seed,
                         "bootstrap",
                         regime,

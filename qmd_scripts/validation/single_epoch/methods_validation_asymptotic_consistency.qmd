@@ -61,8 +61,6 @@ class RegimeConfig(TypedDict):
     sampling: str
     birth_rate: float
     death_rate: float
-
-
 ```
 
 ## Experiment Design
@@ -123,179 +121,23 @@ fit_convergence_config = ConvergenceConfig(
     absolute_tolerance=1e-10,
     patience=10,
 )
+fit_run_config = FittingRunConfig(
+    seed=seed,
+    fit_optimizers=fit_optimizers,
+    fit_optimizer_kwargs=fit_optimizer_kwargs,
+    convergence_config=fit_convergence_config,
+)
 
-
-def _seed_from_parts(*parts: object) -> int:
-    seed_material = "|".join(
-        (
-            int(part).to_bytes(8, "little", signed=True).hex()
-            if isinstance(part, (np.integer, int))
-            else (
-                np.float64(part).hex()
-                if isinstance(part, (np.floating, float))
-                else str(part)
-            )
-        )
-        for part in parts
-    )
-    digest = hashlib.blake2b(seed_material.encode("utf-8"), digest_size=8).digest()
-    return int.from_bytes(digest, "little", signed=False) & ((1 << 63) - 1)
-
-
-def _replicate_seed(
-    regime_config: RegimeConfig, observation_time: float, simulation_index: int
-) -> int:
-    return _seed_from_parts(
-        seed,
-        regime_config["name"],
-        regime_config["sampling"],
-        np.float64(observation_time).hex(),
-        int(simulation_index),
-    )
-
-
-def _bootstrap_seed(replicate_seed: int) -> int:
-    return _seed_from_parts(replicate_seed, "bootstrap")
-
-
-def _sample_age_vector(
-    regime_config: RegimeConfig, observation_time: float, simulation_index: int
-) -> np.ndarray:
-    replicate_seed = _replicate_seed(regime_config, observation_time, simulation_index)
-    rng = np.random.default_rng(replicate_seed)
-
-    birth_rate = float(regime_config["birth_rate"])
-    death_rate = float(regime_config["death_rate"])
-
-    if regime_config["sampling"] == "distribution":
-        sampled = simulate_bdp_ages_from_distributions(
-            birth_rate=torch.tensor(birth_rate, dtype=torch.float64),
-            death_rate=torch.tensor(death_rate, dtype=torch.float64),
-            max_time=torch.tensor(observation_time, dtype=torch.float64),
-            rng=rng,
-            ensure_non_extinct=True,
-        )
-        return np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
-
-    simulated_df = simulate_birth_death_process(
-        birth_rates=birth_rate,
-        death_rates=death_rate,
-        times=observation_time,
-        random_seed=replicate_seed,
-        ensure_non_extinct=True,
-    )
-    survivors = simulated_df[simulated_df["survived"]]
-    if len(survivors) == 0:
-        return np.asarray([], dtype=np.float64)
-    return survivors["age"].to_numpy(dtype=np.float64)
-
-
-def _fit_replicate(
-    regime_config: RegimeConfig,
-    observation_time: float,
-    ages: np.ndarray,
-    simulation_index: int,
-) -> dict[str, Any]:
-    replicate_seed = _replicate_seed(regime_config, observation_time, simulation_index)
-    ages = np.array(ages, dtype=np.float64, copy=True)
-    if ages.size == 0:
-        return {
-            "regime": regime_config["name"],
-            "sampling": regime_config["sampling"],
-            "T": float(observation_time),
-            "simulation_index": int(simulation_index),
-            "replicate_seed": int(replicate_seed),
-            "sample_seed": int(replicate_seed),
-            "fit_seed": int(replicate_seed),
-            "bootstrap_seed": int(_bootstrap_seed(replicate_seed)),
-            "success": False,
-            "population_size": 0,
-            "birth_estimate": np.nan,
-            "death_estimate": np.nan,
-        }
-
-    fit_result = fit_birth_death_processes(
-        list_of_ages=[torch.tensor(ages, dtype=torch.float64)],
-        times=torch.tensor(float(observation_time), dtype=torch.float64),
-        is_ordered=True,
-        perturb_initial_params_std=0.0,
-        random_seed=replicate_seed,
-        initial_birth_rates=torch.tensor(
-            [float(regime_config["birth_rate"])], dtype=torch.float64
-        ),
-        initial_death_rates=torch.tensor(
-            [float(regime_config["death_rate"])], dtype=torch.float64
-        ),
-        optimizers=fit_optimizers,
-        optimizer_kwargs=fit_optimizer_kwargs,
-        convergence_config=fit_convergence_config,
-    )
-
-    if fit_result is None or not fit_result.get("success", False):
-        return {
-            "regime": regime_config["name"],
-            "sampling": regime_config["sampling"],
-            "T": float(observation_time),
-            "simulation_index": int(simulation_index),
-            "replicate_seed": int(replicate_seed),
-            "sample_seed": int(replicate_seed),
-            "fit_seed": int(replicate_seed),
-            "bootstrap_seed": int(_bootstrap_seed(replicate_seed)),
-            "success": False,
-            "population_size": int(len(ages)),
-            "birth_estimate": np.nan,
-            "death_estimate": np.nan,
-        }
-
-    birth_estimate = float(np.atleast_1d(fit_result["birth_rates"])[0])
-    death_estimate = float(np.atleast_1d(fit_result["death_rates"])[0])
-
-    return {
-        "regime": regime_config["name"],
-        "sampling": regime_config["sampling"],
-        "T": float(observation_time),
-        "simulation_index": int(simulation_index),
-        "replicate_seed": int(replicate_seed),
-        "sample_seed": int(replicate_seed),
-        "fit_seed": int(replicate_seed),
-        "bootstrap_seed": int(_bootstrap_seed(replicate_seed)),
-        "success": True,
-        "population_size": int(len(ages)),
-        "birth_estimate": birth_estimate,
-        "death_estimate": death_estimate,
-    }
-
-
-def _run_single_replicate(
-    regime_config: RegimeConfig, observation_time: float, simulation_index: int
-) -> dict[str, Any]:
-    ages = _sample_age_vector(
-        regime_config=regime_config,
-        observation_time=observation_time,
-        simulation_index=simulation_index,
-    )
-    return _fit_replicate(
-        regime_config=regime_config,
-        observation_time=observation_time,
-        ages=ages,
-        simulation_index=simulation_index,
-    )
-
-
-def _safe_mean(values: Any) -> float:
-    values = np.asarray(values, dtype=np.float64)
-    values = values[np.isfinite(values)]
-    if values.size == 0:
-        return np.nan
-    return float(np.mean(values))
-
-
-def _safe_var(values: Any) -> float:
-    values = np.asarray(values, dtype=np.float64)
-    values = values[np.isfinite(values)]
-    if values.size < 2:
-        return np.nan
-    return float(np.var(values, ddof=1))
+from inf_bp_texts.analysis.asymptotic_consistency import (
+    FittingRunConfig,
+    sample_age_vector,
+    fit_replicate,
+    run_single_replicate,
+    reproduce_replicate,
+)
+from inf_bp_texts.analysis.validation_helpers import safe_mean, safe_var
+from inf_bp_texts.utils import json_safe
+from inf_bp_texts.visualization.plotting import plot_parameter_consistency
 ```
 
 ## Run Simulations And Fits
@@ -308,10 +150,11 @@ for regime_index, regime_config in enumerate(regime_configs):
     for time_index, observation_time in enumerate(time_grid):
         replicate_rows.extend(
             Parallel(n_jobs=-1)(
-                delayed(_run_single_replicate)(
+                delayed(run_single_replicate)(
                     regime_config=regime_config,
                     observation_time=float(observation_time),
                     simulation_index=simulation_index,
+                    fit_config=fit_run_config,
                 )
                 for simulation_index in range(num_simulations)
             )
@@ -334,11 +177,11 @@ for (regime, sampling, observation_time), group in results_df.groupby(
             "T": float(observation_time),
             "n_replicates": int(len(group)),
             "success_rate": float(group["success"].mean()),
-            "population_mean": _safe_mean(group["population_size"]),
-            "birth_mean": _safe_mean(successful["birth_estimate"]),
-            "birth_var": _safe_var(successful["birth_estimate"]),
-            "death_mean": _safe_mean(successful["death_estimate"]),
-            "death_var": _safe_var(successful["death_estimate"]),
+            "population_mean": safe_mean(group["population_size"]),
+            "birth_mean": safe_mean(successful["birth_estimate"]),
+            "birth_var": safe_var(successful["birth_estimate"]),
+            "death_mean": safe_mean(successful["death_estimate"]),
+            "death_var": safe_var(successful["death_estimate"]),
             "true_birth_rate": float(regime_lookup[regime]["birth_rate"]),
             "true_death_rate": float(regime_lookup[regime]["death_rate"]),
         },
@@ -371,70 +214,13 @@ debug_output_dir = (
 debug_output_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _json_safe(value: object) -> object:
-    if isinstance(value, (np.integer, int)):
-        return int(value)
-    if isinstance(value, (np.floating, float)):
-        return float(value)
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, torch.Tensor):
-        return value.detach().cpu().numpy().tolist()
-    if isinstance(value, (pd.Timestamp,)):
-        return value.isoformat()
-    if value is None:
-        return None
-    return value
-
-
-def reproduce_replicate(row: Sequence[Any]) -> dict[str, Any]:
-    regime_config = regime_lookup[str(cast(str, row["regime"]))]
-    observation_time = float(cast(float, row["T"]))
-    simulation_index = int(cast(int, row["simulation_index"]))
-    replicate_seed = int(cast(int, row["replicate_seed"]))
-    ages = _sample_age_vector(
-        regime_config=regime_config,
-        observation_time=observation_time,
-        simulation_index=simulation_index,
-    )
-    fit_result = fit_birth_death_processes(
-        list_of_ages=[torch.tensor(ages, dtype=torch.float64)],
-        times=torch.tensor(observation_time, dtype=torch.float64),
-        is_ordered=True,
-        perturb_initial_params_std=0.0,
-        random_seed=replicate_seed,
-        initial_birth_rates=torch.tensor(
-            [float(regime_config["birth_rate"])], dtype=torch.float64
-        ),
-        initial_death_rates=torch.tensor(
-            [float(regime_config["death_rate"])], dtype=torch.float64
-        ),
-        optimizers=fit_optimizers,
-        optimizer_kwargs=fit_optimizer_kwargs,
-        convergence_config=fit_convergence_config,
-    )
-
-    payload = {
-        "regime": str(cast(str, row["regime"])),
-        "sampling": str(cast(str, row["sampling"])),
-        "T": observation_time,
-        "simulation_index": simulation_index,
-        "population_size": int(len(ages)),
-        "replicate_seed": replicate_seed,
-        "sample_seed": replicate_seed,
-        "fit_seed": replicate_seed,
-        "bootstrap_seed": int(_bootstrap_seed(replicate_seed)),
-        "true_birth_rate": float(regime_config["birth_rate"]),
-        "true_death_rate": float(regime_config["death_rate"]),
-        "ages": np.asarray(ages, dtype=np.float64),
-        "fit_result": fit_result,
-    }
-    return payload
-
-
 debug_records = []
 for _, row in spike_selection_unique_df.iterrows():
-    record = reproduce_replicate(row)
+    record = reproduce_replicate(
+        row,
+        regime_lookup,
+        fit_config=fit_run_config,
+    )
     debug_records.append(record)
     debug_path = debug_output_dir / (
         f"{row['regime'].replace(' ', '_')}_{row['sampling']}_T{float(row['T']):.6f}"
@@ -442,10 +228,10 @@ for _, row in spike_selection_unique_df.iterrows():
     )
     fit_result = record["fit_result"]
     debug_payload = {
-        key: _json_safe(value) for key, value in record.items() if key != "fit_result"
+        key: json_safe(value) for key, value in record.items() if key != "fit_result"
     }
     debug_payload["fit_result"] = fit_result
-    debug_path.write_text(json.dumps(debug_payload, indent=2, default=_json_safe))
+    debug_path.write_text(json.dumps(debug_payload, indent=2, default=json_safe))
 
 debug_records_df = pd.DataFrame(
     [
@@ -527,288 +313,25 @@ print(
 ## Consistency Plots
 
 ```{python}
-# | label: consistency-plots
-def _plot_parameter_consistency(
-    summary_df: pd.DataFrame,
-    parameter_name: str,
-    true_rate_key: Literal["birth_rate", "death_rate"],
-    title: str,
-) -> go.Figure:
-    regime_order = [regime_config["name"] for regime_config in regime_configs]
+# plotting moved to src/inf_bp_texts/visualization/plotting.py; see plot_parameter_consistency
 
-    def _fill_color(color: object) -> str:
-        fill_color = "rgba(0,0,0,0.12)"
-        try:
-            if isinstance(color, str) and color.startswith("rgb"):
-                nums = [int(x) for x in color.strip("rgb()").split(",")]
-                fill_color = f"rgba({nums[0]},{nums[1]},{nums[2]},0.12)"
-        except Exception:
-            fill_color = "rgba(0,0,0,0.12)"
-        return fill_color
-
-    fig: go.Figure = make_subplots(
-        rows=len(regime_order),
-        cols=3,
-        vertical_spacing=0.08,
-        horizontal_spacing=0.08,
-        subplot_titles=[
-            title
-            for regime in regime_order
-            for title in (f"{regime} mean", f"{regime} median", f"{regime} variance")
-        ],
-    )
-
-    for row_index, regime_name in enumerate(regime_order, start=1):
-        regime_summary = summary_df[summary_df["regime"] == regime_name].sort_values(
-            "T",
-        )
-        regime_raw = results_df[
-            (results_df["regime"] == regime_name) & (results_df["success"])
-        ]
-        true_value = float(regime_lookup[regime_name][true_rate_key])
-        mean_color = ptolqual[(row_index - 1) % len(ptolqual)]
-        median_color = ptolqual[(row_index) % len(ptolqual)]
-        variance_color = ptolqual[(row_index + 2) % len(ptolqual)]
-
-        # Precompute bootstrap percentile CIs for mean, median, and variance per T
-        t_values = []
-        mean_lower = []
-        mean_upper = []
-        median_lower = []
-        median_upper = []
-        median_estimates = []
-        var_lower = []
-        var_upper = []
-        for t in regime_summary["T"]:
-            t = float(t)
-            t_values.append(t)
-            reps = regime_raw.loc[
-                regime_raw["T"] == t, f"{parameter_name}_estimate"
-            ].to_numpy()
-            reps = reps[np.isfinite(reps)]
-            if reps.size == 0:
-                mean_lower.append(np.nan)
-                mean_upper.append(np.nan)
-                median_lower.append(np.nan)
-                median_upper.append(np.nan)
-                median_estimates.append(np.nan)
-                var_lower.append(np.nan)
-                var_upper.append(np.nan)
-                continue
-
-            rng_bs = np.random.default_rng(
-                _seed_from_parts(seed, "bootstrap", regime_name, parameter_name, t)
-            )
-            boot_stats_mean = np.array(
-                [
-                    np.mean(rng_bs.choice(reps, size=reps.size, replace=True))
-                    for _ in range(bootstrap_samples)
-                ]
-            )
-            boot_stats_median = np.array(
-                [
-                    np.median(rng_bs.choice(reps, size=reps.size, replace=True))
-                    for _ in range(bootstrap_samples)
-                ]
-            )
-            boot_stats_var = np.array(
-                [
-                    np.var(rng_bs.choice(reps, size=reps.size, replace=True), ddof=1)
-                    for _ in range(bootstrap_samples)
-                ]
-            )
-
-            mean_lower.append(float(np.percentile(boot_stats_mean, 2.5)))
-            mean_upper.append(float(np.percentile(boot_stats_mean, 97.5)))
-            median_lower.append(float(np.percentile(boot_stats_median, 2.5)))
-            median_upper.append(float(np.percentile(boot_stats_median, 97.5)))
-            median_estimates.append(float(np.median(reps)))
-            var_lower.append(float(np.percentile(boot_stats_var, 2.5)))
-            var_upper.append(float(np.percentile(boot_stats_var, 97.5)))
-
-        # Mean panel: CI band then mean line
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=mean_lower,
-                mode="lines",
-                line=dict(width=0),
-                showlegend=False,
-            ),
-            row=row_index,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=mean_upper,
-                mode="lines",
-                fill="tonexty",
-                fillcolor=_fill_color(mean_color),
-                line=dict(width=0),
-                showlegend=False,
-            ),
-            row=row_index,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=regime_summary["T"],
-                y=regime_summary[f"{parameter_name}_mean"],
-                mode="lines+markers",
-                line=dict(color=mean_color, width=2),
-                marker=dict(size=7),
-                name=f"{regime_name} mean",
-                showlegend=row_index == 1,
-            ),
-            row=row_index,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=regime_summary["T"],
-                y=[true_value] * len(regime_summary),
-                mode="lines",
-                line=dict(color="black", width=2, dash="dash"),
-                name=f"{regime_name} true",
-                showlegend=row_index == 1,
-            ),
-            row=row_index,
-            col=1,
-        )
-
-        # Median panel: CI band then median line
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=median_lower,
-                mode="lines",
-                line=dict(width=0),
-                showlegend=False,
-            ),
-            row=row_index,
-            col=2,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=median_upper,
-                mode="lines",
-                fill="tonexty",
-                fillcolor=_fill_color(median_color),
-                line=dict(width=0),
-                showlegend=False,
-            ),
-            row=row_index,
-            col=2,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=median_estimates,
-                mode="lines+markers",
-                line=dict(color=median_color, width=2),
-                marker=dict(size=7),
-                name=f"{regime_name} median",
-                showlegend=row_index == 1,
-            ),
-            row=row_index,
-            col=2,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=[true_value] * len(t_values),
-                mode="lines",
-                line=dict(color="black", width=2, dash="dash"),
-                name=f"{regime_name} true median",
-                showlegend=False,
-            ),
-            row=row_index,
-            col=2,
-        )
-
-        # Variance panel: CI band then variance line
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=var_lower,
-                mode="lines",
-                line=dict(width=0),
-                showlegend=False,
-            ),
-            row=row_index,
-            col=3,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=t_values,
-                y=var_upper,
-                mode="lines",
-                fill="tonexty",
-                fillcolor=_fill_color(variance_color),
-                line=dict(width=0),
-                showlegend=False,
-            ),
-            row=row_index,
-            col=3,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=regime_summary["T"],
-                y=regime_summary[f"{parameter_name}_var"],
-                mode="lines+markers",
-                line=dict(color=variance_color, width=2),
-                marker=dict(size=7),
-                name=f"{regime_name} variance",
-                showlegend=row_index == 1,
-            ),
-            row=row_index,
-            col=3,
-        )
-
-    for row_index in range(1, len(regime_order) + 1):
-        fig.update_xaxes(type="log", title_text="T", row=row_index, col=1)
-        fig.update_xaxes(type="log", title_text="T", row=row_index, col=2)
-        fig.update_xaxes(type="log", title_text="T", row=row_index, col=3)
-        fig.update_yaxes(title_text="Mean estimate", row=row_index, col=1)
-        fig.update_yaxes(title_text="Median estimate", row=row_index, col=2)
-        fig.update_yaxes(title_text="Variance", row=row_index, col=3)
-
-    fig.update_layout(
-        title=title,
-        height=280 * len(regime_order),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0.0,
-        ),
-        margin=dict(t=90, l=40, r=20, b=40),
-    )
-    fig = apply_tufte_axes(fig)
-    return fig
-
-
-fig_birth = _plot_parameter_consistency(
+fig_birth = plot_parameter_consistency(
     summary_df=summary_df,
+    results_df=results_df,
+    regime_configs=regime_configs,
+    bootstrap_samples=bootstrap_samples,
+    seed=seed,
     parameter_name="birth",
     true_rate_key="birth_rate",
     title="Birth-rate consistency across observation time",
 )
 fig_birth.show()
-
-fig_death = _plot_parameter_consistency(
+fig_death = plot_parameter_consistency(
     summary_df=summary_df,
+    results_df=results_df,
+    regime_configs=regime_configs,
+    bootstrap_samples=bootstrap_samples,
+    seed=seed,
     parameter_name="death",
     true_rate_key="death_rate",
     title="Death-rate consistency across observation time",

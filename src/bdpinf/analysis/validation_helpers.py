@@ -210,3 +210,21 @@ def boundary_corrected_kde_at_zero(
     if normalization > 0.0 and np.isfinite(normalization):
         y_kde = y_kde / normalization
     return x_grid, y_kde
+
+
+def safe_mean(values: Any) -> float:
+    """Return mean of finite values in array or NaN if none."""
+    arr = np.asarray(values, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return np.nan
+    return float(np.mean(arr))
+
+
+def safe_var(values: Any) -> float:
+    """Return sample variance (ddof=1) for finite values or NaN if insufficient."""
+    arr = np.asarray(values, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    if arr.size < 2:
+        return np.nan
+    return float(np.var(arr, ddof=1))

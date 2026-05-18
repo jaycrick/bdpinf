@@ -48,6 +48,30 @@ def ensure_1d_tensors(*values: torch.Tensor | float) -> tuple[torch.Tensor, ...]
     return tuple(ensure_1d_tensor(value) for value in values)
 
 
+def json_safe(value: object) -> object:
+    """Convert common numpy/torch/pandas types to JSON-serializable Python types."""
+    try:
+        import numpy as _np
+        import pandas as _pd
+        import torch as _torch
+    except Exception:
+        return value
+
+    if isinstance(value, (_np.integer, int)):
+        return int(value)
+    if isinstance(value, (_np.floating, float)):
+        return float(value)
+    if isinstance(value, _np.ndarray):
+        return value.tolist()
+    if isinstance(value, _torch.Tensor):
+        return value.detach().cpu().numpy().tolist()
+    if isinstance(value, (_pd.Timestamp,)):
+        return value.isoformat()
+    if value is None:
+        return None
+    return value
+
+
 def validate_matching_shapes(
     *tensors: torch.Tensor,
     names: tuple[str, ...] | None = None,

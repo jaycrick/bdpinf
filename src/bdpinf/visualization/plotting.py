@@ -5,11 +5,14 @@ process models and their results.
 
 """
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 
 # Professional plotting style configuration
 # Configure professional font family for all plots
@@ -136,6 +139,276 @@ def apply_professional_styling(
         margin={"l": 50, "r": 15, "t": 15 if title else 8, "b": 40, "pad": 4},
         autosize=autosize,
     )
+    return fig
+
+
+def plot_parameter_consistency(
+    summary_df: pd.DataFrame,
+    results_df: pd.DataFrame,
+    regime_configs: Sequence[Mapping[str, Any]],
+    bootstrap_samples: int,
+    seed: int,
+    parameter_name: str,
+    true_rate_key: str,
+    title: str,
+) -> go.Figure:
+    """Create multi-row consistency plots for a parameter across regimes and T.
+
+    This function mirrors the plotting helper from the validation notebook but
+    is provided here so notebooks can import and reuse it.
+    """
+    regime_order = [regime_config["name"] for regime_config in regime_configs]
+    regime_lookup = {cfg["name"]: cfg for cfg in regime_configs}
+
+    def _fill_color(color: object) -> str:
+        fill_color = "rgba(0,0,0,0.12)"
+        try:
+            if isinstance(color, str) and color.startswith("rgb"):
+                nums = [int(x) for x in color.strip("rgb()").split(",")]
+                fill_color = f"rgba({nums[0]},{nums[1]},{nums[2]},0.12)"
+        except Exception:
+            fill_color = "rgba(0,0,0,0.12)"
+        return fill_color
+
+    fig: go.Figure = make_subplots(
+        rows=len(regime_order),
+        cols=3,
+        vertical_spacing=0.08,
+        horizontal_spacing=0.08,
+        subplot_titles=[
+            title
+            for regime in regime_order
+            for title in (f"{regime} mean", f"{regime} median", f"{regime} variance")
+        ],
+    )
+
+    from inf_bp_texts.analysis.spike_detection import seed_from_parts
+
+    for row_index, regime_name in enumerate(regime_order, start=1):
+        regime_summary = summary_df[summary_df["regime"] == regime_name].sort_values(
+            "T",
+        )
+        regime_raw = results_df[
+            (results_df["regime"] == regime_name) & (results_df["success"])
+        ]
+        true_value = float(regime_lookup[regime_name][true_rate_key])
+        mean_color = ptolqual[(row_index - 1) % len(ptolqual)]
+        median_color = ptolqual[(row_index) % len(ptolqual)]
+        variance_color = ptolqual[(row_index + 2) % len(ptolqual)]
+
+        t_values = []
+        mean_lower = []
+        mean_upper = []
+        median_lower = []
+        median_upper = []
+        median_estimates = []
+        var_lower = []
+        var_upper = []
+
+        for t in regime_summary["T"]:
+            t = float(t)
+            t_values.append(t)
+            reps = regime_raw.loc[
+                regime_raw["T"] == t,
+                f"{parameter_name}_estimate",
+            ].to_numpy()
+            reps = reps[np.isfinite(reps)]
+            if reps.size == 0:
+                mean_lower.append(np.nan)
+                mean_upper.append(np.nan)
+                median_lower.append(np.nan)
+                median_upper.append(np.nan)
+                median_estimates.append(np.nan)
+                var_lower.append(np.nan)
+                var_upper.append(np.nan)
+                continue
+
+            rng_bs = np.random.default_rng(
+                seed_from_parts(seed, "bootstrap", regime_name, parameter_name, t),
+            )
+            boot_stats_mean = np.array(
+                [
+                    np.mean(rng_bs.choice(reps, size=reps.size, replace=True))
+                    for _ in range(int(bootstrap_samples))
+                ],
+            )
+            boot_stats_median = np.array(
+                [
+                    np.median(rng_bs.choice(reps, size=reps.size, replace=True))
+                    for _ in range(int(bootstrap_samples))
+                ],
+            )
+            boot_stats_var = np.array(
+                [
+                    np.var(rng_bs.choice(reps, size=reps.size, replace=True), ddof=1)
+                    for _ in range(int(bootstrap_samples))
+                ],
+            )
+
+            mean_lower.append(float(np.percentile(boot_stats_mean, 2.5)))
+            mean_upper.append(float(np.percentile(boot_stats_mean, 97.5)))
+            median_lower.append(float(np.percentile(boot_stats_median, 2.5)))
+            median_upper.append(float(np.percentile(boot_stats_median, 97.5)))
+            median_estimates.append(float(np.median(reps)))
+            var_lower.append(float(np.percentile(boot_stats_var, 2.5)))
+            var_upper.append(float(np.percentile(boot_stats_var, 97.5)))
+
+        # Mean panel
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=mean_lower,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+            ),
+            row=row_index,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=mean_upper,
+                mode="lines",
+                fill="tonexty",
+                fillcolor=_fill_color(mean_color),
+                line=dict(width=0),
+                showlegend=False,
+            ),
+            row=row_index,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=regime_summary["T"],
+                y=regime_summary[f"{parameter_name}_mean"],
+                mode="lines+markers",
+                line=dict(color=mean_color, width=2),
+                marker=dict(size=7),
+                name=f"{regime_name} mean",
+                showlegend=row_index == 1,
+            ),
+            row=row_index,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=regime_summary["T"],
+                y=[true_value] * len(regime_summary),
+                mode="lines",
+                line=dict(color="black", width=2, dash="dash"),
+                name=f"{regime_name} true",
+                showlegend=row_index == 1,
+            ),
+            row=row_index,
+            col=1,
+        )
+
+        # Median panel
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=median_lower,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+            ),
+            row=row_index,
+            col=2,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=median_upper,
+                mode="lines",
+                fill="tonexty",
+                fillcolor=_fill_color(median_color),
+                line=dict(width=0),
+                showlegend=False,
+            ),
+            row=row_index,
+            col=2,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=median_estimates,
+                mode="lines+markers",
+                line=dict(color=median_color, width=2),
+                marker=dict(size=7),
+                name=f"{regime_name} median",
+                showlegend=row_index == 1,
+            ),
+            row=row_index,
+            col=2,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=[true_value] * len(t_values),
+                mode="lines",
+                line=dict(color="black", width=2, dash="dash"),
+                name=f"{regime_name} true median",
+                showlegend=False,
+            ),
+            row=row_index,
+            col=2,
+        )
+
+        # Variance panel
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=var_lower,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+            ),
+            row=row_index,
+            col=3,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=t_values,
+                y=var_upper,
+                mode="lines",
+                fill="tonexty",
+                fillcolor=_fill_color(variance_color),
+                line=dict(width=0),
+                showlegend=False,
+            ),
+            row=row_index,
+            col=3,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=regime_summary["T"],
+                y=regime_summary[f"{parameter_name}_var"],
+                mode="lines+markers",
+                line=dict(color=variance_color, width=2),
+                marker=dict(size=7),
+                name=f"{regime_name} variance",
+                showlegend=row_index == 1,
+            ),
+            row=row_index,
+            col=3,
+        )
+
+    for row_index in range(1, len(regime_order) + 1):
+        fig.update_xaxes(type="log", title_text="T", row=row_index, col=1)
+        fig.update_xaxes(type="log", title_text="T", row=row_index, col=2)
+        fig.update_xaxes(type="log", title_text="T", row=row_index, col=3)
+        fig.update_yaxes(title_text="Mean estimate", row=row_index, col=1)
+        fig.update_yaxes(title_text="Median estimate", row=row_index, col=2)
+        fig.update_yaxes(title_text="Variance", row=row_index, col=3)
+
+    fig.update_layout(
+        title=title,
+        height=280 * len(regime_order),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.0),
+        margin=dict(t=90, l=40, r=20, b=40),
+    )
+    fig = apply_tufte_axes(fig)
     return fig
 
 
