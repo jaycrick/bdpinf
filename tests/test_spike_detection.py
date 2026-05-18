@@ -5,12 +5,28 @@
 import numpy as np
 import pandas as pd
 
+from inf_bp_texts.analysis import spike_detection as sd
 from inf_bp_texts.analysis.spike_detection import (
     bootstrap_percentile_ci,
     compute_ci_width_table,
     select_extreme_replicates,
     select_max_ci_times,
 )
+
+
+def test_seed_from_parts_is_deterministic():
+    a = sd.seed_from_parts(1, "a", 3.14)
+    b = sd.seed_from_parts(1, "a", 3.14)
+    assert isinstance(a, int)
+    assert a == b
+
+
+def test_replicate_and_bootstrap_seed_different():
+    rep = sd.replicate_seed(42, "Regime", "process", 0.5, 7)
+    bs = sd.bootstrap_seed(rep)
+    assert isinstance(rep, int)
+    assert isinstance(bs, int)
+    assert rep != bs
 
 
 def test_bootstrap_percentile_ci_is_deterministic() -> None:

@@ -13,6 +13,17 @@ from inf_bp_texts.analysis import (
     fit_single_model,
     iqr_plotting_subset,
 )
+from inf_bp_texts.analysis import validation_helpers as vh
+
+
+def test_safe_mean_and_var():
+    arr = np.array([1.0, 2.0, np.nan, np.inf, 3.0])
+    assert vh.safe_mean(arr) == 2.0
+    assert round(vh.safe_var(arr), 6) == round(np.var([1.0, 2.0, 3.0], ddof=1), 6)
+
+    empty = np.array([np.nan, np.inf])
+    assert np.isnan(vh.safe_mean(empty))
+    assert np.isnan(vh.safe_var(empty))
 
 
 def test_boundary_corrected_kde_on_support_stays_on_domain() -> None:
