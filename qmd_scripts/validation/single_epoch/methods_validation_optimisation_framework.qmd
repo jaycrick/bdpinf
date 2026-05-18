@@ -80,7 +80,10 @@ sampled = simulate_bdp_ages_from_distributions(
     max_time=torch.tensor(time_span, dtype=torch.float64),
     rng=rng,
 )
-ages = np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
+ages = np.asarray(
+    sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
+    dtype=np.float64,
+)
 
 print(f"Population size: {len(ages)}")
 ```

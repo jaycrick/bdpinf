@@ -67,7 +67,7 @@ simulation_df = simulate_birth_death_process(
     random_seed=seed,
     ensure_non_extinct=True,
 )
-surviving_manuscripts = simulation_df[simulation_df["survived"]]
+surviving_manuscripts = simulation_df.surviving_manuscripts
 ages = surviving_manuscripts["age"].to_numpy(dtype=np.float64)
 lineage = build_birth_death_lineage(simulation_df)
 lineage_display = birth_death_lineage_to_display_frame(lineage)

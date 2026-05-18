@@ -8,6 +8,7 @@ fitting procedures are handled by separate modules.
 from typing import Any, Literal
 
 import numpy as np
+import pandas as pd
 import torch
 from numpy.typing import NDArray
 
@@ -22,6 +23,12 @@ from inf_bp_texts.models.validation import (
 
 NumericInput = float | list[float] | NDArray[np.float64] | torch.Tensor
 RateLabel = Literal["birth", "death"]
+
+
+def _to_nullable_int_series(values: list[int | None] | None) -> pd.Series | None:
+    if values is None:
+        return None
+    return pd.Series(values, dtype="Int64")
 
 
 class BirthDeathProcess:
@@ -69,6 +76,9 @@ class BirthDeathProcess:
         initial_population: int = 1,
         birth_rates: NumericInput | None = None,
         death_rates: NumericInput | None = None,
+        manuscript_records: pd.DataFrame | None = None,
+        spine_ages: NumericInput | None = None,
+        non_spine_ages: NumericInput | None = None,
     ) -> None:
         """Initialize birth-death process with observation data.
 
@@ -107,12 +117,97 @@ class BirthDeathProcess:
 
         self._validate_creation_times()
         self._manuscript_ages: torch.Tensor = self._compute_manuscript_ages()
+        self._manuscript_records: pd.DataFrame | None = (
+            self._normalize_manuscript_records(
+                manuscript_records,
+            )
+        )
+        self._spine_ages: torch.Tensor | None = (
+            self._normalize_optional_age_vector(spine_ages)
+            if spine_ages is not None
+            else None
+        )
+        self._non_spine_ages: torch.Tensor | None = (
+            self._normalize_optional_age_vector(non_spine_ages)
+            if non_spine_ages is not None
+            else None
+        )
 
         # Set fitted status based on whether parameters were provided
         self.fitted: bool = (
             self._birth_rates is not None and self._death_rates is not None
         )
         self.fit_results: dict[str, Any] | None = None
+
+    @classmethod
+    def from_manuscript_records(
+        cls,
+        manuscripts: pd.DataFrame,
+        *,
+        epoch_end_times: NumericInput,
+        start_time: float = 0.0,
+        initial_population: int = 1,
+        birth_rates: NumericInput | None = None,
+        death_rates: NumericInput | None = None,
+    ) -> "BirthDeathProcess":
+        """Build a process from a full manuscript event table."""
+        required_columns = {
+            "manuscript_id",
+            "parent_id",
+            "creation_time",
+            "death_time",
+            "is_spine",
+            "survived",
+            "age",
+            "lifespan",
+        }
+        missing_columns = required_columns.difference(manuscripts.columns)
+        if missing_columns:
+            missing_text = ", ".join(sorted(missing_columns))
+            msg = f"manuscripts is missing required columns: {missing_text}"
+            raise ValueError(msg)
+
+        observed = manuscripts[manuscripts["survived"]].copy()
+        process = cls(
+            creation_times=observed["creation_time"].astype(float).tolist(),
+            epoch_end_times=epoch_end_times,
+            start_time=start_time,
+            initial_population=initial_population,
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            manuscript_records=manuscripts.copy(),
+        )
+        return process
+
+    @classmethod
+    def from_age_samples(
+        cls,
+        *,
+        spine_ages: list[float],
+        non_spine_ages: list[float],
+        epoch_end_times: NumericInput,
+        start_time: float = 0.0,
+        initial_population: int = 1,
+        birth_rates: NumericInput | None = None,
+        death_rates: NumericInput | None = None,
+    ) -> "BirthDeathProcess":
+        """Build a process from sampled spine and non-spine manuscript ages."""
+        epoch_end_times_tensor = cls._to_static_float64_tensor(epoch_end_times)
+        max_time = float(epoch_end_times_tensor.reshape(-1)[-1].item())
+        creation_times = [
+            max_time - float(age) for age in [*spine_ages, *non_spine_ages]
+        ]
+        process = cls(
+            creation_times=creation_times,
+            epoch_end_times=epoch_end_times,
+            start_time=start_time,
+            initial_population=initial_population,
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            spine_ages=spine_ages,
+            non_spine_ages=non_spine_ages,
+        )
+        return process
 
     @property
     def epoch_end_times(self) -> torch.Tensor:
@@ -207,6 +302,48 @@ class BirthDeathProcess:
         if isinstance(values, list):
             return torch.tensor(values, dtype=torch.float64)
         return torch.tensor([values], dtype=torch.float64)
+
+    @staticmethod
+    def _to_static_float64_tensor(values: NumericInput) -> torch.Tensor:
+        if isinstance(values, torch.Tensor):
+            return values.to(dtype=torch.float64)
+        if isinstance(values, np.ndarray):
+            return torch.as_tensor(values, dtype=torch.float64)
+        if isinstance(values, list):
+            return torch.tensor(values, dtype=torch.float64)
+        return torch.tensor([values], dtype=torch.float64)
+
+    def _normalize_optional_age_vector(
+        self,
+        ages: NumericInput,
+    ) -> torch.Tensor:
+        age_tensor = self._to_float64_tensor(ages)
+        if not torch.all(torch.isfinite(age_tensor)):
+            msg = "age values must be finite"
+            raise ValueError(msg)
+        if torch.any(age_tensor < 0):
+            msg = "age values must be non-negative"
+            raise ValueError(msg)
+        return age_tensor
+
+    def _normalize_manuscript_records(
+        self,
+        manuscripts: pd.DataFrame | None,
+    ) -> pd.DataFrame | None:
+        if manuscripts is None:
+            return None
+        records = manuscripts.copy()
+        if "death_time" in records.columns:
+            records["death_time"] = records["death_time"].astype(float)
+        if "age" in records.columns:
+            records["age"] = records["age"].astype(float)
+        if "lifespan" in records.columns:
+            records["lifespan"] = records["lifespan"].astype(float)
+        if "parent_id" in records.columns:
+            records["parent_id"] = records["parent_id"].astype("Int64")
+        if "manuscript_id" in records.columns:
+            records["manuscript_id"] = records["manuscript_id"].astype(int)
+        return records
 
     def _normalize_rate_vector(
         self,
@@ -317,6 +454,146 @@ class BirthDeathProcess:
         """Get cached manuscript ages from creation times and latest epoch end time."""
         self._recompute_manuscript_ages()
         return self._manuscript_ages.clone()
+
+    @property
+    def manuscript_records(self) -> pd.DataFrame | None:
+        """Get the full manuscript record table when available."""
+        if self._manuscript_records is None:
+            return None
+        return self._manuscript_records.copy()
+
+    @property
+    def spine_ages(self) -> torch.Tensor | None:
+        """Get sampled spine ages when the instance originates from that simulator."""
+        if self._spine_ages is None:
+            return None
+        return self._spine_ages.clone()
+
+    @property
+    def non_spine_ages(self) -> torch.Tensor | None:
+        """Get sampled non-spine ages when the instance originates from that simulator."""
+        if self._non_spine_ages is None:
+            return None
+        return self._non_spine_ages.clone()
+
+    @property
+    def death_times(self) -> torch.Tensor | None:
+        """Get manuscript death times when available."""
+        if (
+            self._manuscript_records is None
+            or "death_time" not in self._manuscript_records
+        ):
+            return None
+        return torch.tensor(
+            self._manuscript_records["death_time"].to_numpy(dtype=np.float64),
+            dtype=torch.float64,
+        )
+
+    @property
+    def all_manuscript_ages(self) -> torch.Tensor | None:
+        """Get manuscript ages for all records when a record table exists."""
+        if self._manuscript_records is None or "age" not in self._manuscript_records:
+            return None
+        return torch.tensor(
+            self._manuscript_records["age"].to_numpy(dtype=np.float64),
+            dtype=torch.float64,
+        )
+
+    @property
+    def extinct_manuscripts(self) -> pd.DataFrame | None:
+        """Get the extinct-manuscript subset when a record table exists."""
+        if self._manuscript_records is None:
+            return None
+        return self._manuscript_records[~self._manuscript_records["survived"]].copy()
+
+    @property
+    def surviving_manuscripts(self) -> pd.DataFrame | None:
+        """Get the surviving-manuscript subset when a record table exists."""
+        if self._manuscript_records is None:
+            return None
+        return self._manuscript_records[self._manuscript_records["survived"]].copy()
+
+    def __getitem__(self, key: Any) -> Any:
+        """Provide lightweight compatibility with the prior DataFrame/dict outputs."""
+        if isinstance(key, str):
+            if key == "spine":
+                if self._spine_ages is not None:
+                    return self._spine_ages.clone().tolist()
+                if (
+                    self._manuscript_records is not None
+                    and "is_spine" in self._manuscript_records
+                ):
+                    return (
+                        self._manuscript_records.loc[
+                            self._manuscript_records["is_spine"],
+                            "age",
+                        ]
+                        .astype(float)
+                        .tolist()
+                    )
+            if key == "non_spine":
+                if self._non_spine_ages is not None:
+                    return self._non_spine_ages.clone().tolist()
+                if (
+                    self._manuscript_records is not None
+                    and "is_spine" in self._manuscript_records
+                ):
+                    return (
+                        self._manuscript_records.loc[
+                            ~self._manuscript_records["is_spine"],
+                            "age",
+                        ]
+                        .astype(float)
+                        .tolist()
+                    )
+            if (
+                self._manuscript_records is not None
+                and key in self._manuscript_records.columns
+            ):
+                return self._manuscript_records[key]
+            raise KeyError(key)
+
+        if self._manuscript_records is not None:
+            return self._manuscript_records[key].copy()
+
+        raise TypeError(
+            "BirthDeathProcess only supports string and record-style indexing",
+        )
+
+    def equals(self, other: Any) -> bool:
+        """Compare simulation objects using their manuscript records when available."""
+        if not isinstance(other, BirthDeathProcess):
+            return False
+        if (
+            self._manuscript_records is not None
+            and other._manuscript_records is not None
+        ):
+            return self._manuscript_records.equals(other._manuscript_records)
+        return (
+            self.creation_times == other.creation_times
+            and torch.equal(self.epoch_end_times, other.epoch_end_times)
+            and self.birth_rates == other.birth_rates
+            and self.death_rates == other.death_rates
+        )
+
+    def __eq__(self, other: object) -> bool:
+        """Compare against legacy dict outputs or another process instance."""
+        if isinstance(other, dict):
+            expected_keys = {"spine", "non_spine"}
+            if set(other) != expected_keys:
+                return False
+            return list(self["spine"]) == list(other["spine"]) and list(
+                self["non_spine"],
+            ) == list(other["non_spine"])
+        if isinstance(other, BirthDeathProcess):
+            return self.equals(other)
+        return NotImplemented
+
+    def __len__(self) -> int:
+        """Return the number of manuscript records when available."""
+        if self._manuscript_records is not None:
+            return len(self._manuscript_records)
+        return len(self.manuscript_ages)
 
     @property
     def n_manuscripts(self) -> int:

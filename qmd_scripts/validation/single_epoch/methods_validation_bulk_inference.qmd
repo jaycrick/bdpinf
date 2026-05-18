@@ -72,7 +72,10 @@ def sample_age_vector(
         max_time=torch.tensor(span, dtype=torch.float64),
         rng=rng,
     )
-    return np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
+    return np.asarray(
+        sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
+        dtype=np.float64,
+    )
 
 
 list_of_ages = Parallel(n_jobs=-1)(

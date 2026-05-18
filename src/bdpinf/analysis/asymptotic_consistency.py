@@ -51,6 +51,7 @@ def sample_age_vector(
 
     birth_rate = float(regime_config["birth_rate"])
     death_rate = float(regime_config["death_rate"])
+    ages = np.asarray([], dtype=np.float64)
 
     if regime_config["sampling"] == "distribution":
         sampled = simulate_bdp_ages_from_distributions(
@@ -60,19 +61,31 @@ def sample_age_vector(
             rng=rng,
             ensure_non_extinct=True,
         )
-        return np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
+        if isinstance(sampled, dict):
+            ages = np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
+        else:
+            spine_ages = sampled.spine_ages
+            non_spine_ages = sampled.non_spine_ages
+            if spine_ages is not None and non_spine_ages is not None:
+                ages = np.asarray(
+                    spine_ages.tolist() + non_spine_ages.tolist(),
+                    dtype=np.float64,
+                )
+    else:
+        simulated_process = simulate_birth_death_process(
+            birth_rates=birth_rate,
+            death_rates=death_rate,
+            times=observation_time,
+            random_seed=int(rep_seed),
+            ensure_non_extinct=True,
+        )
+        survivors = simulated_process.surviving_manuscripts
+        if survivors is None and hasattr(simulated_process, "columns"):
+            survivors = simulated_process[simulated_process["survived"]]
+        if survivors is not None and len(survivors) > 0:
+            ages = np.asarray(survivors["age"], dtype=np.float64)
 
-    simulated_df = simulate_birth_death_process(
-        birth_rates=birth_rate,
-        death_rates=death_rate,
-        times=observation_time,
-        random_seed=int(rep_seed),
-        ensure_non_extinct=True,
-    )
-    survivors = simulated_df[simulated_df["survived"]]
-    if len(survivors) == 0:
-        return np.asarray([], dtype=np.float64)
-    return survivors["age"].to_numpy(dtype=np.float64)
+    return ages
 
 
 def fit_replicate(

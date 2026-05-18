@@ -64,19 +64,12 @@ class TestSimulation:
             random_seed=42,
         )
 
-        # Should return a DataFrame
-        assert isinstance(df, pd.DataFrame)
+        # Should return a BirthDeathProcess
+        assert isinstance(df, BirthDeathProcess)
 
-        # Create process object and set state from simulation results
-        surviving_manuscripts = df[df["survived"]]
-        creation_times = surviving_manuscripts["creation_time"].tolist()
-
-        process = BirthDeathProcess(
-            creation_times=creation_times,
-            epoch_end_times=100.0,
-            birth_rates=0.1,
-            death_rates=0.02,
-        )
+        process = df
+        surviving_manuscripts = process.surviving_manuscripts
+        assert surviving_manuscripts is not None
 
         # Check that epoch_end_times and creation_times were set
         assert process.epoch_end_times[-1] == 100.0
@@ -230,23 +223,12 @@ class TestSimulation:
             random_seed=42,
         )
 
-        # Should still return a DataFrame, even if empty
-        assert isinstance(df, pd.DataFrame)
+        # Should still return a BirthDeathProcess, even if empty
+        assert isinstance(df, BirthDeathProcess)
 
-        # Create process object to test that it handles empty results properly
-        surviving_manuscripts = df[df["survived"]] if len(df) > 0 else pd.DataFrame()
-        creation_times = (
-            surviving_manuscripts["creation_time"].tolist()
-            if len(surviving_manuscripts) > 0
-            else []
-        )
-
-        process = BirthDeathProcess(
-            creation_times=creation_times,
-            epoch_end_times=1.0,
-            birth_rates=0.001,
-            death_rates=1.0,
-        )
+        process = df
+        surviving_manuscripts = process.surviving_manuscripts
+        assert surviving_manuscripts is not None
 
         # Check that the process state is still valid
         assert process.epoch_end_times[-1].item() == 1.0
@@ -455,12 +437,13 @@ class TestMultiEpochSimulation:
             random_seed=42,
         )
 
-        # Should return a DataFrame
-        assert isinstance(df, pd.DataFrame)
+        # Should return a BirthDeathProcess
+        assert isinstance(df, BirthDeathProcess)
 
         # All creation times should be <= final time
         if len(df) > 0:
-            assert all(df["creation_time"] <= times[-1])
+            assert df.manuscript_records is not None
+            assert all(df.manuscript_records["creation_time"] <= times[-1])
 
     def test_two_epoch_simulation_reproducible(self) -> None:
         """Test that two-epoch simulation with same seed is reproducible."""
@@ -487,8 +470,8 @@ class TestMultiEpochSimulation:
         # Creation times should match
         if len(df1) > 0 and len(df2) > 0:
             np.testing.assert_array_almost_equal(
-                sorted(df1["creation_time"]),
-                sorted(df2["creation_time"]),
+                sorted(df1.manuscript_records["creation_time"]),
+                sorted(df2.manuscript_records["creation_time"]),
             )
 
     def test_three_epoch_simulation(self) -> None:
@@ -504,11 +487,12 @@ class TestMultiEpochSimulation:
             random_seed=42,
         )
 
-        assert isinstance(df, pd.DataFrame)
+        assert isinstance(df, BirthDeathProcess)
         # Check that all times are within bounds
         if len(df) > 0:
-            assert all(df["creation_time"] >= 0)
-            assert all(df["creation_time"] <= times[-1])
+            assert df.manuscript_records is not None
+            assert all(df.manuscript_records["creation_time"] >= 0)
+            assert all(df.manuscript_records["creation_time"] <= times[-1])
 
     def test_multi_epoch_data_frame_structure(self) -> None:
         """Test that multi-epoch simulation returns properly structured DataFrame."""
@@ -524,7 +508,7 @@ class TestMultiEpochSimulation:
         )
 
         if len(df) > 0:
-            surviving = df[df["survived"]]
+            surviving = df.surviving_manuscripts
             if len(surviving) > 0:
                 required_cols = ["manuscript_id", "creation_time", "age", "survived"]
                 for col in required_cols:
@@ -558,8 +542,8 @@ class TestMultiEpochSimulation:
         )
 
         # Both simulations should complete
-        assert isinstance(df1, pd.DataFrame)
-        assert isinstance(df2, pd.DataFrame)
+        assert isinstance(df1, BirthDeathProcess)
+        assert isinstance(df2, BirthDeathProcess)
 
         # Results should differ (different epoch configurations and seeds)
         # This is probabilistic but with different seeds should be reliable

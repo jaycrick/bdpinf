@@ -77,7 +77,7 @@ def sample_age_vector_process(sim_idx, br, dr, span, base_seed):
         times=span,
         random_seed=run_seed,
     )
-    survivors = simulated_df[simulated_df["death_time"].isna()]
+    survivors = simulated_df.surviving_manuscripts
     if survivors.empty:
         return np.array([], dtype=np.float64)
 

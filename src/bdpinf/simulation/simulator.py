@@ -56,6 +56,7 @@ import pandas as pd
 import torch
 from numpy.typing import NDArray
 
+from inf_bp_texts.models.birth_death_process import BirthDeathProcess
 from inf_bp_texts.models.mathematical_functions import (
     _population_geometric_parameter,
     calculate_extinction_pr,
@@ -132,8 +133,17 @@ class BirthDeathLineage:
         return f"{render(self.root_id)};"
 
 
-def build_birth_death_lineage(manuscripts: pd.DataFrame) -> BirthDeathLineage:
+def build_birth_death_lineage(
+    manuscripts: pd.DataFrame | BirthDeathProcess,
+) -> BirthDeathLineage:
     """Build a parent-preserving lineage tree from a simulated manuscript table."""
+    if isinstance(manuscripts, BirthDeathProcess):
+        manuscript_table = manuscripts.manuscript_records
+        if manuscript_table is None:
+            msg = "BirthDeathProcess does not contain manuscript records"
+            raise ValueError(msg)
+        manuscripts = manuscript_table
+
     required_columns = {"manuscript_id", "parent_id", "creation_time"}
     missing_columns = required_columns.difference(manuscripts.columns)
     if missing_columns:
@@ -408,7 +418,7 @@ def simulate_birth_death_process(
     *,
     ensure_non_extinct: bool = False,
     max_retries: int = 100,
-) -> pd.DataFrame:
+) -> BirthDeathProcess:
     """Simulate manuscript data from the birth-death process with time-varying rates.
 
     This creates a proper birth-death process simulation where manuscripts
@@ -427,7 +437,7 @@ def simulate_birth_death_process(
         random_seed: Random seed for reproducibility
 
     Returns:
-        DataFrame with simulated manuscript data including creation times and ages
+        BirthDeathProcess instance containing the simulated manuscript records
 
     """
     # Convert inputs to arrays for uniform handling
@@ -586,11 +596,21 @@ def simulate_birth_death_process(
 
         # If we don't need to ensure non-extinction, return first draw.
         if not ensure_non_extinct:
-            return df
+            return BirthDeathProcess.from_manuscript_records(
+                df,
+                epoch_end_times=times_arr,
+                birth_rates=birth_rates_arr,
+                death_rates=death_rates_arr,
+            )
 
         # If we require non-extinction, check if at least one survived.
         if df["survived"].any():
-            return df
+            return BirthDeathProcess.from_manuscript_records(
+                df,
+                epoch_end_times=times_arr,
+                birth_rates=birth_rates_arr,
+                death_rates=death_rates_arr,
+            )
 
         # Otherwise, loop to retry until attempts exhausted.
 
@@ -608,7 +628,7 @@ def simulate_bdp_ages_from_distributions(
     max_time: torch.Tensor,
     rng: np.random.Generator,
     ensure_non_extinct: bool = False,
-) -> dict[str, list[float]]:
+) -> BirthDeathProcess:
     """Sample population size and manuscript ages from BDP-derived distributions.
 
     The population size draw follows the existing extinction/geometric logic.
@@ -624,7 +644,7 @@ def simulate_bdp_ages_from_distributions(
             from the conditional geometric component only.
 
     Returns:
-        A dictionary ``ages`` with keys ``"spine"`` and ``"non_spine"``.
+        BirthDeathProcess instance containing the sampled age groups.
 
     Raises:
         ValueError: If rates or max_time are not positive, or tensors are not scalar.
@@ -679,7 +699,13 @@ def simulate_bdp_ages_from_distributions(
             n_samples=pop_size - 1,
         )
 
-    return ages
+    return BirthDeathProcess.from_age_samples(
+        spine_ages=ages["spine"],
+        non_spine_ages=ages["non_spine"],
+        epoch_end_times=max_time,
+        birth_rates=birth_rate,
+        death_rates=death_rate,
+    )
 
 
 if __name__ == "__main__":

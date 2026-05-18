@@ -28,17 +28,13 @@ __compile_start = time.perf_counter()
 ```{python}
 # | label: setup
 import json
-import hashlib
 import os
 from pathlib import Path
 import time
-from typing import Any, Literal, TypedDict, cast, Sequence
+from typing import Any, TypedDict, cast
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objs as go
-from plotly.subplots import make_subplots
-import torch
 from joblib import Parallel, delayed
 from itables import show as show_table
 
@@ -47,13 +43,16 @@ from inf_bp_texts.analysis.spike_detection import (
     select_extreme_replicates,
     select_max_ci_times,
 )
-from inf_bp_texts.inference import fit_birth_death_processes
 from inf_bp_texts.inference.fitting import ConvergenceConfig
-from inf_bp_texts.simulation import (
-    simulate_bdp_ages_from_distributions,
-    simulate_birth_death_process,
+
+from inf_bp_texts.analysis.asymptotic_consistency import (
+    FittingRunConfig,
+    run_single_replicate,
+    reproduce_replicate,
 )
-from inf_bp_texts.visualization.plotting import apply_tufte_axes, ptolqual
+from inf_bp_texts.analysis.validation_helpers import safe_mean, safe_var
+from inf_bp_texts.utils import json_safe
+from inf_bp_texts.visualization.plotting import plot_parameter_consistency
 
 
 class RegimeConfig(TypedDict):
@@ -127,17 +126,6 @@ fit_run_config = FittingRunConfig(
     fit_optimizer_kwargs=fit_optimizer_kwargs,
     convergence_config=fit_convergence_config,
 )
-
-from inf_bp_texts.analysis.asymptotic_consistency import (
-    FittingRunConfig,
-    sample_age_vector,
-    fit_replicate,
-    run_single_replicate,
-    reproduce_replicate,
-)
-from inf_bp_texts.analysis.validation_helpers import safe_mean, safe_var
-from inf_bp_texts.utils import json_safe
-from inf_bp_texts.visualization.plotting import plot_parameter_consistency
 ```
 
 ## Run Simulations And Fits
