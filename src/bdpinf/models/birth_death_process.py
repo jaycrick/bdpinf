@@ -5,6 +5,7 @@ initialization, and core functionality. Complex mathematical computations and
 fitting procedures are handled by separate modules.
 """
 
+from collections.abc import Hashable
 from typing import Any, Literal
 
 import numpy as np
@@ -70,6 +71,8 @@ class BirthDeathProcess:
         ...     print(f"Death rates: {result['death_rates']}")
 
     """
+
+    _NEWICK_LENGTH_EPSILON = 1e-12
 
     def __init__(
         self,
@@ -551,6 +554,113 @@ class BirthDeathProcess:
             simulation_end_time=float(self._latest_epoch_end_time().item()),
             config=config,
         )
+
+    @classmethod
+    def _format_newick_length(cls, length: float) -> str:
+        """Format a branch length for deterministic Newick output."""
+        length_value = float(length)
+        if abs(length_value) < cls._NEWICK_LENGTH_EPSILON:
+            length_value = 0.0
+        return repr(length_value)
+
+    def _to_newick_fragment(
+        self,
+        manuscript_id: int,
+        *,
+        records_by_id: dict[int, dict[Hashable, Any]],
+        child_map: dict[int, list[int]],
+        simulation_end_time: float,
+    ) -> str:
+        """Serialize one lineage into a nested Newick fragment."""
+        record = records_by_id[manuscript_id]
+        birth_time = float(record["creation_time"])
+        death_raw = record.get("death_time")
+        death_time = (
+            float(death_raw)
+            if death_raw is not None and not pd.isna(death_raw)
+            else float(simulation_end_time)
+        )
+
+        children = child_map.get(manuscript_id, [])
+        if not children:
+            branch_length = self._format_newick_length(death_time - birth_time)
+            return f"({manuscript_id}:{branch_length}):0"
+
+        last_child_id = children[-1]
+        last_child_birth_time = float(records_by_id[last_child_id]["creation_time"])
+        branch_length = self._format_newick_length(
+            death_time - last_child_birth_time,
+        )
+        current = f"({manuscript_id}:{branch_length}):0"
+
+        for index in range(len(children) - 1, -1, -1):
+            child_id = children[index]
+            child_birth_time = float(records_by_id[child_id]["creation_time"])
+            next_time = (
+                death_time
+                if index == len(children) - 1
+                else float(records_by_id[children[index + 1]]["creation_time"])
+            )
+            child_fragment = self._to_newick_fragment(
+                child_id,
+                records_by_id=records_by_id,
+                child_map=child_map,
+                simulation_end_time=simulation_end_time,
+            )
+            current = (
+                f"({child_fragment},{current})"
+                f":{self._format_newick_length(next_time - child_birth_time)}"
+            )
+
+        return f"({current}):0"
+
+    def to_newick(self) -> str:
+        """Export the full genealogy as a strict Newick tree string."""
+        if self._manuscript_records is None:
+            msg = (
+                "to_newick requires manuscript_records with manuscript_id and parent_id"
+            )
+            raise ValueError(msg)
+
+        # Reuse the genealogy validator to enforce the rooted-tree contract.
+        ordered_records = self.genealogy_dfs_order()
+
+        records_by_id = {
+            int(row["manuscript_id"]): row.to_dict()
+            for _, row in ordered_records.iterrows()
+        }
+
+        child_map: dict[int, list[int]] = {}
+        for manuscript_id, record in records_by_id.items():
+            parent_raw = record.get("parent_id")
+            if pd.isna(parent_raw):
+                continue
+            parent_id = int(parent_raw)
+            child_map.setdefault(parent_id, []).append(manuscript_id)
+
+        for child_ids in child_map.values():
+            child_ids.sort(
+                key=lambda child_id: (
+                    float(records_by_id[child_id]["creation_time"]),
+                    child_id,
+                ),
+            )
+
+        root_rows = ordered_records[ordered_records["parent_id"].isna()]
+        root_id = int(root_rows.iloc[0]["manuscript_id"])
+        root_birth_time = float(root_rows.iloc[0]["creation_time"])
+        simulation_end_time = float(self._latest_epoch_end_time().item())
+
+        root_fragment = self._to_newick_fragment(
+            root_id,
+            records_by_id=records_by_id,
+            child_map=child_map,
+            simulation_end_time=simulation_end_time,
+        )
+        root_branch_length = self._format_newick_length(
+            root_birth_time - self.start_time,
+        )
+        return f"({root_fragment}):{root_branch_length};"
 
     def __getitem__(self, key: Any) -> Any:
         """Provide lightweight compatibility with the prior DataFrame/dict outputs."""

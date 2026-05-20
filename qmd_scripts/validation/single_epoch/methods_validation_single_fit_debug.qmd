@@ -64,6 +64,9 @@ print(f"Total manuscripts: {len(simulation_df)}")
 print(f"Surviving manuscripts: {len(ages)}")
 print(f"First 10 ages: {ages[:10].tolist()}")
 print(simulation_df.manuscript_records.to_string())
+
+newick_str = simulation_df.to_newick()
+print("Newick:", newick_str)
 ```
 
 ## Genealogy Tree Plot

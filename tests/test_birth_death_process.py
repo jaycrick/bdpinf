@@ -398,3 +398,49 @@ class TestBirthDeathProcessGenealogy:
 
         with pytest.raises(ValueError, match="requires manuscript_records"):
             process.plot_genealogy_tree()
+
+
+class TestBirthDeathProcessNewick:
+    """Test strict Newick export for rooted genealogies."""
+
+    @staticmethod
+    def _sample_newick_records() -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "manuscript_id": 1,
+                    "parent_id": 0,
+                    "creation_time": 2.0,
+                    "death_time": 6.0,
+                    "is_spine": False,
+                    "survived": False,
+                    "age": np.nan,
+                    "lifespan": 4.0,
+                },
+                {
+                    "manuscript_id": 0,
+                    "parent_id": None,
+                    "creation_time": 0.0,
+                    "death_time": np.nan,
+                    "is_spine": False,
+                    "survived": True,
+                    "age": 10.0,
+                    "lifespan": np.nan,
+                },
+            ],
+        )
+
+    def test_to_newick_exports_deterministic_tree(self) -> None:
+        process = BirthDeathProcess.from_manuscript_records(
+            self._sample_newick_records(),
+            epoch_end_times=10.0,
+            start_time=0.0,
+        )
+
+        assert process.to_newick() == "((((1:4.0):0,(0:8.0):0):8.0):0):0.0;"
+
+    def test_to_newick_requires_manuscript_records(self) -> None:
+        process = BirthDeathProcess(creation_times=[1.0], epoch_end_times=10.0)
+
+        with pytest.raises(ValueError, match="requires manuscript_records"):
+            process.to_newick()
