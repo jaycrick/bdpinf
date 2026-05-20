@@ -3,6 +3,8 @@
 # ruff: noqa: S101
 
 import numpy as np
+import pandas as pd
+import plotly.graph_objs as go
 import pytest
 import torch
 from numpy.testing import assert_array_equal
@@ -285,3 +287,114 @@ class TestBirthDeathProcessInit:
 
         with pytest.raises(ValueError, match="birth_rates length"):
             process.set_epoch_end_times([400.0, 800.0])
+
+
+class TestBirthDeathProcessGenealogy:
+    """Test genealogy ordering and plotting helpers."""
+
+    @staticmethod
+    def _sample_genealogy_records() -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "manuscript_id": 0,
+                    "parent_id": None,
+                    "creation_time": 0.0,
+                    "death_time": 0.5,
+                    "is_spine": False,
+                    "survived": False,
+                    "age": np.nan,
+                    "lifespan": 0.5,
+                },
+                {
+                    "manuscript_id": 1,
+                    "parent_id": 0,
+                    "creation_time": 1.0,
+                    "death_time": 6.0,
+                    "is_spine": False,
+                    "survived": False,
+                    "age": np.nan,
+                    "lifespan": 5.0,
+                },
+                {
+                    "manuscript_id": 2,
+                    "parent_id": 0,
+                    "creation_time": 2.0,
+                    "death_time": np.nan,
+                    "is_spine": False,
+                    "survived": True,
+                    "age": 8.0,
+                    "lifespan": np.nan,
+                },
+                {
+                    "manuscript_id": 3,
+                    "parent_id": 1,
+                    "creation_time": 3.0,
+                    "death_time": np.nan,
+                    "is_spine": False,
+                    "survived": True,
+                    "age": 7.0,
+                    "lifespan": np.nan,
+                },
+                {
+                    "manuscript_id": 4,
+                    "parent_id": 1,
+                    "creation_time": 4.0,
+                    "death_time": 9.0,
+                    "is_spine": False,
+                    "survived": False,
+                    "age": np.nan,
+                    "lifespan": 5.0,
+                },
+            ],
+        )
+
+    def test_genealogy_dfs_order_marks_first_survivor_as_spine(self) -> None:
+        process = BirthDeathProcess.from_manuscript_records(
+            self._sample_genealogy_records(),
+            epoch_end_times=10.0,
+            start_time=0.0,
+        )
+
+        order = process.genealogy_dfs_order()
+
+        assert order["manuscript_id"].tolist() == [0, 2, 1, 4, 3]
+        assert order["dfs_index"].tolist() == [0, 1, 2, 3, 4]
+        assert order.loc[order["is_spine"], "manuscript_id"].tolist() == [2]
+        assert order.loc[order["manuscript_id"] == 2, "plot_death_time"].item() == 10.0
+        assert order.loc[order["manuscript_id"] == 0, "plot_death_time"].item() == 0.5
+
+    def test_plot_genealogy_tree_returns_expected_shapes_and_ticks(self) -> None:
+        process = BirthDeathProcess.from_manuscript_records(
+            self._sample_genealogy_records(),
+            epoch_end_times=10.0,
+            start_time=0.0,
+        )
+
+        fig = process.plot_genealogy_tree()
+
+        assert isinstance(fig, go.Figure)
+        assert fig.layout.yaxis.autorange == "reversed"
+        assert tuple(fig.layout.yaxis.tickvals) == (0, 1, 2, 3, 4)
+        assert tuple(fig.layout.yaxis.ticktext) == ("0", "2", "1", "4", "3")
+        assert len(fig.layout.shapes) == 9
+
+        shape_dicts = [shape.to_plotly_json() for shape in fig.layout.shapes]
+        assert any(
+            shape["line"]["color"] == "#000000" and shape["line"]["width"] == 2.0
+            for shape in shape_dicts
+        )
+        assert any(
+            shape["line"]["color"] == "#228833" and shape["line"]["width"] == 4.0
+            for shape in shape_dicts
+        )
+        assert any(shape["line"].get("dash") == "dot" for shape in shape_dicts)
+
+    def test_genealogy_helpers_require_records(self) -> None:
+        process = BirthDeathProcess(creation_times=[1.0], epoch_end_times=10.0)
+
+        with pytest.raises(ValueError, match="requires manuscript_records"):
+            process.genealogy_dfs_order()
+
+        with pytest.raises(ValueError, match="requires manuscript_records"):
+            process.plot_genealogy_tree()
