@@ -5,18 +5,12 @@ process models.
 """
 
 from .simulator import (
-    BirthDeathLineage,
-    birth_death_lineage_to_display_frame,
-    birth_death_lineage_to_newick,
-    build_birth_death_lineage,
     simulate_bdp_ages_from_distributions,
     simulate_birth_death_process,
 )
 
 __all__ = [
     "BirthDeathLineage",
-    "birth_death_lineage_to_display_frame",
-    "birth_death_lineage_to_newick",
     "build_birth_death_lineage",
     "simulate_bdp_ages_from_distributions",
     "simulate_birth_death_process",

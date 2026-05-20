@@ -3,7 +3,6 @@
 # ruff: noqa: S101
 
 import numpy as np
-import pandas as pd
 import torch
 
 import inf_bp_texts.simulation.simulator as simulator_module
@@ -12,47 +11,12 @@ from inf_bp_texts.models.mathematical_functions import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.simulation import (
-    birth_death_lineage_to_display_frame,
-    birth_death_lineage_to_newick,
-    build_birth_death_lineage,
-    simulate_birth_death_process,
-)
+from inf_bp_texts.simulation import simulate_birth_death_process
 from inf_bp_texts.simulation.simulator import simulate_bdp_ages_from_distributions
 
 
 class TestSimulation:
     """Test simulation functionality."""
-
-    def test_birth_death_lineage_preserves_parent_and_dfs_order(self) -> None:
-        """Tree helpers should preserve parent ids and emit DFS order deterministically."""
-        manuscripts = pd.DataFrame(
-            {
-                "manuscript_id": [0, 1, 2, 3, 4],
-                "parent_id": [None, 0, 0, 2, 2],
-                "creation_time": [0.0, 12.0, 5.0, 9.0, 14.0],
-                "death_time": [None, None, None, None, None],
-                "is_spine": [True, False, False, False, False],
-                "survived": [True, True, True, True, True],
-                "age": [0.0, 1.0, 2.0, 3.0, 4.0],
-                "lifespan": [np.nan, np.nan, np.nan, np.nan, np.nan],
-            },
-        )
-
-        lineage = build_birth_death_lineage(manuscripts)
-
-        assert lineage.root_id == 0
-        assert lineage.children_by_parent[0] == (2, 1)
-        assert lineage.children_by_parent[2] == (3, 4)
-        assert lineage.dfs_order() == [0, 2, 3, 4, 1]
-        assert birth_death_lineage_to_newick(lineage) == "((m3,m4)m2,m1)m0;"
-
-        display_frame = birth_death_lineage_to_display_frame(lineage)
-        assert display_frame["manuscript_id"].tolist() == [0, 2, 3, 4, 1]
-        assert display_frame["dfs_order"].tolist() == [0, 1, 2, 3, 4]
-        assert display_frame["depth"].tolist() == [0, 1, 2, 2, 1]
-        assert display_frame.loc[0, "label"] == "m0"
-        assert lineage.nodes.loc[4, "parent_id"] == 2
 
     def test_simulation_basic(self) -> None:
         """Test basic simulation functionality using modular approach."""

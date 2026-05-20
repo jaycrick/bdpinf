@@ -26,16 +26,11 @@ __compile_start = time.perf_counter()
 
 ```{python}
 import numpy as np
-import pandas as pd
 import plotly.graph_objs as go
-from typing import Any, cast
 
 from inf_bp_texts.analysis import FitModelConfig, fit_single_model
 from inf_bp_texts.simulation import (
-    birth_death_lineage_to_display_frame,
-    birth_death_lineage_to_newick,
-    build_birth_death_lineage,
-    simulate_birth_death_process,
+    simulate_birth_death_process
 )
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,
@@ -44,12 +39,7 @@ from inf_bp_texts.visualization.plotting import (
     paper_bgcolor,
     plot_bgcolor,
     ptolqual,
-    lineage_to_figure,
 )
-
-
-def _to_int(value: Any) -> int:
-    return int(value)
 ```
 
 ## Simulate One Dataset
@@ -69,72 +59,11 @@ simulation_df = simulate_birth_death_process(
 )
 surviving_manuscripts = simulation_df.surviving_manuscripts
 ages = surviving_manuscripts["age"].to_numpy(dtype=np.float64)
-lineage = build_birth_death_lineage(simulation_df)
-lineage_display = birth_death_lineage_to_display_frame(lineage)
 
 print(f"Total manuscripts: {len(simulation_df)}")
 print(f"Surviving manuscripts: {len(ages)}")
 print(f"First 10 ages: {ages[:10].tolist()}")
-```
-
-## Display Tree
-
-```{python}
-tree_table = lineage_display[
-    [
-        "dfs_order",
-        "depth",
-        "manuscript_id",
-        "parent_id",
-        "is_spine",
-        "creation_time",
-    ]
-].copy()
-
-print(f"Newick: {birth_death_lineage_to_newick(lineage)}")
-print(tree_table.head(25).to_string(index=False))
-
-tree_coordinates = {
-    _to_int(row.manuscript_id): (_to_int(row.dfs_order), _to_int(row.depth))
-    for row in lineage_display.itertuples(index=False)
-}
-
-edge_x: list[float | None] = []
-edge_y: list[float | None] = []
-for row in lineage_display.itertuples(index=False):
-    if pd.isna(row.parent_id):
-        continue
-    parent_x, parent_y = tree_coordinates[_to_int(row.parent_id)]
-    child_x, child_y = tree_coordinates[_to_int(row.manuscript_id)]
-    edge_x.extend([parent_x, child_x, None])
-    edge_y.extend([parent_y, child_y, None])
-
-node_x = [
-    tree_coordinates[_to_int(row.manuscript_id)][0]
-    for row in lineage_display.itertuples(index=False)
-]
-node_y = [
-    tree_coordinates[_to_int(row.manuscript_id)][1]
-    for row in lineage_display.itertuples(index=False)
-]
-node_text = [f"m{_to_int(node_id)}" for node_id in lineage_display["manuscript_id"]]
-node_colors = [
-    ptolqual[0] if bool(is_spine) else ptolqual[2]
-    for is_spine in lineage_display["is_spine"]
-]
-node_hover = [
-    (
-        f"m{_to_int(row.manuscript_id)}"
-        f"<br>parent: {'root' if pd.isna(row.parent_id) else f'm{_to_int(row.parent_id)}'}"
-        f"<br>dfs order: {_to_int(row.dfs_order)}"
-        f"<br>depth: {_to_int(row.depth)}"
-        f"<br>creation time: {float(cast(float, row.creation_time)):.2f}"
-    )
-    for row in lineage_display.itertuples(index=False)
-]
-
-fig_tree = lineage_to_figure(lineage_display)
-fig_tree.show()
+print(simulation_df.manuscript_records.to_string())
 ```
 
 ## Fit One Simulation
