@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
+import plotly.graph_objs as go
 import torch
 from numpy.typing import NDArray
 
@@ -20,15 +21,18 @@ from inf_bp_texts.models.validation import (
     ValidationConfig,
     normalize_and_validate_inputs,
 )
+from inf_bp_texts.visualization.genealogy import (
+    GenealogyPlotConfig,
+)
+from inf_bp_texts.visualization.genealogy import (
+    genealogy_dfs_order as _genealogy_dfs_order,
+)
+from inf_bp_texts.visualization.genealogy import (
+    plot_genealogy_tree as _plot_genealogy_tree,
+)
 
 NumericInput = float | list[float] | NDArray[np.float64] | torch.Tensor
 RateLabel = Literal["birth", "death"]
-
-
-def _to_nullable_int_series(values: list[int | None] | None) -> pd.Series | None:
-    if values is None:
-        return None
-    return pd.Series(values, dtype="Int64")
 
 
 class BirthDeathProcess:
@@ -512,6 +516,41 @@ class BirthDeathProcess:
         if self._manuscript_records is None:
             return None
         return self._manuscript_records[self._manuscript_records["survived"]].copy()
+
+    def genealogy_dfs_order(self) -> pd.DataFrame:
+        """Return the preorder DFS ordering for the full genealogy tree."""
+        if self._manuscript_records is None:
+            msg = (
+                "genealogy_dfs_order requires manuscript_records with "
+                "manuscript_id and parent_id"
+            )
+            raise ValueError(msg)
+
+        return _genealogy_dfs_order(
+            self._manuscript_records,
+            start_time=self.start_time,
+            simulation_end_time=float(self._latest_epoch_end_time().item()),
+        )
+
+    def plot_genealogy_tree(
+        self,
+        *,
+        config: GenealogyPlotConfig | None = None,
+    ) -> go.Figure:
+        """Return a Plotly figure showing manuscript lifetimes and genealogy."""
+        if self._manuscript_records is None:
+            msg = (
+                "plot_genealogy_tree requires manuscript_records with "
+                "manuscript_id and parent_id"
+            )
+            raise ValueError(msg)
+
+        return _plot_genealogy_tree(
+            self._manuscript_records,
+            start_time=self.start_time,
+            simulation_end_time=float(self._latest_epoch_end_time().item()),
+            config=config,
+        )
 
     def __getitem__(self, key: Any) -> Any:
         """Provide lightweight compatibility with the prior DataFrame/dict outputs."""

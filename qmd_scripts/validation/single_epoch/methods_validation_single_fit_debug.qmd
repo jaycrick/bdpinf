@@ -66,6 +66,20 @@ print(f"First 10 ages: {ages[:10].tolist()}")
 print(simulation_df.manuscript_records.to_string())
 ```
 
+## Genealogy Tree Plot
+
+```{python}
+genealogy_order = simulation_df.genealogy_dfs_order()
+print(
+    genealogy_order[
+        ["dfs_index", "manuscript_id", "parent_id", "survived", "is_spine"]
+    ].to_string(index=False)
+)
+
+genealogy_fig = simulation_df.plot_genealogy_tree()
+genealogy_fig
+```
+
 ## Fit One Simulation
 
 ```{python}
