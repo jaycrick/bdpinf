@@ -37,38 +37,79 @@ RateLabel = Literal["birth", "death"]
 
 
 class BirthDeathProcess:
-    r"""Birth-death process model for manuscript survival and creation.
+    r"""Canonical birth--death process representation for manuscript data.
 
-    This class models manuscript data as a birth-death process where:
-    - Birth rate (λ): Rate of manuscript creation
-    - Death rate (μ): Rate of manuscript loss/destruction
-    - Observed data: Number of surviving manuscripts and their ages
+    This class is the canonical output for the simulators in this package and
+    represents a birth--death process used to model manuscript creation and
+    loss. It stores observation data (creation times or a full manuscript
+    record table), optional sampled spine/non-spine ages, epoch boundaries, and
+    per-epoch rate vectors when available.
 
-    The likelihood function implements the proper birth-death process:
-    1. P_n(T) = probability of n individuals at time T
-    2. f(t) = age density for each manuscript at age t
-    3. Total likelihood = $P_n(T) * \prod f(t_i)$ for all observed ages
+    Key attributes and accessors
+    - `creation_times` (list[float]): times when manuscripts were created.
+    - `epoch_end_times` (torch.Tensor): strictly increasing epoch end times.
+    - `manuscript_ages` (torch.Tensor): ages computed as latest epoch end time
+        minus creation times.
+    - `manuscript_records` (pd.DataFrame | None): full event table when
+        available; may include `death_time`, `age`, `lifespan`, `is_spine`, and
+        `survived`. When present, survivors' `death_time` values may be NaN.
+    - `spine_ages`, `non_spine_ages` (torch.Tensor | None): sampled age
+        vectors produced by the age-sampling simulator.
+    - `death_times` (torch.Tensor | None): vector of death times extracted
+        from `manuscript_records` when present.
+    - `surviving_manuscripts`, `extinct_manuscripts` (pd.DataFrame | None):
+        convenience views into the record table.
 
-    Mathematical formulations are handled by the mathematical_functions module.
+    Compatibility
+    - Provides lightweight compatibility with legacy simulator outputs:
+        - Indexing with `['spine']` and `['non_spine']` returns lists of ages
+            (from sampled tensors or from `manuscript_records`).
+        - Equality supports comparison against legacy dict outputs of the form
+            `{'spine': [...], 'non_spine': [...]}` for transitionary tests.
 
-    Examples:
-        Basic usage with manuscript creation times:
+    Construction
+    - `BirthDeathProcess(...)` accepts `creation_times` and `epoch_end_times`.
+    - `from_age_samples(...)` builds a process from sampled spine and
+        non-spine ages (useful when simulators return only sampled ages).
+    - `from_manuscript_records(...)` builds a process from a full event table
+        (useful when simulators return detailed records including extinct
+        manuscripts).
 
-        >>> from inf_bp_texts.models import BirthDeathProcess
-        >>> model = BirthDeathProcess([100, 200, 300], epoch_end_times=500)
-        >>> ages = model.manuscript_ages
-        >>> print(ages)
-        [400. 300. 200.]
+    Methods
+    -------
+    - `to_newick`: export the full genealogy as a strict Newick-format tree
+        string (requires `manuscript_records` with `manuscript_id` and
+        `parent_id`).
+    - `genealogy_dfs_order`: validate the manuscript record table and return
+        a preorder DFS ordering for the rooted genealogy used by the
+        serializer and plotting helpers.
+    - `plot_genealogy_tree`: return a Plotly `Figure` showing manuscript
+        lifetimes and the genealogy (requires `manuscript_records`).
+    - `log_likelihood` / `negative_log_likelihood`: compute the likelihood
+        given per-epoch `birth_rates` and `death_rates` (stored internally as
+        `torch.Tensor`).
+    - `update_parameters`: update the model parameters after fitting.
+    - `__getitem__`: provide lightweight compatibility with legacy outputs and
+        record-style indexing (supports `'spine'`, `'non_spine'`, and column
+        access when `manuscript_records` is present).
 
-        Fitting parameters using the inference module:
+    Examples
+    --------
+            Construct from sampled ages and inspect results::
 
-        >>> from inf_bp_texts.inference.fitting import fit_birth_death_process
-        >>> import numpy as np
-        >>> ages = np.array([100, 150, 200])
-        >>> result = fit_birth_death_process(ages, observation_time=250)
-        >>> if result['success']:
-        ...     print(f"Birth rates: {result['birth_rates']}")
-        ...     print(f"Death rates: {result['death_rates']}")
+                    >>> proc = BirthDeathProcess.from_age_samples(
+                    ...     spine_ages=[10.0, 5.0], non_spine_ages=[2.0], epoch_end_times=50
+                    ... )
+                    >>> proc.spine_ages
+                    tensor([10.,  5.])
+                    >>> proc['spine']  # legacy indexing
+                    [10.0, 5.0]
+
+            Construct from a manuscript record table and access death times::
+
+                    >>> df = proc.manuscript_records  # may be None if not provided
+                    >>> if df is not None:
+                    ...     print(proc.death_times)
 
     """
 
