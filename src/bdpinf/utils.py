@@ -1,7 +1,11 @@
 """Common utilities for API data collection and processing."""
 
+from collections.abc import Callable
+from numbers import Integral, Real
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import torch
 
 
@@ -70,6 +74,66 @@ def json_safe(value: object) -> object:
     if value is None:
         return None
     return value
+
+
+def format_table_value(value: object) -> object:
+    """Format a scalar for display in interactive tables."""
+    if value is None:
+        return None
+
+    if isinstance(value, (str, bytes)):
+        return value
+
+    try:
+        if value is None or value != value:
+            return value
+    except Exception:
+        pass
+
+    if isinstance(value, (bool, np.bool_)):
+        return value
+
+    if isinstance(value, Integral):
+        integer_value = int(value)
+        if abs(integer_value) >= 1e4:
+            return f"{float(integer_value):.2e}"
+        return integer_value
+
+    if isinstance(value, Real):
+        numeric_value = float(value)
+        if not np.isfinite(numeric_value):
+            return value
+
+        if abs(numeric_value) >= 1e4:
+            return f"{numeric_value:.2e}"
+
+        if numeric_value.is_integer():
+            return int(numeric_value)
+
+        magnitude = abs(numeric_value)
+        if 1e-1 <= magnitude < 1e4:
+            return f"{numeric_value:.2f}"
+        return f"{numeric_value:.2e}"
+
+    return value
+
+
+def format_table_dataframe(
+    dataframe: pd.DataFrame,
+    formatter: Callable[[object], object] = format_table_value,
+) -> pd.DataFrame:
+    """Return a display copy of a dataframe with formatted table values."""
+    return pd.DataFrame(
+        {
+            column_name: pd.Series(
+                [formatter(value) for value in dataframe[column_name].tolist()],
+                index=dataframe.index,
+                dtype=object,
+            )
+            for column_name in dataframe.columns
+        },
+        index=dataframe.index,
+    )
 
 
 def validate_matching_shapes(

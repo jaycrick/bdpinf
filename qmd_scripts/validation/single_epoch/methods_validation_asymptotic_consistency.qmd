@@ -51,7 +51,7 @@ from inf_bp_texts.analysis.asymptotic_consistency import (
     reproduce_replicate,
 )
 from inf_bp_texts.analysis.validation_helpers import safe_mean, safe_var
-from inf_bp_texts.utils import json_safe
+from inf_bp_texts.utils import format_table_dataframe, json_safe
 from inf_bp_texts.visualization.plotting import plot_parameter_consistency
 
 
@@ -254,35 +254,35 @@ print(
 
 ```{python}
 # | label: summary-table
-show_table(summary_df)
+show_table(format_table_dataframe(summary_df))
 ```
 
 ### CI Width Table
 
 ```{python}
 # | label: ci-width-table
-show_table(ci_width_df)
+show_table(format_table_dataframe(ci_width_df))
 ```
 
 ### Target Times Table
 
 ```{python}
 # | label: target-times-table
-show_table(target_times_df)
+show_table(format_table_dataframe(target_times_df))
 ```
 
 ### Spike Selection Table
 
 ```{python}
 # | label: spike-selection-table
-show_table(spike_selection_unique_df)
+show_table(format_table_dataframe(spike_selection_unique_df))
 ```
 
 ### Debug Records Table
 
 ```{python}
 # | label: debug-records-table
-show_table(debug_records_df)
+show_table(format_table_dataframe(debug_records_df))
 ```
 
 ```{python}

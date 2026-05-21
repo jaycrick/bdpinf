@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from itables import show as show_table
+from inf_bp_texts.utils import format_table_dataframe
 
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.inference.fitting import fit_birth_death_processes, ConvergenceConfig
@@ -368,9 +369,7 @@ for r in results:
         )
         continue
 
-    optimization_attempts = cast(
-        list[dict[str, Any]], r.get("optimization", []) or []
-    )
+    optimization_attempts = cast(list[dict[str, Any]], r.get("optimization", []) or [])
     best_attempt: dict[str, Any] | None = None
     best_nll = np.inf
     for att in optimization_attempts:
@@ -414,7 +413,7 @@ summary_df = summary_df.sort_values("final_log_likelihood", ascending=False)
 
 ll_col_index = int(cast(int, summary_df.columns.get_loc("final_log_likelihood")))
 show_table(
-    summary_df,
+    format_table_dataframe(summary_df),
     order=[[ll_col_index, "desc"]],
     paging=True,
     pageLength=25,
