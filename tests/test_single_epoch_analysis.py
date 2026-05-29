@@ -21,6 +21,7 @@ from inf_bp_texts.analysis import (
     extract_rate_arrays,
     summarize_fit_success,
 )
+from inf_bp_texts.models.birth_death_process import BirthDeathProcess
 
 
 def test_extract_alive_ages_sorts_by_spine_flag() -> None:
@@ -31,8 +32,13 @@ def test_extract_alive_ages_sorts_by_spine_flag() -> None:
             "is_spine": [False, True, False],
         },
     )
+    process = BirthDeathProcess(
+        creation_times=[100.0, 50.0],
+        epoch_end_times=200.0,
+        manuscript_records=simulation_df,
+    )
 
-    ages = extract_alive_ages(simulation_df, time_span=200.0)
+    ages = extract_alive_ages(process, time_span=200.0)
     # Alive rows are creation times [50.0, 100.0] after spine-first sorting.
     assert np.allclose(ages, np.array([150.0, 100.0], dtype=np.float64))
 

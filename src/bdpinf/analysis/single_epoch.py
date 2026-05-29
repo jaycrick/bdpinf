@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
@@ -12,6 +12,11 @@ from numpy.typing import NDArray
 from .validation_helpers import boundary_corrected_kde_at_zero
 
 MIN_KDE_SAMPLES = 2
+
+
+class _HasManuscriptRecords(Protocol):
+    @property
+    def manuscript_records(self) -> pd.DataFrame | None: ...
 
 
 @dataclass(frozen=True)
@@ -40,12 +45,17 @@ class BoxPlotStyle:
 
 
 def extract_alive_ages(
-    simulation_df: pd.DataFrame,
+    simulation_df: _HasManuscriptRecords,
     time_span: float,
 ) -> NDArray[np.float64]:
     """Return manuscript ages for extant records sorted by spine flag."""
-    alive_mask = simulation_df["death_time"].isna()
-    alive = simulation_df.loc[alive_mask].sort_values("is_spine", ascending=False)
+    records = simulation_df.manuscript_records
+    if records is None:
+        msg = "extract_alive_ages requires manuscript_records"
+        raise ValueError(msg)
+
+    alive_mask = records["death_time"].isna()
+    alive = records.loc[alive_mask].sort_values("is_spine", ascending=False)
     ages = time_span - alive["creation_time"].to_numpy(dtype=np.float64)
     return np.asarray(ages, dtype=np.float64)
 
