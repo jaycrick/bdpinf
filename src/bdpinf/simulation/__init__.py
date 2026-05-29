@@ -8,10 +8,24 @@ from .simulator import (
     simulate_bdp_ages_from_distributions,
     simulate_birth_death_process,
 )
+from .splitting import (
+    FlemingViotConfig,
+    SplittingConfig,
+    plot_conditioned_trajectories,
+    plot_empirical_population_mean,
+    plot_level_survival_probabilities,
+    simulate_subcritical_survival_fleming_viot,
+    simulate_subcritical_survival_splitting,
+)
 
 __all__ = [
-    "BirthDeathLineage",
-    "build_birth_death_lineage",
+    "FlemingViotConfig",
+    "SplittingConfig",
+    "plot_conditioned_trajectories",
+    "plot_empirical_population_mean",
+    "plot_level_survival_probabilities",
     "simulate_bdp_ages_from_distributions",
     "simulate_birth_death_process",
+    "simulate_subcritical_survival_fleming_viot",
+    "simulate_subcritical_survival_splitting",
 ]
