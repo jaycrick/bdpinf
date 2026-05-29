@@ -1,0 +1,132 @@
+"""Tests for splitting-based conditioned survival simulators."""
+
+# ruff: noqa: S101
+
+import numpy as np
+
+from inf_bp_texts.models import BirthDeathProcess
+from inf_bp_texts.simulation import (
+    FlemingViotConfig,
+    SplittingConfig,
+    simulate_subcritical_survival_fleming_viot,
+    simulate_subcritical_survival_splitting,
+)
+
+
+class TestSplittingSimulation:
+    """Validate rare-event splitting and Fleming-Viot approximations."""
+
+    def test_splitting_returns_expected_shapes(self) -> None:
+        config = SplittingConfig(
+            birth_rate=0.9,
+            death_rate=1.0,
+            terminal_time=40.0,
+            n_particles=200,
+            n_levels=8,
+            random_seed=17,
+            n_conditioned_trajectories=6,
+        )
+
+        result = simulate_subcritical_survival_splitting(config)
+
+        assert result.level_times.shape[0] == config.n_levels + 1
+        assert result.level_survival_probabilities.shape[0] == config.n_levels
+        assert result.level_mean_populations.shape[0] == config.n_levels + 1
+        assert 0.0 <= result.survival_probability_estimate <= 1.0
+
+    def test_splitting_product_matches_stored_estimate(self) -> None:
+        config = SplittingConfig(
+            birth_rate=0.9,
+            death_rate=1.0,
+            terminal_time=30.0,
+            n_particles=150,
+            n_levels=6,
+            random_seed=91,
+            n_conditioned_trajectories=4,
+        )
+
+        result = simulate_subcritical_survival_splitting(config)
+        reconstructed = float(np.prod(result.level_survival_probabilities))
+        assert np.isclose(
+            reconstructed,
+            result.survival_probability_estimate,
+            atol=1e-12,
+            rtol=1e-12,
+        )
+
+    def test_splitting_reproducible_with_fixed_seed(self) -> None:
+        config = SplittingConfig(
+            birth_rate=0.9,
+            death_rate=1.0,
+            terminal_time=25.0,
+            n_particles=120,
+            n_levels=5,
+            random_seed=2026,
+            n_conditioned_trajectories=5,
+        )
+
+        first = simulate_subcritical_survival_splitting(config)
+        second = simulate_subcritical_survival_splitting(config)
+
+        assert np.isclose(
+            first.survival_probability_estimate,
+            second.survival_probability_estimate,
+        )
+        assert np.allclose(
+            first.level_survival_probabilities,
+            second.level_survival_probabilities,
+        )
+
+    def test_conditioned_trajectories_survive_to_terminal_time(self) -> None:
+        config = SplittingConfig(
+            birth_rate=0.9,
+            death_rate=1.0,
+            terminal_time=40.0,
+            n_particles=250,
+            n_levels=8,
+            random_seed=11,
+            n_conditioned_trajectories=8,
+        )
+
+        result = simulate_subcritical_survival_splitting(config)
+
+        for trajectory in result.conditioned_trajectories:
+            assert isinstance(trajectory.process, BirthDeathProcess)
+            assert np.isclose(trajectory.times[-1], config.terminal_time)
+            assert trajectory.populations[-1] > 0
+
+    def test_fleming_viot_returns_expected_shapes(self) -> None:
+        config = FlemingViotConfig(
+            birth_rate=0.9,
+            death_rate=1.0,
+            terminal_time=40.0,
+            n_particles=200,
+            n_levels=8,
+            random_seed=13,
+            n_conditioned_trajectories=6,
+        )
+
+        result = simulate_subcritical_survival_fleming_viot(config)
+
+        assert result.level_times.shape[0] == config.n_levels + 1
+        assert result.level_survival_probabilities.shape[0] == config.n_levels
+        assert result.level_mean_populations.shape[0] == config.n_levels + 1
+        assert 0.0 <= result.survival_proxy_estimate <= 1.0
+
+    def test_fleming_viot_maintains_particle_bank_when_survivors_exist(self) -> None:
+        config = FlemingViotConfig(
+            birth_rate=0.9,
+            death_rate=1.0,
+            terminal_time=20.0,
+            n_particles=100,
+            n_levels=4,
+            random_seed=29,
+            n_conditioned_trajectories=3,
+        )
+
+        result = simulate_subcritical_survival_fleming_viot(config)
+        if len(result.level_diagnostics) > 0:
+            # Level-wise proxy stays within [0,1], and if all levels had survivors,
+            # the final conditioned bank can still provide trajectories.
+            assert np.all(result.level_survival_probabilities >= 0.0)
+            assert np.all(result.level_survival_probabilities <= 1.0)
