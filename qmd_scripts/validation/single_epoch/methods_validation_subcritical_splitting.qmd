@@ -1,0 +1,199 @@
+---
+title: "Single-Epoch Validation: Subcritical Splitting"
+subtitle: "Rare-event survival conditioning for continuous-time birth-death branching"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# ruff: noqa: E402
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+
+__compile_start = time.perf_counter()
+```
+
+## Why splitting is needed
+
+For a subcritical branching process with $\lambda < \mu$, extinction is typical and
+$P(\tau > T)$ becomes very small when $T$ is large. Naive direct simulation wastes
+most trajectories because they hit the absorbing state $Z_t = 0$ long before $T$.
+
+Multilevel splitting introduces times
+$0=t_0<t_1<\dots<t_K=T$, estimates each conditional probability
+$P(\tau>t_k\mid\tau>t_{k-1})$, and multiplies them:
+
+$$
+\widehat{P}(\tau>T)=\prod_{k=1}^{K}\widehat{p}_k,
+\qquad
+\widehat{p}_k=\frac{\#\{\text{survivors at }t_k\}}{N}.
+$$
+
+Resampling survivors at each level concentrates computation on rare surviving lineages.
+
+## Setup
+
+```{python}
+import numpy as np
+import pandas as pd
+
+from inf_bp_texts.simulation import (
+    FlemingViotConfig,
+    SplittingConfig,
+    plot_conditioned_trajectories,
+    plot_empirical_population_mean,
+    plot_level_survival_probabilities,
+    simulate_subcritical_survival_fleming_viot,
+    simulate_subcritical_survival_splitting,
+)
+```
+
+## Example parameters
+
+```{python}
+birth_rate = 0.9
+
+death_rate = 1.0
+terminal_time = 100.0
+n_particles = 1000
+n_levels = 20
+random_seed = 42
+```
+
+## Run multilevel splitting
+
+```{python}
+splitting_config = SplittingConfig(
+    birth_rate=birth_rate,
+    death_rate=death_rate,
+    terminal_time=terminal_time,
+    n_particles=n_particles,
+    n_levels=n_levels,
+    random_seed=random_seed,
+    n_conditioned_trajectories=12,
+)
+
+splitting_result = simulate_subcritical_survival_splitting(splitting_config)
+
+print(
+    f"Estimated survival probability P(tau > T): {splitting_result.survival_probability_estimate:.6e}"
+)
+print(f"Final survivor bank size: {splitting_result.final_survivor_count}")
+print(
+    "Product check: ",
+    f"{np.prod(splitting_result.level_survival_probabilities):.6e}",
+)
+```
+
+## Conditioned trajectories
+
+```{python}
+fig_conditioned = plot_conditioned_trajectories(
+    splitting_result.conditioned_trajectories,
+    max_trajectories=10,
+    title="Conditioned Population Trajectories (Splitting)",
+)
+fig_conditioned
+```
+
+## Empirical mean population across levels
+
+```{python}
+fig_mean = plot_empirical_population_mean(
+    level_times=splitting_result.level_times,
+    mean_populations=splitting_result.level_mean_populations,
+    title="Empirical Mean Population by Level (Splitting)",
+)
+fig_mean
+```
+
+## Estimated survival probabilities across levels
+
+```{python}
+fig_level_probs = plot_level_survival_probabilities(
+    level_times=splitting_result.level_times,
+    level_survival_probabilities=splitting_result.level_survival_probabilities,
+    title="Level-wise Conditional Survival Estimates",
+)
+fig_level_probs
+```
+
+## Optional comparison: Fleming-Viot approximation
+
+```{python}
+fv_config = FlemingViotConfig(
+    birth_rate=birth_rate,
+    death_rate=death_rate,
+    terminal_time=terminal_time,
+    n_particles=n_particles,
+    n_levels=n_levels,
+    random_seed=random_seed,
+    n_conditioned_trajectories=8,
+)
+
+fv_result = simulate_subcritical_survival_fleming_viot(fv_config)
+
+comparison_df = pd.DataFrame(
+    {
+        "method": ["splitting", "fleming_viot_levelwise"],
+        "estimate": [
+            splitting_result.survival_probability_estimate,
+            fv_result.survival_proxy_estimate,
+        ],
+        "final_survivor_bank": [
+            splitting_result.final_survivor_count,
+            fv_result.final_survivor_count,
+        ],
+    },
+)
+comparison_df
+```
+
+```{python}
+fig_compare_probs = plot_level_survival_probabilities(
+    level_times=fv_result.level_times,
+    level_survival_probabilities=fv_result.level_survival_probabilities,
+    title="Level-wise Survival Proxy (Fleming-Viot)",
+)
+fig_compare_probs
+```
+
+## Notes on numerical stability and variance
+
+- Too few levels can produce high variance because some $\widehat{p}_k$ are very small.
+- Too many levels can increase resampling noise and computational overhead.
+- A practical strategy is to choose levels so empirical survivor fractions stay away
+  from both 0 and 1, then check sensitivity to level grids and random seeds.
+
+```{python}
+# | cache: false
+# | echo: false
+# | include: false
+import json
+import os
+from pathlib import Path
+import time
+
+doc_name = "methods_validation_subcritical_splitting.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+if compile_log.exists():
+    log_data = json.loads(compile_log.read_text())
+else:
+    log_data = {}
+
+log_data[doc_name] = {
+    "duration_seconds": duration_seconds,
+    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+}
+compile_log.write_text(json.dumps(log_data, indent=2))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```
