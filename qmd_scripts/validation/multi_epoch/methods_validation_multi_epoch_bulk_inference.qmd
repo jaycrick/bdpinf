@@ -6,6 +6,7 @@ date: last-modified
 ---
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false

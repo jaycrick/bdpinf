@@ -1,0 +1,352 @@
+---
+title: "Single-Epoch Validation: Asymptotic Consistency"
+subtitle: "Parameter Estimates vs Observation Time"
+author: "JC"
+date: last-modified
+---
+
+**TODOs:**
+
+- [ ] Create a way of investigating why there is a massive spike in some of the fits.
+Output all the information necessary to reproduce the spike in a single fit,
+and then investigate that fit in isolation.
+
+```{python}
+# ruff: noqa: E402
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+
+__compile_start = time.perf_counter()
+```
+
+## Setup
+
+```{python}
+# | label: setup
+import json
+import os
+from pathlib import Path
+import time
+from typing import Any, TypedDict, cast
+
+import numpy as np
+import pandas as pd
+from joblib import Parallel, delayed
+from itables import show as show_table
+
+from inf_bp_texts.analysis.spike_detection import (
+    compute_ci_width_table,
+    select_extreme_replicates,
+    select_max_ci_times,
+)
+from inf_bp_texts.inference.fitting import ConvergenceConfig
+
+from inf_bp_texts.analysis.asymptotic_consistency import (
+    FittingRunConfig,
+    run_single_replicate,
+    reproduce_replicate,
+)
+from inf_bp_texts.analysis.validation_helpers import safe_mean, safe_var
+from inf_bp_texts.utils import format_table_dataframe, json_safe
+from inf_bp_texts.visualization.plotting import plot_parameter_consistency
+
+
+class RegimeConfig(TypedDict):
+    name: str
+    sampling: str
+    birth_rate: float
+    death_rate: float
+```
+
+## Experiment Design
+
+```{python}
+# | label: experiment-design
+seed = 42
+num_simulations = 1_000
+time_grid = np.logspace(-0.5, 0.5, num=15)
+# Note that the mean number of survivors at time T in a birth-death process
+# with birth rate λ and death rate μ is approximately exp((λ - μ) * T) for large T,
+# so the chosen time grid should yield a range of survivor counts across regimes.
+# λ - μ and T = 10^3.4 ≈ 25000.
+
+regime_configs: list[RegimeConfig] = [
+    {
+        "name": "Supercritical",
+        "sampling": "process",
+        "birth_rate": 5.0,
+        "death_rate": 2.0,
+    },
+    {
+        "name": "Almost critical",
+        "sampling": "process",
+        "birth_rate": 5.0,
+        "death_rate": 4.0,
+    },
+    {
+        "name": "Critical",
+        "sampling": "distribution",
+        "birth_rate": 5.0,
+        "death_rate": 5.0,
+    },
+    {
+        "name": "Subcritical",
+        "sampling": "distribution",
+        "birth_rate": 5.0,
+        "death_rate": 6.0,
+    },
+]
+regime_lookup: dict[str, RegimeConfig] = {
+    regime_config["name"]: regime_config for regime_config in regime_configs
+}
+bootstrap_samples = 1000
+fit_optimizers = ["lbfgs", "adam"]
+fit_optimizer_kwargs: dict[str, dict[str, Any]] = {
+    "lbfgs": {
+        "lr": 1.0,
+        "line_search_fn": "strong_wolfe",
+        "min_iterations": 10,
+    },
+    "adam": {
+        "lr": 1e-3,
+    },
+}
+fit_convergence_config = ConvergenceConfig(
+    gradient_threshold=1e-6,
+    absolute_tolerance=1e-10,
+    patience=10,
+)
+fit_run_config = FittingRunConfig(
+    seed=seed,
+    fit_optimizers=fit_optimizers,
+    fit_optimizer_kwargs=fit_optimizer_kwargs,
+    convergence_config=fit_convergence_config,
+)
+```
+
+## Run Simulations And Fits
+
+```{python}
+# | label: run-simulations-and-fits
+replicate_rows: list[dict[str, object]] = []
+
+for regime_index, regime_config in enumerate(regime_configs):
+    for time_index, observation_time in enumerate(time_grid):
+        replicate_rows.extend(
+            Parallel(n_jobs=-1)(
+                delayed(run_single_replicate)(
+                    regime_config=regime_config,
+                    observation_time=float(observation_time),
+                    simulation_index=simulation_index,
+                    fit_config=fit_run_config,
+                )
+                for simulation_index in range(num_simulations)
+            )
+        )
+
+results_df = pd.DataFrame(replicate_rows)
+summary_rows: list[dict[str, object]] = []
+
+for (regime, sampling, observation_time), group in results_df.groupby(
+    ["regime", "sampling", "T"],
+    sort=False,
+):
+    regime = str(cast(str, regime))
+    observation_time = float(cast(float, observation_time))
+    successful = group[group["success"]]
+    summary_rows.append(
+        {
+            "regime": regime,
+            "sampling": sampling,
+            "T": float(observation_time),
+            "n_replicates": int(len(group)),
+            "success_rate": float(group["success"].mean()),
+            "population_mean": safe_mean(group["population_size"]),
+            "birth_mean": safe_mean(successful["birth_estimate"]),
+            "birth_var": safe_var(successful["birth_estimate"]),
+            "death_mean": safe_mean(successful["death_estimate"]),
+            "death_var": safe_var(successful["death_estimate"]),
+            "true_birth_rate": float(regime_lookup[regime]["birth_rate"]),
+            "true_death_rate": float(regime_lookup[regime]["death_rate"]),
+        },
+    )
+
+summary_df = (
+    pd.DataFrame(summary_rows).sort_values(["regime", "T"]).reset_index(drop=True)
+)
+
+ci_width_df = compute_ci_width_table(
+    results_df=results_df,
+    regime_configs=regime_configs,
+    bootstrap_samples=bootstrap_samples,
+    seed=seed,
+)
+target_times_df = select_max_ci_times(ci_width_df)
+spike_selection_df = select_extreme_replicates(
+    results_df=results_df,
+    target_times_df=target_times_df,
+    num_simulations=num_simulations,
+    include_lowest=True,
+)
+spike_selection_unique_df = spike_selection_df.drop_duplicates(
+    subset=["regime", "sampling", "T", "simulation_index"],
+).reset_index(drop=True)
+
+debug_output_dir = (
+    Path("_output") / "validation_debug" / "methods_validation_asymptotic_consistency"
+)
+debug_output_dir.mkdir(parents=True, exist_ok=True)
+
+
+debug_records = []
+for _, row in spike_selection_unique_df.iterrows():
+    record = reproduce_replicate(
+        row,
+        regime_lookup,
+        fit_config=fit_run_config,
+    )
+    debug_records.append(record)
+    debug_path = debug_output_dir / (
+        f"{row['regime'].replace(' ', '_')}_{row['sampling']}_T{float(row['T']):.6f}"
+        f"_sim{int(row['simulation_index'])}.json"
+    )
+    fit_result = record["fit_result"]
+    debug_payload = {
+        key: json_safe(value) for key, value in record.items() if key != "fit_result"
+    }
+    debug_payload["fit_result"] = fit_result
+    debug_path.write_text(json.dumps(debug_payload, indent=2, default=json_safe))
+
+debug_records_df = pd.DataFrame(
+    [
+        {
+            key: value
+            for key, value in record.items()
+            if key not in {"ages", "fit_result"}
+        }
+        for record in debug_records
+    ],
+)
+
+print(
+    summary_df[
+        [
+            "regime",
+            "sampling",
+            "T",
+            "n_replicates",
+            "success_rate",
+            "population_mean",
+            "birth_mean",
+            "birth_var",
+            "death_mean",
+            "death_var",
+        ]
+    ].to_string(index=False, float_format="%.6f")
+)
+```
+
+### Summary Table
+
+```{python}
+# | label: summary-table
+show_table(format_table_dataframe(summary_df))
+```
+
+### CI Width Table
+
+```{python}
+# | label: ci-width-table
+show_table(format_table_dataframe(ci_width_df))
+```
+
+### Target Times Table
+
+```{python}
+# | label: target-times-table
+show_table(format_table_dataframe(target_times_df))
+```
+
+### Spike Selection Table
+
+```{python}
+# | label: spike-selection-table
+show_table(format_table_dataframe(spike_selection_unique_df))
+```
+
+### Debug Records Table
+
+```{python}
+# | label: debug-records-table
+show_table(format_table_dataframe(debug_records_df))
+```
+
+```{python}
+# | label: subcritical-min-population
+subcritical_min_population = results_df.loc[
+    results_df["regime"] == "Subcritical",
+    "population_size",
+].min()
+
+print(
+    "Minimum observed population size in the subcritical regime with ensure_non_extinct=True: "
+    f"{int(subcritical_min_population)}"
+)
+```
+
+## Consistency Plots
+
+```{python}
+# plotting moved to src/inf_bp_texts/visualization/plotting.py; see plot_parameter_consistency
+
+fig_birth = plot_parameter_consistency(
+    summary_df=summary_df,
+    results_df=results_df,
+    regime_configs=regime_configs,
+    bootstrap_samples=bootstrap_samples,
+    seed=seed,
+    parameter_name="birth",
+    true_rate_key="birth_rate",
+    title="Birth-rate consistency across observation time",
+)
+fig_birth.show()
+fig_death = plot_parameter_consistency(
+    summary_df=summary_df,
+    results_df=results_df,
+    regime_configs=regime_configs,
+    bootstrap_samples=bootstrap_samples,
+    seed=seed,
+    parameter_name="death",
+    true_rate_key="death_rate",
+    title="Death-rate consistency across observation time",
+)
+fig_death.show()
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+doc_name = "methods_validation_asymptotic_consistency.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

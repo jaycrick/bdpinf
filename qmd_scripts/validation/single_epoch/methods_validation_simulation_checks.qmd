@@ -6,12 +6,14 @@ date: last-modified
 ---
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false
 # | include: false
 
 import time
+
 __compile_start = time.perf_counter()
 ```
 
@@ -20,11 +22,6 @@ __compile_start = time.perf_counter()
 This notebook validates simulation outputs for single-epoch birth-death age sampling,
 including population counts and age distributions against theoretical curves.
 
-**TODOs:**
-
-- [ ] Make the population distribution plot smaller by making the x-axis go to 2400, and adjusting bin width to 100.
-- [ ] Do a Anderson-Darling test for both spine and non-spine age samples against theoretical distributions or each other.
-
 ## Setup
 
 ```{python}
@@ -32,7 +29,8 @@ import numpy as np
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import torch
-import time
+from typing import Any, Callable
+from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
 from inf_bp_texts.models.mathematical_functions import (
     calculate_extinction_pr,
@@ -57,15 +55,17 @@ from joblib import Parallel, delayed
 ## Simulate Age Vectors
 
 ```{python}
-num_sims = 5000
+num_sims = 5_000
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500.0
 seed = 42
-population_bin_width = 200
+population_bin_width = 100
 
 
-def sample_age_vector_from_distribution(sim_idx, br, dr, span, base_seed):
+def sample_age_vector_from_distribution(
+    sim_idx: int, br: float, dr: float, span: float, base_seed: int
+) -> np.ndarray:
     rng = np.random.default_rng(base_seed + sim_idx)
     sampled = simulate_bdp_ages_from_distributions(
         birth_rate=torch.tensor(br, dtype=torch.float64),
@@ -73,10 +73,15 @@ def sample_age_vector_from_distribution(sim_idx, br, dr, span, base_seed):
         max_time=torch.tensor(span, dtype=torch.float64),
         rng=rng,
     )
-    return np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
+    return np.asarray(
+        sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
+        dtype=np.float64,
+    )
 
 
-def sample_age_vector_full_process(sim_idx, br, dr, span, base_seed):
+def sample_age_vector_full_process(
+    sim_idx: int, br: float, dr: float, span: float, base_seed: int
+) -> np.ndarray:
     run_seed = base_seed + sim_idx
     simulated_df = simulate_birth_death_process(
         birth_rates=float(br),
@@ -84,7 +89,7 @@ def sample_age_vector_full_process(sim_idx, br, dr, span, base_seed):
         times=float(span),
         random_seed=run_seed,
     )
-    survivors = simulated_df[simulated_df["survived"]]
+    survivors = simulated_df.surviving_manuscripts
     if survivors.empty:
         return np.array([], dtype=np.float64)
 
@@ -253,7 +258,7 @@ fig_population.update_layout(
         yanchor="top",
     ),
 )
-fig_population.update_xaxes(dtick=population_bin_width)
+fig_population.update_xaxes(dtick=population_bin_width, range=[0, 2000])
 fig_population.show()
 saved_population = save_figure(
     fig_population,
@@ -268,12 +273,12 @@ print(f"Saved population figure: {saved_population}")
 
 ```{python}
 def theoretical_age_density(
-    log_lik_fn,
+    log_lik_fn: Callable[[torch.Tensor], torch.Tensor],
     support_upper: float,
     n_grid: int = 300,
     include_endpoint: bool = True,
     proportion_not_at_upper: float | None = None,
-):
+) -> tuple[np.ndarray, np.ndarray]:
     x_grid = np.linspace(0.0, support_upper, n_grid, endpoint=include_endpoint)
     y_vals = []
     for x_val in x_grid:
@@ -571,6 +576,99 @@ print(f"Saved age-density figure: {saved_age_densities}")
 ```
 
 The density of the spine age distribution does not include the point mass at the maximum time span.
+
+## Statistical Goodness-of-Fit Tests
+
+```{python}
+# Anderson-Darling test comparing direct vs full process methods
+
+ad_method = PermutationMethod(
+    n_resamples=1_111, batch=101, rng=np.random.default_rng(33943)
+)
+
+# Spine age samples
+spine_ad_result = anderson_ksamp(
+    [spine_age_samples_direct, spine_age_samples_process],
+    variant="midrank",
+    method=ad_method,
+)
+
+# Non-spine age samples
+non_spine_ad_result: Any = None
+if (non_spine_age_samples_direct.size > 0) and (non_spine_age_samples_process.size > 0):
+    non_spine_ad_result = anderson_ksamp(
+        [non_spine_age_samples_direct, non_spine_age_samples_process],
+        variant="midrank",
+        method=ad_method,
+    )
+else:
+    non_spine_ad_result = None
+
+# Population distributions
+pop_ad_result = anderson_ksamp(
+    [population_sizes_direct, population_sizes_process],
+    variant="midrank",
+    method=ad_method,
+)
+
+# Kolmogorov-Smirnov test comparing methods for age distributions
+spine_ks_statistic, spine_ks_pvalue = ks_2samp(
+    spine_age_samples_direct, spine_age_samples_process
+)
+
+if (non_spine_age_samples_direct.size > 0) and (non_spine_age_samples_process.size > 0):
+    non_spine_ks_statistic, non_spine_ks_pvalue = ks_2samp(
+        non_spine_age_samples_direct, non_spine_age_samples_process
+    )
+else:
+    non_spine_ks_statistic = None
+    non_spine_ks_pvalue = None
+
+pop_ks_statistic, pop_ks_pvalue = ks_2samp(
+    population_sizes_direct, population_sizes_process
+)
+
+print("=" * 70)
+print("ANDERSON-DARLING TESTS (Direct vs Full Process)")
+print("=" * 70)
+print("\nSpine Ages:")
+print(f"  Anderson-Darling statistic: {spine_ad_result.statistic:.6f}")
+print(f"  p-value: {spine_ad_result.pvalue:.6f}")
+print(f"  Samples (direct): {len(spine_age_samples_direct)}")
+print(f"  Samples (process): {len(spine_age_samples_process)}")
+
+if non_spine_ad_result is not None:
+    print("\nNon-Spine Ages:")
+    print(f"  Anderson-Darling statistic: {non_spine_ad_result.statistic:.6f}")
+    print(f"  p-value: {non_spine_ad_result.pvalue:.6f}")
+    print(f"  Samples (direct): {len(non_spine_age_samples_direct)}")
+    print(f"  Samples (process): {len(non_spine_age_samples_process)}")
+
+print("\nPopulation Distributions:")
+print(f"  Anderson-Darling statistic: {pop_ad_result.statistic:.6f}")
+print(f"  p-value: {pop_ad_result.pvalue:.6f}")
+print(f"  Samples: {len(population_sizes_direct)} each")
+
+print("\n" + "=" * 70)
+print("KOLMOGOROV-SMIRNOV TESTS (Direct vs Full Process)")
+print("=" * 70)
+print("\nSpine Ages:")
+print(f"  KS statistic: {spine_ks_statistic:.6f}")
+print(f"  p-value: {spine_ks_pvalue:.6f}")
+
+if non_spine_ks_statistic is not None:
+    print("\nNon-Spine Ages:")
+    print(f"  KS statistic: {non_spine_ks_statistic:.6f}")
+    print(f"  p-value: {non_spine_ks_pvalue:.6f}")
+
+print("\nPopulation Distributions:")
+print(f"  KS statistic: {pop_ks_statistic:.6f}")
+print(f"  p-value: {pop_ks_pvalue:.6f}")
+```
+
+The Anderson-Darling test evaluates whether two samples come from the same distribution.
+Higher p-values (typically > 0.05) suggest the samples are from the same distribution,
+while lower p-values suggest significant differences between the direct sampling and full process methods.
 
 ```{python}
 # | label: compile-time-report

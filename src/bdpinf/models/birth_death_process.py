@@ -5,15 +5,31 @@ initialization, and core functionality. Complex mathematical computations and
 fitting procedures are handled by separate modules.
 """
 
+from collections.abc import Hashable
 from typing import Any, Literal
 
 import numpy as np
+import pandas as pd
+import plotly.graph_objs as go
 import torch
 from numpy.typing import NDArray
 
+from inf_bp_texts.inference.likelihood import log_likelihood as _log_likelihood
+from inf_bp_texts.inference.likelihood import (
+    negative_log_likelihood as _negative_log_likelihood,
+)
 from inf_bp_texts.models.validation import (
     ValidationConfig,
     normalize_and_validate_inputs,
+)
+from inf_bp_texts.visualization.genealogy import (
+    GenealogyPlotConfig,
+)
+from inf_bp_texts.visualization.genealogy import (
+    genealogy_dfs_order as _genealogy_dfs_order,
+)
+from inf_bp_texts.visualization.genealogy import (
+    plot_genealogy_tree as _plot_genealogy_tree,
 )
 
 NumericInput = float | list[float] | NDArray[np.float64] | torch.Tensor
@@ -21,40 +37,83 @@ RateLabel = Literal["birth", "death"]
 
 
 class BirthDeathProcess:
-    r"""Birth-death process model for manuscript survival and creation.
+    r"""Canonical birth--death process representation for manuscript data.
 
-    This class models manuscript data as a birth-death process where:
-    - Birth rate (λ): Rate of manuscript creation
-    - Death rate (μ): Rate of manuscript loss/destruction
-    - Observed data: Number of surviving manuscripts and their ages
+    This class is the canonical output for the simulators in this package and
+    represents a birth--death process used to model manuscript creation and
+    loss. It stores observation data (creation times or a full manuscript
+    record table), optional sampled spine/non-spine ages, epoch boundaries, and
+    per-epoch rate vectors when available.
 
-    The likelihood function implements the proper birth-death process:
-    1. P_n(T) = probability of n individuals at time T
-    2. f(t) = age density for each manuscript at age t
-    3. Total likelihood = $P_n(T) * \prod f(t_i)$ for all observed ages
+    Key attributes and accessors
+    - `creation_times` (list[float]): times when manuscripts were created.
+    - `epoch_end_times` (torch.Tensor): strictly increasing epoch end times.
+    - `manuscript_ages` (torch.Tensor): ages computed as latest epoch end time
+        minus creation times.
+    - `manuscript_records` (pd.DataFrame | None): full event table when
+        available; may include `death_time`, `age`, `lifespan`, `is_spine`, and
+        `survived`. When present, survivors' `death_time` values may be NaN.
+    - `spine_ages`, `non_spine_ages` (torch.Tensor | None): sampled age
+        vectors produced by the age-sampling simulator.
+    - `death_times` (torch.Tensor | None): vector of death times extracted
+        from `manuscript_records` when present.
+    - `surviving_manuscripts`, `extinct_manuscripts` (pd.DataFrame | None):
+        convenience views into the record table.
 
-    Mathematical formulations are handled by the mathematical_functions module.
+    Compatibility
+    - Provides lightweight compatibility with legacy simulator outputs:
+        - Indexing with `['spine']` and `['non_spine']` returns lists of ages
+            (from sampled tensors or from `manuscript_records`).
+        - Equality supports comparison against legacy dict outputs of the form
+            `{'spine': [...], 'non_spine': [...]}` for transitionary tests.
 
-    Examples:
-        Basic usage with manuscript creation times:
+    Construction
+    - `BirthDeathProcess(...)` accepts `creation_times` and `epoch_end_times`.
+    - `from_age_samples(...)` builds a process from sampled spine and
+        non-spine ages (useful when simulators return only sampled ages).
+    - `from_manuscript_records(...)` builds a process from a full event table
+        (useful when simulators return detailed records including extinct
+        manuscripts).
 
-        >>> from inf_bp_texts.models import BirthDeathProcess
-        >>> model = BirthDeathProcess([100, 200, 300], epoch_end_times=500)
-        >>> ages = model.manuscript_ages
-        >>> print(ages)
-        [400. 300. 200.]
+    Methods
+    -------
+    - `to_newick`: export the full genealogy as a strict Newick-format tree
+        string (requires `manuscript_records` with `manuscript_id` and
+        `parent_id`).
+    - `genealogy_dfs_order`: validate the manuscript record table and return
+        a preorder DFS ordering for the rooted genealogy used by the
+        serializer and plotting helpers.
+    - `plot_genealogy_tree`: return a Plotly `Figure` showing manuscript
+        lifetimes and the genealogy (requires `manuscript_records`).
+    - `log_likelihood` / `negative_log_likelihood`: compute the likelihood
+        given per-epoch `birth_rates` and `death_rates` (stored internally as
+        `torch.Tensor`).
+    - `update_parameters`: update the model parameters after fitting.
+    - `__getitem__`: provide lightweight compatibility with legacy outputs and
+        record-style indexing (supports `'spine'`, `'non_spine'`, and column
+        access when `manuscript_records` is present).
 
-        Fitting parameters using the inference module:
+    Examples
+    --------
+            Construct from sampled ages and inspect results::
 
-        >>> from inf_bp_texts.inference.fitting import fit_birth_death_process
-        >>> import numpy as np
-        >>> ages = np.array([100, 150, 200])
-        >>> result = fit_birth_death_process(ages, observation_time=250)
-        >>> if result['success']:
-        ...     print(f"Birth rates: {result['birth_rates']}")
-        ...     print(f"Death rates: {result['death_rates']}")
+                    >>> proc = BirthDeathProcess.from_age_samples(
+                    ...     spine_ages=[10.0, 5.0], non_spine_ages=[2.0], epoch_end_times=50
+                    ... )
+                    >>> proc.spine_ages
+                    tensor([10.,  5.])
+                    >>> proc['spine']  # legacy indexing
+                    [10.0, 5.0]
+
+            Construct from a manuscript record table and access death times::
+
+                    >>> df = proc.manuscript_records  # may be None if not provided
+                    >>> if df is not None:
+                    ...     print(proc.death_times)
 
     """
+
+    _NEWICK_LENGTH_EPSILON = 1e-12
 
     def __init__(
         self,
@@ -65,6 +124,9 @@ class BirthDeathProcess:
         initial_population: int = 1,
         birth_rates: NumericInput | None = None,
         death_rates: NumericInput | None = None,
+        manuscript_records: pd.DataFrame | None = None,
+        spine_ages: NumericInput | None = None,
+        non_spine_ages: NumericInput | None = None,
     ) -> None:
         """Initialize birth-death process with observation data.
 
@@ -103,12 +165,97 @@ class BirthDeathProcess:
 
         self._validate_creation_times()
         self._manuscript_ages: torch.Tensor = self._compute_manuscript_ages()
+        self._manuscript_records: pd.DataFrame | None = (
+            self._normalize_manuscript_records(
+                manuscript_records,
+            )
+        )
+        self._spine_ages: torch.Tensor | None = (
+            self._normalize_optional_age_vector(spine_ages)
+            if spine_ages is not None
+            else None
+        )
+        self._non_spine_ages: torch.Tensor | None = (
+            self._normalize_optional_age_vector(non_spine_ages)
+            if non_spine_ages is not None
+            else None
+        )
 
         # Set fitted status based on whether parameters were provided
         self.fitted: bool = (
             self._birth_rates is not None and self._death_rates is not None
         )
         self.fit_results: dict[str, Any] | None = None
+
+    @classmethod
+    def from_manuscript_records(
+        cls,
+        manuscripts: pd.DataFrame,
+        *,
+        epoch_end_times: NumericInput,
+        start_time: float = 0.0,
+        initial_population: int = 1,
+        birth_rates: NumericInput | None = None,
+        death_rates: NumericInput | None = None,
+    ) -> "BirthDeathProcess":
+        """Build a process from a full manuscript event table."""
+        required_columns = {
+            "manuscript_id",
+            "parent_id",
+            "creation_time",
+            "death_time",
+            "is_spine",
+            "survived",
+            "age",
+            "lifespan",
+        }
+        missing_columns = required_columns.difference(manuscripts.columns)
+        if missing_columns:
+            missing_text = ", ".join(sorted(missing_columns))
+            msg = f"manuscripts is missing required columns: {missing_text}"
+            raise ValueError(msg)
+
+        observed = manuscripts[manuscripts["survived"]].copy()
+        process = cls(
+            creation_times=observed["creation_time"].astype(float).tolist(),
+            epoch_end_times=epoch_end_times,
+            start_time=start_time,
+            initial_population=initial_population,
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            manuscript_records=manuscripts.copy(),
+        )
+        return process
+
+    @classmethod
+    def from_age_samples(
+        cls,
+        *,
+        spine_ages: list[float],
+        non_spine_ages: list[float],
+        epoch_end_times: NumericInput,
+        start_time: float = 0.0,
+        initial_population: int = 1,
+        birth_rates: NumericInput | None = None,
+        death_rates: NumericInput | None = None,
+    ) -> "BirthDeathProcess":
+        """Build a process from sampled spine and non-spine manuscript ages."""
+        epoch_end_times_tensor = cls._to_static_float64_tensor(epoch_end_times)
+        max_time = float(epoch_end_times_tensor.reshape(-1)[-1].item())
+        creation_times = [
+            max_time - float(age) for age in [*spine_ages, *non_spine_ages]
+        ]
+        process = cls(
+            creation_times=creation_times,
+            epoch_end_times=epoch_end_times,
+            start_time=start_time,
+            initial_population=initial_population,
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            spine_ages=spine_ages,
+            non_spine_ages=non_spine_ages,
+        )
+        return process
 
     @property
     def epoch_end_times(self) -> torch.Tensor:
@@ -203,6 +350,48 @@ class BirthDeathProcess:
         if isinstance(values, list):
             return torch.tensor(values, dtype=torch.float64)
         return torch.tensor([values], dtype=torch.float64)
+
+    @staticmethod
+    def _to_static_float64_tensor(values: NumericInput) -> torch.Tensor:
+        if isinstance(values, torch.Tensor):
+            return values.to(dtype=torch.float64)
+        if isinstance(values, np.ndarray):
+            return torch.as_tensor(values, dtype=torch.float64)
+        if isinstance(values, list):
+            return torch.tensor(values, dtype=torch.float64)
+        return torch.tensor([values], dtype=torch.float64)
+
+    def _normalize_optional_age_vector(
+        self,
+        ages: NumericInput,
+    ) -> torch.Tensor:
+        age_tensor = self._to_float64_tensor(ages)
+        if not torch.all(torch.isfinite(age_tensor)):
+            msg = "age values must be finite"
+            raise ValueError(msg)
+        if torch.any(age_tensor < 0):
+            msg = "age values must be non-negative"
+            raise ValueError(msg)
+        return age_tensor
+
+    def _normalize_manuscript_records(
+        self,
+        manuscripts: pd.DataFrame | None,
+    ) -> pd.DataFrame | None:
+        if manuscripts is None:
+            return None
+        records = manuscripts.copy()
+        if "death_time" in records.columns:
+            records["death_time"] = records["death_time"].astype(float)
+        if "age" in records.columns:
+            records["age"] = records["age"].astype(float)
+        if "lifespan" in records.columns:
+            records["lifespan"] = records["lifespan"].astype(float)
+        if "parent_id" in records.columns:
+            records["parent_id"] = records["parent_id"].astype("Int64")
+        if "manuscript_id" in records.columns:
+            records["manuscript_id"] = records["manuscript_id"].astype(int)
+        return records
 
     def _normalize_rate_vector(
         self,
@@ -315,6 +504,288 @@ class BirthDeathProcess:
         return self._manuscript_ages.clone()
 
     @property
+    def manuscript_records(self) -> pd.DataFrame | None:
+        """Get the full manuscript record table when available."""
+        if self._manuscript_records is None:
+            return None
+        return self._manuscript_records.copy()
+
+    @property
+    def spine_ages(self) -> torch.Tensor | None:
+        """Get sampled spine ages when the instance originates from that simulator."""
+        if self._spine_ages is None:
+            return None
+        return self._spine_ages.clone()
+
+    @property
+    def non_spine_ages(self) -> torch.Tensor | None:
+        """Get sampled non-spine ages when the instance originates from that simulator."""
+        if self._non_spine_ages is None:
+            return None
+        return self._non_spine_ages.clone()
+
+    @property
+    def death_times(self) -> torch.Tensor | None:
+        """Get manuscript death times when available."""
+        if (
+            self._manuscript_records is None
+            or "death_time" not in self._manuscript_records
+        ):
+            return None
+        return torch.tensor(
+            self._manuscript_records["death_time"].to_numpy(dtype=np.float64),
+            dtype=torch.float64,
+        )
+
+    @property
+    def all_manuscript_ages(self) -> torch.Tensor | None:
+        """Get manuscript ages for all records when a record table exists."""
+        if self._manuscript_records is None or "age" not in self._manuscript_records:
+            return None
+        return torch.tensor(
+            self._manuscript_records["age"].to_numpy(dtype=np.float64),
+            dtype=torch.float64,
+        )
+
+    @property
+    def extinct_manuscripts(self) -> pd.DataFrame | None:
+        """Get the extinct-manuscript subset when a record table exists."""
+        if self._manuscript_records is None:
+            return None
+        return self._manuscript_records[~self._manuscript_records["survived"]].copy()
+
+    @property
+    def surviving_manuscripts(self) -> pd.DataFrame | None:
+        """Get the surviving-manuscript subset when a record table exists."""
+        if self._manuscript_records is None:
+            return None
+        return self._manuscript_records[self._manuscript_records["survived"]].copy()
+
+    def genealogy_dfs_order(self) -> pd.DataFrame:
+        """Return the preorder DFS ordering for the full genealogy tree."""
+        if self._manuscript_records is None:
+            msg = (
+                "genealogy_dfs_order requires manuscript_records with "
+                "manuscript_id and parent_id"
+            )
+            raise ValueError(msg)
+
+        return _genealogy_dfs_order(
+            self._manuscript_records,
+            start_time=self.start_time,
+            simulation_end_time=float(self._latest_epoch_end_time().item()),
+        )
+
+    def plot_genealogy_tree(
+        self,
+        *,
+        config: GenealogyPlotConfig | None = None,
+    ) -> go.Figure:
+        """Return a Plotly figure showing manuscript lifetimes and genealogy."""
+        if self._manuscript_records is None:
+            msg = (
+                "plot_genealogy_tree requires manuscript_records with "
+                "manuscript_id and parent_id"
+            )
+            raise ValueError(msg)
+
+        return _plot_genealogy_tree(
+            self._manuscript_records,
+            start_time=self.start_time,
+            simulation_end_time=float(self._latest_epoch_end_time().item()),
+            config=config,
+        )
+
+    @classmethod
+    def _format_newick_length(cls, length: float) -> str:
+        """Format a branch length for deterministic Newick output."""
+        length_value = float(length)
+        if abs(length_value) < cls._NEWICK_LENGTH_EPSILON:
+            length_value = 0.0
+        return repr(length_value)
+
+    def _to_newick_fragment(
+        self,
+        manuscript_id: int,
+        *,
+        records_by_id: dict[int, dict[Hashable, Any]],
+        child_map: dict[int, list[int]],
+        simulation_end_time: float,
+    ) -> str:
+        """Serialize one lineage into a nested Newick fragment."""
+        record = records_by_id[manuscript_id]
+        birth_time = float(record["creation_time"])
+        death_raw = record.get("death_time")
+        death_time = (
+            float(death_raw)
+            if death_raw is not None and not pd.isna(death_raw)
+            else float(simulation_end_time)
+        )
+
+        children = child_map.get(manuscript_id, [])
+        if not children:
+            branch_length = self._format_newick_length(death_time - birth_time)
+            return f"({manuscript_id}:{branch_length}):0"
+
+        last_child_id = children[-1]
+        last_child_birth_time = float(records_by_id[last_child_id]["creation_time"])
+        branch_length = self._format_newick_length(
+            death_time - last_child_birth_time,
+        )
+        current = f"({manuscript_id}:{branch_length}):0"
+
+        for index in range(len(children) - 1, -1, -1):
+            child_id = children[index]
+            child_birth_time = float(records_by_id[child_id]["creation_time"])
+            next_time = (
+                death_time
+                if index == len(children) - 1
+                else float(records_by_id[children[index + 1]]["creation_time"])
+            )
+            child_fragment = self._to_newick_fragment(
+                child_id,
+                records_by_id=records_by_id,
+                child_map=child_map,
+                simulation_end_time=simulation_end_time,
+            )
+            current = (
+                f"({child_fragment},{current})"
+                f":{self._format_newick_length(next_time - child_birth_time)}"
+            )
+
+        return f"({current}):0"
+
+    def to_newick(self) -> str:
+        """Export the full genealogy as a strict Newick tree string."""
+        if self._manuscript_records is None:
+            msg = (
+                "to_newick requires manuscript_records with manuscript_id and parent_id"
+            )
+            raise ValueError(msg)
+
+        # Reuse the genealogy validator to enforce the rooted-tree contract.
+        ordered_records = self.genealogy_dfs_order()
+
+        records_by_id = {
+            int(row["manuscript_id"]): row.to_dict()
+            for _, row in ordered_records.iterrows()
+        }
+
+        child_map: dict[int, list[int]] = {}
+        for manuscript_id, record in records_by_id.items():
+            parent_raw = record.get("parent_id")
+            if pd.isna(parent_raw):
+                continue
+            parent_id = int(parent_raw)
+            child_map.setdefault(parent_id, []).append(manuscript_id)
+
+        for child_ids in child_map.values():
+            child_ids.sort(
+                key=lambda child_id: (
+                    float(records_by_id[child_id]["creation_time"]),
+                    child_id,
+                ),
+            )
+
+        root_rows = ordered_records[ordered_records["parent_id"].isna()]
+        root_id = int(root_rows.iloc[0]["manuscript_id"])
+        root_birth_time = float(root_rows.iloc[0]["creation_time"])
+        simulation_end_time = float(self._latest_epoch_end_time().item())
+
+        root_fragment = self._to_newick_fragment(
+            root_id,
+            records_by_id=records_by_id,
+            child_map=child_map,
+            simulation_end_time=simulation_end_time,
+        )
+        root_branch_length = self._format_newick_length(
+            root_birth_time - self.start_time,
+        )
+        return f"({root_fragment}):{root_branch_length};"
+
+    def __getitem__(self, key: Any) -> Any:
+        """Provide lightweight compatibility with the prior DataFrame/dict outputs."""
+        if isinstance(key, str):
+            if key == "spine":
+                if self._spine_ages is not None:
+                    return self._spine_ages.clone().tolist()
+                if (
+                    self._manuscript_records is not None
+                    and "is_spine" in self._manuscript_records
+                ):
+                    return (
+                        self._manuscript_records.loc[
+                            self._manuscript_records["is_spine"],
+                            "age",
+                        ]
+                        .astype(float)
+                        .tolist()
+                    )
+            if key == "non_spine":
+                if self._non_spine_ages is not None:
+                    return self._non_spine_ages.clone().tolist()
+                if (
+                    self._manuscript_records is not None
+                    and "is_spine" in self._manuscript_records
+                ):
+                    return (
+                        self._manuscript_records.loc[
+                            ~self._manuscript_records["is_spine"],
+                            "age",
+                        ]
+                        .astype(float)
+                        .tolist()
+                    )
+            if (
+                self._manuscript_records is not None
+                and key in self._manuscript_records.columns
+            ):
+                return self._manuscript_records[key]
+            raise KeyError(key)
+
+        if self._manuscript_records is not None:
+            return self._manuscript_records[key].copy()
+
+        raise TypeError(
+            "BirthDeathProcess only supports string and record-style indexing",
+        )
+
+    def equals(self, other: Any) -> bool:
+        """Compare simulation objects using their manuscript records when available."""
+        if not isinstance(other, BirthDeathProcess):
+            return False
+        if (
+            self._manuscript_records is not None
+            and other._manuscript_records is not None
+        ):
+            return self._manuscript_records.equals(other._manuscript_records)
+        return (
+            self.creation_times == other.creation_times
+            and torch.equal(self.epoch_end_times, other.epoch_end_times)
+            and self.birth_rates == other.birth_rates
+            and self.death_rates == other.death_rates
+        )
+
+    def __eq__(self, other: object) -> bool:
+        """Compare against legacy dict outputs or another process instance."""
+        if isinstance(other, dict):
+            expected_keys = {"spine", "non_spine"}
+            if set(other) != expected_keys:
+                return False
+            return list(self["spine"]) == list(other["spine"]) and list(
+                self["non_spine"],
+            ) == list(other["non_spine"])
+        if isinstance(other, BirthDeathProcess):
+            return self.equals(other)
+        return NotImplemented
+
+    def __len__(self) -> int:
+        """Return the number of manuscript records when available."""
+        if self._manuscript_records is not None:
+            return len(self._manuscript_records)
+        return len(self.manuscript_ages)
+
+    @property
     def n_manuscripts(self) -> int:
         """Get the number of manuscripts in the process."""
         return len(self.manuscript_ages)
@@ -375,10 +846,6 @@ class BirthDeathProcess:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
 
-        from inf_bp_texts.inference.likelihood import (  # noqa: PLC0415
-            log_likelihood as _log_likelihood,
-        )
-
         return _log_likelihood(
             birth_rates=self._birth_rates,
             death_rates=self._death_rates,
@@ -392,10 +859,6 @@ class BirthDeathProcess:
         if self._birth_rates is None or self._death_rates is None:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
-
-        from inf_bp_texts.inference.likelihood import (  # noqa: PLC0415
-            negative_log_likelihood as _negative_log_likelihood,
-        )
 
         return _negative_log_likelihood(
             birth_rates=self._birth_rates,

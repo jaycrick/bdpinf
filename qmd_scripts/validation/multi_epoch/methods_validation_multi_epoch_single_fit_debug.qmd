@@ -6,6 +6,7 @@ date: last-modified
 ---
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false
@@ -87,36 +88,26 @@ print(single_fit_result)
 ```
 
 ```{python}
-%%prun -s cumulative -q -l 60 -T prof-multi-epoch-single-fit.txt -D prof-multi-epoch-single-fit.prof
 
-_ = fit_single_model(ages, fit_config)
-```
-
-```{python}
-# | label: compile-time-report
-# | cache: false
-# | echo: false
-
-import json
-import os
+# Profile the fit using cProfile/pstats (replaces the %%prun cell magic)
+import cProfile
+import pstats
+import io
 from pathlib import Path
-import time
 
-doc_name = "methods_validation_multi_epoch_single_fit_debug.qmd"
-project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
-compile_log = project_dir / "_output" / "compile_times.json"
-compile_log.parent.mkdir(parents=True, exist_ok=True)
-
-duration_seconds = time.perf_counter() - __compile_start
-timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-
+prof_file = "prof-multi-epoch-single-fit.prof"
+txt_file = "prof-multi-epoch-single-fit.txt"
+profiler = cProfile.Profile()
+profiler.enable()
 try:
-    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
-except Exception:
-    data = {}
-
-data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
-compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
-
-print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+    _ = fit_single_model(ages, fit_config)
+finally:
+    profiler.disable()
+    profiler.dump_stats(prof_file)
+    buf = io.StringIO()
+    ps = pstats.Stats(profiler, stream=buf).sort_stats("cumulative")
+    ps.print_stats(60)
+    report = buf.getvalue()
+    Path(txt_file).write_text(report)
+    print(report)
 ```

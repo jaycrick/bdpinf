@@ -3,9 +3,9 @@
 # ruff: noqa: S101
 
 import numpy as np
-import pandas as pd
 import torch
 
+import inf_bp_texts.simulation.simulator as simulator_module
 from inf_bp_texts.models import BirthDeathProcess
 from inf_bp_texts.models.mathematical_functions import (
     calculate_non_spine_ages_log_lik,
@@ -28,19 +28,12 @@ class TestSimulation:
             random_seed=42,
         )
 
-        # Should return a DataFrame
-        assert isinstance(df, pd.DataFrame)
+        # Should return a BirthDeathProcess
+        assert isinstance(df, BirthDeathProcess)
 
-        # Create process object and set state from simulation results
-        surviving_manuscripts = df[df["survived"]]
-        creation_times = surviving_manuscripts["creation_time"].tolist()
-
-        process = BirthDeathProcess(
-            creation_times=creation_times,
-            epoch_end_times=100.0,
-            birth_rates=0.1,
-            death_rates=0.02,
-        )
+        process = df
+        surviving_manuscripts = process.surviving_manuscripts
+        assert surviving_manuscripts is not None
 
         # Check that epoch_end_times and creation_times were set
         assert process.epoch_end_times[-1] == 100.0
@@ -194,23 +187,12 @@ class TestSimulation:
             random_seed=42,
         )
 
-        # Should still return a DataFrame, even if empty
-        assert isinstance(df, pd.DataFrame)
+        # Should still return a BirthDeathProcess, even if empty
+        assert isinstance(df, BirthDeathProcess)
 
-        # Create process object to test that it handles empty results properly
-        surviving_manuscripts = df[df["survived"]] if len(df) > 0 else pd.DataFrame()
-        creation_times = (
-            surviving_manuscripts["creation_time"].tolist()
-            if len(surviving_manuscripts) > 0
-            else []
-        )
-
-        process = BirthDeathProcess(
-            creation_times=creation_times,
-            epoch_end_times=1.0,
-            birth_rates=0.001,
-            death_rates=1.0,
-        )
+        process = df
+        surviving_manuscripts = process.surviving_manuscripts
+        assert surviving_manuscripts is not None
 
         # Check that the process state is still valid
         assert process.epoch_end_times[-1].item() == 1.0
@@ -258,6 +240,70 @@ class TestSimulation:
         # ages should be different
         if len(new_process.manuscript_ages) > 0:
             assert not np.array_equal(new_process.manuscript_ages, initial_ages)
+
+    def test_bdp_distribution_sampler_defaults_to_extinction_branch(
+        self,
+        monkeypatch,
+    ) -> None:
+        class DummyRng:
+            def uniform(self):
+                return 0.0
+
+            def geometric(self, _):
+                raise AssertionError("geometric should not be called when extinct")
+
+        monkeypatch.setattr(
+            simulator_module,
+            "calculate_extinction_pr",
+            lambda *args, **kwargs: 1.0,
+        )
+
+        sampled = simulate_bdp_ages_from_distributions(
+            birth_rate=torch.tensor(0.5, dtype=torch.float64),
+            death_rate=torch.tensor(0.3, dtype=torch.float64),
+            max_time=torch.tensor(5.0, dtype=torch.float64),
+            rng=DummyRng(),
+        )
+
+        assert sampled == {"spine": [], "non_spine": []}
+
+    def test_bdp_distribution_sampler_can_force_non_extinction(
+        self,
+        monkeypatch,
+    ) -> None:
+        class DummyRng:
+            def uniform(self):
+                return 0.0
+
+            def geometric(self, _):
+                return np.array(2)
+
+        monkeypatch.setattr(
+            simulator_module,
+            "_population_geometric_parameter",
+            lambda *args, **kwargs: torch.tensor(0.5, dtype=torch.float64),
+        )
+        monkeypatch.setattr(
+            simulator_module,
+            "_sample_spine_ages",
+            lambda **kwargs: [1.23],
+        )
+        monkeypatch.setattr(
+            simulator_module,
+            "_sample_non_spine_ages",
+            lambda **kwargs: [4.56],
+        )
+
+        sampled = simulate_bdp_ages_from_distributions(
+            birth_rate=torch.tensor(0.5, dtype=torch.float64),
+            death_rate=torch.tensor(0.3, dtype=torch.float64),
+            max_time=torch.tensor(5.0, dtype=torch.float64),
+            rng=DummyRng(),
+            ensure_non_extinct=True,
+        )
+
+        assert sampled["spine"] == [1.23]
+        assert sampled["non_spine"] == [4.56]
 
     def test_simulation_parameter_effects(self) -> None:
         """Test that birth/death rates affect simulation results as expected."""
@@ -355,12 +401,13 @@ class TestMultiEpochSimulation:
             random_seed=42,
         )
 
-        # Should return a DataFrame
-        assert isinstance(df, pd.DataFrame)
+        # Should return a BirthDeathProcess
+        assert isinstance(df, BirthDeathProcess)
 
         # All creation times should be <= final time
         if len(df) > 0:
-            assert all(df["creation_time"] <= times[-1])
+            assert df.manuscript_records is not None
+            assert all(df.manuscript_records["creation_time"] <= times[-1])
 
     def test_two_epoch_simulation_reproducible(self) -> None:
         """Test that two-epoch simulation with same seed is reproducible."""
@@ -387,8 +434,8 @@ class TestMultiEpochSimulation:
         # Creation times should match
         if len(df1) > 0 and len(df2) > 0:
             np.testing.assert_array_almost_equal(
-                sorted(df1["creation_time"]),
-                sorted(df2["creation_time"]),
+                sorted(df1.manuscript_records["creation_time"]),
+                sorted(df2.manuscript_records["creation_time"]),
             )
 
     def test_three_epoch_simulation(self) -> None:
@@ -404,11 +451,12 @@ class TestMultiEpochSimulation:
             random_seed=42,
         )
 
-        assert isinstance(df, pd.DataFrame)
+        assert isinstance(df, BirthDeathProcess)
         # Check that all times are within bounds
         if len(df) > 0:
-            assert all(df["creation_time"] >= 0)
-            assert all(df["creation_time"] <= times[-1])
+            assert df.manuscript_records is not None
+            assert all(df.manuscript_records["creation_time"] >= 0)
+            assert all(df.manuscript_records["creation_time"] <= times[-1])
 
     def test_multi_epoch_data_frame_structure(self) -> None:
         """Test that multi-epoch simulation returns properly structured DataFrame."""
@@ -424,7 +472,7 @@ class TestMultiEpochSimulation:
         )
 
         if len(df) > 0:
-            surviving = df[df["survived"]]
+            surviving = df.surviving_manuscripts
             if len(surviving) > 0:
                 required_cols = ["manuscript_id", "creation_time", "age", "survived"]
                 for col in required_cols:
@@ -458,8 +506,8 @@ class TestMultiEpochSimulation:
         )
 
         # Both simulations should complete
-        assert isinstance(df1, pd.DataFrame)
-        assert isinstance(df2, pd.DataFrame)
+        assert isinstance(df1, BirthDeathProcess)
+        assert isinstance(df2, BirthDeathProcess)
 
         # Results should differ (different epoch configurations and seeds)
         # This is probabilistic but with different seeds should be reliable

@@ -20,6 +20,7 @@ This document implements a lightweight optimisation benchmarking workflow for si
 
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false
@@ -41,8 +42,10 @@ import torch
 import plotly.graph_objs as go
 
 from pathlib import Path
+from typing import Any, cast
 
 from itables import show as show_table
+from inf_bp_texts.utils import format_table_dataframe
 
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.inference.fitting import fit_birth_death_processes, ConvergenceConfig
@@ -78,7 +81,10 @@ sampled = simulate_bdp_ages_from_distributions(
     max_time=torch.tensor(time_span, dtype=torch.float64),
     rng=rng,
 )
-ages = np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
+ages = np.asarray(
+    sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
+    dtype=np.float64,
+)
 
 print(f"Population size: {len(ages)}")
 ```
@@ -157,7 +163,7 @@ results = []
 for cfg in configs:
     label = cfg["label"]
     print(f"Running: {label}")
-    fit_kwargs = {**base_fit_kwargs}
+    fit_kwargs: dict[str, Any] = {**base_fit_kwargs}
     fit_kwargs.update(
         {
             "optimizers": cfg["optimizers"],
@@ -180,7 +186,7 @@ for cfg in configs:
 
     elapsed = time.perf_counter() - start
     optimization_result = res.get("optimization_result", {})
-    attempts = (
+    attempts: list[dict[str, Any]] = (
         optimization_result.get("attempts", [])
         if isinstance(optimization_result, dict)
         else []
@@ -214,7 +220,10 @@ for r in results:
         continue
     print("  success:", r.get("success"))
     print("  runtime (s):", f"{r.get('runtime_s'):.3f}")
-    for att_idx, att in enumerate(r.get("optimization", [])):
+    optimization_attempts: list[dict[str, Any]] = cast(
+        list[dict[str, Any]], r.get("optimization", []) or []
+    )
+    for att_idx, att in enumerate(optimization_attempts):
         print(
             f"    optimizer={att.get('optimizer')}, converged={att.get('converged')}, iterations={att.get('iterations')}"
         )
@@ -247,7 +256,7 @@ for r in results:
                 plot_bgcolor=plot_bgcolor,
                 paper_bgcolor=paper_bgcolor,
             )
-            fig_nll = apply_professional_styling(fig_nll, None, "Iteration", "NLL")
+            fig_nll = apply_professional_styling(fig_nll, "", "Iteration", "NLL")
             fig_nll = apply_tufte_axes(fig_nll)
             fig_nll.update_xaxes(showgrid=True, gridcolor=gridcolor)
             fig_nll.update_yaxes(showgrid=True, gridcolor=gridcolor)
@@ -277,7 +286,7 @@ for r in results:
                 plot_bgcolor=plot_bgcolor,
                 paper_bgcolor=paper_bgcolor,
             )
-            fig_g = apply_professional_styling(fig_g, None, "Iteration", "Grad Norm")
+            fig_g = apply_professional_styling(fig_g, "", "Iteration", "Grad Norm")
             fig_g = apply_tufte_axes(fig_g)
             fig_g.update_xaxes(showgrid=True, gridcolor=gridcolor)
             fig_g.update_yaxes(showgrid=True, gridcolor=gridcolor)
@@ -316,9 +325,7 @@ for r in results:
                         plot_bgcolor=plot_bgcolor,
                         paper_bgcolor=paper_bgcolor,
                     )
-                    fig_p = apply_professional_styling(
-                        fig_p, None, "Iteration", f"param_{p}"
-                    )
+                    fig_p = apply_professional_styling(fig_p, "", "Iteration", f"param_{p}")
                     fig_p = apply_tufte_axes(fig_p)
                     fig_p.update_xaxes(showgrid=True, gridcolor=gridcolor)
                     fig_p.update_yaxes(showgrid=True, gridcolor=gridcolor)
@@ -338,7 +345,7 @@ for r in results:
 ## Summary table
 
 ```{python}
-def _fmt_array(values, n_digits: int = 6) -> str:
+def _fmt_array(values: Any, n_digits: int = 6) -> str:
     if values is None:
         return "NA"
     arr = np.asarray(values, dtype=float)
@@ -348,7 +355,7 @@ def _fmt_array(values, n_digits: int = 6) -> str:
 summary_rows = []
 for r in results:
     method = r.get("label", "unknown")
-    runtime_s = float(r.get("runtime_s", np.nan))
+    runtime_s = float(cast(float, r.get("runtime_s", np.nan)))
 
     if r.get("error"):
         summary_rows.append(
@@ -362,10 +369,10 @@ for r in results:
         )
         continue
 
-    attempts = r.get("optimization", []) or []
-    best_attempt = None
+    optimization_attempts = cast(list[dict[str, Any]], r.get("optimization", []) or [])
+    best_attempt: dict[str, Any] | None = None
     best_nll = np.inf
-    for att in attempts:
+    for att in optimization_attempts:
         att_best = att.get("best_nll")
         if att_best is None:
             continue
@@ -373,8 +380,8 @@ for r in results:
             best_nll = float(att_best)
             best_attempt = att
 
-    if best_attempt is None and attempts:
-        best_attempt = attempts[-1]
+    if best_attempt is None and optimization_attempts:
+        best_attempt = optimization_attempts[-1]
 
     nll_iterations = (
         len(best_attempt.get("nll_history") or []) if best_attempt is not None else 0
@@ -404,9 +411,9 @@ for r in results:
 summary_df = pd.DataFrame(summary_rows)
 summary_df = summary_df.sort_values("final_log_likelihood", ascending=False)
 
-ll_col_index = summary_df.columns.get_loc("final_log_likelihood")
+ll_col_index = int(cast(int, summary_df.columns.get_loc("final_log_likelihood")))
 show_table(
-    summary_df,
+    format_table_dataframe(summary_df),
     order=[[ll_col_index, "desc"]],
     paging=True,
     pageLength=25,

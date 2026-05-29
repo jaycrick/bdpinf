@@ -10,6 +10,8 @@ from .simulator import (
 )
 
 __all__ = [
+    "BirthDeathLineage",
+    "build_birth_death_lineage",
     "simulate_bdp_ages_from_distributions",
     "simulate_birth_death_process",
 ]

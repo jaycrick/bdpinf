@@ -6,12 +6,14 @@ date: last-modified
 ---
 
 ```{python}
+# ruff: noqa: E402
 # | label: compile-time-start
 # | cache: false
 # | echo: false
 # | include: false
 
 import time
+
 __compile_start = time.perf_counter()
 ```
 
@@ -19,6 +21,7 @@ __compile_start = time.perf_counter()
 
 ```{python}
 import numpy as np
+from pathlib import Path
 
 from inf_bp_texts.inference import fit_birth_death_processes_bayesian
 from inf_bp_texts.inference.bayesian import (
@@ -72,15 +75,32 @@ print(single_fit_result)
 ```
 
 ```{python}
-%%prun -s cumulative -q -l 40 -T prof-multi-epoch-bayesian-single-fit.txt -D prof-multi-epoch-bayesian-single-fit.prof
+# Profile the fit using cProfile/pstats (replaces the %%prun cell magic)
+import cProfile
+import pstats
+import io
 
-_ = fit_birth_death_processes_bayesian(
-    list_of_ages=[ages],
-    times=times,
-    model_config=model_config,
-    mcmc_config=mcmc_config,
-    prior_config=prior_config,
-)
+prof_file = "prof-multi-epoch-bayesian-single-fit.prof"
+txt_file = "prof-multi-epoch-bayesian-single-fit.txt"
+profiler = cProfile.Profile()
+profiler.enable()
+try:
+    _ = fit_birth_death_processes_bayesian(
+        list_of_ages=[ages],
+        times=times,
+        model_config=model_config,
+        mcmc_config=mcmc_config,
+        prior_config=prior_config,
+    )
+finally:
+    profiler.disable()
+    profiler.dump_stats(prof_file)
+    buf = io.StringIO()
+    ps = pstats.Stats(profiler, stream=buf).sort_stats("cumulative")
+    ps.print_stats(40)
+    report = buf.getvalue()
+    Path(txt_file).write_text(report)
+    print(report)
 ```
 
 ```{python}

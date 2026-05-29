@@ -73,7 +73,7 @@ def _compute_populations_log_lik_multi_start(
     alpha_t: torch.Tensor,
     beta_t: torch.Tensor,
 ) -> torch.Tensor:
-    """Compute log probabilities for populations when initial_population > 1.
+    r"""Compute log probabilities for populations when initial_population > 1.
 
     Helper function that handles the complex combinatorial calculation for
     the case when the process starts with more than one individual.
@@ -87,7 +87,7 @@ def _compute_populations_log_lik_multi_start(
     n0 : int
         Initial number of individuals (initial_population).
     alpha_t : torch.Tensor
-        Extinction probability Pr(Z_T = 0).
+        Extinction probability $\Pr(Z_T = 0)$.
     beta_t : torch.Tensor
         Geometric parameter for survival distribution.
 
@@ -181,7 +181,7 @@ def calculate_populations_log_lik(
 ) -> torch.Tensor:
     r"""Calculate log-probability of population counts under birth-death process.
 
-    This function computes log p_n(T) for each count n in `ns` using
+    This function computes $\log \Pr(Z_T = n)$ for each count $n$ in `ns` using
     closed-form expressions for the birth-and-death process probabilities.
     The computed log-probabilities are summed and returned as a single
     torch.Tensor. Invalid or numerically unstable inputs return -inf tensor.
@@ -205,12 +205,12 @@ def calculate_populations_log_lik(
     unbias : bool
         If True, condition on non-extinction for positive counts when the
         initial population is 1 by using the geometric mass with parameter
-        ``1 - beta_t`` on the positive integers.
+        $1 - \beta_t$ on the positive integers.
 
     Returns
     -------
     torch.Tensor
-        Scalar tensor (shape ()) containing sum of log p_n(T) across
+        Scalar tensor (shape ()) containing sum of $\log \Pr(Z_T = n)$ across
         provided `ns`. dtype: torch.float64.
 
     Notes
@@ -224,6 +224,9 @@ def calculate_populations_log_lik(
         \alpha_T := \Pr(Z_T = 0)
         = \frac{\mu(e^{(\mu - \lambda)T} - 1)}
         {\lambda e^{(\mu - \lambda)T} - \mu}
+    $$ and
+    $$
+        \beta_T := \frac{\lambda}{\mu} \alpha_T
     $$
 
     For $\lambda = \mu$, the limiting case is:
@@ -398,27 +401,29 @@ def calculate_non_spine_ages_log_lik(
     return_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """Calculate log-likelihood of the ages of the "non-spine" individual(s).
+    r"""Calculate log-likelihood of the ages of the "non-spine" individual(s).
 
     In the constant rate case, the density for the age *a* is:
+    $$
+        \frac{\lambda * \exp(-\lambda a) - \mu * \exp(-(\lambda - \mu)T) * \exp(-\mu a)
+        }{1 - \exp(-(\lambda - \mu)T)}
+    $$
 
-        (λ * exp(-λa) - μ * exp(-(λ - μ)T) * exp(-μa))
-        / (1 - exp(-(λ - μ)T))
-
-    given λ ≠ μ, otherwise the "critical" case is:
-
-        exp(-λa) * (1 + λ(T-a)) / T
+    given $\lambda \neq \mu$, otherwise the "critical" case is:
+    $$
+        \frac{\exp(-\lambda a) * (1 + \lambda(T-a))}{T}
+    $$
 
     Parameters
     ----------
     birth_rates : torch.Tensor | float
-        (Non-negative) birth rate(s) *λ*.
+        (Non-negative) birth rate(s) $\lambda$.
     death_rates : torch.Tensor | float
-        (Non-negative) death rate(s) *μ*.
+        (Non-negative) death rate(s) $\mu$.
     ages : torch.Tensor | float
-        Age(s) *a*. All ages must satisfy 0 ≤ *a* ≤ *T*.
+        Age(s) $a$. All ages must satisfy $0 \leq a \leq T$.
     times : torch.Tensor | float
-        Observation time(s) *T*. For multi-epoch case, the end of each epoch.
+        Observation time(s) $T$. For multi-epoch case, the end of each epoch.
     return_array : bool, optional
         If True, return the per-age log-likelihood contributions instead of
         the summed value. Default False.
@@ -549,28 +554,39 @@ def calculate_spine_ages_log_lik(
     return_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """Calculate log-likelihood of the age(s) of the special "spine" individual(s).
+    r"""Calculate log-likelihood of the age(s) of the special "spine" individual(s).
 
-    In the constant rate case, the density for the age a is:
+    In the constant rate case, the density for the age $a$ is:
 
-        λμ(exp(-λa) - exp(-μa)) / (λ - μ) for a < T, and
-        (λ * exp(-μT) - μ * exp(-λT)) / (λ - μ) for a = T.
+    $$
+        \frac{\lambda\mu(\exp(-\lambda a) - \exp(-\mu a))}{\lambda - \mu} \quad
+        \text{for } a < T,
+    $$
+    and
+    $$
+        \frac{\lambda \exp(-\mu T) - \mu \exp(-\lambda T)}{\lambda - \mu} \quad
+        \text{for } a = T.
+    $$
 
-    given λ ≠ μ, otherwise the "critical" case is:
-
-        λ^2 * a * exp(-λa) for a < T, and
-        (1 + λT) * exp(-λT) for a = T.
+    given $\lambda \neq \mu$, otherwise the "critical" case is:
+    $$
+        \lambda^2 * a * \exp(-\lambda a) \quad \text{for } a < T,
+    $$
+    and
+    $$
+        (1 + \lambda T) * \exp(-\lambda T) \quad \text{for } a = T.
+    $$
 
     Parameters
     ----------
     birth_rates : torch.Tensor | float
-        (Non-negative) birth rate(s) λ.
+        (Non-negative) birth rate(s) $\lambda$.
     death_rates : torch.Tensor | float
-        (Non-negative) death rate(s) μ.
+        (Non-negative) death rate(s) $\mu$.
     ages : torch.Tensor | float
-        Age(s) a. All ages must satisfy 0 ≤ a ≤ T.
+        Age(s) $a$. All ages must satisfy $0 \leq a \leq T$.
     times : torch.Tensor | float
-        Observation time(s) T. For multi-epoch case, the end of each epoch.
+        Observation time(s) $T$. For multi-epoch case, the end of each epoch.
     return_array : bool, optional
         If True, return the per-age log-likelihood contributions instead of
         the summed value. Default False.
@@ -708,7 +724,7 @@ def calculate_ages_log_lik(
     are_spines: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """Compute log-likelihood of manuscript ages under a birth-death model.
+    r"""Compute log-likelihood of manuscript ages under a birth-death model.
 
     Dispatches to spine or non-spine likelihood calculation based on ``are_spines``.
     All operations preserve PyTorch's computational graph for automatic differentiation.
@@ -716,22 +732,22 @@ def calculate_ages_log_lik(
     Parameters
     ----------
     birth_rates : torch.Tensor | float
-        Birth rate(s) λ.
+        Birth rate(s) $\lambda$.
         Scalar for single epoch, 1D tensor for piecewise-constant rates.
         All values must be positive. Will be converted to torch.float64.
     death_rates : torch.Tensor | float
-        Death rate(s) μ.
+        Death rate(s) $\mu$.
         Scalar for single epoch, 1D tensor for piecewise-constant rates.
         All values must be positive. Will be converted to torch.float64.
     ages : torch.Tensor | float
-        Manuscript age(s) t. Scalar or 1D tensor. All ages must satisfy 0 ≤ t ≤ T.
+        Manuscript age(s) $t$. Scalar or 1D tensor. All ages must satisfy $0 \leq t \leq T$.
         Will be converted to torch.float64.
     times : torch.Tensor | float
-        Observation time(s) T. Scalar for single epoch, 1D tensor of strictly increasing
+        Observation time(s) $T$. Scalar for single epoch, 1D tensor of strictly increasing
         epoch end times for piecewise-constant model.
         Will be converted to torch.float64.
     are_spines : bool, optional
-        If True, computes spine likelihood (discrete mass at T, continuous for t < T).
+        If True, computes spine likelihood (discrete mass at $T$, continuous for $0 \leq t < T$).
         If False, computes non-spine likelihood. Default False.
 
     Returns
@@ -745,31 +761,17 @@ def calculate_ages_log_lik(
     ------
     ValueError
         If array inputs have mismatched lengths, times are not strictly increasing,
-        or ages fall outside [0, *T*].
+        or ages fall outside $[0, T]$.
 
     Notes
     -----
-    - Handles λ ≈ μ limiting case for numerical stability using log1p/expm1.
+    - Handles $\lambda \approx \mu$ limiting case for numerical stability using ``log1p/expm1``.
     - Supports both single-epoch (scalar)
     and multi-epoch (array) piecewise-constant rates.
     - Multi-epoch cases use time-reversal transformation internally.
     - All operations maintain PyTorch's computational graph for gradient computation.
     - Internally delegates to ``calculate_spine_ages_log_lik`` or
       ``calculate_non_spine_ages_log_lik`` depending on ``are_spines`` flag.
-
-    Examples
-    --------
-    Single-epoch case with gradient computation:
-
-    >>> birth_rate_val = torch.tensor(0.1, requires_grad=True)
-    >>> death_rate_val = torch.tensor(0.05, requires_grad=True)
-    >>> ages = torch.tensor([10.0, 20.0, 30.0])
-    >>> T = 100.0
-    >>> log_lik = calculate_ages_log_lik(
-    ...     birth_rate_val, death_rate_val, ages, T, are_spines=False
-    ... )
-    >>> log_lik.backward()  # Compute gradients w.r.t. birth_rate_val and death_rate_val
-    >>> print(birth_rate_val.grad, death_rate_val.grad)
 
     """
     if are_spines:
@@ -797,27 +799,27 @@ def calculate_extinction_pr(
     return_log_prob: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """Calculate extinction probability for a birth-death process *Z* at time *T*.
+    r"""Calculate extinction probability for a birth-death process $Z$ at time $T$.
 
         Pr(Z_T = 0).
 
     Parameters
     ----------
     birth_rates : torch.Tensor or float
-        Birth rate(s) λ. Scalar or 1D tensor for piecewise-constant rates.
+        Birth rate(s) $\lambda$. Scalar or 1D tensor for piecewise-constant rates.
     death_rates : torch.Tensor or float
-        Death rate(s) μ. Scalar or 1D tensor for piecewise-constant rates.
+        Death rate(s) $\mu$. Scalar or 1D tensor for piecewise-constant rates.
     times : torch.Tensor or float
-        Observation time(s) T. Scalar for single time, 1D tensor for epoch end times.
+        Observation time(s) $T$. Scalar for single time, 1D tensor for epoch end times.
         For arrays, must be monotonically increasing.
     return_log_prob : bool, optional
-        If True, return log(Pr(Z_T = 0)) instead of Pr(Z_T = 0). Default False.
+        If True, return $\log(\Pr(Z_T = 0))$ instead of $\Pr(Z_T = 0)$. Default False.
 
     Returns
     -------
     torch.Tensor
-        Scalar tensor (shape ()) containing extinction probability Pr(Z_T = 0)
-        (or log(Pr(Z_T = 0)) if return_log_prob=True). dtype: torch.float64.
+        Scalar tensor (shape ()) containing extinction probability $\Pr(Z_T = 0)$
+        (or $\log(\Pr(Z_T = 0))$ if return_log_prob=True). dtype: torch.float64.
 
     """
     if not _skip_normalization:
@@ -957,7 +959,7 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     as_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """Calculate log-likelihood of initial lifetime(s) given non-extinction.
+    r"""Calculate log-likelihood of initial lifetime(s) given non-extinction.
 
     This implementation uses only PyTorch operations to preserve
     autograd support end-to-end.
@@ -967,9 +969,9 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     lifetimes : torch.Tensor
         1D tensor of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
     birth_rates : torch.Tensor
-        1D tensor of birth rates λ per epoch (shape: (n_epochs,)).
+        1D tensor of birth rates $\lambda$ per epoch (shape: (n_epochs,)).
     death_rates : torch.Tensor
-        1D tensor of death rates μ per epoch; same length as ``birth_rates``.
+        1D tensor of death rates $\mu$ per epoch; same length as ``birth_rates``.
     times : torch.Tensor
         1D, strictly increasing tensor of epoch end times matching rate arrays.
     as_array : bool, optional
@@ -1060,7 +1062,7 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
     as_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """Calculate log probability of extinction given initial lifetime(s).
+    r"""Calculate log probability of extinction given initial lifetime(s).
 
     Parameters
     ----------
@@ -1068,9 +1070,10 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
         1D tensor of manuscript lifetimes (shape: (n,), dtype: torch.float64).
         Each lifetime must be ≤ times[-1].
     birth_rates : torch.Tensor
-        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
+        1D tensor of birth rates $\lambda$ per epoch
+        (shape: (n_epochs,), dtype: torch.float64).
     death_rates : torch.Tensor
-        1D tensor of death rates μ per epoch. Same shape as ``birth_rates``
+        1D tensor of death rates $\mu$ per epoch. Same shape as ``birth_rates``
         (dtype: torch.float64).
     times : torch.Tensor
         1D, strictly increasing tensor of epoch end times (shape: (n_epochs,),
@@ -1221,7 +1224,7 @@ def calculate_log_lik_lifetimes(
     as_array: bool = False,
     _skip_normalization: bool = False,
 ) -> torch.Tensor:
-    """Calculate log-likelihood of manuscript lifetime(s).
+    r"""Calculate log-likelihood of manuscript lifetime(s).
 
     Pr(lifetime)
 
@@ -1231,7 +1234,8 @@ def calculate_log_lik_lifetimes(
         1D tensor of lifetimes (shape: (n,), dtype: torch.float64).
         Each lifetime ≤ times[-1].
     death_rates : torch.Tensor
-        1D tensor of death rates μ per epoch (shape: (n_epochs,), dtype: torch.float64).
+        1D tensor of death rates $\mu$ per epoch
+        (shape: (n_epochs,), dtype: torch.float64).
     times : torch.Tensor
         1D, strictly increasing tensor of epoch end times (shape: (n_epochs,),
         dtype: torch.float64).

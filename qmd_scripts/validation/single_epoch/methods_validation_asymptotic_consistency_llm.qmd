@@ -1,0 +1,149 @@
+---
+title: "Asymptotic inference for a hierarchical random-sum model — LLM answer"
+format: html
+---
+
+**LLM-generated answer (verbatim)**
+
+Let
+\[
+X_t := (Z_t, A_t, B_{t,1},\dots,B_{t,Z_t-1})
+\]
+denote the complete observation at time $t$. On the natural disjoint-union sample space
+\[
+\bigsqcup_{z\ge 1}\{z\}\times\mathbb R^{z},
+\]
+the complete-data density is
+\[
+f_{\theta,t}(z,a,b_{1:z-1})
+=
+p_\theta(z\mid t)\,q_\theta(a\mid t)\,\prod_{i=1}^{z-1} r_\theta(b_i\mid t),
+\qquad z\ge 1,
+\]
+with the empty product interpreted as $1$ when $z=1$.
+
+The complete-data log-likelihood is therefore
+\[
+\ell_t(\theta)
+=
+\log p_\theta(Z_t\mid t)
++
+\log q_\theta(A_t\mid t)
++
+\sum_{i=1}^{Z_t-1}\log r_\theta(B_{t,i}\mid t).
+\]
+
+Because the number of $B$-terms is random, the asymptotic problem is not classical iid MLE with fixed dimension; it is better viewed as a single-observation triangular-array / random-sum likelihood problem indexed by $t$. If $Z_t$ stays tight as $t\to\infty$, there is generally no route to consistency from one observation alone; some effective sample size must diverge.
+
+The right classification depends on the structural role of $Z$. As posed, this is primarily a random-sum model with complete-data likelihood; it becomes a latent-variable model only if $Z$ or the $B_i$ are unobserved, in which case the observed likelihood is a mixture over $z$. If $Z$ is genuinely a population size or offspring count evolving over time, then branching-process asymptotics and martingale methods are often the natural language; if the hierarchy is just a count plus marks, then random-sum and M-estimation arguments are usually cleaner than trying to force an iid framework. Branching-process inference has a long MLE literature, and martingale methods are standard there.
+
+For consistency, the most robust route is a Wald-type argument for a normalized criterion,
+\[
+M_t(\theta):=\frac{1}{w_t}\ell_t(\theta),
+\]
+where $w_t\to\infty$ is a deterministic scaling matched to the growth of information, often chosen to be the natural effective sample size or its mean growth rate. One then proves a uniform law of large numbers
+\[
+\sup_{\theta\in\Theta}\big|M_t(\theta)-M(\theta)\big|\to 0
+\quad\text{in probability or a.s.}
+\]
+for a deterministic limit $M$ with unique maximizer at $\theta_0$. Wald’s original consistency theorem and its standard modern formulation require compactness or a sieve/compactification, upper semicontinuity of the criterion, an integrable envelope, and identifiability of the limiting objective. For random-sum models, the LLN step is typically proved by conditioning on $Z_t$, applying a conditional LLN to the $B_i$-sum, and then controlling the asymptotics of $Z_t/w_t$.
+
+If the model is latent-variable or mixture-like after marginalization, then Kiefer–Wolfowitz-type arguments become relevant. Their classical result is exactly about consistency of the MLE in the presence of infinitely many incidental parameters, and the modern mixture-model literature shows how delicate consistency can be without careful regularity or penalization. In your complete-data setting, KW is not the first tool unless you are optimizing over a hidden random measure or unobserved latent structure; but if $Z$ is hidden, or if you integrate over the random number of $B_i$, then the observed likelihood becomes mixture-like and the KW/mixture theory becomes much more natural. (Project Euclid link: https://projecteuclid.org/)
+
+For asymptotic normality, the cleanest route is a score/Hessian expansion under differentiability in quadratic mean (DQM). In the regular fixed-dimensional iid case, DQM plus nonsingular Fisher information gives LAN and, with a Taylor expansion of the score, asymptotic normality of the MLE. In your setting the same logic applies after normalization by $w_t$ or $\sqrt{w_t}$, but the score is a random sum,
+\[
+\dot\ell_t(\theta_0)
+=
+\dot\ell_{p,t}(\theta_0)+\dot\ell_{q,t}(\theta_0)+\sum_{i=1}^{Z_t-1}\dot\ell_{r,t,i}(\theta_0),
+\]
+so the CLT step is usually a random-sum CLT or, in dependent/branching settings, a martingale CLT. If the normalized observed information converges to a deterministic Fisher information matrix ($I(\theta_0)$), then
+\[
+\sqrt{w_t}(\hat\theta_t-\theta_0)
+=
+I(\theta_0)^{-1}\frac{\dot\ell_t(\theta_0)}{\sqrt{w_t}}+o_p(1),
+\]
+with the limit normal under a standard CLT; if the information limit is random, a mixed-normal/LAMN-type limit is the more plausible target.
+
+The main technical conditions to check are these: identifiability of the joint law $(p_\theta,q_\theta,r_\theta)$; domination by a common measure on the disjoint union space; a support that does not vary pathologically with $\theta$ or, if it does, a nonregular analysis; differentiability of $(\theta\mapsto \sqrt{f_{\theta,t}})$ in $L^2$ uniformly enough to justify exchanging derivatives and expectations; and an envelope for the score/Hessian strong enough to control the random-sum term $(\sum_{i=1}^{Z_t-1})$. Uniform convergence is usually obtained by a Glivenko–Cantelli argument for a class of log-densities, or by a localized version with bracketing/entropy bounds if the parameter set is not compact. Heavy tails in $B_i$, boundary values of $\theta$, or non-negligible mass near $Z_t\in\{0,1\}$ can all break the usual LLN/CLT and change the rate or the limit law.
+
+The dependence structure is mild conditional on $Z_t$: the $B_i$ are iid given $Z_t$, but unconditionally they are coupled through the shared random count. This is exactly why conditioning on $Z_t$ is often the first proof step. If the model is actually generated recursively across time, then the whole sequence $(X_t)$ is no longer a collection of independent experiments, and martingale or ergodic methods usually beat iid likelihood arguments. That is why branching-process papers typically condition on survival/non-extinction and then use martingale limits, while state-space and hidden-process models use a mix of latent-variable likelihood and dependent-data asymptotics.
+
+A practical proof template is therefore: first normalize the complete log-likelihood by the right growth rate ($w_t$); second prove a uniform convergence result for $M_t(\theta)$; third deduce consistency from a unique maximizer of the limit criterion; fourth derive a score expansion and identify the asymptotic law of the normalized score; fifth show convergence of the observed information. If the model is branching-like, condition on survival or on the event $(Z_t\to\infty)$; if it is mixture-like after marginalization, consider penalization or sieve methods; if it is genuinely a process over $t$, use martingale estimating equations or local asymptotic theory. The standard references that match this roadmap best are Wald for consistency, Kiefer–Wolfowitz for mixture/incidental-parameter settings, van der Vaart or Ibragimov–Has’minskii for DQM/LAN and asymptotic normality, and branching-process inference papers when $Z$ has a reproduction interpretation.
+
+If helpful, I can turn this into a theorem-proving checklist for your exact model, with assumptions stated in a form suitable for a paper or thesis.
+
+---
+
+## How to prove consistency of the estimators (concise proof outline)
+
+Below is a concise, structured outline you can follow to convert the LLM answer into a formal consistency proof for the MLE (or M-estimator) based on the complete-data likelihood.
+
+- **1. Choose normalization $w_t$.** Pick a deterministic sequence $w_t\to\infty$ matching the growth of information (e.g. $w_t=\mathbb E_{\theta_0}[Z_t]$, $w_t=t$, or $w_t=Z_t$ if $Z_t$ is deterministic/regular).
+
+- **2. Define normalized criterion.** Set $M_t(\theta)=w_t^{-1}\ell_t(\theta)$ and the population limit
+  \[M(\theta):=\lim_{t\to\infty}\mathbb E_{\theta_0}[M_t(\theta)],\]
+  provided the limit exists (or take an almost-sure/ subsequential limit as appropriate).
+
+- **3. Prove a uniform law of large numbers (ULLN).** Show
+  \[\sup_{\theta\in\Theta}|M_t(\theta)-M(\theta)|\xrightarrow{p}0.\]
+  Typical route:
+  - Condition on $Z_t$ and apply a conditional LLN to the sum \(\sum_{i=1}^{Z_t-1}\log r_\theta(B_{t,i})\).
+  - Show $Z_t/w_t\to c$ in probability (or a.s.) for some deterministic $c>0$, or control fluctuations when $Z_t/w_t$ is random but tight.
+  - Obtain equicontinuity in $\theta$ (via Lipschitz scores, bracketing entropy, or compactness + dominated convergence).
+
+- **4. Verify identifiability and uniqueness.** Prove that $M(\theta)$ is uniquely maximized at $\theta_0$. This typically follows because
+  \[M(\theta)-M(\theta_0)=-\mathrm{KL}(P_{\theta_0},P_{\theta})\le 0,\]
+  with equality only at $\theta=\theta_0$, under the domination/identifiability conditions.
+
+- **5. Apply Wald's argmax theorem.** From the ULLN and unique maximizer conclude \(\hat\theta_t\xrightarrow{p}\theta_0\) (or a.s. under stronger ULLN).
+
+- **6. List regularity conditions to check.** Include:
+  - Compactness of $\Theta$ or use of sieves/penalties.
+  - Dominating measure and integrable envelope for $\log f_{\theta,t}$.
+  - Uniform continuity in $\theta$ of the log-densities or scores.
+  - Control of tails: $\mathbb E_{\theta_0}[Z_t\sup_{\theta}|\log r_\theta(B)|]<\infty$.
+  - Identifiability of $(p_\theta,q_\theta,r_\theta)$ jointly.
+
+- **7. If $Z_t$ is stochastic or branching-like.** Either condition on events where $Z_t\to\infty$ (e.g. survival) and run the same steps on that event, or use martingale LLNs for branching structures to obtain deterministic normalization.
+
+- **8. Notes on latent/marginal cases.** If $Z$ or the $B_i$ are unobserved and you maximize the observed (marginal) likelihood, replace the conditional LLN step with a Kiefer–Wolfowitz / mixture-model ULLN argument; include extra compactification or penalization assumptions as in mixture-MLE theory.
+
+This outline converts the LLM narrative into a compact, checkable proof plan. For a formal write-up, replace each bullet with a lemma: (i) normalization lemma, (ii) conditional LLN lemma, (iii) uniform equicontinuity lemma, (iv) identifiability lemma, (v) argmax consistency theorem application. Each lemma should state precise assumptions and then be proved using standard tools (conditional LLN, dominated convergence, Glivenko–Cantelli theorems, or martingale limit theorems as appropriate).
+
+---
+
+## References
+
+### Sources cited in the original answer
+
+- **Wald consistency and classical likelihood asymptotics:** [Wald consistency notes (University of Minnesota)](https://www.stat.umn.edu/geyer/8112/notes/wald.pdf?utm_source=chatgpt.com)
+
+- **Kiefer–Wolfowitz consistency for mixture/incidental-parameter models:** [Kiefer–Wolfowitz (1956) original paper](https://projecteuclid.org/journals/annals-of-mathematical-statistics/volume-27/issue-4/Consistency-of-the-Maximum-Likelihood-Estimator-in-the-Presence-of/10.1214/aoms/1177728066.full?utm_source=chatgpt.com)
+
+- **Branching-process inference and martingale methods:** [Keiding — Estimation Theory for Branching Processes](https://www.math.ku.dk/bibliotek/arkivet/preprints-fra-ims/1975/preprint_1975_-_no_7_keiding__niels_-_estimation_theory_for_branching_processes.pdf?utm_source=chatgpt.com)
+
+- **LAN/LAMN and asymptotic likelihood theory:** [LAMN reference document (KU Leuven repository)](https://lirias.kuleuven.be/retrieve/1490e3e2-13e4-4e32-bb70-4a8f9c977c19?utm_source=chatgpt.com)
+
+- **Empirical process / uniform convergence references:** [Empirical process lecture notes (ETH Zürich)](https://stat.ethz.ch/~geer/cowlas.pdf?utm_source=chatgpt.com)
+
+- **Martingale and stochastic-process asymptotics:** [Martingale methods and stochastic-process asymptotics reference (arXiv)](https://arxiv.org/pdf/2009.09695?utm_source=chatgpt.com)
+
+### Additional standard references mentioned
+
+- **General asymptotic statistics:** van der Vaart, A. W. (1998). _Asymptotic Statistics_. Cambridge University Press.
+- **Statistical Estimation:** Ibragimov, I. A., & Has’minskii, R. Z. (1981). _Statistical Estimation: Asymptotic Theory_. Springer.
+- **Asymptotics in Statistics:** Le Cam, L., & Yang, G. L. (2000). _Asymptotics in Statistics_. Springer.
+
+- **Empirical processes and M-estimation:** van der Vaart, A. W., & Wellner, J. A. (1996). _Weak Convergence and Empirical Processes_. Springer.
+- **Large sample estimation:** Newey, W., & McFadden, D. (1994). _Large Sample Estimation and Hypothesis Testing_ (chapter in Handbook of Econometrics / lecture notes).
+
+- **Branching processes:** Athreya, K. B., & Ney, P. E. (1972). _Branching Processes_. Springer.
+- **The theory of branching processes:** Harris, T. E. (1963). _The Theory of Branching Processes_. Springer.
+- **Branching processes with biological applications:** Jagers, P. (1975). _Branching Processes with Biological Applications_. John Wiley & Sons.
+
+- **Martingale asymptotics:** Hall, P., & Heyde, C. C. (1980). _Martingale Limit Theory and Its Application_. Academic Press.
+
+- **Counting-process and stochastic-process likelihoods:** Andersen, P. K., Borgan, Ø., Gill, R. D., & Keiding, N. (1993). _Statistical Models Based on Counting Processes_. Springer.
+- **Statistical inference for ergodic diffusion processes:** Kutoyants, Y. A. (2004). _Statistical Inference for Ergodic Diffusion Processes_. Springer.
+
+- **Mixture models:** Lindsay, B. G. (1995). _Mixture Models: Theory, Geometry and Applications_. IMS.
