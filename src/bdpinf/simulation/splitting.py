@@ -31,7 +31,30 @@ from inf_bp_texts.visualization.plotting import (
 
 @dataclass(frozen=True)
 class SplittingConfig:
-    """Configuration for multilevel splitting in a subcritical regime."""
+    """Configuration for multilevel splitting in a subcritical regime.
+
+    Parameters
+    ----------
+    birth_rate : float
+        Per-individual birth rate used in the birth-death dynamics.
+    death_rate : float
+        Per-individual death rate used in the birth-death dynamics.
+    terminal_time : float
+        Target time horizon T for conditioning on survival.
+    n_particles : int
+        Number of particles in the splitting particle ensemble.
+    level_times : list[float] | None, optional
+        Explicit level boundary times (including 0 and `terminal_time`). If
+        ``None``, levels are constructed from ``n_levels``.
+    n_levels : int, optional
+        Number of level intervals to create when ``level_times`` is not
+        provided. Defaults to 10.
+    random_seed : int | None, optional
+        Seed for random number generation to allow reproducible runs.
+    n_conditioned_trajectories : int, optional
+        Number of conditioned trajectories to return for downstream analysis.
+
+    """
 
     birth_rate: float
     death_rate: float
@@ -45,7 +68,30 @@ class SplittingConfig:
 
 @dataclass(frozen=True)
 class FlemingViotConfig:
-    """Configuration for level-wise Fleming-Viot approximation."""
+    """Configuration for level-wise Fleming-Viot approximation.
+
+    Parameters
+    ----------
+    birth_rate : float
+        Per-individual birth rate used in the birth-death dynamics.
+    death_rate : float
+        Per-individual death rate used in the birth-death dynamics.
+    terminal_time : float
+        Target time horizon T for conditioning on survival.
+    n_particles : int
+        Number of particles in the Fleming–Viot ensemble.
+    level_times : list[float] | None, optional
+        Explicit level boundary times (including 0 and `terminal_time`). If
+        ``None``, levels are constructed from ``n_levels``.
+    n_levels : int, optional
+        Number of level intervals to create when ``level_times`` is not
+        provided. Defaults to 10.
+    random_seed : int | None, optional
+        Seed for random number generation to allow reproducible runs.
+    n_conditioned_trajectories : int, optional
+        Number of conditioned trajectories to return for downstream analysis.
+
+    """
 
     birth_rate: float
     death_rate: float
@@ -59,7 +105,25 @@ class FlemingViotConfig:
 
 @dataclass(frozen=True)
 class LevelDiagnostic:
-    """Per-level diagnostics for splitting/Fleming-Viot evolution."""
+    """Per-level diagnostics for splitting/Fleming-Viot evolution.
+
+    Parameters
+    ----------
+    level_index : int
+        Index of the level interval (1-based with 0 reserved for t0).
+    time : float
+        Level boundary time corresponding to this diagnostic.
+    survivor_count : int
+        Number of particles surviving at the level boundary.
+    conditional_survival_estimate : float
+        Empirical conditional survival probability for this level interval.
+    cumulative_survival_estimate : float
+        Cumulative product of conditional survival estimates up to this
+        level, estimating overall survival to the current time.
+    mean_population : float
+        Ensemble mean population size at the level boundary.
+
+    """
 
     level_index: int
     time: float
@@ -71,7 +135,21 @@ class LevelDiagnostic:
 
 @dataclass(frozen=True)
 class ConditionedTrajectory:
-    """A sampled conditioned population path and optional manuscript process."""
+    """A sampled conditioned population path and associated process record.
+
+    Parameters
+    ----------
+    particle_id : int
+        Identifier for the particle that produced this conditioned trajectory.
+    times : np.ndarray
+        Monotone array of observation times for the population trace.
+    populations : np.ndarray
+        Population sizes corresponding to ``times``.
+    process : BirthDeathProcess
+        Manuscript-level birth-death process reconstructed from particle
+        ancestry records.
+
+    """
 
     particle_id: int
     times: np.ndarray
@@ -81,7 +159,33 @@ class ConditionedTrajectory:
 
 @dataclass(frozen=True)
 class SplittingSimulationResult:
-    """Output of multilevel splitting simulation."""
+    """Output of multilevel splitting simulation.
+
+    Parameters
+    ----------
+    config : SplittingConfig
+        The configuration used to run the simulation.
+    level_times : np.ndarray
+        Array of level boundary times including time 0 and terminal time.
+    survival_probability_estimate : float
+        Estimated probability of survival to the terminal time (product of
+        conditional estimates across levels).
+    level_diagnostics : list[LevelDiagnostic]
+        Per-level diagnostic objects describing survival and population
+        statistics.
+    level_survival_probabilities : np.ndarray
+        Empirical conditional survival probabilities for each level
+        interval (length = len(level_times) - 1).
+    level_mean_populations : np.ndarray
+        Ensemble mean population at each level boundary.
+    final_survivor_count : int
+        Number of surviving manuscripts/lineages at the terminal time.
+    conditioned_trajectories : list[ConditionedTrajectory]
+        Sampled conditioned trajectories selected from surviving particles.
+    particle_genealogy : pd.DataFrame
+        Tabular parent–child lineage records produced during resampling.
+
+    """
 
     config: SplittingConfig
     level_times: np.ndarray
@@ -96,7 +200,32 @@ class SplittingSimulationResult:
 
 @dataclass(frozen=True)
 class FlemingViotSimulationResult:
-    """Output of level-wise Fleming-Viot simulation."""
+    """Output of level-wise Fleming-Viot simulation.
+
+    Parameters
+    ----------
+    config : FlemingViotConfig
+        The configuration used to run the Fleming–Viot approximation.
+    level_times : np.ndarray
+        Array of level boundary times including time 0 and terminal time.
+    survival_proxy_estimate : float
+        Proxy estimate of survival obtained from the Fleming–Viot procedure.
+    level_diagnostics : list[LevelDiagnostic]
+        Per-level diagnostic objects describing survival and population
+        statistics.
+    level_survival_probabilities : np.ndarray
+        Empirical conditional survival probabilities for each level
+        interval (length = len(level_times) - 1).
+    level_mean_populations : np.ndarray
+        Ensemble mean population at each level boundary.
+    final_survivor_count : int
+        Number of surviving manuscripts/lineages at the terminal time.
+    conditioned_trajectories : list[ConditionedTrajectory]
+        Sampled conditioned trajectories selected from surviving particles.
+    particle_genealogy : pd.DataFrame
+        Tabular parent–child lineage records produced during resampling.
+
+    """
 
     config: FlemingViotConfig
     level_times: np.ndarray
@@ -111,7 +240,29 @@ class FlemingViotSimulationResult:
 
 @dataclass
 class _ParticleState:
-    """Mutable per-particle state for exact event simulation."""
+    """Mutable per-particle state for exact event simulation.
+
+    Parameters
+    ----------
+    particle_id : int
+        Unique identifier assigned to the particle instance.
+    current_time : float
+        Current simulated time for this particle.
+    next_manuscript_id : int
+        Next available manuscript identifier for descendants.
+    alive_ids : list[int]
+        List of manuscript ids currently alive within the particle.
+    manuscript_records : dict[int, dict[str, Any]]
+        Mapping from manuscript id to a record dict containing creation and
+        death metadata.
+    trace_times : list[float]
+        Times at which the particle trace population was recorded.
+    trace_populations : list[int]
+        Population sizes corresponding to ``trace_times``.
+    rng : np.random.Generator
+        Random number generator instance used for stochastic events.
+
+    """
 
     particle_id: int
     current_time: float
