@@ -74,7 +74,6 @@ splitting_config = SplittingConfig(
     n_particles=n_particles,
     n_levels=n_levels,
     random_seed=random_seed,
-    n_conditioned_trajectories=12,
 )
 
 splitting_result = simulate_subcritical_survival_splitting(splitting_config)
@@ -83,11 +82,16 @@ print(
     f"Estimated survival probability P(tau > T): {splitting_result.survival_probability_estimate:.6e}"
 )
 print(f"Final survivor bank size: {splitting_result.final_survivor_count}")
+print(f"Returned conditioned trajectories: {len(splitting_result.conditioned_trajectories)}")
 print(
     "Product check: ",
     f"{np.prod(splitting_result.level_survival_probabilities):.6e}",
 )
 ```
+
+By default, splitting now returns all terminal survivors in
+`conditioned_trajectories`; `n_conditioned_trajectories` remains available as an
+explicit cap if you want fewer trajectories.
 
 ## Conditioned trajectories
 

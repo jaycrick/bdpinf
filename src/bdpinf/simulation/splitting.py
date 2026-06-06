@@ -54,8 +54,10 @@ class SplittingConfig:
         provided. Defaults to 10.
     random_seed : int | None, optional
         Seed for random number generation to allow reproducible runs.
-    n_conditioned_trajectories : int, optional
-        Number of conditioned trajectories to return for downstream analysis.
+    n_conditioned_trajectories : int | None, optional
+        Maximum number of conditioned trajectories to return for downstream
+        analysis. If ``None``, all surviving terminal trajectories are
+        returned.
 
     """
 
@@ -82,7 +84,7 @@ class FlemingViotConfig:
     terminal_time : float
         Target time horizon T for conditioning on survival.
     n_particles : int
-        Number of particles in the Fleming–Viot ensemble.
+        Number of particles in the Fleming-Viot ensemble.
     level_times : list[float] | None, optional
         Explicit level boundary times (including 0 and `terminal_time`). If
         ``None``, levels are constructed from ``n_levels``.
@@ -186,7 +188,7 @@ class SplittingSimulationResult:
     conditioned_trajectories : list[ConditionedTrajectory]
         Sampled conditioned trajectories selected from surviving particles.
     particle_genealogy : pd.DataFrame
-        Tabular parent–child lineage records produced during resampling.
+        Tabular parent-child lineage records produced during resampling.
 
     """
 
@@ -208,11 +210,11 @@ class FlemingViotSimulationResult:
     Parameters
     ----------
     config : FlemingViotConfig
-        The configuration used to run the Fleming–Viot approximation.
+        The configuration used to run the Fleming-Viot approximation.
     level_times : np.ndarray
         Array of level boundary times including time 0 and terminal time.
     survival_proxy_estimate : float
-        Proxy estimate of survival obtained from the Fleming–Viot procedure.
+        Proxy estimate of survival obtained from the Fleming-Viot procedure.
     level_diagnostics : list[LevelDiagnostic]
         Per-level diagnostic objects describing survival and population
         statistics.
@@ -226,7 +228,7 @@ class FlemingViotSimulationResult:
     conditioned_trajectories : list[ConditionedTrajectory]
         Sampled conditioned trajectories selected from surviving particles.
     particle_genealogy : pd.DataFrame
-        Tabular parent–child lineage records produced during resampling.
+        Tabular parent-child lineage records produced during resampling.
 
     """
 
