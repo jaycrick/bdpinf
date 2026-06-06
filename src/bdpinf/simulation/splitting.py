@@ -22,11 +22,14 @@ import pandas as pd
 import plotly.graph_objs as go
 
 from inf_bp_texts.models import BirthDeathProcess
+from inf_bp_texts.models.mathematical_functions import calculate_extinction_pr
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,
     apply_tufte_axes,
     ptolqual,
 )
+
+MIN_LEVEL_TIMES = 2
 
 
 @dataclass(frozen=True)
@@ -63,7 +66,7 @@ class SplittingConfig:
     level_times: list[float] | None = None
     n_levels: int = 10
     random_seed: int | None = None
-    n_conditioned_trajectories: int = 12
+    n_conditioned_trajectories: int | None = None
 
 
 @dataclass(frozen=True)
@@ -312,7 +315,7 @@ def _build_level_times(
     if levels.ndim != 1:
         msg = "level_times must be one-dimensional"
         raise ValueError(msg)
-    if levels.size < 2:
+    if levels.size < MIN_LEVEL_TIMES:
         msg = "At least two level times are required"
         raise ValueError(msg)
     if not np.isclose(levels[0], 0.0):
@@ -333,6 +336,32 @@ def _make_child_rng(
 ) -> np.random.Generator:
     child_seed = int(seed_rng.integers(0, 2**31 - 1))
     return np.random.default_rng(child_seed)
+
+
+def _calculate_extinction_probability(
+    *,
+    birth_rate: float,
+    death_rate: float,
+    interval_time: float,
+) -> float:
+    probability = float(calculate_extinction_pr(birth_rate, death_rate, interval_time))
+    return float(np.clip(probability, 0.0, 1.0))
+
+
+def _adaptive_particle_count(
+    *,
+    birth_rate: float,
+    death_rate: float,
+    interval_time: float,
+) -> int:
+    extinction_probability = _calculate_extinction_probability(
+        birth_rate=birth_rate,
+        death_rate=death_rate,
+        interval_time=interval_time,
+    )
+    if extinction_probability <= 0.0:
+        return 1
+    return int(np.ceil(1.0 / extinction_probability))
 
 
 def _initialize_particle(
@@ -492,26 +521,29 @@ def _particle_to_birth_death_process(
 def _build_conditioned_trajectories(
     *,
     particles: list[_ParticleState],
-    n_conditioned_trajectories: int,
-    terminal_time: float,
-    birth_rate: float,
-    death_rate: float,
+    config: Any,
     seed_rng: np.random.Generator,
 ) -> list[ConditionedTrajectory]:
     survivors = [particle for particle in particles if len(particle.alive_ids) > 0]
-    if not survivors or n_conditioned_trajectories <= 0:
+    if not survivors:
         return []
 
-    n_take = min(n_conditioned_trajectories, len(survivors))
+    if config.n_conditioned_trajectories is None:
+        n_take = len(survivors)
+    else:
+        if config.n_conditioned_trajectories <= 0:
+            return []
+        n_take = min(config.n_conditioned_trajectories, len(survivors))
+
     chosen_indices = seed_rng.choice(len(survivors), size=n_take, replace=False)
     trajectories: list[ConditionedTrajectory] = []
     for raw_idx in np.atleast_1d(chosen_indices):
         particle = survivors[int(raw_idx)]
         process = _particle_to_birth_death_process(
             state=particle,
-            terminal_time=terminal_time,
-            birth_rate=birth_rate,
-            death_rate=death_rate,
+            terminal_time=float(config.terminal_time),
+            birth_rate=float(config.birth_rate),
+            death_rate=float(config.death_rate),
         )
         trajectories.append(
             ConditionedTrajectory(
@@ -558,9 +590,11 @@ def simulate_subcritical_survival_splitting(
     lineage_rows: list[dict[str, Any]] = []
     particle_id_counter = config.n_particles
     cumulative = 1.0
+    previous_time = 0.0
 
     for level_index in range(1, len(levels)):
         target_time = float(levels[level_index])
+        interval_time = target_time - previous_time
         for particle in particles:
             _simulate_to_level(
                 state=particle,
@@ -595,9 +629,14 @@ def simulate_subcritical_survival_splitting(
             particles = []
             break
 
+        target_particle_count = _adaptive_particle_count(
+            birth_rate=float(config.birth_rate),
+            death_rate=float(config.death_rate),
+            interval_time=float(interval_time),
+        )
         selected_slots = seed_rng.choice(
             survivors,
-            size=config.n_particles,
+            size=target_particle_count,
             replace=True,
         )
         next_particles: list[_ParticleState] = []
@@ -622,13 +661,11 @@ def simulate_subcritical_survival_splitting(
                 },
             )
         particles = next_particles
+        previous_time = target_time
 
     conditioned_trajectories = _build_conditioned_trajectories(
         particles=particles,
-        n_conditioned_trajectories=config.n_conditioned_trajectories,
-        terminal_time=float(config.terminal_time),
-        birth_rate=float(config.birth_rate),
-        death_rate=float(config.death_rate),
+        config=config,
         seed_rng=seed_rng,
     )
 
@@ -752,10 +789,7 @@ def simulate_subcritical_survival_fleming_viot(
 
     conditioned_trajectories = _build_conditioned_trajectories(
         particles=particles,
-        n_conditioned_trajectories=config.n_conditioned_trajectories,
-        terminal_time=float(config.terminal_time),
-        birth_rate=float(config.birth_rate),
-        death_rate=float(config.death_rate),
+        config=config,
         seed_rng=seed_rng,
     )
 
