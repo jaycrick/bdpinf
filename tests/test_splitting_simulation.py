@@ -11,6 +11,10 @@ from inf_bp_texts.simulation import (
     simulate_subcritical_survival_fleming_viot,
     simulate_subcritical_survival_splitting,
 )
+from inf_bp_texts.simulation.splitting import (
+    _adaptive_particle_count,
+    _calculate_extinction_probability,
+)
 
 
 class TestSplittingSimulation:
@@ -24,7 +28,6 @@ class TestSplittingSimulation:
             n_particles=200,
             n_levels=8,
             random_seed=17,
-            n_conditioned_trajectories=6,
         )
 
         result = simulate_subcritical_survival_splitting(config)
@@ -42,7 +45,6 @@ class TestSplittingSimulation:
             n_particles=150,
             n_levels=6,
             random_seed=91,
-            n_conditioned_trajectories=4,
         )
 
         result = simulate_subcritical_survival_splitting(config)
@@ -62,7 +64,6 @@ class TestSplittingSimulation:
             n_particles=120,
             n_levels=5,
             random_seed=2026,
-            n_conditioned_trajectories=5,
         )
 
         first = simulate_subcritical_survival_splitting(config)
@@ -85,15 +86,30 @@ class TestSplittingSimulation:
             n_particles=250,
             n_levels=8,
             random_seed=11,
-            n_conditioned_trajectories=8,
         )
 
         result = simulate_subcritical_survival_splitting(config)
+
+        assert len(result.conditioned_trajectories) == result.final_survivor_count
 
         for trajectory in result.conditioned_trajectories:
             assert isinstance(trajectory.process, BirthDeathProcess)
             assert np.isclose(trajectory.times[-1], config.terminal_time)
             assert trajectory.populations[-1] > 0
+
+    def test_extinction_helper_uses_requested_band(self) -> None:
+        probability = _calculate_extinction_probability(
+            birth_rate=0.9,
+            death_rate=1.0,
+            interval_time=0.5,
+        )
+
+        assert np.e ** (-2.0) < probability < 0.5
+        assert _adaptive_particle_count(
+            birth_rate=0.9,
+            death_rate=1.0,
+            interval_time=0.5,
+        ) == int(np.ceil(1.0 / probability))
 
     def test_fleming_viot_returns_expected_shapes(self) -> None:
         config = FlemingViotConfig(
