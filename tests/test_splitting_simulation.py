@@ -202,6 +202,52 @@ class TestSplittingSimulation:
                 f"exceeds cap {config.n_particles}"
             )
 
+    def test_splitting_spine_is_alive_list_head(self) -> None:
+        # Verify that each conditioned trajectory has exactly one is_spine
+        # manuscript that is also a survivor — consistent with the
+        # simulate_birth_death_process index-0 alive-list convention.
+        config = SplittingConfig(
+            birth_rate=0.9,
+            death_rate=1.0,
+            terminal_time=10.0,
+            n_particles=500,
+            random_seed=77,
+        )
+
+        result = simulate_subcritical_survival_splitting(config)
+
+        assert len(result.conditioned_trajectories) > 0, "expected non-zero survivors"
+        for traj in result.conditioned_trajectories:
+            records = traj.process.manuscript_records
+            if records is None:
+                continue
+            spine_rows = records[records["is_spine"]]
+            assert len(spine_rows) == 1, "expected exactly one spine per tree"
+            assert bool(spine_rows["survived"].iloc[0]), "spine must be a survivor"
+
+    def test_fleming_viot_spine_is_alive_list_head(self) -> None:
+        # Same structural check for the Fleming-Viot path.
+        config = FlemingViotConfig(
+            birth_rate=0.9,
+            death_rate=1.0,
+            terminal_time=10.0,
+            n_particles=200,
+            n_levels=5,
+            random_seed=88,
+            n_conditioned_trajectories=20,
+        )
+
+        result = simulate_subcritical_survival_fleming_viot(config)
+
+        assert len(result.conditioned_trajectories) > 0, "expected non-zero survivors"
+        for traj in result.conditioned_trajectories:
+            records = traj.process.manuscript_records
+            if records is None:
+                continue
+            spine_rows = records[records["is_spine"]]
+            assert len(spine_rows) == 1, "expected exactly one spine per tree"
+            assert bool(spine_rows["survived"].iloc[0]), "spine must be a survivor"
+
     def test_fleming_viot_level_times_invariant_on_early_extinction(self) -> None:
         # Regression test for the same early-exit truncation bug in the
         # Fleming-Viot path.

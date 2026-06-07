@@ -531,11 +531,18 @@ def _simulate_to_level(
 
         state.current_time = event_time
         if state.rng.uniform() < birth_probability:
-            parent_idx = int(state.rng.integers(0, len(state.alive_ids)))
-            parent_id = state.alive_ids[parent_idx]
             child_id = state.next_manuscript_id
             state.next_manuscript_id += 1
-            state.alive_ids.append(child_id)
+            # Insert at a random position >= 1 so index-0 lineage is never
+            # displaced — matching simulate_birth_death_process's convention.
+            # Parent is the left neighbour at insert_idx - 1.
+            if len(state.alive_ids) == 1:
+                state.alive_ids.append(child_id)
+                parent_id = state.alive_ids[0]
+            else:
+                insert_idx = int(state.rng.integers(1, len(state.alive_ids) + 1))
+                state.alive_ids.insert(insert_idx, child_id)
+                parent_id = state.alive_ids[insert_idx - 1]
             state.manuscript_records[child_id] = {
                 "manuscript_id": child_id,
                 "parent_id": parent_id,
