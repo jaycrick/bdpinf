@@ -33,9 +33,11 @@ class TestSplittingSimulation:
 
         result = simulate_subcritical_survival_splitting(config)
 
-        assert result.level_times.shape[0] == config.n_levels + 1
-        assert result.level_survival_probabilities.shape[0] == config.n_levels
-        assert result.level_mean_populations.shape[0] == config.n_levels + 1
+        # n_levels is ignored when level_times is None; levels are auto-selected
+        n_levels_used = len(result.level_times) - 1
+        assert result.level_times.shape[0] == n_levels_used + 1
+        assert result.level_survival_probabilities.shape[0] == n_levels_used
+        assert result.level_mean_populations.shape[0] == n_levels_used + 1
         assert 0.0 <= result.survival_probability_estimate <= 1.0
 
     def test_splitting_product_matches_stored_estimate(self) -> None:
@@ -134,13 +136,14 @@ class TestSplittingSimulation:
         # Regression test: when all particles go extinct before the final level
         # the loop breaks early and level_times was previously not truncated,
         # leaving len(level_times) >> len(level_survival_probabilities) + 1.
-        # Use a near-zero birth rate and very few particles so extinction before
-        # the last level is guaranteed regardless of seed.
+        # Use n_particles=2 so that after the first level only 0 or 1 particle
+        # can survive; with a near-zero birth rate, all-extinct is guaranteed.
+        # n_levels is ignored because level_times=None triggers auto-selection.
         config = SplittingConfig(
             birth_rate=0.05,
             death_rate=1.0,
             terminal_time=50.0,
-            n_particles=5,
+            n_particles=2,
             n_levels=15,
             random_seed=0,
         )
@@ -150,13 +153,54 @@ class TestSplittingSimulation:
         # Core invariant: always one more boundary than probability estimates.
         assert len(result.level_times) == len(result.level_survival_probabilities) + 1
         assert len(result.level_times) == len(result.level_mean_populations)
-        # Confirm we actually hit the early-exit path.
-        assert len(result.level_survival_probabilities) < config.n_levels
+        # Confirm the early-exit path was taken: all particles went extinct.
+        assert result.survival_probability_estimate == 0.0
+        assert result.final_survivor_count == 0
         # plot_level_survival_probabilities must not raise.
         plot_level_survival_probabilities(
             level_times=result.level_times,
             level_survival_probabilities=result.level_survival_probabilities,
         )
+
+    def test_splitting_band_and_initial_count(self) -> None:
+        # Verify the enrichment scheme: first-increment pr_ext in band, initial
+        # ensemble == min(R, cap), and every level's entering_count <= cap.
+        config = SplittingConfig(
+            birth_rate=0.9,
+            death_rate=1.0,
+            terminal_time=50.0,
+            n_particles=500,
+            random_seed=42,
+        )
+
+        result = simulate_subcritical_survival_splitting(config)
+
+        # Derive what the first increment should be from the auto-selected grid
+        first_increment = float(result.level_times[1]) - float(result.level_times[0])
+        pr_ext = _calculate_extinction_probability(
+            birth_rate=config.birth_rate,
+            death_rate=config.death_rate,
+            interval_time=first_increment,
+        )
+
+        # pr_ext must be in band [e^{-2}, 0.5]
+        assert np.e**-2.0 <= pr_ext <= 0.5, (
+            f"First-increment pr_ext {pr_ext:.4f} is outside band"
+        )
+
+        # initial_particle_count == min(ceil(1/pr_ext), n_particles)
+        expected_r = int(np.ceil(1.0 / pr_ext))
+        expected_initial = min(expected_r, config.n_particles)
+        assert result.splitting_factor == expected_r
+        assert result.initial_particle_count == expected_initial
+
+        # Every LevelDiagnostic.entering_count must be <= n_particles (cap respected)
+        for diag in result.level_diagnostics:
+            assert diag.entering_count is not None
+            assert diag.entering_count <= config.n_particles, (
+                f"Level {diag.level_index}: entering_count {diag.entering_count} "
+                f"exceeds cap {config.n_particles}"
+            )
 
     def test_fleming_viot_level_times_invariant_on_early_extinction(self) -> None:
         # Regression test for the same early-exit truncation bug in the

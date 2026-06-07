@@ -30,6 +30,8 @@ from inf_bp_texts.visualization.plotting import (
 )
 
 MIN_LEVEL_TIMES = 2
+_BAND_LOWER: float = np.e**-2.0  # ≈ 0.135; at this pr_ext, R = ceil(e^2) = 8
+_BAND_UPPER: float = 0.5  # at this pr_ext, R = ceil(2) = 2
 
 
 @dataclass(frozen=True)
@@ -45,13 +47,20 @@ class SplittingConfig:
     terminal_time : float
         Target time horizon T for conditioning on survival.
     n_particles : int
-        Number of particles in the splitting particle ensemble.
+        Cap on the ensemble size after each enrichment step.  The initial
+        ensemble size is ``ceil(1 / pr_ext)`` (the splitting factor R), which
+        may be smaller than this cap.  After R-fold duplication of survivors,
+        if the ensemble would exceed ``n_particles`` it is subsampled uniformly
+        back down to ``n_particles``.
     level_times : list[float] | None, optional
         Explicit level boundary times (including 0 and `terminal_time`). If
-        ``None``, levels are constructed from ``n_levels``.
+        ``None``, levels are automatically chosen so that the per-increment
+        extinction probability lies in ``[e^{-2}, 0.5]``; in that case
+        ``n_levels`` is ignored.
     n_levels : int, optional
         Number of level intervals to create when ``level_times`` is not
-        provided. Defaults to 10.
+        provided.  Ignored when ``level_times`` is ``None`` (levels are
+        auto-selected from the band constraint).  Defaults to 10.
     random_seed : int | None, optional
         Seed for random number generation to allow reproducible runs.
     n_conditioned_trajectories : int | None, optional
@@ -121,12 +130,16 @@ class LevelDiagnostic:
     survivor_count : int
         Number of particles surviving at the level boundary.
     conditional_survival_estimate : float
-        Empirical conditional survival probability for this level interval.
+        Empirical conditional survival probability for this level interval,
+        computed as ``survivor_count / entering_count``.
     cumulative_survival_estimate : float
         Cumulative product of conditional survival estimates up to this
         level, estimating overall survival to the current time.
     mean_population : float
         Ensemble mean population size at the level boundary.
+    entering_count : int | None, optional
+        Number of particles that entered this level interval.  Set by the
+        splitting simulator; ``None`` for the Fleming-Viot path.
 
     """
 
@@ -136,6 +149,7 @@ class LevelDiagnostic:
     conditional_survival_estimate: float
     cumulative_survival_estimate: float
     mean_population: float
+    entering_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -201,6 +215,8 @@ class SplittingSimulationResult:
     final_survivor_count: int
     conditioned_trajectories: list[ConditionedTrajectory]
     particle_genealogy: pd.DataFrame
+    splitting_factor: int = 1
+    initial_particle_count: int = 1
 
 
 @dataclass(frozen=True)
@@ -364,6 +380,86 @@ def _adaptive_particle_count(
     if extinction_probability <= 0.0:
         return 1
     return int(np.ceil(1.0 / extinction_probability))
+
+
+def _select_level_times_for_band(
+    *,
+    birth_rate: float,
+    death_rate: float,
+    terminal_time: float,
+) -> np.ndarray:
+    """Auto-select an equal-spaced level grid whose per-increment pr_ext is in band.
+
+    Finds the coarsest equal-spaced grid (fewest levels) such that the
+    single-particle extinction probability over each increment lies within
+    ``[_BAND_LOWER, _BAND_UPPER]``.  The upper edge ``_BAND_UPPER = 0.5``
+    corresponds to ``R = ceil(1/0.5) = 2`` (minimum duplication); finer grids
+    only increase cost and reduce ``R``.
+
+    Parameters
+    ----------
+    birth_rate : float
+        Per-individual birth rate.
+    death_rate : float
+        Per-individual death rate (must exceed ``birth_rate``).
+    terminal_time : float
+        Terminal time T.
+
+    Returns
+    -------
+    np.ndarray
+        Strictly increasing level boundary array ``[0, ..., T]`` of length
+        ``n_levels + 1``, where ``n_levels >= 1``.
+
+    Raises
+    ------
+    ValueError
+        If no valid grid can be found (e.g. ``terminal_time`` is so short
+        that even a single increment violates the band).
+
+    """
+    # Binary-search for the largest increment tau such that pr_ext(tau) <= BAND_UPPER.
+    # That gives the coarsest (fewest levels) valid grid.
+    lo, hi = 0.0, terminal_time
+    for _ in range(64):
+        mid = (lo + hi) / 2.0
+        pr = _calculate_extinction_probability(
+            birth_rate=birth_rate,
+            death_rate=death_rate,
+            interval_time=mid,
+        )
+        if pr <= _BAND_UPPER:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < 1e-12:
+            break
+
+    # tau_star ~ lo; n_levels = max(1, ceil(T / tau_star))
+    tau_star = lo
+    if tau_star <= 0.0:
+        msg = (
+            "Cannot find a level increment with pr_ext <= 0.5 for the given "
+            "birth_rate, death_rate, and terminal_time. "
+            "Check that the process is subcritical and terminal_time is positive."
+        )
+        raise ValueError(msg)
+
+    n_levels = max(1, int(np.ceil(terminal_time / tau_star)))
+
+    # After rounding, verify the actual per-increment pr_ext is still >= BAND_LOWER.
+    # If rounding reduced n_levels enough to push pr_ext below the lower bound,
+    # step n_levels back up by one.
+    actual_increment = terminal_time / n_levels
+    actual_pr = _calculate_extinction_probability(
+        birth_rate=birth_rate,
+        death_rate=death_rate,
+        interval_time=actual_increment,
+    )
+    if actual_pr < _BAND_LOWER:
+        n_levels += 1
+
+    return np.linspace(0.0, terminal_time, num=n_levels + 1, dtype=np.float64)
 
 
 def _initialize_particle(
@@ -558,14 +654,155 @@ def _build_conditioned_trajectories(
     return trajectories
 
 
+def _enrich_survivors(
+    *,
+    survivors: np.ndarray,
+    particles: list[_ParticleState],
+    splitting_factor: int,
+    n_particles_cap: int,
+    seed_rng: np.random.Generator,
+    particle_id_counter: int,
+    level_index: int,
+    target_time: float,
+    lineage_rows: list[dict[str, Any]],
+) -> tuple[list[_ParticleState], int]:
+    """Clone survivors R-fold; subsample to cap if needed.
+
+    Parameters
+    ----------
+    survivors : np.ndarray
+        Indices into ``particles`` of survivors at the current level.
+    particles : list[_ParticleState]
+        Full particle list at the current level boundary.
+    splitting_factor : int
+        R = ceil(1 / pr_ext); each survivor is cloned this many times.
+    n_particles_cap : int
+        Maximum ensemble size; subsampled to this if R * survivors > cap.
+    seed_rng : np.random.Generator
+        Master RNG used to draw child seeds.
+    particle_id_counter : int
+        Next available particle identifier.
+    level_index : int
+        Current level index (used in lineage records).
+    target_time : float
+        Current level boundary time (used in lineage records).
+    lineage_rows : list[dict[str, Any]]
+        Appended in-place with parent-child lineage entries.
+
+    Returns
+    -------
+    tuple[list[_ParticleState], int]
+        The enriched particle list and the updated ``particle_id_counter``.
+
+    """
+    target_count = splitting_factor * int(survivors.size)
+    if target_count <= n_particles_cap:
+        selected_slots = np.repeat(survivors, splitting_factor)
+    else:
+        selected_slots = seed_rng.choice(survivors, size=n_particles_cap, replace=True)
+
+    next_particles: list[_ParticleState] = []
+    for child_slot, parent_slot_raw in enumerate(np.atleast_1d(selected_slots)):
+        parent_slot = int(parent_slot_raw)
+        parent_particle = particles[parent_slot]
+        child_particle = _clone_particle(
+            donor=parent_particle,
+            particle_id=particle_id_counter,
+            seed_rng=seed_rng,
+        )
+        particle_id_counter += 1
+        next_particles.append(child_particle)
+        lineage_rows.append(
+            {
+                "level_index": level_index,
+                "time": target_time,
+                "child_slot": child_slot,
+                "parent_slot": parent_slot,
+                "child_particle_id": child_particle.particle_id,
+                "parent_particle_id": parent_particle.particle_id,
+            },
+        )
+    return next_particles, particle_id_counter
+
+
 def simulate_subcritical_survival_splitting(
     config: SplittingConfig,
 ) -> SplittingSimulationResult:
-    """Run multilevel splitting for subcritical survival to terminal_time.
+    """Run fixed-factor enrichment (RESTART) splitting to estimate subcritical survival.
 
-    The estimator is
-        P(tau > T) ~= product_k p_hat_k,
-    where p_hat_k is the empirical conditional survival fraction at level k.
+    Requires a strictly subcritical process (``birth_rate < death_rate``).
+    For supercritical or critical processes use ``simulate_birth_death_process``
+    directly.
+
+    Algorithm
+    ---------
+    **Band constraint.** The level grid is chosen so that the single-particle
+    extinction probability over each increment satisfies
+    ``pr_ext in [e^{-2}, 0.5]``.  This keeps the splitting factor
+    ``R = ceil(1 / pr_ext)`` in the range ``[2, 8]``, balancing variance
+    reduction against computational cost.
+
+    **Initialisation.** When ``config.level_times`` is ``None``, the grid is
+    auto-selected by bisection (``_select_level_times_for_band``); otherwise
+    the caller-supplied grid is used and its first increment is validated
+    against the band.  The initial ensemble size is
+    ``N_0 = min(R, config.n_particles)``.
+
+    **Each level k** is processed in three steps:
+
+    1. **Evolve.** Every particle advances from ``t_{k-1}`` to ``t_k`` under
+       exact Gillespie dynamics.
+    2. **Estimate.** The empirical conditional survival fraction is
+       ``p_k = S_k / N_{k-1}``, where ``S_k`` is the survivor count and
+       ``N_{k-1}`` is the entering particle count (not the cap).
+    3. **Enrich.** Each surviving particle is duplicated R times (R-fold
+       enrichment).  If ``R * S_k > config.n_particles`` the enlarged ensemble
+       is subsampled uniformly with replacement to ``config.n_particles``; this
+       caps cost while keeping the estimator unbiased.
+
+    The final survival estimate is the product
+    ``P(survival to T) ~= p_1 * p_2 * ... * p_K``.
+
+    If all particles go extinct at any level, the algorithm stops early
+    (``survival_probability_estimate`` will be zero) and the returned
+    ``level_times`` array will be shorter than the full K+1 entries.
+
+    Parameters
+    ----------
+    config : SplittingConfig
+        Simulation parameters.  See ``SplittingConfig`` for field descriptions.
+        ``n_particles`` acts as a cap on ensemble size; ``n_levels`` is ignored
+        when ``level_times`` is ``None``.
+
+    Returns
+    -------
+    SplittingSimulationResult
+        Contains:
+
+        - ``survival_probability_estimate`` - product of the per-level
+          empirical fractions.
+        - ``level_survival_probabilities`` - the individual ``p_k`` values.
+        - ``level_mean_populations`` - mean population at each level boundary
+          (including t_0, where it equals 1).
+        - ``level_times`` - the boundary times actually used (may be truncated
+          on early extinction).
+        - ``conditioned_trajectories`` - surviving terminal particles as
+          ``ConditionedTrajectory`` objects, each carrying a full
+          ``BirthDeathProcess`` with ``is_spine`` flags set.
+        - ``particle_genealogy`` - DataFrame of parent-child particle lineage
+          records at each enrichment step.
+        - ``level_diagnostics`` - per-level diagnostic records including
+          ``entering_count`` (particles entering that level).
+        - ``splitting_factor`` - the R value derived from the first increment.
+        - ``initial_particle_count`` - ``N_0 = min(R, config.n_particles)``.
+
+    Raises
+    ------
+    ValueError
+        If ``birth_rate >= death_rate`` (not subcritical), ``n_particles < 1``,
+        ``terminal_time <= 0``, or if ``level_times`` is supplied but its first
+        increment violates the band constraint ``[e^{-2}, 0.5]``.
+
     """
     _validate_common_inputs(
         birth_rate=float(config.birth_rate),
@@ -574,29 +811,59 @@ def simulate_subcritical_survival_splitting(
         n_particles=int(config.n_particles),
     )
 
-    levels = _build_level_times(
-        terminal_time=float(config.terminal_time),
-        level_times=config.level_times,
-        n_levels=int(config.n_levels),
+    # --- Level selection ---
+    if config.level_times is None:
+        levels = _select_level_times_for_band(
+            birth_rate=float(config.birth_rate),
+            death_rate=float(config.death_rate),
+            terminal_time=float(config.terminal_time),
+        )
+    else:
+        levels = _build_level_times(
+            terminal_time=float(config.terminal_time),
+            level_times=config.level_times,
+            n_levels=int(config.n_levels),
+        )
+        first_increment = float(levels[1]) - float(levels[0])
+        first_pr_ext = _calculate_extinction_probability(
+            birth_rate=float(config.birth_rate),
+            death_rate=float(config.death_rate),
+            interval_time=first_increment,
+        )
+        if not (_BAND_LOWER <= first_pr_ext <= _BAND_UPPER):
+            msg = (
+                f"First increment extinction probability {first_pr_ext:.4f} is outside "
+                f"the required band [{_BAND_LOWER:.4f}, {_BAND_UPPER:.4f}]. "
+                "Adjust level_times or leave level_times=None for auto-selection."
+            )
+            raise ValueError(msg)
+
+    # --- Splitting factor from first increment ---
+    first_increment_time = float(levels[1]) - float(levels[0])
+    splitting_factor = _adaptive_particle_count(
+        birth_rate=float(config.birth_rate),
+        death_rate=float(config.death_rate),
+        interval_time=first_increment_time,
     )
+    n_particles_cap = int(config.n_particles)
+    n_initial = min(splitting_factor, n_particles_cap)
 
     seed_rng = np.random.default_rng(config.random_seed)
     particles = [
-        _initialize_particle(particle_id=i, seed_rng=seed_rng)
-        for i in range(config.n_particles)
+        _initialize_particle(particle_id=i, seed_rng=seed_rng) for i in range(n_initial)
     ]
 
     diagnostics: list[LevelDiagnostic] = []
     level_probs: list[float] = []
     mean_populations: list[float] = [1.0]
     lineage_rows: list[dict[str, Any]] = []
-    particle_id_counter = config.n_particles
+    particle_id_counter = n_initial
     cumulative = 1.0
-    previous_time = 0.0
 
     for level_index in range(1, len(levels)):
         target_time = float(levels[level_index])
-        interval_time = target_time - previous_time
+        n_entering = len(particles)
+
         for particle in particles:
             _simulate_to_level(
                 state=particle,
@@ -611,7 +878,8 @@ def simulate_subcritical_survival_splitting(
         )
         survivors = np.flatnonzero(populations_at_level > 0)
         survivor_count = int(survivors.size)
-        conditional_prob = survivor_count / float(config.n_particles)
+        # Correct denominator: entering count, not cap
+        conditional_prob = survivor_count / float(n_entering)
         cumulative *= conditional_prob
 
         diagnostics.append(
@@ -622,6 +890,7 @@ def simulate_subcritical_survival_splitting(
                 conditional_survival_estimate=conditional_prob,
                 cumulative_survival_estimate=cumulative,
                 mean_population=float(np.mean(populations_at_level)),
+                entering_count=n_entering,
             ),
         )
         level_probs.append(conditional_prob)
@@ -631,39 +900,18 @@ def simulate_subcritical_survival_splitting(
             particles = []
             break
 
-        target_particle_count = _adaptive_particle_count(
-            birth_rate=float(config.birth_rate),
-            death_rate=float(config.death_rate),
-            interval_time=float(interval_time),
+        # --- R-fold enrichment with cap ---
+        particles, particle_id_counter = _enrich_survivors(
+            survivors=survivors,
+            particles=particles,
+            splitting_factor=splitting_factor,
+            n_particles_cap=n_particles_cap,
+            seed_rng=seed_rng,
+            particle_id_counter=particle_id_counter,
+            level_index=level_index,
+            target_time=target_time,
+            lineage_rows=lineage_rows,
         )
-        selected_slots = seed_rng.choice(
-            survivors,
-            size=target_particle_count,
-            replace=True,
-        )
-        next_particles: list[_ParticleState] = []
-        for child_slot, parent_slot_raw in enumerate(np.atleast_1d(selected_slots)):
-            parent_slot = int(parent_slot_raw)
-            parent_particle = particles[parent_slot]
-            child_particle = _clone_particle(
-                donor=parent_particle,
-                particle_id=particle_id_counter,
-                seed_rng=seed_rng,
-            )
-            particle_id_counter += 1
-            next_particles.append(child_particle)
-            lineage_rows.append(
-                {
-                    "level_index": level_index,
-                    "time": target_time,
-                    "child_slot": child_slot,
-                    "parent_slot": parent_slot,
-                    "child_particle_id": child_particle.particle_id,
-                    "parent_particle_id": parent_particle.particle_id,
-                },
-            )
-        particles = next_particles
-        previous_time = target_time
 
     conditioned_trajectories = _build_conditioned_trajectories(
         particles=particles,
@@ -695,6 +943,8 @@ def simulate_subcritical_survival_splitting(
         final_survivor_count=final_survivor_count,
         conditioned_trajectories=conditioned_trajectories,
         particle_genealogy=particle_genealogy,
+        splitting_factor=splitting_factor,
+        initial_particle_count=n_initial,
     )
 
 
