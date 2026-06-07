@@ -3,6 +3,8 @@
 # ruff: noqa: S101
 
 import numpy as np
+import pandas as pd
+import pytest
 import torch
 
 import inf_bp_texts.simulation.simulator as simulator_module
@@ -11,8 +13,18 @@ from inf_bp_texts.models.mathematical_functions import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.simulation import simulate_birth_death_process
-from inf_bp_texts.simulation.simulator import simulate_bdp_ages_from_distributions
+from inf_bp_texts.simulation import (
+    simulate_birth_death_process,
+    simulate_birth_death_process_from_contour_process,
+)
+from inf_bp_texts.simulation.simulator import (
+    _build_contour_process_list,
+    _contour_process_list_to_birth_death_process,
+    _generate_non_spine_component,
+    _generate_spine_component,
+    _validate_contour_process_list,
+    simulate_bdp_ages_from_distributions,
+)
 
 
 class TestSimulation:
@@ -383,6 +395,119 @@ class TestSimulation:
         # All ages in DataFrame should be non-negative
         if len(surviving_manuscripts) > 0:
             assert all(age >= 0 for age in surviving_manuscripts["age"])
+
+
+class TestContourProcessSimulation:
+    """Test contour-process simulation and reconstruction."""
+
+    def test_contour_process_concatenation_example(self) -> None:
+        non_spine_component = [5.0, 2.0, 5.0, 3.0, 4.0, 0.0]
+        spine_component = [5.0, 2.0, 3.0, 0.0]
+
+        contour_process_list = _build_contour_process_list(
+            spine_component=spine_component,
+            non_spine_component=non_spine_component,
+        )
+
+        assert contour_process_list == [0.0, 3.0, 2.0, 5.0, 2.0, 5.0, 3.0, 4.0, 0.0]
+
+    @pytest.mark.parametrize(
+        "contour_process_list",
+        [
+            [0.0, 1.0, 0.0, 1.0],
+            [1.0, 3.0, 2.0],
+            [0.0, 3.0, 2.0],
+            [0.0, 3.0, 3.0, 0.0, 0.0],
+            [0.0, 3.0, 2.0, 1.0, 0.0],
+            [0.0, 3.0, 4.0, 2.0, 0.0],
+        ],
+    )
+    def test_contour_process_validation_rejects_invalid_examples(
+        self,
+        contour_process_list: list[float],
+    ) -> None:
+        with pytest.raises(ValueError):
+            _validate_contour_process_list(contour_process_list)
+
+    def test_contour_process_validation_accepts_valid_examples(self) -> None:
+        _validate_contour_process_list([0.0, 3.0, 2.0, 5.0, 2.0, 5.0, 3.0, 4.0, 0.0])
+        _validate_contour_process_list([0.0, 1.0, 0.0])
+
+    def test_birth_death_process_reconstruction_from_contour_list(self) -> None:
+        contour_process_list = [0.0, 3.0, 2.0, 5.0, 2.0, 5.0, 3.0, 4.0, 0.0]
+
+        process = _contour_process_list_to_birth_death_process(
+            contour_process_list,
+            birth_rate=0.5,
+            death_rate=0.2,
+        )
+
+        assert isinstance(process, BirthDeathProcess)
+        records = process.manuscript_records
+        assert records is not None
+        records = records.sort_values("manuscript_id").reset_index(drop=True)
+
+        assert pd.isna(records.loc[0, "parent_id"])
+        assert records.loc[0, "manuscript_id"] == 0
+        assert records.loc[0, "creation_time"] == 0.0
+        assert records.loc[0, "death_time"] == 3.0
+        assert records.loc[1, "parent_id"] == 0
+        assert records.loc[2, "parent_id"] == 0
+        assert records.loc[3, "parent_id"] == 2
+
+        genealogy = process.genealogy_dfs_order()
+        assert genealogy.loc[genealogy["manuscript_id"] == 0, "parent_id"].isna().all()
+        assert len(genealogy) == len(process)
+
+    def test_simulation_is_deterministic_for_fixed_seed(self) -> None:
+        process_1 = simulate_birth_death_process_from_contour_process(
+            birth_rate=0.5,
+            death_rate=0.2,
+            terminal_time=5.0,
+            random_seed=123,
+        )
+        process_2 = simulate_birth_death_process_from_contour_process(
+            birth_rate=0.5,
+            death_rate=0.2,
+            terminal_time=5.0,
+            random_seed=123,
+        )
+
+        assert process_1 == process_2
+
+    def test_generated_contour_process_satisfies_validation_and_reconstruction(
+        self,
+    ) -> None:
+        rng = np.random.default_rng(2026)
+        non_spine_component = _generate_non_spine_component(
+            birth_rate=0.8,
+            death_rate=1.1,
+            terminal_time=4.0,
+            rng=rng,
+        )
+        spine_component = _generate_spine_component(
+            birth_rate=0.8,
+            death_rate=1.1,
+            terminal_time=4.0,
+            rng=rng,
+        )
+        contour_process_list = _build_contour_process_list(
+            spine_component=spine_component,
+            non_spine_component=non_spine_component,
+        )
+
+        _validate_contour_process_list(contour_process_list)
+
+        process = _contour_process_list_to_birth_death_process(
+            contour_process_list,
+            birth_rate=0.8,
+            death_rate=1.1,
+        )
+        assert process.manuscript_records is not None
+        assert process.manuscript_records["manuscript_id"].is_unique
+        assert process.manuscript_records["parent_id"].isna().sum() == 1
+        assert process.epoch_end_times[-1].item() == 4.0
+        assert all(0.0 <= ct <= 4.0 for ct in process.creation_times)
 
 
 class TestMultiEpochSimulation:
