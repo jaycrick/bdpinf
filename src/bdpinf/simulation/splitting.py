@@ -438,7 +438,7 @@ def _select_level_times_for_band(
             break
         if pr <= _BAND_UPPER:
             splitting_factor = int(np.ceil(1.0 / pr))
-            score = abs(splitting_factor * pr - 1.0)
+            score = abs((splitting_factor * pr) ** n - 1.0)
             if score < best_score:
                 best_score = score
                 best_n = n

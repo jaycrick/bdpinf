@@ -304,7 +304,7 @@ class TestSplittingSimulation:
                 break
             if pr <= _BAND_UPPER:
                 r = int(np.ceil(1.0 / pr))
-                score = abs(r * pr - 1.0)
+                score = abs((r * pr) ** n - 1.0)
                 if score < best_score:
                     best_score = score
                     best_n = n
