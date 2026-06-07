@@ -687,7 +687,7 @@ def simulate_subcritical_survival_splitting(
 
     return SplittingSimulationResult(
         config=config,
-        level_times=levels,
+        level_times=levels[: len(level_probs) + 1],
         survival_probability_estimate=float(cumulative),
         level_diagnostics=diagnostics,
         level_survival_probabilities=np.asarray(level_probs, dtype=np.float64),
@@ -811,7 +811,7 @@ def simulate_subcritical_survival_fleming_viot(
 
     return FlemingViotSimulationResult(
         config=config,
-        level_times=levels,
+        level_times=levels[: len(level_probs) + 1],
         survival_proxy_estimate=float(cumulative_proxy),
         level_diagnostics=diagnostics,
         level_survival_probabilities=np.asarray(level_probs, dtype=np.float64),
