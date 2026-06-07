@@ -475,7 +475,10 @@ def _contour_process_list_to_birth_death_process(
     The contour is interpreted as alternating death and birth times. This
     function returns a canonical `BirthDeathProcess` where manuscripts that
     reach the terminal time are treated as surviving, and exactly one
-    surviving manuscript is marked as the spine.
+    surviving manuscript is marked as the spine: the individual that was
+    last-born among those alive when the process first reaches the terminal
+    time (equivalently, the individual at the top of the genealogy stack
+    when T is first hit).
     """
     _validate_contour_process_list(contour_process_list)
 
@@ -495,6 +498,9 @@ def _contour_process_list_to_birth_death_process(
     birth_times_stack = [values[0]]
     manuscript_number_stack = [0]
     next_manuscript_id = 1
+    # Spine = the individual at the top of the genealogy stack the first time
+    # the process reaches T; equivalently, the last-born individual alive at T.
+    spine_manuscript_id: int | None = None
 
     for index in range(1, len(values) - 1):
         current_value = values[index]
@@ -505,6 +511,8 @@ def _contour_process_list_to_birth_death_process(
                 records[manuscript_number_stack[-1]]["death_time"] = float(
                     "nan",
                 )
+                if spine_manuscript_id is None:
+                    spine_manuscript_id = manuscript_number_stack[-1]
             else:
                 records[manuscript_number_stack[-1]]["death_time"] = current_value
             continue
@@ -547,13 +555,10 @@ def _contour_process_list_to_birth_death_process(
         np.nan,
     )
 
-    # Mark `is_spine=True` only for the first manuscript which finishes at T
-    survivors = records_df[records_df["survived"]]
-    if not survivors.empty:
-        # choose the earliest-created surviving manuscript as the spine
-        earliest_idx = int(survivors["creation_time"].idxmin())
-        records_df["is_spine"] = False
-        records_df.loc[earliest_idx, "is_spine"] = True
+    # Mark the spine: the individual last-born when T was first reached.
+    records_df["is_spine"] = False
+    if spine_manuscript_id is not None:
+        records_df.loc[spine_manuscript_id, "is_spine"] = True
 
     return BirthDeathProcess.from_manuscript_records(
         manuscripts=records_df,
