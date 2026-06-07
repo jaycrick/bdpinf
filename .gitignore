@@ -236,3 +236,6 @@ __marimo__/
 # qmd_scripts metadata
 qmd_scripts/.DS_Store
 qmd_scripts/.jupyter_cache/
+
+# Claude Code
+.claude/settings.local.json
