@@ -13,6 +13,9 @@ from inf_bp_texts.simulation import (
     simulate_subcritical_survival_splitting,
 )
 from inf_bp_texts.simulation.splitting import (
+    _BAND_LOWER,
+    _BAND_UPPER,
+    _MAX_BAND_LEVELS,
     _adaptive_particle_count,
     _calculate_extinction_probability,
 )
@@ -268,6 +271,48 @@ class TestSplittingSimulation:
         plot_level_survival_probabilities(
             level_times=result.level_times,
             level_survival_probabilities=result.level_survival_probabilities,
+        )
+
+    def test_splitting_selects_balanced_split(self) -> None:
+        # Verify that auto-selection chooses the split count whose R*pr_ext is
+        # closest to 1, not merely the coarsest in-band grid.
+        birth_rate = 0.9
+        death_rate = 1.0
+        terminal_time = 50.0
+
+        config = SplittingConfig(
+            birth_rate=birth_rate,
+            death_rate=death_rate,
+            terminal_time=terminal_time,
+            n_particles=500,
+            random_seed=42,
+        )
+        result = simulate_subcritical_survival_splitting(config)
+        n_selected = len(result.level_times) - 1
+
+        # Independently compute the best n by brute force
+        best_score = np.inf
+        best_n = 0
+        n = 1
+        while n <= _MAX_BAND_LEVELS:
+            pr = _calculate_extinction_probability(
+                birth_rate=birth_rate,
+                death_rate=death_rate,
+                interval_time=terminal_time / n,
+            )
+            if pr < _BAND_LOWER:
+                break
+            if pr <= _BAND_UPPER:
+                r = int(np.ceil(1.0 / pr))
+                score = abs(r * pr - 1.0)
+                if score < best_score:
+                    best_score = score
+                    best_n = n
+            n += 1
+
+        assert best_n > 0, "reference search found no valid split (test setup error)"
+        assert n_selected == best_n, (
+            f"simulator chose n={n_selected} but brute-force optimum is n={best_n}"
         )
 
     def test_fleming_viot_maintains_particle_bank_when_survivors_exist(self) -> None:

@@ -32,6 +32,7 @@ from inf_bp_texts.visualization.plotting import (
 MIN_LEVEL_TIMES = 2
 _BAND_LOWER: float = np.e**-2.0  # ≈ 0.135; at this pr_ext, R = ceil(e^2) = 8
 _BAND_UPPER: float = 0.5  # at this pr_ext, R = ceil(2) = 2
+_MAX_BAND_LEVELS: int = 100_000  # defensive cap on the equal-split search
 
 
 @dataclass(frozen=True)
@@ -388,13 +389,16 @@ def _select_level_times_for_band(
     death_rate: float,
     terminal_time: float,
 ) -> np.ndarray:
-    """Auto-select an equal-spaced level grid whose per-increment pr_ext is in band.
+    """Auto-select an equal-spaced level grid balancing enrichment against extinction.
 
-    Finds the coarsest equal-spaced grid (fewest levels) such that the
-    single-particle extinction probability over each increment lies within
-    ``[_BAND_LOWER, _BAND_UPPER]``.  The upper edge ``_BAND_UPPER = 0.5``
-    corresponds to ``R = ceil(1/0.5) = 2`` (minimum duplication); finer grids
-    only increase cost and reduce ``R``.
+    Enumerates equal-split counts ``n = 1, 2, ...``.  Each gives an increment
+    ``tau = T / n`` with single-particle extinction probability
+    ``pr = pr_ext(tau)`` (monotonically decreasing in ``n``) and splitting
+    factor ``R = ceil(1 / pr)``.  Among the splits whose ``pr`` lies in the band
+    ``[_BAND_LOWER, _BAND_UPPER]`` (equivalently ``R in [2, 8]``), it selects the
+    ``n`` minimising ``|R * pr - 1|`` — i.e. the grid whose per-level R-fold
+    enrichment most nearly offsets the per-level die-off.  The chosen factor is
+    constant across the whole process because the grid is equal-spaced.
 
     Parameters
     ----------
@@ -409,57 +413,48 @@ def _select_level_times_for_band(
     -------
     np.ndarray
         Strictly increasing level boundary array ``[0, ..., T]`` of length
-        ``n_levels + 1``, where ``n_levels >= 1``.
+        ``n_levels + 1``, where ``n_levels >= 1`` and the per-increment
+        extinction probability lies in ``[_BAND_LOWER, _BAND_UPPER]``.
 
     Raises
     ------
     ValueError
-        If no valid grid can be found (e.g. ``terminal_time`` is so short
-        that even a single increment violates the band).
+        If no equal-split grid with per-increment ``pr_ext`` in the band can be
+        found (e.g. the process is not subcritical, or ``terminal_time`` is so
+        short that even a single-level split falls outside the band).
 
     """
-    # Binary-search for the largest increment tau such that pr_ext(tau) <= BAND_UPPER.
-    # That gives the coarsest (fewest levels) valid grid.
-    lo, hi = 0.0, terminal_time
-    for _ in range(64):
-        mid = (lo + hi) / 2.0
+    best_score = np.inf
+    best_n = 0
+    n = 1
+    while n <= _MAX_BAND_LEVELS:
         pr = _calculate_extinction_probability(
             birth_rate=birth_rate,
             death_rate=death_rate,
-            interval_time=mid,
+            interval_time=terminal_time / n,
         )
-        if pr <= _BAND_UPPER:
-            lo = mid
-        else:
-            hi = mid
-        if hi - lo < 1e-12:
+        if pr < _BAND_LOWER:
+            # pr_ext is monotone decreasing in n; every larger n is also below the band
             break
+        if pr <= _BAND_UPPER:
+            splitting_factor = int(np.ceil(1.0 / pr))
+            score = abs(splitting_factor * pr - 1.0)
+            if score < best_score:
+                best_score = score
+                best_n = n
+        n += 1
 
-    # tau_star ~ lo; n_levels = max(1, ceil(T / tau_star))
-    tau_star = lo
-    if tau_star <= 0.0:
+    if best_n == 0:
         msg = (
-            "Cannot find a level increment with pr_ext <= 0.5 for the given "
-            "birth_rate, death_rate, and terminal_time. "
-            "Check that the process is subcritical and terminal_time is positive."
+            "Cannot find an equal-split grid with per-increment pr_ext in the "
+            f"band [{_BAND_LOWER:.4f}, {_BAND_UPPER:.4f}] for the given "
+            "birth_rate, death_rate, and terminal_time. Check that the process "
+            "is subcritical and terminal_time is large enough that extinction "
+            "over the whole horizon is at least e^{-2}."
         )
         raise ValueError(msg)
 
-    n_levels = max(1, int(np.ceil(terminal_time / tau_star)))
-
-    # After rounding, verify the actual per-increment pr_ext is still >= BAND_LOWER.
-    # If rounding reduced n_levels enough to push pr_ext below the lower bound,
-    # step n_levels back up by one.
-    actual_increment = terminal_time / n_levels
-    actual_pr = _calculate_extinction_probability(
-        birth_rate=birth_rate,
-        death_rate=death_rate,
-        interval_time=actual_increment,
-    )
-    if actual_pr < _BAND_LOWER:
-        n_levels += 1
-
-    return np.linspace(0.0, terminal_time, num=n_levels + 1, dtype=np.float64)
+    return np.linspace(0.0, terminal_time, num=best_n + 1, dtype=np.float64)
 
 
 def _initialize_particle(
