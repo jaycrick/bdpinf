@@ -18,6 +18,8 @@ Use the colon-wrapped shortcode (e.g. `:zap:`), not the Unicode emoji character.
 
 Example: `:zap: Add users endpoint, fixes #27`
 
+**Commit granularity:** Prefer bundled commits that group related code, tests, and docs into a single commit. Choose the prefix that reflects the commit's primary concern. Do not split a feature into separate per-prefix commits (e.g. one `:zap:` for the code, one `:cop:` for its tests, one `:abc:` for its docs) unless those pieces genuinely belong in separate commits for other reasons.
+
 ## Commands
 
 ```bash
