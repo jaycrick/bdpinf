@@ -39,15 +39,13 @@ Resampling survivors at each level concentrates computation on rare surviving li
 
 ```{python}
 import numpy as np
-import pandas as pd
 
 from inf_bp_texts.simulation import (
-    FlemingViotConfig,
     SplittingConfig,
     plot_conditioned_trajectories,
     plot_empirical_population_mean,
     plot_level_survival_probabilities,
-    simulate_subcritical_survival_fleming_viot,
+    select_level_times_for_band,
     simulate_subcritical_survival_splitting,
 )
 ```
@@ -60,7 +58,6 @@ birth_rate = 0.9
 death_rate = 1.0
 terminal_time = 100.0
 n_particles = 1000
-n_levels = 20
 random_seed = 42
 ```
 
@@ -72,7 +69,6 @@ splitting_config = SplittingConfig(
     death_rate=death_rate,
     terminal_time=terminal_time,
     n_particles=n_particles,
-    n_levels=n_levels,
     random_seed=random_seed,
 )
 
@@ -126,44 +122,35 @@ fig_level_probs = plot_level_survival_probabilities(
 fig_level_probs
 ```
 
-## Optional comparison: Fleming-Viot approximation
+## Predetermining the level grid and splitting factor
+
+`select_level_times_for_band` is the public API for the auto-grid-selection logic.
+Call it once outside any benchmark loop to avoid repeating the grid search:
 
 ```{python}
-fv_config = FlemingViotConfig(
+precomputed_levels = select_level_times_for_band(
+    birth_rate=birth_rate,
+    death_rate=death_rate,
+    terminal_time=terminal_time,
+)
+print(f"Auto-selected grid: {len(precomputed_levels) - 1} levels")
+
+# Pass the precomputed grid (and optionally pin the splitting factor R)
+# so the timed simulation call does no bisection.
+config_pinned = SplittingConfig(
     birth_rate=birth_rate,
     death_rate=death_rate,
     terminal_time=terminal_time,
     n_particles=n_particles,
-    n_levels=n_levels,
-    random_seed=random_seed,
-    n_conditioned_trajectories=8,
+    level_times=precomputed_levels.tolist(),
+    splitting_factor=splitting_result.splitting_factor,
+    random_seed=random_seed + 1,
 )
-
-fv_result = simulate_subcritical_survival_fleming_viot(fv_config)
-
-comparison_df = pd.DataFrame(
-    {
-        "method": ["splitting", "fleming_viot_levelwise"],
-        "estimate": [
-            splitting_result.survival_probability_estimate,
-            fv_result.survival_proxy_estimate,
-        ],
-        "final_survivor_bank": [
-            splitting_result.final_survivor_count,
-            fv_result.final_survivor_count,
-        ],
-    },
+result_pinned = simulate_subcritical_survival_splitting(config_pinned)
+print(
+    f"Pinned-grid estimate: {result_pinned.survival_probability_estimate:.6e} "
+    f"(splitting_factor R={result_pinned.splitting_factor})"
 )
-comparison_df
-```
-
-```{python}
-fig_compare_probs = plot_level_survival_probabilities(
-    level_times=fv_result.level_times,
-    level_survival_probabilities=fv_result.level_survival_probabilities,
-    title="Level-wise Survival Proxy (Fleming-Viot)",
-)
-fig_compare_probs
 ```
 
 ## Notes on numerical stability and variance

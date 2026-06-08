@@ -1,6 +1,6 @@
 ---
 title: "Single-Epoch Validation: Simulator Comparison"
-subtitle: "Speed and correctness of three subcritical birth–death process simulators"
+subtitle: "Speed and correctness of subcritical birth–death process simulators across parameter regimes"
 author: "JC"
 date: last-modified
 ---
@@ -19,38 +19,29 @@ __compile_start = time.perf_counter()
 
 ## Overview
 
-Three distinct algorithms produce a single-epoch birth–death process conditioned
-on survival to a terminal time $T$.  All three operate in the strictly subcritical
-regime ($\lambda < \mu$), where survival to large $T$ is a rare event.
+Two algorithms produce a single-epoch birth–death process conditioned on survival to
+a terminal time $T$, operating in the strictly subcritical regime ($\lambda < \mu$):
 
 | Method | Per-run output | Conditioning mechanism |
 |---|---|---|
 | **Contour process** | one conditioned tree per call | exact: spine excursion is constructed to reach $T$ |
 | **Multilevel splitting** | survival probability estimate; conditioned trees from surviving particles | fixed-factor (R-fold) enrichment at level boundaries |
-| **Fleming–Viot** | $N$ conditioned trees per run | cloning survivors to replace extinct particles |
 
-This notebook compares the three on two axes:
+This notebook benchmarks both methods across three parameter regimes with a shared
+birth rate $\lambda = 1$ and death rates $\mu \in \{1.1, 2, 10\}$ at terminal time
+$T = 20$.  The regimes span a wide range of subcriticality so that the comparison
+exercises both mild and extreme rare-event behaviour.
 
-1. **Speed** — raw wall-clock time and per-tree throughput.
-2. **Correctness** — survival probability estimates and, for methods that produce
-   conditioned trajectories, the empirical spine and non-spine age distributions
-   overlaid against the closed-form theoretical densities
-   (`calculate_spine_ages_log_lik`, `calculate_non_spine_ages_log_lik`).
+**Splitting: fixed-factor enrichment (RESTART).** The level grid is auto-selected via
+`select_level_times_for_band` so the per-increment single-particle extinction probability
+lies in $[e^{-2}, 0.5]$, keeping $R = \lceil 1/p_\text{ext} \rceil \in [2, 8]$.
+The level grid and $R$ are **precomputed once per regime outside the timed benchmark**,
+so grid-selection cost does not inflate the splitting runtime comparison.
 
-**Splitting: fixed-factor enrichment (RESTART).** The multilevel splitting
-implementation uses a fixed enrichment factor $R = \lceil 1/p_\text{ext} \rceil$
-derived from the per-increment single-particle extinction probability.  The level
-grid is auto-selected so that $p_\text{ext} \in [e^{-2}, 0.5]$, keeping $R \in [2, 8]$.
-At each level boundary every surviving particle is cloned $R$ times; if the
-ensemble would exceed `n_particles` it is subsampled uniformly back down to the cap.
-The ensemble therefore *grows* exponentially until the cap is reached, after which it
-runs at the cap size.  Starting ensemble size is $\min(R, \text{cap})$.
-
-**Spine labelling caveat.** The contour simulator marks the *earliest-created
-surviving* manuscript as the spine, while the splitting/Fleming–Viot methods mark
-`alive_ids[0]` (insertion order) as the spine.  Both definitions select a single
-surviving lineage that should follow the theoretical spine age distribution; the
-visual difference is expected to be small.
+**Spine labelling caveat.** The contour simulator marks the earliest-created surviving
+manuscript as the spine, while the splitting method marks `alive_ids[0]`
+(insertion order).  Both select a single surviving lineage; the visual difference is
+expected to be small.
 
 ## Setup
 
@@ -72,10 +63,9 @@ from inf_bp_texts.models.mathematical_functions import (
     calculate_spine_ages_log_lik,
 )
 from inf_bp_texts.simulation import (
-    FlemingViotConfig,
     SplittingConfig,
+    select_level_times_for_band,
     simulate_birth_death_process_from_contour_process,
-    simulate_subcritical_survival_fleming_viot,
     simulate_subcritical_survival_splitting,
 )
 from inf_bp_texts.visualization.plotting import (
@@ -86,47 +76,31 @@ from inf_bp_texts.visualization.plotting import (
 )
 ```
 
-## Parameters
-
-```{python}
-# Process parameters (subcritical: lambda < mu)
-birth_rate = 0.9
-death_rate = 1.0
-terminal_time = 100.0
-n_levels = 20
-seed = 42
-
-# Speed benchmark
-n_speed_contour = 100  # serial contour calls
-n_particles_speed = 500  # particles for splitting/FV benchmark
-
-# Correctness data
-n_contour_trees = 1500  # parallel contour calls
-n_particles_correctness = 1000  # particles for splitting/FV correctness runs
-n_conditioned_fv = 10_000  # cap above any realistic survivor count
-
-# Theoretical survival probability
-theoretical_survival = 1.0 - float(
-    calculate_extinction_pr(birth_rate, death_rate, terminal_time)
-)
-print(f"Theoretical P(survive to T={terminal_time:.0f}): {theoretical_survival:.6e}")
-```
-
 ## Helper Functions
 
 ```{python}
-def extract_spine_and_non_spine(
+def extract_ages_from_process(
     process: Any,
+    terminal_time: float,
 ) -> tuple[float | None, np.ndarray]:
-    """Return (spine_age or None, array of finite non-spine ages) from a BirthDeathProcess."""
-    spine_list = process["spine"]
-    spine_age = float(spine_list[0]) if spine_list else None
-    non_spine_raw = process["non_spine"]
-    non_spine_ages = np.asarray(
-        [a for a in non_spine_raw if np.isfinite(float(a))],
-        dtype=np.float64,
+    """Return (spine_age or None, finite non-spine ages) from a BirthDeathProcess."""
+    records = process.manuscript_records
+    if records is None or len(records) == 0:
+        return None, np.array([], dtype=np.float64)
+    alive = records[records["death_time"].isna()]
+    if len(alive) == 0:
+        return None, np.array([], dtype=np.float64)
+    spine_rows = alive[alive["is_spine"]]
+    non_spine_rows = alive[~alive["is_spine"]]
+    spine_age: float | None = (
+        float(terminal_time) - float(spine_rows["creation_time"].iloc[0])
+        if len(spine_rows) > 0
+        else None
     )
-    return spine_age, non_spine_ages
+    non_spine_raw = float(terminal_time) - non_spine_rows["creation_time"].to_numpy(
+        dtype=np.float64
+    )
+    return spine_age, non_spine_raw[np.isfinite(non_spine_raw)]
 
 
 def theoretical_age_density(
@@ -137,18 +111,16 @@ def theoretical_age_density(
     proportion_not_at_upper: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     x_grid = np.linspace(0.0, support_upper, n_grid, endpoint=include_endpoint)
-    y_vals = []
-    for x_val in x_grid:
-        log_density = log_lik_fn(torch.tensor(float(x_val), dtype=torch.float64))
-        y_vals.append(
-            float(torch.exp(log_density).item()) if torch.isfinite(log_density) else 0.0
+    y_vals = [
+        float(torch.exp(v).item()) if torch.isfinite(v) else 0.0
+        for v in (
+            log_lik_fn(torch.tensor(float(x), dtype=torch.float64)) for x in x_grid
         )
-    y_vals_arr = np.asarray(y_vals, dtype=np.float64)
-    if proportion_not_at_upper is not None:
-        p_not_upper = float(proportion_not_at_upper)
-        if np.isfinite(p_not_upper) and p_not_upper > 0.0:
-            y_vals_arr = y_vals_arr * (1.0 / p_not_upper)
-    return x_grid, y_vals_arr
+    ]
+    y_arr = np.asarray(y_vals, dtype=np.float64)
+    if proportion_not_at_upper is not None and proportion_not_at_upper > 0.0:
+        y_arr = y_arr / float(proportion_not_at_upper)
+    return x_grid, y_arr
 
 
 def proportion_not_at_upper(
@@ -156,11 +128,8 @@ def proportion_not_at_upper(
     support_upper: float,
     tol: float = 1e-12,
 ) -> float:
-    samples = np.asarray(samples, dtype=np.float64)
     finite = samples[np.isfinite(samples)]
-    if len(finite) == 0:
-        return 1.0
-    return float(np.mean(finite < (float(support_upper) - float(tol))))
+    return float(np.mean(finite < float(support_upper) - tol)) if len(finite) > 0 else 1.0
 
 
 def robust_y_max(
@@ -168,426 +137,375 @@ def robust_y_max(
     quantile: float = 99.0,
     pad: float = 1.1,
 ) -> float:
-    finite_parts: list[np.ndarray] = []
-    for arr in arrays:
-        if arr is None:
-            continue
-        values = np.asarray(arr, dtype=np.float64)
-        finite = values[np.isfinite(values)]
-        if finite.size > 0:
-            finite_parts.append(finite)
-    if not finite_parts:
+    parts = [arr[np.isfinite(arr)] for arr in arrays if arr is not None and arr.size > 0]
+    if not parts:
         return 1.0
-    joined = np.concatenate(finite_parts)
+    joined = np.concatenate(parts)
     q = float(np.nanpercentile(joined, quantile))
-    if not np.isfinite(q) or q <= 0.0:
-        q = float(np.nanmax(joined)) if joined.size > 0 else 1.0
-    if not np.isfinite(q) or q <= 0.0:
-        q = 1.0
-    return q * float(pad)
+    q = float(np.nanmax(joined)) if not np.isfinite(q) or q <= 0.0 else q
+    return max(q * float(pad), 1e-12)
+```
+
+## Parameter Regimes and Level Grid Precomputation
+
+The three regimes share $\lambda = 1$ and $T = 20$ but differ in $\mu$.  The level
+grid and splitting factor $R$ are predetermined here — outside any timed code — so that
+the benchmark cells measure only the simulation cost.
+
+```{python}
+BIRTH_RATE = 1.0
+TERMINAL_TIME = 20.0
+SEED = 42
+
+# Benchmark sizing
+N_SPEED_CONTOUR = 50      # serial contour calls per regime
+N_PARTICLES_SPEED = 500   # splitting particle cap (speed run)
+N_CONTOUR_TREES = 500     # parallel contour calls per regime (correctness)
+N_PARTICLES_CORRECTNESS = 1000  # splitting particle cap (correctness run)
+
+DEATH_RATES = [1.1, 2.0, 10.0]
+
+# Precompute level grids and R values (not timed)
+regime_grids: list[np.ndarray] = []
+regime_r_values: list[int] = []
+for dr in DEATH_RATES:
+    lvl = select_level_times_for_band(
+        birth_rate=BIRTH_RATE,
+        death_rate=dr,
+        terminal_time=TERMINAL_TIME,
+    )
+    regime_grids.append(lvl)
+    first_inc = float(lvl[1]) - float(lvl[0])
+    # R = ceil(1 / pr_ext) for the first increment
+    from inf_bp_texts.simulation.splitting import _calculate_extinction_probability  # noqa: PLC0415
+    pr = _calculate_extinction_probability(
+        birth_rate=BIRTH_RATE,
+        death_rate=dr,
+        interval_time=first_inc,
+    )
+    regime_r_values.append(int(np.ceil(1.0 / pr)))
+
+print(f"{'death_rate':>12} | {'levels':>8} | {'R':>4} | {'P(survive to T)':>18}")
+print(f"{'-'*12}-+-{'-'*8}-+-{'-'*4}-+-{'-'*18}")
+for dr, lvl, r in zip(DEATH_RATES, regime_grids, regime_r_values):
+    p_survive = 1.0 - float(calculate_extinction_pr(BIRTH_RATE, dr, TERMINAL_TIME))
+    print(
+        f"{dr:>12.1f} | {len(lvl) - 1:>8d} | {r:>4d} | {p_survive:>18.6e}"
+    )
 ```
 
 ## Speed Benchmark
 
-Each method is timed at the same parameters.  The contour method is run
-*serially* so the per-call cost is clean; it is embarrassingly parallel in
-practice.  The splitting and Fleming–Viot methods are each run once.
+Contour calls are run serially (embarrassingly parallel in practice).  Splitting is
+run once per regime with the precomputed grid — **no grid-selection cost included**.
 
 ```{python}
-# Contour: serial loop
-contour_speed_start = time.perf_counter()
-for i in range(n_speed_contour):
-    _ = simulate_birth_death_process_from_contour_process(
-        birth_rate=birth_rate,
-        death_rate=death_rate,
-        terminal_time=terminal_time,
-        random_seed=seed + i,
+speed_results: list[dict[str, Any]] = []
+
+for dr, lvl, r in zip(DEATH_RATES, regime_grids, regime_r_values):
+    # --- Contour (serial) ---
+    t0 = time.perf_counter()
+    for i in range(N_SPEED_CONTOUR):
+        _ = simulate_birth_death_process_from_contour_process(
+            birth_rate=BIRTH_RATE,
+            death_rate=dr,
+            terminal_time=TERMINAL_TIME,
+            random_seed=SEED + i,
+        )
+    contour_time = time.perf_counter() - t0
+
+    # --- Splitting (pinned grid + R) ---
+    speed_config = SplittingConfig(
+        birth_rate=BIRTH_RATE,
+        death_rate=dr,
+        terminal_time=TERMINAL_TIME,
+        n_particles=N_PARTICLES_SPEED,
+        level_times=lvl.tolist(),
+        splitting_factor=r,
+        random_seed=SEED,
+        n_conditioned_trajectories=None,
     )
-contour_speed_time = time.perf_counter() - contour_speed_start
-contour_speed_trees = n_speed_contour
-contour_per_tree = contour_speed_time / contour_speed_trees
+    t0 = time.perf_counter()
+    sp_result = simulate_subcritical_survival_splitting(speed_config)
+    splitting_time = time.perf_counter() - t0
 
-# Splitting: one run
-splitting_speed_config = SplittingConfig(
-    birth_rate=birth_rate,
-    death_rate=death_rate,
-    terminal_time=terminal_time,
-    n_particles=n_particles_speed,
-    n_levels=n_levels,
-    random_seed=seed,
-    n_conditioned_trajectories=None,
-)
-splitting_speed_start = time.perf_counter()
-splitting_speed_result = simulate_subcritical_survival_splitting(splitting_speed_config)
-splitting_speed_time = time.perf_counter() - splitting_speed_start
-splitting_speed_trees = len(splitting_speed_result.conditioned_trajectories)
+    splitting_trees = len(sp_result.conditioned_trajectories)
+    speed_results.append(
+        {
+            "death_rate": dr,
+            "contour_total_s": contour_time,
+            "contour_per_tree_s": contour_time / N_SPEED_CONTOUR,
+            "splitting_total_s": splitting_time,
+            "splitting_trees": splitting_trees,
+            "splitting_estimate": sp_result.survival_probability_estimate,
+            "splitting_r": sp_result.splitting_factor,
+            "splitting_initial": sp_result.initial_particle_count,
+            "n_levels": len(sp_result.level_times) - 1,
+        }
+    )
 
-# Fleming–Viot: one run
-fv_speed_config = FlemingViotConfig(
-    birth_rate=birth_rate,
-    death_rate=death_rate,
-    terminal_time=terminal_time,
-    n_particles=n_particles_speed,
-    n_levels=n_levels,
-    random_seed=seed,
-    n_conditioned_trajectories=n_conditioned_fv,
-)
-fv_speed_start = time.perf_counter()
-fv_speed_result = simulate_subcritical_survival_fleming_viot(fv_speed_config)
-fv_speed_time = time.perf_counter() - fv_speed_start
-fv_speed_trees = len(fv_speed_result.conditioned_trajectories)
-fv_per_tree = fv_speed_time / max(fv_speed_trees, 1)
-
-print("=" * 78)
+print("=" * 90)
 print("SPEED BENCHMARK")
-print("=" * 78)
-print(f"{'Method':<18} | {'Total time (s)':>14} | {'# trees':>8} | {'s / tree':>10}")
-print(f"{'-' * 18}-+-{'-' * 14}-+-{'-' * 8}-+-{'-' * 10}")
-print(
-    f"{'Contour':<18} | {contour_speed_time:>14.3f} | {contour_speed_trees:>8d}"
-    f" | {contour_per_tree:>10.5f}"
+print("=" * 90)
+hdr = (
+    f"{'mu':>5} | {'Contour total':>14} | {'Contour/tree':>13} | "
+    f"{'Splitting total':>16} | {'Splitting trees':>16} | R"
 )
-splitting_per_tree_str = (
-    f"{splitting_speed_time / splitting_speed_trees:>10.5f}"
-    if splitting_speed_trees > 0
-    else f"{'n/a (0 trees)':>10}"
-)
-print(
-    f"{'Splitting':<18} | {splitting_speed_time:>14.3f} | {splitting_speed_trees:>8d}"
-    f" | {splitting_per_tree_str}"
-)
-print(
-    f"{'Fleming–Viot':<18} | {fv_speed_time:>14.3f} | {fv_speed_trees:>8d}"
-    f" | {fv_per_tree:>10.5f}"
-)
-print()
-print(
-    f"Contour: {n_speed_contour} calls run serially; parallelises linearly with CPU cores."
-)
-print(
-    f"Splitting: R-fold enrichment (R={splitting_speed_result.splitting_factor}); "
-    f"starts with {splitting_speed_result.initial_particle_count} particles, "
-    f"cap={n_particles_speed}."
-)
-print()
-print("=" * 78)
-print("SURVIVAL-PROBABILITY CROSS-CHECK")
-print("=" * 78)
-print(f"Theoretical P(survive to T={terminal_time:.0f}):  {theoretical_survival:.6e}")
-print(
-    f"Splitting estimate:                {splitting_speed_result.survival_probability_estimate:.6e}"
-)
-print(
-    f"Fleming–Viot proxy:                {fv_speed_result.survival_proxy_estimate:.6e}"
-)
-print()
-n_levels_used = len(splitting_speed_result.level_survival_probabilities)
-print(f"Splitting: {n_levels_used} auto-selected levels (n_levels config is ignored).")
-if n_levels_used > 0:
+print(hdr)
+print("-" * len(hdr))
+for row in speed_results:
+    dr_val = float(row["death_rate"])
+    c_tot = float(row["contour_total_s"])
+    c_pt = float(row["contour_per_tree_s"])
+    s_tot = float(row["splitting_total_s"])
+    s_tr = int(row["splitting_trees"])
+    s_r = int(row["splitting_r"])
     print(
-        f"  Per-level probabilities: {splitting_speed_result.level_survival_probabilities}"
+        f"{dr_val:>5.1f} | {c_tot:>13.3f}s | {c_pt:>12.5f}s | "
+        f"{s_tot:>15.3f}s | {s_tr:>16d} | {s_r}"
     )
+
+print()
+print("=" * 90)
+print("SURVIVAL-PROBABILITY CROSS-CHECK")
+print("=" * 90)
+print(f"{'mu':>5} | {'Theoretical P(T)':>18} | {'Splitting estimate':>20}")
+print("-" * 48)
+for row in speed_results:
+    dr_val = float(row["death_rate"])
+    theoretical = 1.0 - float(calculate_extinction_pr(BIRTH_RATE, dr_val, TERMINAL_TIME))
+    est = float(row["splitting_estimate"])
+    print(f"{dr_val:>5.1f} | {theoretical:>18.6e} | {est:>20.6e}")
 ```
 
 ## Correctness Data: Pooled Age Samples
 
-For methods that produce conditioned trajectories, we pool spine and non-spine
-ages across all trees and compare against the theoretical densities.
+For each regime we collect spine and non-spine ages from the contour method (via
+parallel calls) and splitting (one run with pinned grid).
 
 ```{python}
-# ---- Contour: embarrassingly parallel ----------------------------------------
-def _run_contour(sim_idx: int, base_seed: int) -> tuple[float | None, np.ndarray]:
+def _run_contour_regime(
+    sim_idx: int, base_seed: int, birth_rate: float, death_rate: float, t: float
+) -> tuple[float | None, np.ndarray]:
     process = simulate_birth_death_process_from_contour_process(
         birth_rate=birth_rate,
         death_rate=death_rate,
-        terminal_time=terminal_time,
+        terminal_time=t,
         random_seed=base_seed + sim_idx,
     )
-    return extract_spine_and_non_spine(process)
+    return extract_ages_from_process(process, t)
 
 
-contour_results = Parallel(n_jobs=-1)(
-    delayed(_run_contour)(i, seed) for i in range(n_contour_trees)
-)
+# Per-regime correctness data storage
+regime_data: list[dict[str, Any]] = []
 
-contour_spine_ages = np.asarray(
-    [spine for spine, _ in contour_results if spine is not None],
-    dtype=np.float64,
-)
-contour_non_spine_ages = (
-    np.concatenate([ns for _, ns in contour_results if ns.size > 0])
-    if any(ns.size > 0 for _, ns in contour_results)
-    else np.array([], dtype=np.float64)
-)
+for regime_idx, (dr, lvl, r) in enumerate(zip(DEATH_RATES, regime_grids, regime_r_values)):
+    # Contour: parallel
+    contour_raw: list[tuple[float | None, np.ndarray]] = Parallel(n_jobs=-1)(
+        delayed(_run_contour_regime)(i, SEED + regime_idx * 10_000, BIRTH_RATE, dr, TERMINAL_TIME)
+        for i in range(N_CONTOUR_TREES)
+    )
+    contour_spine_ages = np.asarray(
+        [s for s, _ in contour_raw if s is not None], dtype=np.float64
+    )
+    ns_parts = [ns for _, ns in contour_raw if ns.size > 0]
+    contour_non_spine_ages = (
+        np.concatenate(ns_parts) if ns_parts else np.array([], dtype=np.float64)
+    )
 
-# ---- Splitting: one run; R-fold enrichment grows ensemble to cap -------------
-splitting_correctness_config = SplittingConfig(
-    birth_rate=birth_rate,
-    death_rate=death_rate,
-    terminal_time=terminal_time,
-    n_particles=n_particles_correctness,
-    n_levels=n_levels,
-    random_seed=seed + 1_000,
-    n_conditioned_trajectories=None,
-)
-splitting_correctness_result = simulate_subcritical_survival_splitting(
-    splitting_correctness_config
-)
+    # Splitting: pinned grid + R
+    correctness_config = SplittingConfig(
+        birth_rate=BIRTH_RATE,
+        death_rate=dr,
+        terminal_time=TERMINAL_TIME,
+        n_particles=N_PARTICLES_CORRECTNESS,
+        level_times=lvl.tolist(),
+        splitting_factor=r,
+        random_seed=SEED + 1_000 + regime_idx * 10_000,
+        n_conditioned_trajectories=None,
+    )
+    sp_result = simulate_subcritical_survival_splitting(correctness_config)
 
-splitting_spine_list: list[float] = []
-splitting_non_spine_list: list[np.ndarray] = []
-for traj in splitting_correctness_result.conditioned_trajectories:
-    spine, non_spine = extract_spine_and_non_spine(traj.process)
-    if spine is not None:
-        splitting_spine_list.append(spine)
-    if non_spine.size > 0:
-        splitting_non_spine_list.append(non_spine)
+    sp_spine_list: list[float] = []
+    sp_ns_list: list[np.ndarray] = []
+    for traj in sp_result.conditioned_trajectories:
+        spine_age, ns_ages = extract_ages_from_process(traj.process, TERMINAL_TIME)
+        if spine_age is not None:
+            sp_spine_list.append(spine_age)
+        if ns_ages.size > 0:
+            sp_ns_list.append(ns_ages)
 
-splitting_spine_ages = np.asarray(splitting_spine_list, dtype=np.float64)
-splitting_non_spine_ages = (
-    np.concatenate(splitting_non_spine_list)
-    if splitting_non_spine_list
-    else np.array([], dtype=np.float64)
-)
+    sp_spine_ages = np.asarray(sp_spine_list, dtype=np.float64)
+    sp_non_spine_ages = (
+        np.concatenate(sp_ns_list) if sp_ns_list else np.array([], dtype=np.float64)
+    )
 
-# ---- Fleming–Viot: one run; all particles survive by construction ------------
-fv_correctness_config = FlemingViotConfig(
-    birth_rate=birth_rate,
-    death_rate=death_rate,
-    terminal_time=terminal_time,
-    n_particles=n_particles_correctness,
-    n_levels=n_levels,
-    random_seed=seed + 2_000,
-    n_conditioned_trajectories=n_conditioned_fv,
-)
-fv_correctness_result = simulate_subcritical_survival_fleming_viot(
-    fv_correctness_config
-)
+    regime_data.append(
+        {
+            "death_rate": dr,
+            "contour_spine": contour_spine_ages,
+            "contour_non_spine": contour_non_spine_ages,
+            "splitting_spine": sp_spine_ages,
+            "splitting_non_spine": sp_non_spine_ages,
+            "splitting_estimate": sp_result.survival_probability_estimate,
+        }
+    )
 
-fv_spine_list: list[float] = []
-fv_non_spine_list: list[np.ndarray] = []
-for traj in fv_correctness_result.conditioned_trajectories:
-    spine, non_spine = extract_spine_and_non_spine(traj.process)
-    if spine is not None:
-        fv_spine_list.append(spine)
-    if non_spine.size > 0:
-        fv_non_spine_list.append(non_spine)
-
-fv_spine_ages = np.asarray(fv_spine_list, dtype=np.float64)
-fv_non_spine_ages = (
-    np.concatenate(fv_non_spine_list)
-    if fv_non_spine_list
-    else np.array([], dtype=np.float64)
-)
-
-print(f"{'Method':<18} | {'Spine samples':>14} | {'Non-spine samples':>18}")
-print(f"{'-' * 18}-+-{'-' * 14}-+-{'-' * 18}")
-print(
-    f"{'Contour':<18} | {len(contour_spine_ages):>14d} | {len(contour_non_spine_ages):>18d}"
-)
-print(
-    f"{'Splitting':<18} | {len(splitting_spine_ages):>14d} | {len(splitting_non_spine_ages):>18d}"
-)
-print(
-    f"{'Fleming–Viot':<18} | {len(fv_spine_ages):>14d} | {len(fv_non_spine_ages):>18d}"
-)
-print()
-print(
-    "Splitting correctness survival estimate: "
-    f"{splitting_correctness_result.survival_probability_estimate:.6e}"
-)
+print(f"{'mu':>5} | {'Contour spine':>14} | {'Contour non-spine':>18} | {'Split spine':>12} | {'Split non-spine':>16}")
+print("-" * 75)
+for rd in regime_data:
+    dr_val = float(rd["death_rate"])
+    print(
+        f"{dr_val:>5.1f} | "
+        f"{len(rd['contour_spine']):>14d} | "
+        f"{len(rd['contour_non_spine']):>18d} | "
+        f"{len(rd['splitting_spine']):>12d} | "
+        f"{len(rd['splitting_non_spine']):>16d}"
+    )
 ```
 
 ## Age Density Overlays
 
-Each panel shows a boundary-corrected KDE over the empirical age samples and a
-dashed theoretical density.  Row 1 = non-spine individuals; Row 2 = spine
-individual.  Columns correspond to the three simulators.  All three are expected
-to agree with theory; the splitting column grows its particle ensemble via R-fold
-enrichment and should now produce enough samples for density estimation.
-The spine KDE excludes the point mass at $a = T$, with the
-continuous portion rescaled accordingly.
+Each column is a parameter regime.  Row 1 = non-spine individuals; Row 2 = spine
+individual.  Solid fill = empirical KDE; dashed = theoretical density.  Both methods
+should agree with theory.
 
 ```{python}
-# Spine KDE samples: exclude point mass at T
-contour_spine_kde = contour_spine_ages[contour_spine_ages < terminal_time]
-splitting_spine_kde = splitting_spine_ages[splitting_spine_ages < terminal_time]
-fv_spine_kde = fv_spine_ages[fv_spine_ages < terminal_time]
-
-# Renormalisation proportion for spine (pooled across methods with samples)
-spine_all_for_prop = np.concatenate(
-    [
-        arr
-        for arr in [contour_spine_ages, splitting_spine_ages, fv_spine_ages]
-        if arr.size > 0
-    ]
-)
-spine_prop = proportion_not_at_upper(spine_all_for_prop, terminal_time)
-
-non_spine_all_for_prop = np.concatenate(
-    [
-        arr
-        for arr in [contour_non_spine_ages, splitting_non_spine_ages, fv_non_spine_ages]
-        if arr.size > 0
-    ]
-)
-non_spine_prop = proportion_not_at_upper(non_spine_all_for_prop, terminal_time)
-
-# Theoretical density traces (same for every column)
-spine_theory_x, spine_theory_y = theoretical_age_density(
-    lambda age: calculate_spine_ages_log_lik(
-        birth_rates=birth_rate,
-        death_rates=death_rate,
-        ages=age,
-        times=terminal_time,
-    ),
-    terminal_time,
-    include_endpoint=False,
-    proportion_not_at_upper=spine_prop if spine_prop > 0.0 else None,
-)
-
-non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
-    lambda age: calculate_non_spine_ages_log_lik(
-        birth_rates=birth_rate,
-        death_rates=death_rate,
-        ages=age,
-        times=terminal_time,
-    ),
-    terminal_time,
-    proportion_not_at_upper=non_spine_prop if non_spine_prop > 0.0 else None,
-)
-
-# KDE computations (may return (None, None) for empty inputs)
-method_labels = ["Contour", "Splitting", "Fleming–Viot"]
-method_colors = [ptolqual[0], ptolqual[2], ptolqual[4]]
-spine_samples_list = [contour_spine_kde, splitting_spine_kde, fv_spine_kde]
-non_spine_samples_list = [
-    contour_non_spine_ages,
-    splitting_non_spine_ages,
-    fv_non_spine_ages,
-]
-
-spine_kde_data = [
-    (
-        boundary_corrected_kde_on_support(arr, support_upper=terminal_time)
-        if arr.size > 1
-        else (None, None)
-    )
-    for arr in spine_samples_list
-]
-non_spine_kde_data = [
-    (
-        boundary_corrected_kde_on_support(arr, support_upper=terminal_time)
-        if arr.size > 1
-        else (None, None)
-    )
-    for arr in non_spine_samples_list
-]
+regime_labels = [f"μ = {float(rd['death_rate']):.1f}" for rd in regime_data]
+method_colors = [ptolqual[0], ptolqual[2]]  # contour, splitting
 
 fig_ages = make_subplots(
     rows=2,
     cols=3,
     horizontal_spacing=0.06,
-    vertical_spacing=0.1,
+    vertical_spacing=0.12,
     shared_xaxes="columns",
     shared_yaxes="rows",
-    subplot_titles=method_labels + [""] * 3,
+    subplot_titles=regime_labels + [""] * 3,
 )
 
-for col_idx, (label, color, (s_grid, s_kde), (ns_grid, ns_kde)) in enumerate(
-    zip(method_labels, method_colors, spine_kde_data, non_spine_kde_data),
-    start=1,
-):
-    show_legend = col_idx == 1
+for col_idx, rd in enumerate(regime_data, start=1):
+    dr_val = float(rd["death_rate"])
+    c_spine = np.asarray(rd["contour_spine"], dtype=np.float64)
+    c_ns = np.asarray(rd["contour_non_spine"], dtype=np.float64)
+    s_spine = np.asarray(rd["splitting_spine"], dtype=np.float64)
+    s_ns = np.asarray(rd["splitting_non_spine"], dtype=np.float64)
 
-    # Non-spine KDE (row 1)
-    if ns_grid is not None:
+    # Spine KDE: exclude the point mass at T
+    c_spine_kde_samples = c_spine[c_spine < TERMINAL_TIME]
+    s_spine_kde_samples = s_spine[s_spine < TERMINAL_TIME]
+
+    # Proportion of spine ages not equal to T (for rescaling theory density)
+    all_spine = np.concatenate([a for a in [c_spine, s_spine] if a.size > 0])
+    spine_prop = proportion_not_at_upper(all_spine, TERMINAL_TIME) if all_spine.size > 0 else 1.0
+    all_ns = np.concatenate([a for a in [c_ns, s_ns] if a.size > 0])
+    ns_prop = proportion_not_at_upper(all_ns, TERMINAL_TIME) if all_ns.size > 0 else 1.0
+
+    # Theoretical curves for this regime
+    spine_x, spine_y = theoretical_age_density(
+        lambda age, br=BIRTH_RATE, dr=dr_val, t=TERMINAL_TIME: calculate_spine_ages_log_lik(  # type: ignore[misc]
+            birth_rates=br, death_rates=dr, ages=age, times=t
+        ),
+        TERMINAL_TIME,
+        include_endpoint=False,
+        proportion_not_at_upper=spine_prop if spine_prop > 0.0 else None,
+    )
+    ns_x, ns_y = theoretical_age_density(
+        lambda age, br=BIRTH_RATE, dr=dr_val, t=TERMINAL_TIME: calculate_non_spine_ages_log_lik(  # type: ignore[misc]
+            birth_rates=br, death_rates=dr, ages=age, times=t
+        ),
+        TERMINAL_TIME,
+        proportion_not_at_upper=ns_prop if ns_prop > 0.0 else None,
+    )
+
+    # KDE for each method
+    for method_name, color, sp_kde_s, ns_kde_s in [
+        ("Contour", method_colors[0], c_spine_kde_samples, c_ns),
+        ("Splitting", method_colors[1], s_spine_kde_samples, s_ns),
+    ]:
+        show_legend = col_idx == 1
+
+        # Non-spine (row 1)
+        ns_grid, ns_kde = (
+            boundary_corrected_kde_on_support(ns_kde_s, support_upper=TERMINAL_TIME)
+            if ns_kde_s.size > 1
+            else (None, None)
+        )
+        if ns_grid is not None and ns_kde is not None:
+            fig_ages.add_trace(
+                go.Scatter(
+                    x=ns_grid,
+                    y=ns_kde,
+                    mode="lines",
+                    line=dict(color=color, width=2),
+                    fill="tozeroy",
+                    fillcolor=color,
+                    opacity=0.5,
+                    name=method_name,
+                    showlegend=show_legend,
+                ),
+                row=1,
+                col=col_idx,
+            )
+
+        # Non-spine theory (row 1)
         fig_ages.add_trace(
             go.Scatter(
-                x=ns_grid,
-                y=ns_kde,
+                x=ns_x,
+                y=ns_y,
                 mode="lines",
-                line=dict(color=color, width=2),
-                fill="tozeroy",
-                fillcolor=color,
-                opacity=0.55,
-                name=label,
-                showlegend=show_legend,
+                line=dict(color=ptolqual[1], width=2, dash="dash"),
+                name="Theoretical",
+                showlegend=show_legend and method_name == "Contour",
             ),
             row=1,
             col=col_idx,
         )
-    fig_ages.add_trace(
-        go.Scatter(
-            x=non_spine_theory_x,
-            y=non_spine_theory_y,
-            mode="lines",
-            line=dict(color=ptolqual[1], width=2, dash="dash"),
-            name="Theoretical",
-            showlegend=show_legend,
-        ),
-        row=1,
-        col=col_idx,
-    )
 
-    # Spine KDE (row 2)
-    if s_grid is not None:
+        # Spine (row 2)
+        sp_grid, sp_kde = (
+            boundary_corrected_kde_on_support(sp_kde_s, support_upper=TERMINAL_TIME)
+            if sp_kde_s.size > 1
+            else (None, None)
+        )
+        if sp_grid is not None and sp_kde is not None:
+            fig_ages.add_trace(
+                go.Scatter(
+                    x=sp_grid,
+                    y=sp_kde,
+                    mode="lines",
+                    line=dict(color=color, width=2),
+                    fill="tozeroy",
+                    fillcolor=color,
+                    opacity=0.5,
+                    name=method_name,
+                    showlegend=False,
+                ),
+                row=2,
+                col=col_idx,
+            )
+
+        # Spine theory (row 2)
         fig_ages.add_trace(
             go.Scatter(
-                x=s_grid,
-                y=s_kde,
+                x=spine_x,
+                y=spine_y,
                 mode="lines",
-                line=dict(color=color, width=2),
-                fill="tozeroy",
-                fillcolor=color,
-                opacity=0.55,
-                name=label,
+                line=dict(color=ptolqual[1], width=2, dash="dash"),
+                name="Theoretical",
                 showlegend=False,
             ),
             row=2,
             col=col_idx,
         )
-    fig_ages.add_trace(
-        go.Scatter(
-            x=spine_theory_x,
-            y=spine_theory_y,
-            mode="lines",
-            line=dict(color=ptolqual[1], width=2, dash="dash"),
-            name="Theoretical",
-            showlegend=False,
-        ),
-        row=2,
-        col=col_idx,
-    )
 
-# Y-axis ranges — derived from methods that have samples (contour + FV)
-spine_y_max = robust_y_max(
-    [s for _, s in spine_kde_data if s is not None] + [spine_theory_y]  # type: ignore[arg-type]
-)
-non_spine_y_max = robust_y_max(
-    [ns for _, ns in non_spine_kde_data if ns is not None] + [non_spine_theory_y]  # type: ignore[arg-type]
-)
-
-for col_idx in range(1, 4):
-    fig_ages.update_xaxes(range=[0.0, terminal_time], row=1, col=col_idx)
-    fig_ages.update_xaxes(
-        range=[0.0, terminal_time],
-        title_text="Age",
-        row=2,
-        col=col_idx,
-    )
-    fig_ages.update_yaxes(range=[0.0, non_spine_y_max], row=1, col=col_idx)
-    fig_ages.update_yaxes(range=[0.0, spine_y_max], row=2, col=col_idx)
+    fig_ages.update_xaxes(range=[0.0, TERMINAL_TIME], row=1, col=col_idx)
+    fig_ages.update_xaxes(range=[0.0, TERMINAL_TIME], title_text="Age", row=2, col=col_idx)
 
 fig_ages.update_yaxes(title_text="Density (non-spine)", row=1, col=1)
 fig_ages.update_yaxes(title_text="Density (spine)", row=2, col=1)
 
-fig_ages = apply_professional_styling(
-    fig_ages,
-    "Age Densities vs Theory: Three Simulators Compared",
-    "",
-    "",
-)
+fig_ages = apply_professional_styling(fig_ages, "Age Densities vs Theory: Three Regimes", "", "")
 fig_ages = apply_tufte_axes(fig_ages)
 fig_ages.update_layout(
     margin=dict(t=60),
@@ -597,22 +515,17 @@ fig_ages.show()
 saved_ages = save_figure(
     fig_ages,
     "methods_validation_simulator_comparison_age_densities",
-    width=600,
-    height=380,
+    width=800,
+    height=420,
 )
 print(f"Saved age-density figure: {saved_ages}")
 ```
 
-The spine density does not include the point mass at the maximum time span; the
-continuous portion is rescaled so that densities are comparable.  An empty
-splitting column confirms the adaptive-resampling behaviour described in the
-overview.
-
 ## Statistical Goodness-of-Fit Tests
 
-Pairwise Anderson–Darling and Kolmogorov–Smirnov tests compare the methods that
-produce enough samples.  Pairs are skipped when fewer than 10 samples are
-available (which can occur if all particles go extinct before the terminal time).
+Pairwise Anderson–Darling and Kolmogorov–Smirnov tests compare Contour vs Splitting
+within each regime.  Pairs are skipped when fewer than 10 samples are available.
+High p-values indicate indistinguishable distributions.
 
 ```{python}
 MIN_SAMPLES = 10
@@ -621,90 +534,58 @@ ad_method = PermutationMethod(
     n_resamples=1_111, batch=101, rng=np.random.default_rng(33943)
 )
 
-_all_spine = {
-    "Contour": contour_spine_ages,
-    "Splitting": splitting_spine_ages,
-    "Fleming–Viot": fv_spine_ages,
-}
-_all_non_spine = {
-    "Contour": contour_non_spine_ages,
-    "Splitting": splitting_non_spine_ages,
-    "Fleming–Viot": fv_non_spine_ages,
-}
+for rd in regime_data:
+    dr_val = float(rd["death_rate"])
+    c_spine = np.asarray(rd["contour_spine"], dtype=np.float64)
+    c_ns = np.asarray(rd["contour_non_spine"], dtype=np.float64)
+    s_spine = np.asarray(rd["splitting_spine"], dtype=np.float64)
+    s_ns = np.asarray(rd["splitting_non_spine"], dtype=np.float64)
 
-pairs = [
-    ("Contour", "Splitting"),
-    ("Contour", "Fleming–Viot"),
-    ("Splitting", "Fleming–Viot"),
-]
+    regime_label = f"mu = {dr_val:.1f}  (Contour vs Splitting)"
+    print(f"\n{'=' * 60}")
+    print(regime_label)
+    print("=" * 60)
 
-print("=" * 80)
-print("ANDERSON-DARLING TESTS (midrank variant, permutation p-values)")
-print("=" * 80)
+    # Anderson-Darling
+    for label, arr_a, arr_b in [
+        ("Spine     (AD)", c_spine, s_spine),
+        ("Non-spine (AD)", c_ns, s_ns),
+    ]:
+        if arr_a.size >= MIN_SAMPLES and arr_b.size >= MIN_SAMPLES:
+            ad = anderson_ksamp([arr_a, arr_b], variant="midrank", method=ad_method)
+            print(
+                f"  {label}: stat = {ad.statistic:>8.4f},  p = {ad.pvalue:.4f}"
+                f"  (n = {len(arr_a)}, {len(arr_b)})"
+            )
+        else:
+            print(
+                f"  {label}: skipped — insufficient samples "
+                f"({len(arr_a)}, {len(arr_b)})"
+            )
 
-for name_a, name_b in pairs:
-    pair_label = f"{name_a} vs {name_b}"
-    print(f"\n{pair_label}")
-    print("-" * len(pair_label))
-    s_a, s_b = _all_spine[name_a], _all_spine[name_b]
-    if s_a.size >= MIN_SAMPLES and s_b.size >= MIN_SAMPLES:
-        ad = anderson_ksamp([s_a, s_b], variant="midrank", method=ad_method)
-        print(
-            f"  Spine:      AD = {ad.statistic:>9.4f},  p = {ad.pvalue:.4f}"
-            f"  (n = {len(s_a)}, {len(s_b)})"
-        )
-    else:
-        print(f"  Spine:      skipped — insufficient samples ({len(s_a)}, {len(s_b)})")
-
-    ns_a, ns_b = _all_non_spine[name_a], _all_non_spine[name_b]
-    if ns_a.size >= MIN_SAMPLES and ns_b.size >= MIN_SAMPLES:
-        ad_ns = anderson_ksamp([ns_a, ns_b], variant="midrank", method=ad_method)
-        print(
-            f"  Non-spine:  AD = {ad_ns.statistic:>9.4f},  p = {ad_ns.pvalue:.4f}"
-            f"  (n = {len(ns_a)}, {len(ns_b)})"
-        )
-    else:
-        print(
-            f"  Non-spine:  skipped — insufficient samples ({len(ns_a)}, {len(ns_b)})"
-        )
+    # Kolmogorov-Smirnov
+    for label, arr_a, arr_b in [
+        ("Spine     (KS)", c_spine, s_spine),
+        ("Non-spine (KS)", c_ns, s_ns),
+    ]:
+        if arr_a.size >= MIN_SAMPLES and arr_b.size >= MIN_SAMPLES:
+            ks, ksp = ks_2samp(arr_a, arr_b)
+            print(
+                f"  {label}: stat = {ks:>8.5f},  p = {ksp:.4f}"
+                f"  (n = {len(arr_a)}, {len(arr_b)})"
+            )
+        else:
+            print(
+                f"  {label}: skipped — insufficient samples "
+                f"({len(arr_a)}, {len(arr_b)})"
+            )
 
 print()
-print("=" * 80)
-print("KOLMOGOROV-SMIRNOV TESTS")
-print("=" * 80)
-
-for name_a, name_b in pairs:
-    pair_label = f"{name_a} vs {name_b}"
-    print(f"\n{pair_label}")
-    print("-" * len(pair_label))
-    s_a, s_b = _all_spine[name_a], _all_spine[name_b]
-    if s_a.size >= MIN_SAMPLES and s_b.size >= MIN_SAMPLES:
-        ks, ksp = ks_2samp(s_a, s_b)
-        print(
-            f"  Spine:      KS = {ks:>8.5f},  p = {ksp:.4f}"
-            f"  (n = {len(s_a)}, {len(s_b)})"
-        )
-    else:
-        print(f"  Spine:      skipped — insufficient samples ({len(s_a)}, {len(s_b)})")
-
-    ns_a, ns_b = _all_non_spine[name_a], _all_non_spine[name_b]
-    if ns_a.size >= MIN_SAMPLES and ns_b.size >= MIN_SAMPLES:
-        ks_ns, ksp_ns = ks_2samp(ns_a, ns_b)
-        print(
-            f"  Non-spine:  KS = {ks_ns:>8.5f},  p = {ksp_ns:.4f}"
-            f"  (n = {len(ns_a)}, {len(ns_b)})"
-        )
-    else:
-        print(
-            f"  Non-spine:  skipped — insufficient samples ({len(ns_a)}, {len(ns_b)})"
-        )
 ```
 
-High p-values (typically > 0.05) for a given pair indicate that the two methods
-draw from the same distribution.  Systematic differences in the spine component
-may reflect the different spine-labelling conventions (contour: earliest-created
-survivor; splitting/FV: first insertion-order survivor); non-spine disagreements
-are a cleaner signal of algorithmic error.
+Non-spine disagreements are a cleaner signal of algorithmic bias than spine
+differences, since the spine labelling conventions differ slightly between methods
+(earliest-created vs insertion-order survivor).
 
 ```{python}
 # | label: compile-time-report
@@ -713,7 +594,6 @@ are a cleaner signal of algorithmic error.
 
 import json
 import os
-import time
 from pathlib import Path
 
 doc_name = "methods_validation_simulator_comparison.qmd"

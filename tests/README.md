@@ -44,7 +44,7 @@ All `test_` methods take `self`. Module-level helpers and fixtures stay at modul
 | `test_fitting.py` | MLE fitting via LBFGS/Adam, `ParameterConstraints`, covariance estimation |
 | `test_bayesian_fitting.py` | Pyro-based posterior inference |
 | `test_simulation.py` | Gillespie simulator, reproducibility, DataFrame structure |
-| `test_splitting_simulation.py` | Multilevel splitting and Fleming–Viot particle methods |
+| `test_splitting_simulation.py` | Multilevel splitting simulations and conditioned survival |
 | `test_probability_normalization.py` | Densities integrate / mass functions sum to 1 |
 | `test_asymptotic_consistency.py` | MLE recovers known parameters in large-sample regime |
 | `test_lbfgs_exception_inconsistency.py` | LBFGS exception-handling edge cases |

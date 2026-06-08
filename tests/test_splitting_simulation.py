@@ -4,10 +4,9 @@ import numpy as np
 
 from inf_bp_texts.models import BirthDeathProcess
 from inf_bp_texts.simulation import (
-    FlemingViotConfig,
     SplittingConfig,
     plot_level_survival_probabilities,
-    simulate_subcritical_survival_fleming_viot,
+    select_level_times_for_band,
     simulate_subcritical_survival_splitting,
 )
 from inf_bp_texts.simulation.splitting import (
@@ -20,7 +19,7 @@ from inf_bp_texts.simulation.splitting import (
 
 
 class TestSplittingSimulation:
-    """Validate rare-event splitting and Fleming-Viot approximations."""
+    """Validate rare-event splitting simulations."""
 
     def test_splitting_returns_expected_shapes(self) -> None:
         config = SplittingConfig(
@@ -115,24 +114,6 @@ class TestSplittingSimulation:
             interval_time=0.5,
         ) == int(np.ceil(1.0 / probability))
 
-    def test_fleming_viot_returns_expected_shapes(self) -> None:
-        config = FlemingViotConfig(
-            birth_rate=0.9,
-            death_rate=1.0,
-            terminal_time=40.0,
-            n_particles=200,
-            n_levels=8,
-            random_seed=13,
-            n_conditioned_trajectories=6,
-        )
-
-        result = simulate_subcritical_survival_fleming_viot(config)
-
-        assert result.level_times.shape[0] == config.n_levels + 1
-        assert result.level_survival_probabilities.shape[0] == config.n_levels
-        assert result.level_mean_populations.shape[0] == config.n_levels + 1
-        assert 0.0 <= result.survival_proxy_estimate <= 1.0
-
     def test_splitting_level_times_invariant_on_early_extinction(self) -> None:
         # Regression test: when all particles go extinct before the final level
         # the loop breaks early and level_times was previously not truncated,
@@ -226,51 +207,6 @@ class TestSplittingSimulation:
             assert len(spine_rows) == 1, "expected exactly one spine per tree"
             assert bool(spine_rows["survived"].iloc[0]), "spine must be a survivor"
 
-    def test_fleming_viot_spine_is_alive_list_head(self) -> None:
-        # Same structural check for the Fleming-Viot path.
-        config = FlemingViotConfig(
-            birth_rate=0.9,
-            death_rate=1.0,
-            terminal_time=10.0,
-            n_particles=200,
-            n_levels=5,
-            random_seed=88,
-            n_conditioned_trajectories=20,
-        )
-
-        result = simulate_subcritical_survival_fleming_viot(config)
-
-        assert len(result.conditioned_trajectories) > 0, "expected non-zero survivors"
-        for traj in result.conditioned_trajectories:
-            records = traj.process.manuscript_records
-            if records is None:
-                continue
-            spine_rows = records[records["is_spine"]]
-            assert len(spine_rows) == 1, "expected exactly one spine per tree"
-            assert bool(spine_rows["survived"].iloc[0]), "spine must be a survivor"
-
-    def test_fleming_viot_level_times_invariant_on_early_extinction(self) -> None:
-        # Regression test for the same early-exit truncation bug in the
-        # Fleming-Viot path.
-        config = FlemingViotConfig(
-            birth_rate=0.05,
-            death_rate=1.0,
-            terminal_time=50.0,
-            n_particles=5,
-            n_levels=15,
-            random_seed=0,
-        )
-
-        result = simulate_subcritical_survival_fleming_viot(config)
-
-        assert len(result.level_times) == len(result.level_survival_probabilities) + 1
-        assert len(result.level_times) == len(result.level_mean_populations)
-        assert len(result.level_survival_probabilities) < config.n_levels
-        plot_level_survival_probabilities(
-            level_times=result.level_times,
-            level_survival_probabilities=result.level_survival_probabilities,
-        )
-
     def test_splitting_selects_balanced_split(self) -> None:
         # Verify that auto-selection chooses the split count whose R*pr_ext is
         # closest to 1, not merely the coarsest in-band grid.
@@ -313,20 +249,55 @@ class TestSplittingSimulation:
             f"simulator chose n={n_selected} but brute-force optimum is n={best_n}"
         )
 
-    def test_fleming_viot_maintains_particle_bank_when_survivors_exist(self) -> None:
-        config = FlemingViotConfig(
-            birth_rate=0.9,
-            death_rate=1.0,
-            terminal_time=20.0,
-            n_particles=100,
-            n_levels=4,
-            random_seed=29,
-            n_conditioned_trajectories=3,
+    def test_select_level_times_for_band_is_valid_grid(self) -> None:
+        # The public selector must return a strictly increasing grid starting at
+        # 0 and ending at terminal_time, with all increments in the band.
+        birth_rate = 1.0
+        death_rate = 2.0
+        terminal_time = 20.0
+
+        levels = select_level_times_for_band(
+            birth_rate=birth_rate,
+            death_rate=death_rate,
+            terminal_time=terminal_time,
         )
 
-        result = simulate_subcritical_survival_fleming_viot(config)
-        if len(result.level_diagnostics) > 0:
-            # Level-wise proxy stays within [0,1], and if all levels had survivors,
-            # the final conditioned bank can still provide trajectories.
-            assert np.all(result.level_survival_probabilities >= 0.0)
-            assert np.all(result.level_survival_probabilities <= 1.0)
+        assert float(levels[0]) == 0.0
+        assert np.isclose(float(levels[-1]), terminal_time)
+        assert len(levels) >= 2
+        # strictly increasing
+        assert np.all(np.diff(levels) > 0)
+        # first increment pr_ext in band
+        first_increment = float(levels[1]) - float(levels[0])
+        pr = _calculate_extinction_probability(
+            birth_rate=birth_rate,
+            death_rate=death_rate,
+            interval_time=first_increment,
+        )
+        assert _BAND_LOWER <= pr <= _BAND_UPPER
+
+    def test_splitting_factor_override_bypasses_band_check(self) -> None:
+        # When both level_times and splitting_factor are supplied, the band
+        # validation is skipped even if the first increment is out of band.
+        # Use a very coarse grid (one level) whose pr_ext is far above _BAND_UPPER,
+        # combined with a hand-picked R=2 — this would normally raise ValueError.
+        birth_rate = 1.0
+        death_rate = 1.1
+        terminal_time = 20.0
+
+        # Single level — pr_ext for the whole horizon is above 0.5 for mild subcritical
+        config = SplittingConfig(
+            birth_rate=birth_rate,
+            death_rate=death_rate,
+            terminal_time=terminal_time,
+            n_particles=200,
+            level_times=[0.0, terminal_time],
+            splitting_factor=2,
+            random_seed=5,
+        )
+
+        result = simulate_subcritical_survival_splitting(config)
+
+        # Override was respected
+        assert result.splitting_factor == 2
+        assert 0.0 <= result.survival_probability_estimate <= 1.0

@@ -6,9 +6,8 @@ up to a large terminal time.
 
 Implemented methods:
 - Multilevel splitting with exact Gillespie trajectory evolution
-- Level-wise Fleming-Viot particle approximation for comparison
 
-Both methods expose level diagnostics, conditioned trajectory samples, and
+The method exposes level diagnostics, conditioned trajectory samples, and
 particle ancestry metadata suitable for downstream analysis.
 """
 
@@ -68,6 +67,12 @@ class SplittingConfig:
         Maximum number of conditioned trajectories to return for downstream
         analysis. If ``None``, all surviving terminal trajectories are
         returned.
+    splitting_factor : int | None, optional
+        Optional manual override for the enrichment factor R. When provided
+        it is used directly instead of ``ceil(1/pr_ext)``. When both
+        ``level_times`` and ``splitting_factor`` are supplied, the band
+        validation on the first increment is bypassed, so a predetermined
+        out-of-band grid can be used without error.
 
     """
 
@@ -79,48 +84,12 @@ class SplittingConfig:
     n_levels: int = 10
     random_seed: int | None = None
     n_conditioned_trajectories: int | None = None
-
-
-@dataclass(frozen=True)
-class FlemingViotConfig:
-    """Configuration for level-wise Fleming-Viot approximation.
-
-    Parameters
-    ----------
-    birth_rate : float
-        Per-individual birth rate used in the birth-death dynamics.
-    death_rate : float
-        Per-individual death rate used in the birth-death dynamics.
-    terminal_time : float
-        Target time horizon T for conditioning on survival.
-    n_particles : int
-        Number of particles in the Fleming-Viot ensemble.
-    level_times : list[float] | None, optional
-        Explicit level boundary times (including 0 and `terminal_time`). If
-        ``None``, levels are constructed from ``n_levels``.
-    n_levels : int, optional
-        Number of level intervals to create when ``level_times`` is not
-        provided. Defaults to 10.
-    random_seed : int | None, optional
-        Seed for random number generation to allow reproducible runs.
-    n_conditioned_trajectories : int, optional
-        Number of conditioned trajectories to return for downstream analysis.
-
-    """
-
-    birth_rate: float
-    death_rate: float
-    terminal_time: float
-    n_particles: int
-    level_times: list[float] | None = None
-    n_levels: int = 10
-    random_seed: int | None = None
-    n_conditioned_trajectories: int = 12
+    splitting_factor: int | None = None
 
 
 @dataclass(frozen=True)
 class LevelDiagnostic:
-    """Per-level diagnostics for splitting/Fleming-Viot evolution.
+    """Per-level diagnostics for splitting evolution.
 
     Parameters
     ----------
@@ -139,8 +108,7 @@ class LevelDiagnostic:
     mean_population : float
         Ensemble mean population size at the level boundary.
     entering_count : int | None, optional
-        Number of particles that entered this level interval.  Set by the
-        splitting simulator; ``None`` for the Fleming-Viot path.
+        Number of particles that entered this level interval.
 
     """
 
@@ -218,46 +186,6 @@ class SplittingSimulationResult:
     particle_genealogy: pd.DataFrame
     splitting_factor: int = 1
     initial_particle_count: int = 1
-
-
-@dataclass(frozen=True)
-class FlemingViotSimulationResult:
-    """Output of level-wise Fleming-Viot simulation.
-
-    Parameters
-    ----------
-    config : FlemingViotConfig
-        The configuration used to run the Fleming-Viot approximation.
-    level_times : np.ndarray
-        Array of level boundary times including time 0 and terminal time.
-    survival_proxy_estimate : float
-        Proxy estimate of survival obtained from the Fleming-Viot procedure.
-    level_diagnostics : list[LevelDiagnostic]
-        Per-level diagnostic objects describing survival and population
-        statistics.
-    level_survival_probabilities : np.ndarray
-        Empirical conditional survival probabilities for each level
-        interval (length = len(level_times) - 1).
-    level_mean_populations : np.ndarray
-        Ensemble mean population at each level boundary.
-    final_survivor_count : int
-        Number of surviving manuscripts/lineages at the terminal time.
-    conditioned_trajectories : list[ConditionedTrajectory]
-        Sampled conditioned trajectories selected from surviving particles.
-    particle_genealogy : pd.DataFrame
-        Tabular parent-child lineage records produced during resampling.
-
-    """
-
-    config: FlemingViotConfig
-    level_times: np.ndarray
-    survival_proxy_estimate: float
-    level_diagnostics: list[LevelDiagnostic]
-    level_survival_probabilities: np.ndarray
-    level_mean_populations: np.ndarray
-    final_survivor_count: int
-    conditioned_trajectories: list[ConditionedTrajectory]
-    particle_genealogy: pd.DataFrame
 
 
 @dataclass
@@ -383,7 +311,7 @@ def _adaptive_particle_count(
     return int(np.ceil(1.0 / extinction_probability))
 
 
-def _select_level_times_for_band(
+def select_level_times_for_band(
     *,
     birth_rate: float,
     death_rate: float,
@@ -745,7 +673,7 @@ def simulate_subcritical_survival_splitting(
     reduction against computational cost.
 
     **Initialisation.** When ``config.level_times`` is ``None``, the grid is
-    auto-selected by bisection (``_select_level_times_for_band``); otherwise
+    auto-selected by bisection (``select_level_times_for_band``); otherwise
     the caller-supplied grid is used and its first increment is validated
     against the band.  The initial ensemble size is
     ``N_0 = min(R, config.n_particles)``.
@@ -802,8 +730,9 @@ def simulate_subcritical_survival_splitting(
     ------
     ValueError
         If ``birth_rate >= death_rate`` (not subcritical), ``n_particles < 1``,
-        ``terminal_time <= 0``, or if ``level_times`` is supplied but its first
-        increment violates the band constraint ``[e^{-2}, 0.5]``.
+        ``terminal_time <= 0``, or if ``level_times`` is supplied without a
+        ``splitting_factor`` override but its first increment violates the band
+        constraint ``[e^{-2}, 0.5]``, or if ``splitting_factor < 1``.
 
     """
     _validate_common_inputs(
@@ -815,7 +744,7 @@ def simulate_subcritical_survival_splitting(
 
     # --- Level selection ---
     if config.level_times is None:
-        levels = _select_level_times_for_band(
+        levels = select_level_times_for_band(
             birth_rate=float(config.birth_rate),
             death_rate=float(config.death_rate),
             terminal_time=float(config.terminal_time),
@@ -826,27 +755,39 @@ def simulate_subcritical_survival_splitting(
             level_times=config.level_times,
             n_levels=int(config.n_levels),
         )
-        first_increment = float(levels[1]) - float(levels[0])
-        first_pr_ext = _calculate_extinction_probability(
+        # When the caller supplies both an explicit grid and an explicit
+        # splitting_factor, they have predetermined the configuration and
+        # the band check is bypassed.  Otherwise validate that the first
+        # increment falls within [e^{-2}, 0.5] to ensure R in [2, 8].
+        if config.splitting_factor is None:
+            first_increment = float(levels[1]) - float(levels[0])
+            first_pr_ext = _calculate_extinction_probability(
+                birth_rate=float(config.birth_rate),
+                death_rate=float(config.death_rate),
+                interval_time=first_increment,
+            )
+            if not (_BAND_LOWER <= first_pr_ext <= _BAND_UPPER):
+                msg = (
+                    f"First increment extinction probability {first_pr_ext:.4f} is outside "
+                    f"the required band [{_BAND_LOWER:.4f}, {_BAND_UPPER:.4f}]. "
+                    "Adjust level_times, leave level_times=None for auto-selection, "
+                    "or supply splitting_factor to bypass this check."
+                )
+                raise ValueError(msg)
+
+    # --- Splitting factor from first increment (or manual override) ---
+    if config.splitting_factor is not None:
+        if int(config.splitting_factor) < 1:
+            msg = f"splitting_factor must be >= 1, got {config.splitting_factor}."
+            raise ValueError(msg)
+        splitting_factor = int(config.splitting_factor)
+    else:
+        first_increment_time = float(levels[1]) - float(levels[0])
+        splitting_factor = _adaptive_particle_count(
             birth_rate=float(config.birth_rate),
             death_rate=float(config.death_rate),
-            interval_time=first_increment,
+            interval_time=first_increment_time,
         )
-        if not (_BAND_LOWER <= first_pr_ext <= _BAND_UPPER):
-            msg = (
-                f"First increment extinction probability {first_pr_ext:.4f} is outside "
-                f"the required band [{_BAND_LOWER:.4f}, {_BAND_UPPER:.4f}]. "
-                "Adjust level_times or leave level_times=None for auto-selection."
-            )
-            raise ValueError(msg)
-
-    # --- Splitting factor from first increment ---
-    first_increment_time = float(levels[1]) - float(levels[0])
-    splitting_factor = _adaptive_particle_count(
-        birth_rate=float(config.birth_rate),
-        death_rate=float(config.death_rate),
-        interval_time=first_increment_time,
-    )
     n_particles_cap = int(config.n_particles)
     n_initial = min(splitting_factor, n_particles_cap)
 
@@ -947,130 +888,6 @@ def simulate_subcritical_survival_splitting(
         particle_genealogy=particle_genealogy,
         splitting_factor=splitting_factor,
         initial_particle_count=n_initial,
-    )
-
-
-def simulate_subcritical_survival_fleming_viot(
-    config: FlemingViotConfig,
-) -> FlemingViotSimulationResult:
-    """Run a level-wise Fleming-Viot approximation for comparison.
-
-    This approximation evolves all particles with exact continuous-time dynamics
-    on each level interval, then replaces extinct particles by cloning randomly
-    selected survivors at the same level boundary.
-    """
-    _validate_common_inputs(
-        birth_rate=float(config.birth_rate),
-        death_rate=float(config.death_rate),
-        terminal_time=float(config.terminal_time),
-        n_particles=int(config.n_particles),
-    )
-
-    levels = _build_level_times(
-        terminal_time=float(config.terminal_time),
-        level_times=config.level_times,
-        n_levels=int(config.n_levels),
-    )
-
-    seed_rng = np.random.default_rng(config.random_seed)
-    particles = [
-        _initialize_particle(particle_id=i, seed_rng=seed_rng)
-        for i in range(config.n_particles)
-    ]
-
-    diagnostics: list[LevelDiagnostic] = []
-    level_probs: list[float] = []
-    mean_populations: list[float] = [1.0]
-    lineage_rows: list[dict[str, Any]] = []
-    particle_id_counter = config.n_particles
-    cumulative_proxy = 1.0
-
-    for level_index in range(1, len(levels)):
-        target_time = float(levels[level_index])
-        for particle in particles:
-            _simulate_to_level(
-                state=particle,
-                birth_rate=float(config.birth_rate),
-                death_rate=float(config.death_rate),
-                target_time=target_time,
-            )
-
-        populations = np.asarray([len(p.alive_ids) for p in particles], dtype=np.int64)
-        survivors = np.flatnonzero(populations > 0)
-        dead_slots = np.flatnonzero(populations == 0)
-        survivor_count = int(survivors.size)
-        conditional = survivor_count / float(config.n_particles)
-        cumulative_proxy *= conditional
-
-        diagnostics.append(
-            LevelDiagnostic(
-                level_index=level_index,
-                time=target_time,
-                survivor_count=survivor_count,
-                conditional_survival_estimate=conditional,
-                cumulative_survival_estimate=cumulative_proxy,
-                mean_population=float(np.mean(populations)),
-            ),
-        )
-        level_probs.append(conditional)
-        mean_populations.append(float(np.mean(populations)))
-
-        if survivor_count == 0:
-            particles = []
-            break
-
-        for dead_slot_raw in dead_slots:
-            dead_slot = int(dead_slot_raw)
-            donor_slot = int(seed_rng.choice(survivors))
-            donor_particle = particles[donor_slot]
-            replacement = _clone_particle(
-                donor=donor_particle,
-                particle_id=particle_id_counter,
-                seed_rng=seed_rng,
-            )
-            particle_id_counter += 1
-            lineage_rows.append(
-                {
-                    "level_index": level_index,
-                    "time": target_time,
-                    "child_slot": dead_slot,
-                    "parent_slot": donor_slot,
-                    "child_particle_id": replacement.particle_id,
-                    "parent_particle_id": donor_particle.particle_id,
-                },
-            )
-            particles[dead_slot] = replacement
-
-    conditioned_trajectories = _build_conditioned_trajectories(
-        particles=particles,
-        config=config,
-        seed_rng=seed_rng,
-    )
-
-    final_survivor_count = int(sum(len(p.alive_ids) > 0 for p in particles))
-    genealogy = pd.DataFrame(lineage_rows)
-    if genealogy.empty:
-        genealogy = pd.DataFrame(
-            columns=[
-                "level_index",
-                "time",
-                "child_slot",
-                "parent_slot",
-                "child_particle_id",
-                "parent_particle_id",
-            ],
-        )
-
-    return FlemingViotSimulationResult(
-        config=config,
-        level_times=levels[: len(level_probs) + 1],
-        survival_proxy_estimate=float(cumulative_proxy),
-        level_diagnostics=diagnostics,
-        level_survival_probabilities=np.asarray(level_probs, dtype=np.float64),
-        level_mean_populations=np.asarray(mean_populations, dtype=np.float64),
-        final_survivor_count=final_survivor_count,
-        conditioned_trajectories=conditioned_trajectories,
-        particle_genealogy=genealogy,
     )
 
 
