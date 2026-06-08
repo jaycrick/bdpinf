@@ -81,6 +81,7 @@ sampled = simulate_bdp_ages_from_distributions(
     max_time=torch.tensor(time_span, dtype=torch.float64),
     rng=rng,
 )
+assert sampled.spine_ages is not None and sampled.non_spine_ages is not None
 ages = np.asarray(
     sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
     dtype=np.float64,

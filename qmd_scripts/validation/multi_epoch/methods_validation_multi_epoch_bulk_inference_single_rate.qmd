@@ -20,6 +20,8 @@ __compile_start = time.perf_counter()
 ## Setup
 
 ```{python}
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -60,7 +62,9 @@ import torch
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 
 
-def sample_age_vector(sim_idx, br, dr, span, base_seed):
+def sample_age_vector(
+    sim_idx: int, br: float, dr: float, span: float, base_seed: int
+) -> np.ndarray:
     rng = np.random.default_rng(base_seed + sim_idx)
     sampled = simulate_bdp_ages_from_distributions(
         birth_rate=torch.tensor(br, dtype=torch.float64),
@@ -68,6 +72,7 @@ def sample_age_vector(sim_idx, br, dr, span, base_seed):
         max_time=torch.tensor(span, dtype=torch.float64),
         rng=rng,
     )
+    assert sampled.spine_ages is not None and sampled.non_spine_ages is not None
     return np.asarray(
         sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
         dtype=np.float64,
@@ -77,7 +82,7 @@ def sample_age_vector(sim_idx, br, dr, span, base_seed):
 fit_times = np.array([time_span / 2.0, time_span], dtype=float)
 
 
-def _has_ages_in_each_epoch(ages, times):
+def _has_ages_in_each_epoch(ages: np.ndarray, times: np.ndarray) -> bool:
     ages = np.asarray(ages, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
     if ages.size == 0 or times.size == 0:
@@ -85,9 +90,9 @@ def _has_ages_in_each_epoch(ages, times):
 
     first_epoch_end = float(times[0])
     final_time = float(times[-1])
-    return np.any(ages < first_epoch_end) and np.any(
+    return bool(np.any(ages < first_epoch_end)) and bool(np.any(
         (ages >= first_epoch_end) & (ages <= final_time)
-    )
+    ))
 
 
 raw_list_of_ages = Parallel(n_jobs=-1)(
@@ -130,7 +135,7 @@ print(f"Successful fits: {fit_summary['successful']}")
 print(f"Failed fits: {fit_summary['failed']}")
 print(f"Success rate: {fit_summary['success_rate']:.1f}%")
 
-successful_fits_by_optimizer = Counter()
+successful_fits_by_optimizer: Counter[str] = Counter()
 for model in fitted_results:
     if model is None or not model.get("success", False):
         continue
@@ -177,7 +182,7 @@ if failed:
 The figures below use a joint plotting subset with 1.5×IQR outliers removed across the plotted parameters.
 
 ```{python}
-def _extract_epoch_parameter_arrays(models):
+def _extract_epoch_parameter_arrays(models: list[dict[str, Any] | None]) -> dict[str, np.ndarray]:
     successful_models = [
         model for model in models if model is not None and model.get("success", False)
     ]

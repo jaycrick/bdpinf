@@ -41,6 +41,9 @@ uv run mypy src/                               # strict mode
 # All at once (pre-commit)
 uv run pre-commit run --all-files
 
+# Lint Python cells in Quarto notebooks — run whenever a .qmd file is created or updated
+uv run lintquarto -l ruff mypy -p qmd_scripts docs -e .venv _output reference
+
 # Documentation — always use uv run to pick up the venv; plain `quarto` uses
 # system Python and fails with ModuleNotFoundError
 uv run quartodoc build          # regenerate reference/*.qmd from docstrings

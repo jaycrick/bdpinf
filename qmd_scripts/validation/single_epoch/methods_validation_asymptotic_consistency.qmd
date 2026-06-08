@@ -205,7 +205,7 @@ debug_output_dir.mkdir(parents=True, exist_ok=True)
 debug_records = []
 for _, row in spike_selection_unique_df.iterrows():
     record = reproduce_replicate(
-        row,
+        {str(k): v for k, v in row.to_dict().items()},
         regime_lookup,
         fit_config=fit_run_config,
     )

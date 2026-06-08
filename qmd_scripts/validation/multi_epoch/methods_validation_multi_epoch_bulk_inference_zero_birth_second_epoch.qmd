@@ -20,6 +20,9 @@ __compile_start = time.perf_counter()
 ```{python}
 # | label: simulate-zero-birth
 # Simulation: generate datasets with zero second-epoch births by simulating first epoch and advancing survivors
+from typing import Any
+
+import pandas as pd
 import numpy as np
 from joblib import Parallel, delayed
 
@@ -31,10 +34,11 @@ times = np.array([7.5, 15.0], dtype=float)
 seed = 42
 
 from inf_bp_texts.simulation import simulate_birth_death_process
-from inf_bp_texts.analysis.single_epoch import extract_alive_ages
 
 
-def simulate_zero_birth_second_epoch(sim_idx, birth_rate_epoch_1, death_rate, times):
+def simulate_zero_birth_second_epoch(
+    sim_idx: int, birth_rate_epoch_1: float, death_rate: float, times: np.ndarray
+) -> "pd.DataFrame":
     split_time = float(times[0])
     final_time = float(times[-1])
     first_epoch = simulate_birth_death_process(
@@ -44,7 +48,8 @@ def simulate_zero_birth_second_epoch(sim_idx, birth_rate_epoch_1, death_rate, ti
         random_seed=42000 + sim_idx,
     )
 
-    simulation = first_epoch.copy(deep=True)
+    assert first_epoch.manuscript_records is not None
+    simulation = first_epoch.manuscript_records.copy()
     alive_mask = simulation["death_time"].isna()
     alive_indices = simulation.index[alive_mask]
     if len(alive_indices) > 0:
@@ -72,8 +77,11 @@ simulated_processes = Parallel(n_jobs=-1)(
 )
 
 list_of_ages = []
+time_span = float(times[-1])
 for sim in simulated_processes:
-    list_of_ages.append(extract_alive_ages(sim, float(times[-1])))
+    alive = sim.loc[sim["death_time"].isna()].sort_values("is_spine", ascending=False)
+    ages = time_span - alive["creation_time"].to_numpy(dtype=np.float64)
+    list_of_ages.append(np.asarray(ages, dtype=np.float64))
 print(f"Simulations: {len(list_of_ages)}")
 ```
 
@@ -98,7 +106,9 @@ from inf_bp_texts.visualization.plotting import (
     save_figure,
 )
 
-birth_rates_true = np.array([birth_rate_epoch_1_true, birth_rate_epoch_2_true], dtype=float)
+birth_rates_true = np.array(
+    [birth_rate_epoch_1_true, birth_rate_epoch_2_true], dtype=float
+)
 death_rates_true = np.array([death_rate_true, death_rate_true], dtype=float)
 
 fit_config = FitModelConfig(
@@ -115,14 +125,17 @@ param_constraints = ParameterConstraints(
 )
 
 
-def fit_constrained_model(ages, config, constraints):
+def fit_constrained_model(
+    ages: np.ndarray, config: "FitModelConfig", constraints: "ParameterConstraints"
+) -> "dict[str, Any] | None":
     if len(ages) == 0:
         return None
 
     try:
+        _times = torch.as_tensor(config.times, dtype=torch.float64) if isinstance(config.times, np.ndarray) else config.times
         result = fit_birth_death_processes(
             list_of_ages=[torch.as_tensor(ages, dtype=torch.float64)],
-            times=config.times,
+            times=_times,
             is_ordered=config.is_ordered,
             perturb_initial_params_std=config.perturb_initial_params_std or 0.0,
             random_seed=config.random_seed,
@@ -155,7 +168,7 @@ print(
     f"Second-epoch birth rate fixed for fitting at 1e-12; displayed as {birth_rate_epoch_2_true:.1f} in summaries."
 )
 
-successful_fits_by_optimizer = Counter()
+successful_fits_by_optimizer: Counter[str] = Counter()
 for model in fitted_results:
     if model is None or not model.get("success", False):
         continue
@@ -232,7 +245,7 @@ for model, ages in zip(fitted_results, list_of_ages, strict=False):
 
 non_boundary_plotting_data, _ = iqr_plotting_subset(
     {
-        "population": fit_populations,
+        "population": [float(x) for x in fit_populations],
         "mean_age": fit_mean_ages,
         "birth_rate": fit_birth_values,
         "death_rate": fit_death_values,
@@ -240,7 +253,7 @@ non_boundary_plotting_data, _ = iqr_plotting_subset(
 )
 boundary_plotting_data, _ = iqr_plotting_subset(
     {
-        "population": fit_populations_boundary,
+        "population": [float(x) for x in fit_populations_boundary],
         "mean_age": fit_mean_ages_boundary,
         "birth_rate": fit_birth_values_boundary,
         "death_rate": fit_death_values_boundary,
@@ -252,9 +265,10 @@ print(
     f"boundary {len(boundary_plotting_data['population'])} / {len(fit_populations_boundary)}"
 )
 
-if len(non_boundary_plotting_data["population"]) > 0 or len(
-    boundary_plotting_data["population"]
-) > 0:
+if (
+    len(non_boundary_plotting_data["population"]) > 0
+    or len(boundary_plotting_data["population"]) > 0
+):
     fig_rates_vs_pop = go.Figure()
     # Non-boundary samples with circle markers
     if len(non_boundary_plotting_data["population"]) > 0:
@@ -340,9 +354,10 @@ if len(non_boundary_plotting_data["population"]) > 0 or len(
 ## Fitted Rates vs Mean Population Age
 
 ```{python}
-if len(non_boundary_plotting_data["mean_age"]) > 0 or len(
-    boundary_plotting_data["mean_age"]
-) > 0:
+if (
+    len(non_boundary_plotting_data["mean_age"]) > 0
+    or len(boundary_plotting_data["mean_age"]) > 0
+):
     fig_rates_vs_mean_age = go.Figure()
     # Non-boundary samples with circle markers
     if len(non_boundary_plotting_data["mean_age"]) > 0:
@@ -428,7 +443,9 @@ if len(non_boundary_plotting_data["mean_age"]) > 0 or len(
 ## Stacked Histograms for Epoch 1 Birth and Shared Death
 
 ```{python}
-def build_hist_bins(primary_values, secondary_values, bins=30):
+def build_hist_bins(
+    primary_values: list[float], secondary_values: list[float], bins: int = 30
+) -> dict[str, float]:
     combined = np.concatenate(
         [np.asarray(primary_values), np.asarray(secondary_values)]
     )
@@ -441,7 +458,7 @@ def build_hist_bins(primary_values, secondary_values, bins=30):
 
 
 birth_bins = build_hist_bins(
-    non_boundary_plotting_data["birth_rate"], boundary_plotting_data["birth_rate"]
+    non_boundary_plotting_data["birth_rate"], boundary_plotting_data["birth_rate"]  # type: ignore[arg-type]
 )
 fig_birth_hist = go.Figure()
 fig_birth_hist.add_trace(
@@ -491,7 +508,7 @@ saved_birth_hist = save_figure(
 print(f"Saved birth-rate histogram figure: {saved_birth_hist}")
 
 death_bins = build_hist_bins(
-    non_boundary_plotting_data["death_rate"], boundary_plotting_data["death_rate"]
+    non_boundary_plotting_data["death_rate"], boundary_plotting_data["death_rate"]  # type: ignore[arg-type]
 )
 fig_death_hist = go.Figure()
 fig_death_hist.add_trace(
@@ -542,7 +559,9 @@ print(f"Saved death-rate histogram figure: {saved_death_hist}")
 ## Summary Statistics
 
 ```{python}
-def print_rate_summary(label, birth_values, death_values):
+def print_rate_summary(
+    label: str, birth_values: list[float], death_values: list[float]
+) -> None:
     birth_array = np.asarray(birth_values, dtype=np.float64)
     death_array = np.asarray(death_values, dtype=np.float64)
 

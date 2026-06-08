@@ -97,13 +97,13 @@ n_levels = 20
 seed = 42
 
 # Speed benchmark
-n_speed_contour = 100    # serial contour calls
+n_speed_contour = 100  # serial contour calls
 n_particles_speed = 500  # particles for splitting/FV benchmark
 
 # Correctness data
-n_contour_trees = 1500         # parallel contour calls
+n_contour_trees = 1500  # parallel contour calls
 n_particles_correctness = 1000  # particles for splitting/FV correctness runs
-n_conditioned_fv = 10_000      # cap above any realistic survivor count
+n_conditioned_fv = 10_000  # cap above any realistic survivor count
 
 # Theoretical survival probability
 theoretical_survival = 1.0 - float(
@@ -242,7 +242,7 @@ print("=" * 78)
 print("SPEED BENCHMARK")
 print("=" * 78)
 print(f"{'Method':<18} | {'Total time (s)':>14} | {'# trees':>8} | {'s / tree':>10}")
-print(f"{'-'*18}-+-{'-'*14}-+-{'-'*8}-+-{'-'*10}")
+print(f"{'-' * 18}-+-{'-' * 14}-+-{'-' * 8}-+-{'-' * 10}")
 print(
     f"{'Contour':<18} | {contour_speed_time:>14.3f} | {contour_speed_trees:>8d}"
     f" | {contour_per_tree:>10.5f}"
@@ -261,7 +261,9 @@ print(
     f" | {fv_per_tree:>10.5f}"
 )
 print()
-print(f"Contour: {n_speed_contour} calls run serially; parallelises linearly with CPU cores.")
+print(
+    f"Contour: {n_speed_contour} calls run serially; parallelises linearly with CPU cores."
+)
 print(
     f"Splitting: R-fold enrichment (R={splitting_speed_result.splitting_factor}); "
     f"starts with {splitting_speed_result.initial_particle_count} particles, "
@@ -272,13 +274,19 @@ print("=" * 78)
 print("SURVIVAL-PROBABILITY CROSS-CHECK")
 print("=" * 78)
 print(f"Theoretical P(survive to T={terminal_time:.0f}):  {theoretical_survival:.6e}")
-print(f"Splitting estimate:                {splitting_speed_result.survival_probability_estimate:.6e}")
-print(f"Fleming–Viot proxy:                {fv_speed_result.survival_proxy_estimate:.6e}")
+print(
+    f"Splitting estimate:                {splitting_speed_result.survival_probability_estimate:.6e}"
+)
+print(
+    f"Fleming–Viot proxy:                {fv_speed_result.survival_proxy_estimate:.6e}"
+)
 print()
 n_levels_used = len(splitting_speed_result.level_survival_probabilities)
 print(f"Splitting: {n_levels_used} auto-selected levels (n_levels config is ignored).")
 if n_levels_used > 0:
-    print(f"  Per-level probabilities: {splitting_speed_result.level_survival_probabilities}")
+    print(
+        f"  Per-level probabilities: {splitting_speed_result.level_survival_probabilities}"
+    )
 ```
 
 ## Correctness Data: Pooled Age Samples
@@ -352,7 +360,9 @@ fv_correctness_config = FlemingViotConfig(
     random_seed=seed + 2_000,
     n_conditioned_trajectories=n_conditioned_fv,
 )
-fv_correctness_result = simulate_subcritical_survival_fleming_viot(fv_correctness_config)
+fv_correctness_result = simulate_subcritical_survival_fleming_viot(
+    fv_correctness_config
+)
 
 fv_spine_list: list[float] = []
 fv_non_spine_list: list[np.ndarray] = []
@@ -371,10 +381,16 @@ fv_non_spine_ages = (
 )
 
 print(f"{'Method':<18} | {'Spine samples':>14} | {'Non-spine samples':>18}")
-print(f"{'-'*18}-+-{'-'*14}-+-{'-'*18}")
-print(f"{'Contour':<18} | {len(contour_spine_ages):>14d} | {len(contour_non_spine_ages):>18d}")
-print(f"{'Splitting':<18} | {len(splitting_spine_ages):>14d} | {len(splitting_non_spine_ages):>18d}")
-print(f"{'Fleming–Viot':<18} | {len(fv_spine_ages):>14d} | {len(fv_non_spine_ages):>18d}")
+print(f"{'-' * 18}-+-{'-' * 14}-+-{'-' * 18}")
+print(
+    f"{'Contour':<18} | {len(contour_spine_ages):>14d} | {len(contour_non_spine_ages):>18d}"
+)
+print(
+    f"{'Splitting':<18} | {len(splitting_spine_ages):>14d} | {len(splitting_non_spine_ages):>18d}"
+)
+print(
+    f"{'Fleming–Viot':<18} | {len(fv_spine_ages):>14d} | {len(fv_non_spine_ages):>18d}"
+)
 print()
 print(
     "Splitting correctness survival estimate: "
@@ -445,18 +461,26 @@ non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
 method_labels = ["Contour", "Splitting", "Fleming–Viot"]
 method_colors = [ptolqual[0], ptolqual[2], ptolqual[4]]
 spine_samples_list = [contour_spine_kde, splitting_spine_kde, fv_spine_kde]
-non_spine_samples_list = [contour_non_spine_ages, splitting_non_spine_ages, fv_non_spine_ages]
+non_spine_samples_list = [
+    contour_non_spine_ages,
+    splitting_non_spine_ages,
+    fv_non_spine_ages,
+]
 
 spine_kde_data = [
-    boundary_corrected_kde_on_support(arr, support_upper=terminal_time)
-    if arr.size > 1
-    else (None, None)
+    (
+        boundary_corrected_kde_on_support(arr, support_upper=terminal_time)
+        if arr.size > 1
+        else (None, None)
+    )
     for arr in spine_samples_list
 ]
 non_spine_kde_data = [
-    boundary_corrected_kde_on_support(arr, support_upper=terminal_time)
-    if arr.size > 1
-    else (None, None)
+    (
+        boundary_corrected_kde_on_support(arr, support_upper=terminal_time)
+        if arr.size > 1
+        else (None, None)
+    )
     for arr in non_spine_samples_list
 ]
 
@@ -538,10 +562,10 @@ for col_idx, (label, color, (s_grid, s_kde), (ns_grid, ns_kde)) in enumerate(
 
 # Y-axis ranges — derived from methods that have samples (contour + FV)
 spine_y_max = robust_y_max(
-    [s for _, s in spine_kde_data if s is not None] + [spine_theory_y]
+    [s for _, s in spine_kde_data if s is not None] + [spine_theory_y]  # type: ignore[arg-type]
 )
 non_spine_y_max = robust_y_max(
-    [ns for _, ns in non_spine_kde_data if ns is not None] + [non_spine_theory_y]
+    [ns for _, ns in non_spine_kde_data if ns is not None] + [non_spine_theory_y]  # type: ignore[arg-type]
 )
 
 for col_idx in range(1, 4):
@@ -640,7 +664,9 @@ for name_a, name_b in pairs:
             f"  (n = {len(ns_a)}, {len(ns_b)})"
         )
     else:
-        print(f"  Non-spine:  skipped — insufficient samples ({len(ns_a)}, {len(ns_b)})")
+        print(
+            f"  Non-spine:  skipped — insufficient samples ({len(ns_a)}, {len(ns_b)})"
+        )
 
 print()
 print("=" * 80)
@@ -669,7 +695,9 @@ for name_a, name_b in pairs:
             f"  (n = {len(ns_a)}, {len(ns_b)})"
         )
     else:
-        print(f"  Non-spine:  skipped — insufficient samples ({len(ns_a)}, {len(ns_b)})")
+        print(
+            f"  Non-spine:  skipped — insufficient samples ({len(ns_a)}, {len(ns_b)})"
+        )
 ```
 
 High p-values (typically > 0.05) for a given pair indicate that the two methods
