@@ -51,9 +51,14 @@ print(f"First 10 ages: {ages[:10].tolist()}")
 ## Likelihood Sanity Check
 
 ```{python}
-init_birth, init_death = _get_crude_parameter_estimates(ages, times)
+import torch as _torch
+
+times_tensor = _torch.tensor(times, dtype=_torch.float64)
+init_birth, init_death = _get_crude_parameter_estimates(ages, times_tensor)
 if len(ages) > 0 and ages[0] == np.max(ages):
-    spine_ages = np.array([ages[0]], dtype=np.float64)
+    spine_ages: _torch.Tensor | None = _torch.tensor(
+        np.array([ages[0]], dtype=np.float64), dtype=_torch.float64
+    )
     non_spine_ages = ages[1:]
 else:
     spine_ages = None
@@ -63,7 +68,7 @@ initial_nll = negative_log_likelihood(
     birth_rates=init_birth,
     death_rates=init_death,
     ages=non_spine_ages,
-    times=times,
+    times=times_tensor,
     spine_ages=spine_ages,
     ns=None,
     is_ordered=False,

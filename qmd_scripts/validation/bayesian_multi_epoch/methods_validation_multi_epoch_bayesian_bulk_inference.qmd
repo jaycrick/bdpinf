@@ -22,6 +22,7 @@ __compile_start = time.perf_counter()
 ```{python}
 import numpy as np
 import pandas as pd
+import torch
 
 from inf_bp_texts.inference import fit_birth_death_processes_bayesian
 from inf_bp_texts.inference.bayesian import (
@@ -71,7 +72,7 @@ for i in range(num_sims):
 
     result = fit_birth_death_processes_bayesian(
         list_of_ages=[ages],
-        times=times,
+        times=torch.as_tensor(times, dtype=torch.float64),
         model_config=model_config,
         mcmc_config=mcmc_config,
         prior_config=prior_config,

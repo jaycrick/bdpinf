@@ -1,7 +1,5 @@
 """Tests for parameter constraints in fitting module."""
 
-# ruff: noqa: S101
-
 import pytest
 import torch
 

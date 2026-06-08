@@ -26,6 +26,7 @@ birth and death rates are identical in each epoch.
 ## Setup
 
 ```{python}
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -69,7 +70,9 @@ three_epoch_death_rates = np.array([death_rate, death_rate, death_rate], dtype=f
 three_epoch_times = np.array([500.0, 1000.0, 1500.0], dtype=float)
 
 
-def sample_age_vector_process(sim_idx, br, dr, span, base_seed):
+def sample_age_vector_process(
+    sim_idx: int, br: np.ndarray | float, dr: np.ndarray | float, span: np.ndarray | float, base_seed: int
+) -> np.ndarray:
     run_seed = base_seed + sim_idx
     simulated_df = simulate_birth_death_process(
         birth_rates=br,
@@ -78,6 +81,7 @@ def sample_age_vector_process(sim_idx, br, dr, span, base_seed):
         random_seed=run_seed,
     )
     survivors = simulated_df.surviving_manuscripts
+    assert survivors is not None
     if survivors.empty:
         return np.array([], dtype=np.float64)
 
@@ -290,12 +294,12 @@ print(f"Saved population figure: {saved_population}")
 
 ```{python}
 def theoretical_age_density(
-    log_lik_fn,
+    log_lik_fn: Callable[..., Any],
     support_upper: float,
     n_grid: int = 300,
     include_endpoint: bool = True,
     proportion_not_at_upper: float | None = None,
-):
+) -> tuple[np.ndarray, np.ndarray]:
     x_grid = np.linspace(0.0, support_upper, n_grid, endpoint=include_endpoint)
     y_vals = []
     for x_val in x_grid:

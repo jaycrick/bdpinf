@@ -6,24 +6,24 @@ format: html
 **LLM-generated answer (verbatim)**
 
 Let
-\[
+$$
 X_t := (Z_t, A_t, B_{t,1},\dots,B_{t,Z_t-1})
-\]
+$$
 denote the complete observation at time $t$. On the natural disjoint-union sample space
-\[
+$$
 \bigsqcup_{z\ge 1}\{z\}\times\mathbb R^{z},
-\]
+$$
 the complete-data density is
-\[
+$$
 f_{\theta,t}(z,a,b_{1:z-1})
 =
 p_\theta(z\mid t)\,q_\theta(a\mid t)\,\prod_{i=1}^{z-1} r_\theta(b_i\mid t),
 \qquad z\ge 1,
-\]
+$$
 with the empty product interpreted as $1$ when $z=1$.
 
 The complete-data log-likelihood is therefore
-\[
+$$
 \ell_t(\theta)
 =
 \log p_\theta(Z_t\mid t)
@@ -31,37 +31,37 @@ The complete-data log-likelihood is therefore
 \log q_\theta(A_t\mid t)
 +
 \sum_{i=1}^{Z_t-1}\log r_\theta(B_{t,i}\mid t).
-\]
+$$
 
 Because the number of $B$-terms is random, the asymptotic problem is not classical iid MLE with fixed dimension; it is better viewed as a single-observation triangular-array / random-sum likelihood problem indexed by $t$. If $Z_t$ stays tight as $t\to\infty$, there is generally no route to consistency from one observation alone; some effective sample size must diverge.
 
 The right classification depends on the structural role of $Z$. As posed, this is primarily a random-sum model with complete-data likelihood; it becomes a latent-variable model only if $Z$ or the $B_i$ are unobserved, in which case the observed likelihood is a mixture over $z$. If $Z$ is genuinely a population size or offspring count evolving over time, then branching-process asymptotics and martingale methods are often the natural language; if the hierarchy is just a count plus marks, then random-sum and M-estimation arguments are usually cleaner than trying to force an iid framework. Branching-process inference has a long MLE literature, and martingale methods are standard there.
 
 For consistency, the most robust route is a Wald-type argument for a normalized criterion,
-\[
+$$
 M_t(\theta):=\frac{1}{w_t}\ell_t(\theta),
-\]
+$$
 where $w_t\to\infty$ is a deterministic scaling matched to the growth of information, often chosen to be the natural effective sample size or its mean growth rate. One then proves a uniform law of large numbers
-\[
+$$
 \sup_{\theta\in\Theta}\big|M_t(\theta)-M(\theta)\big|\to 0
 \quad\text{in probability or a.s.}
-\]
+$$
 for a deterministic limit $M$ with unique maximizer at $\theta_0$. Wald’s original consistency theorem and its standard modern formulation require compactness or a sieve/compactification, upper semicontinuity of the criterion, an integrable envelope, and identifiability of the limiting objective. For random-sum models, the LLN step is typically proved by conditioning on $Z_t$, applying a conditional LLN to the $B_i$-sum, and then controlling the asymptotics of $Z_t/w_t$.
 
 If the model is latent-variable or mixture-like after marginalization, then Kiefer–Wolfowitz-type arguments become relevant. Their classical result is exactly about consistency of the MLE in the presence of infinitely many incidental parameters, and the modern mixture-model literature shows how delicate consistency can be without careful regularity or penalization. In your complete-data setting, KW is not the first tool unless you are optimizing over a hidden random measure or unobserved latent structure; but if $Z$ is hidden, or if you integrate over the random number of $B_i$, then the observed likelihood becomes mixture-like and the KW/mixture theory becomes much more natural. (Project Euclid link: https://projecteuclid.org/)
 
 For asymptotic normality, the cleanest route is a score/Hessian expansion under differentiability in quadratic mean (DQM). In the regular fixed-dimensional iid case, DQM plus nonsingular Fisher information gives LAN and, with a Taylor expansion of the score, asymptotic normality of the MLE. In your setting the same logic applies after normalization by $w_t$ or $\sqrt{w_t}$, but the score is a random sum,
-\[
+$$
 \dot\ell_t(\theta_0)
 =
 \dot\ell_{p,t}(\theta_0)+\dot\ell_{q,t}(\theta_0)+\sum_{i=1}^{Z_t-1}\dot\ell_{r,t,i}(\theta_0),
-\]
+$$
 so the CLT step is usually a random-sum CLT or, in dependent/branching settings, a martingale CLT. If the normalized observed information converges to a deterministic Fisher information matrix ($I(\theta_0)$), then
-\[
+$$
 \sqrt{w_t}(\hat\theta_t-\theta_0)
 =
 I(\theta_0)^{-1}\frac{\dot\ell_t(\theta_0)}{\sqrt{w_t}}+o_p(1),
-\]
+$$
 with the limit normal under a standard CLT; if the information limit is random, a mixed-normal/LAMN-type limit is the more plausible target.
 
 The main technical conditions to check are these: identifiability of the joint law $(p_\theta,q_\theta,r_\theta)$; domination by a common measure on the disjoint union space; a support that does not vary pathologically with $\theta$ or, if it does, a nonregular analysis; differentiability of $(\theta\mapsto \sqrt{f_{\theta,t}})$ in $L^2$ uniformly enough to justify exchanging derivatives and expectations; and an envelope for the score/Hessian strong enough to control the random-sum term $(\sum_{i=1}^{Z_t-1})$. Uniform convergence is usually obtained by a Glivenko–Cantelli argument for a class of log-densities, or by a localized version with bracketing/entropy bounds if the parameter set is not compact. Heavy tails in $B_i$, boundary values of $\theta$, or non-negligible mass near $Z_t\in\{0,1\}$ can all break the usual LLN/CLT and change the rate or the limit law.
@@ -81,21 +81,21 @@ Below is a concise, structured outline you can follow to convert the LLM answer 
 - **1. Choose normalization $w_t$.** Pick a deterministic sequence $w_t\to\infty$ matching the growth of information (e.g. $w_t=\mathbb E_{\theta_0}[Z_t]$, $w_t=t$, or $w_t=Z_t$ if $Z_t$ is deterministic/regular).
 
 - **2. Define normalized criterion.** Set $M_t(\theta)=w_t^{-1}\ell_t(\theta)$ and the population limit
-  \[M(\theta):=\lim_{t\to\infty}\mathbb E_{\theta_0}[M_t(\theta)],\]
+  $$M(\theta):=\lim_{t\to\infty}\mathbb E_{\theta_0}[M_t(\theta)],$$
   provided the limit exists (or take an almost-sure/ subsequential limit as appropriate).
 
 - **3. Prove a uniform law of large numbers (ULLN).** Show
-  \[\sup_{\theta\in\Theta}|M_t(\theta)-M(\theta)|\xrightarrow{p}0.\]
+  $$\sup_{\theta\in\Theta}|M_t(\theta)-M(\theta)|\xrightarrow{p}0.$$
   Typical route:
-  - Condition on $Z_t$ and apply a conditional LLN to the sum \(\sum_{i=1}^{Z_t-1}\log r_\theta(B_{t,i})\).
+  - Condition on $Z_t$ and apply a conditional LLN to the sum $\sum_{i=1}^{Z_t-1}\log r_\theta(B_{t,i})$.
   - Show $Z_t/w_t\to c$ in probability (or a.s.) for some deterministic $c>0$, or control fluctuations when $Z_t/w_t$ is random but tight.
   - Obtain equicontinuity in $\theta$ (via Lipschitz scores, bracketing entropy, or compactness + dominated convergence).
 
 - **4. Verify identifiability and uniqueness.** Prove that $M(\theta)$ is uniquely maximized at $\theta_0$. This typically follows because
-  \[M(\theta)-M(\theta_0)=-\mathrm{KL}(P_{\theta_0},P_{\theta})\le 0,\]
+  $$M(\theta)-M(\theta_0)=-\mathrm{KL}(P_{\theta_0},P_{\theta})\le 0,$$
   with equality only at $\theta=\theta_0$, under the domination/identifiability conditions.
 
-- **5. Apply Wald's argmax theorem.** From the ULLN and unique maximizer conclude \(\hat\theta_t\xrightarrow{p}\theta_0\) (or a.s. under stronger ULLN).
+- **5. Apply Wald's argmax theorem.** From the ULLN and unique maximizer conclude $\hat\theta_t\xrightarrow{p}\theta_0$ (or a.s. under stronger ULLN).
 
 - **6. List regularity conditions to check.** Include:
   - Compactness of $\Theta$ or use of sieves/penalties.

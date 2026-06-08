@@ -72,6 +72,7 @@ def sample_age_vector(
         max_time=torch.tensor(span, dtype=torch.float64),
         rng=rng,
     )
+    assert sampled.spine_ages is not None and sampled.non_spine_ages is not None
     return np.asarray(
         sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
         dtype=np.float64,

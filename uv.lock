@@ -823,7 +823,7 @@ dev = [
     { name = "isort", specifier = ">=7.0.0" },
     { name = "joblib-stubs", specifier = ">=1.5.3.1.20260117" },
     { name = "jupyter-cache", specifier = ">=1.0.1" },
-    { name = "lintquarto", specifier = ">=0.8.0" },
+    { name = "lintquarto", specifier = ">=0.11.0" },
     { name = "lxml-stubs", specifier = ">=0.5.1" },
     { name = "mypy", specifier = ">=1.19.1" },
     { name = "pandas-stubs", specifier = ">=3.0.0.260204" },
@@ -1346,15 +1346,15 @@ wheels = [
 
 [[package]]
 name = "lintquarto"
-version = "0.10.0"
+version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyyaml" },
     { name = "toml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c8/0f/2e1532feb215bce5f9a824fe33ad851ba5a4803bd231fa16278d8b4d716a/lintquarto-0.10.0.tar.gz", hash = "sha256:d004e63f30779047d89182557e0ac738177e851f9b4a9e19f14929e2506f6b7b", size = 19218, upload-time = "2026-05-06T12:04:20.122Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/47/d5/ec9222cc635d4d2043967142c0fa41ff0e06d96f4fbef109880df7e5b076/lintquarto-0.11.0.tar.gz", hash = "sha256:8d12411394384cba9e6b33bc816420c41bcdd3076b2521dd30cde4f5dca2e63b", size = 19508, upload-time = "2026-05-22T09:45:05.392Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/f8/1e5e3623590d92e7595ea60429c07e377ae04fd8f538d95e9fb842d38e70/lintquarto-0.10.0-py3-none-any.whl", hash = "sha256:49a04decd719b7f3a82f064b087c50adf1e4dde53bfe90f60692910997c214f0", size = 17904, upload-time = "2026-05-06T12:04:18.724Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/9a/3bef4e74a94b7542d8e599313b183626a3edbf1562fee52777b93c892938/lintquarto-0.11.0-py3-none-any.whl", hash = "sha256:b0c76bdc001ad37b88b69a2558487de2552da62f61841823e49712dd7fde4fba", size = 18107, upload-time = "2026-05-22T09:45:04.262Z" },
 ]
 
 [[package]]

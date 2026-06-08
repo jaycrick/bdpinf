@@ -1,10 +1,5 @@
-"""Test cases for the calculate_populations_log_lik function.
+"""Test cases for calculate_populations_log_lik based on the Arley & Borchsenius formula."""
 
-These tests verify the correctness of the birth-death process population
-probability calculation based on the Arley & Borchsenius formula.
-"""
-
-# ruff: noqa: S101
 import math
 
 import pytest
@@ -188,7 +183,8 @@ class TestPopulationProbability:
                 times=time,
                 ns=n,
             )
-            # If the function returns -inf, it means alpha_t or beta_t went out of bounds
+            # If the function returns -inf,
+            # it means alpha_t or beta_t went out of bounds
             # For these reasonable parameters, we expect finite results
             assert torch.isfinite(result), (
                 f"Expected finite result for λ={birth_rate}, μ={death_rate}, "

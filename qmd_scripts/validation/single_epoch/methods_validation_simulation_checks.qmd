@@ -73,6 +73,7 @@ def sample_age_vector_from_distribution(
         max_time=torch.tensor(span, dtype=torch.float64),
         rng=rng,
     )
+    assert sampled.spine_ages is not None and sampled.non_spine_ages is not None
     return np.asarray(
         sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
         dtype=np.float64,
@@ -90,6 +91,7 @@ def sample_age_vector_full_process(
         random_seed=run_seed,
     )
     survivors = simulated_df.surviving_manuscripts
+    assert survivors is not None
     if survivors.empty:
         return np.array([], dtype=np.float64)
 

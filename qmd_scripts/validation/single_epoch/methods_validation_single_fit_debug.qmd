@@ -58,11 +58,13 @@ simulation_df = simulate_birth_death_process(
     ensure_non_extinct=True,
 )
 surviving_manuscripts = simulation_df.surviving_manuscripts
+assert surviving_manuscripts is not None
 ages = surviving_manuscripts["age"].to_numpy(dtype=np.float64)
 
 print(f"Total manuscripts: {len(simulation_df)}")
 print(f"Surviving manuscripts: {len(ages)}")
 print(f"First 10 ages: {ages[:10].tolist()}")
+assert simulation_df.manuscript_records is not None
 print(simulation_df.manuscript_records.to_string())
 
 newick_str = simulation_df.to_newick()

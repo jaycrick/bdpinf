@@ -1,23 +1,4 @@
-# ruff: noqa: S101
-# ruff: noqa: D102
-"""Comprehensive test suite for mathematical_functions.py.
-
-This module tests all mathematical functions for birth-death process calculations,
-organized in a logical dependency order:
-1. Basic helper functions (private)
-2. Extinction probability calculations
-3. Population likelihood functions
-4. Age likelihood functions (spine and non-spine)
-5. Derivative functions
-6. Integration and edge cases
-
-Test Strategy:
-- Unit tests for individual functions
-- Numerical stability tests for edge cases (λ ≈ μ, extreme parameters)
-- Mathematical property tests (probability bounds, monotonicity)
-- Integration tests for function chains
-- Array vs scalar input consistency tests
-"""
+"""Comprehensive test suite for mathematical_functions.py."""
 
 import math
 

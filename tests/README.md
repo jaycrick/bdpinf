@@ -1,178 +1,84 @@
 # Tests for inf-bp-texts
 
-This directory contains comprehensive test suites covering models, inference, simulation, parsing utilities, and supporting helpers.
+This directory contains the test suite for `inf_bp_texts`, covering models, inference,
+simulation, data parsing, and supporting helpers.
 
-## Test Organization
+## Running tests
 
-### Core Test Files
-
-- **`test_birth_death_process.py`** - Tests for basic `BirthDeathProcess` class functionality
-  - Initialization with required `creation_times` and `epoch_end_times` parameters
-  - Optional `birth_rate` and `death_rate` parameter handling
-  - Manuscript addition and age calculation
-  - Process summaries and basic methods
-  - Type consistency and attribute management
-
-- **`test_log_likelihood.py`** - Tests for log-likelihood calculations
-  - Self-attribute usage (`self.ages`, `self.birth_rate`, `self.death_rate`)
-  - Parameter validation and edge cases
-  - Numerical stability and critical cases
-  - Negative log-likelihood for optimization
-
-- **`test_fitting.py`** - Tests for parameter estimation and model fitting
-  - Internal data fitting (`fit_from_self_data()`)
-  - External DataFrame fitting (`fit()`)
-  - Optimization methods and robustness
-  - Fit result structure and validation
-
-- **`test_simulation.py`** - Tests for birth-death process simulation
-  - Simulation reproducibility and randomness
-  - DataFrame structure and data validation
-  - Age consistency and state management
-  - Parameter effects on simulation outcomes
-
-- **`test_utils.py`** - Tests for utility functions and edge cases
-  - Prediction methods
-  - Edge cases and error handling
-
-- **`test_mathematical_functions.py`** - Pure-function math checks (extinction probability, age/population likelihoods)
-- **`test_population_probability.py`** - Population probability edge cases and bounds
-- **`test_german_pattern_parsing.py`** / **`test_pattern_analysis.py`** - Parsing and pattern analysis utilities
-- **`test_constants.py`** - Validates canonical constants and pattern maps
-
-- **`test_integration.py`** - Integration tests for complete workflows
-  - End-to-end simulation and fitting
-  - Real-world data processing workflows
-  - Model comparison workflows
-  - Numerical robustness testing
-
-## Running Tests
-
-### Run All Tests
 ```bash
-poetry run python -m pytest tests/ -v
+# Default run — slow tests excluded, coverage ≥ 80% enforced
+uv run pytest
+
+# Single file
+uv run pytest tests/test_fitting.py -v
+
+# Slow tests only
+uv run pytest -m slow
+
+# Single test by name
+uv run pytest -k "test_name"
 ```
 
-### Run Specific Test Files
-```bash
-# Basic functionality
-poetry run python -m pytest tests/test_birth_death_process.py -v
+## Test organization
 
-# Log-likelihood calculations
-poetry run python -m pytest tests/test_log_likelihood.py -v
+Every test file follows the canonical layout documented in `CLAUDE.md ## Tests`:
 
-# Fitting functionality
-poetry run python -m pytest tests/test_fitting.py -v
+- Module docstring (mandatory).
+- Optional non-ruff pragmas (e.g. `# mypy: disable-error-code=…`).
+- Imports.
+- Module-level helpers, fixtures, and constants (if any).
+- One `class Test<Subject>:` grouping all tests for that module.
 
-# Simulation functionality
-poetry run python -m pytest tests/test_simulation.py -v
+All `test_` methods take `self`. Module-level helpers and fixtures stay at module scope
+(not inside the class). Cross-file fixtures live in `conftest.py`.
 
-# Utility functions
-poetry run python -m pytest tests/test_utils.py -v
+## Test files
 
-# Integration tests
-poetry run python -m pytest tests/test_integration.py -v
-```
+| File | What it covers |
+|------|---------------|
+| `test_birth_death_process.py` | `BirthDeathProcess` init, manuscript addition, serialisation |
+| `test_log_likelihood.py` | `BirthDeathProcess.log_likelihood()` — parameter validation, edge cases |
+| `test_mathematical_functions.py` | Pure-function math: extinction probability, spine/non-spine densities, population probabilities |
+| `test_mathematical_derivatives.py` | Numerical derivative calculations |
+| `test_likelihood.py` | `log_likelihood()` / `negative_log_likelihood()` wrappers, spine marginalisation |
+| `test_fitting.py` | MLE fitting via LBFGS/Adam, `ParameterConstraints`, covariance estimation |
+| `test_bayesian_fitting.py` | Pyro-based posterior inference |
+| `test_simulation.py` | Gillespie simulator, reproducibility, DataFrame structure |
+| `test_splitting_simulation.py` | Multilevel splitting simulations and conditioned survival |
+| `test_probability_normalization.py` | Densities integrate / mass functions sum to 1 |
+| `test_asymptotic_consistency.py` | MLE recovers known parameters in large-sample regime |
+| `test_lbfgs_exception_inconsistency.py` | LBFGS exception-handling edge cases |
+| `test_lbfgs_improved_once.py` | Convergence detection when LBFGS improves exactly once |
+| `test_population_probability.py` | `calculate_populations_log_lik` edge cases and bounds |
+| `test_parameter_constraints.py` | `ParameterConstraints` validation and equality-group logic |
+| `test_data_cleaning.py` | `clean_manuscript_dates`, quality reports, manual corrections |
+| `test_ntvmr.py` | NTVMR download helpers, XML formatting, error detection |
+| `test_xml_processing.py` | `analyze_all_manuscripts` batch XML parsing |
+| `test_german_pattern_parsing.py` | German biblical abbreviation parsing from `contentOverview` strings |
+| `test_pattern_analysis.py` | Pattern analysis utilities |
+| `test_constants.py` | Canonical book ordering, German abbreviations, section patterns |
+| `test_single_epoch_analysis.py` | Single-epoch analysis helpers |
+| `test_integration.py` | End-to-end workflows (simulation → fitting) |
+| `test_cli.py` | CLI entry points |
+| `test_plotting.py` | Visualization / Plotly utilities |
+| `test_validation_helpers.py` | Validation helper functions |
+| `test_spike_detection.py` | Spike detection utilities |
+| `test_reports.py` | Report generation helpers |
+| `test_table_formatting.py` | Table formatting utilities |
+| `test_json_safe.py` | `json_safe` type-conversion utility |
+| `test_basic.py` | Basic smoke tests |
+| `test_lxml_conversion.py` | XML processing with lxml |
+| `test_manuscript_analysis.py` | Manuscript analysis helpers |
+| `test_utils.py` | Miscellaneous utility functions |
+| `test_probability_normalization.py` | Normalization checks |
 
-### Run Tests with Coverage
-```bash
-poetry run python -m pytest tests/ --cov=inf_bp_texts --cov-report=html
-```
+## Adding new tests
 
-### Run Tests in Parallel
-```bash
-poetry run python -m pytest tests/ -n auto
-```
+Follow the canonical layout in `CLAUDE.md ## Tests`. Key points:
 
-## Test Coverage
-
-The test suite covers:
-
-### ✅ Core Functionality
-- Class initialization with required parameters (`creation_times`, `epoch_end_times`)
-- Optional parameter handling (`birth_rate`, `death_rate`, `start_time`)
-- Manuscript addition and age calculation
-- Automatic filtering of manuscripts after the latest `epoch_end_times` value
-- Process state management
-- Parameter validation
-
-### ✅ Mathematical Operations
-- Log-likelihood calculations with self attributes
-- Parameter separation (birth_rate, death_rate)
-- Count inference from ages
-- Numerical stability and edge cases
-
-### ✅ Parameter Estimation
-- Internal data fitting (using `self.ages`)
-- External DataFrame fitting
-- Multiple optimization methods
-- Fit result validation and structure
-
-### ✅ Simulation
-- Birth-death process simulation
-- Data structure validation
-- Reproducibility and randomness
-- State consistency
-
-### ✅ Utility Functions and Parsing
-- Data preparation for analysis
-- Model comparison workflows
-- Prediction methods
-- Helper function validation
-- Pattern parsing and constant validation
-
-### ✅ Integration Workflows
-- Complete analysis pipelines
-- Real-world data processing
-- Model selection and comparison
-- Robustness testing
-
-## Expected Warnings
-
-Some tests may produce expected warnings:
-
-- **Runtime Warnings** from scipy optimization (numerical precision issues)
-- **Optimization Warnings** for unknown solver options (harmless)
-- **User Warnings** for using unfitted models in predictions
-
-These warnings are normal and indicate the code is handling edge cases appropriately.
-
-## Test Philosophy
-
-### Robustness Over Strict Success
-Many tests check for valid result structures rather than strict success, since:
-- Optimization can legitimately fail with certain data
-- Numerical methods have inherent limitations
-- Real-world data often presents challenging cases
-
-### Comprehensive Edge Case Testing
-Tests include scenarios like:
-- Empty data sets
-- Extreme parameter values
-- Numerical boundary conditions
-- Invalid inputs and error handling
-
-### Integration Testing
-Tests verify that components work together correctly in realistic workflows, not just in isolation.
-
-## Adding New Tests
-
-When adding new functionality to `inf_bp_texts`, please add corresponding tests:
-
-1. **Unit tests** for individual methods
-2. **Integration tests** for workflows
-3. **Edge case tests** for robustness
-4. **Performance tests** for large datasets (if applicable)
-
-Follow the existing test patterns and naming conventions for consistency.
-
-## Debugging Test Failures
-
-If tests fail unexpectedly:
-
-1. **Check warnings** - they often indicate the source of issues
-2. **Run individual tests** - isolate the problem
-3. **Add debug prints** - understand the data flow
-4. **Check numerical stability** - extreme values can cause legitimate failures
-
-The test suite is designed to be informative about what's working and what's not, rather than being overly strict about success in cases where failure is mathematically reasonable.
+- One `class Test<Subject>:` per file, named after the module under test.
+- Module docstring is mandatory (`D100` is enforced by ruff).
+- `S101`, `D101`, and `D102` are centrally ignored for `tests/*` in `pyproject.toml` —
+  do not add per-file `# ruff: noqa` lines.
+- Slow tests (those hitting real network calls or expensive optimizations) should be
+  marked `@pytest.mark.slow` so they are excluded from the default run.

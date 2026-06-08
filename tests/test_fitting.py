@@ -1,8 +1,5 @@
 """Test suite for modular fitting functionality."""
 
-# ruff: noqa: S101
-# ruff: noqa: D101 D102
-
 import inspect
 from pathlib import Path
 
