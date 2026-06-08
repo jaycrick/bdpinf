@@ -1,7 +1,5 @@
 """Tests for splitting-based conditioned survival simulators."""
 
-# ruff: noqa: S101
-
 import numpy as np
 
 from inf_bp_texts.models import BirthDeathProcess

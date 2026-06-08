@@ -1,3 +1,5 @@
+"""Tests verifying LBFGS makes at least one improvement step from initial values."""
+
 import torch
 
 from inf_bp_texts.inference.fitting import (
@@ -43,11 +45,13 @@ def _assert_improved(result: dict):
     )
 
 
-def test_lbfgs_improved_once_default():
-    result = _run_lbfgs()
-    _assert_improved(result)
+class TestLbfgsImprovedOnce:
+    """Test that LBFGS improves from the initial NLL value within one pass."""
 
+    def test_lbfgs_improved_once_default(self):
+        result = _run_lbfgs()
+        _assert_improved(result)
 
-def test_lbfgs_improved_once_strong_wolfe():
-    result = _run_lbfgs(line_search_fn="strong_wolfe")
-    _assert_improved(result)
+    def test_lbfgs_improved_once_strong_wolfe(self):
+        result = _run_lbfgs(line_search_fn="strong_wolfe")
+        _assert_improved(result)

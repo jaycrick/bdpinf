@@ -1,7 +1,5 @@
 """Test suite for BirthDeathProcess class initialization and basic functionality."""
 
-# ruff: noqa: S101
-
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go

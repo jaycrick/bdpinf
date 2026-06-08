@@ -48,6 +48,42 @@ uv run quarto render            # full site build → _output/ (cached cells ski
 uv run quarto preview           # incremental preview with live reload
 ```
 
+## Tests
+
+### Canonical file layout
+
+Every `tests/test_*.py` file follows this order, top to bottom:
+
+```python
+"""<One-line module docstring ending in a period.>"""
+
+# (optional) module-level pragmas that are NOT ruff, e.g.
+# mypy: disable-error-code=import-untyped
+
+import <stdlib>
+import <third-party>
+
+from inf_bp_texts... import ...
+
+# module-level constants, fixtures, and non-test helper functions stay here
+
+
+class TestSubject:
+    """Test <subject>."""
+
+    def test_something(self) -> None:
+        ...
+```
+
+### Conventions
+
+- **Module docstring** is the first statement, single line, ends with `.`. `D100` is enforced so every file must have one.
+- **No per-file `# ruff: noqa` lines** — test-wide relaxations live in `[tool.ruff.lint.per-file-ignores]` in `pyproject.toml`, not in individual files.
+- **Class grouping** — all tests live inside a `class Test<Subject>:` with a one-line `"""Test ..."""` docstring. Test methods take `self`. One class per file is the default.
+- **Class/method docstrings are optional** — `D101`/`D102` are centrally ignored for tests via `pyproject.toml`; method names are self-documenting.
+- **Module-level helpers stay at module scope** — fixtures, helper functions, and constants shared within a file remain outside the test class (pytest resolves module-scoped fixtures inside class methods). Cross-file helpers and fixtures go in `tests/conftest.py`.
+- **Non-ruff pragmas** (e.g. `# mypy: disable-error-code=import-untyped`) go directly under the module docstring, before imports.
+
 ## Architecture
 
 **inf-bp-texts** downloads New Testament manuscript data from the NTVMR API, runs quality control, and fits birth-death process models to estimate manuscript creation/survival rates via MLE.

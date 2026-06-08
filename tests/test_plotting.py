@@ -1,7 +1,5 @@
 """Tests for visualization plotting utilities."""
 
-# ruff: noqa: S101
-
 import sys
 import types
 from pathlib import Path
@@ -177,78 +175,79 @@ def fake_plotly(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[DummyFigure]]
     }
 
 
-def test_apply_professional_styling_updates_layout() -> None:
-    """apply_professional_styling should populate core layout fields."""
-    height = 420
-    top_margin = 15
+class TestPlotting:
+    """Test visualization plotting utilities."""
 
-    fig = DummyFigure()
-    returned = apply_professional_styling(fig, "Title", "X", "Y", height=height)
+    def test_apply_professional_styling_updates_layout(self) -> None:
+        """apply_professional_styling should populate core layout fields."""
+        height = 420
+        top_margin = 15
 
-    assert returned is fig
-    assert len(fig.layout_updates) == 1
-    update = fig.layout_updates[0]
-    assert update["title"] == "Title"
-    assert update["xaxis_title"] == "X"
-    assert update["yaxis_title"] == "Y"
-    assert update["height"] == height
-    assert update["margin"]["t"] == top_margin
+        fig = DummyFigure()
+        returned = apply_professional_styling(fig, "Title", "X", "Y", height=height)
 
+        assert returned is fig
+        assert len(fig.layout_updates) == 1
+        update = fig.layout_updates[0]
+        assert update["title"] == "Title"
+        assert update["xaxis_title"] == "X"
+        assert update["yaxis_title"] == "Y"
+        assert update["height"] == height
+        assert update["margin"]["t"] == top_margin
 
-def test_apply_tufte_legend_fallback_position() -> None:
-    """apply_tufte_legend should fall back to top-right for unknown positions."""
-    fallback_position = 0.98
+    def test_apply_tufte_legend_fallback_position(self) -> None:
+        """apply_tufte_legend should fall back to top-right for unknown positions."""
+        fallback_position = 0.98
 
-    fig = DummyFigure()
-    apply_tufte_legend(fig, position="unknown", showlegend=False)
+        fig = DummyFigure()
+        apply_tufte_legend(fig, position="unknown", showlegend=False)
 
-    update = fig.layout_updates[0]
-    assert update["showlegend"] is False
-    assert update["legend"]["x"] == fallback_position
-    assert update["legend"]["y"] == fallback_position
-    assert update["legend"]["xanchor"] == "right"
-    assert update["legend"]["yanchor"] == "top"
+        update = fig.layout_updates[0]
+        assert update["showlegend"] is False
+        assert update["legend"]["x"] == fallback_position
+        assert update["legend"]["y"] == fallback_position
+        assert update["legend"]["xanchor"] == "right"
+        assert update["legend"]["yanchor"] == "top"
 
+    def test_apply_tufte_axes_updates_both_axes(self) -> None:
+        """apply_tufte_axes should apply minimalist settings to both axes."""
+        axis_color = "#111111"
+        tick_color = "#222222"
+        tick_len = 4
 
-def test_apply_tufte_axes_updates_both_axes() -> None:
-    """apply_tufte_axes should apply minimalist settings to both axes."""
-    axis_color = "#111111"
-    tick_color = "#222222"
-    tick_len = 4
+        fig = DummyFigure()
+        apply_tufte_axes(
+            fig,
+            axis_color=axis_color,
+            tick_color=tick_color,
+            tick_len=tick_len,
+        )
 
-    fig = DummyFigure()
-    apply_tufte_axes(
-        fig,
-        axis_color=axis_color,
-        tick_color=tick_color,
-        tick_len=tick_len,
-    )
+        assert len(fig.xaxes_updates) == 1
+        assert len(fig.yaxes_updates) == 1
+        assert fig.xaxes_updates[0]["showgrid"] is False
+        assert fig.yaxes_updates[0]["linecolor"] == axis_color
+        assert fig.xaxes_updates[0]["tickcolor"] == tick_color
+        assert fig.xaxes_updates[0]["ticklen"] == tick_len
 
-    assert len(fig.xaxes_updates) == 1
-    assert len(fig.yaxes_updates) == 1
-    assert fig.xaxes_updates[0]["showgrid"] is False
-    assert fig.yaxes_updates[0]["linecolor"] == axis_color
-    assert fig.xaxes_updates[0]["tickcolor"] == tick_color
-    assert fig.xaxes_updates[0]["ticklen"] == tick_len
+    def test_save_figure_success_returns_path(self, tmp_path: Path) -> None:
+        """save_figure should return the output PDF path on successful export."""
+        fig = DummyFigure()
 
+        saved = save_figure(
+            fig, "my_plot", width=220, height=180, output_dir=str(tmp_path)
+        )
 
-def test_save_figure_success_returns_path(tmp_path: Path) -> None:
-    """save_figure should return the output PDF path on successful export."""
-    fig = DummyFigure()
+        assert saved == tmp_path / "my_plot.pdf"
+        assert saved is not None
+        assert saved.exists()
+        first_update = fig.layout_updates[0]
+        assert first_update["margin"] == {"l": 30, "r": 8, "t": 8, "b": 35, "pad": 2}
 
-    saved = save_figure(fig, "my_plot", width=220, height=180, output_dir=str(tmp_path))
+    def test_save_figure_failure_returns_none(self, tmp_path: Path) -> None:
+        """save_figure should return None when image writing fails."""
+        fig = DummyFigure(should_fail_write=True)
 
-    assert saved == tmp_path / "my_plot.pdf"
-    assert saved is not None
-    assert saved.exists()
-    first_update = fig.layout_updates[0]
-    assert first_update["margin"] == {"l": 30, "r": 8, "t": 8, "b": 35, "pad": 2}
+        saved = save_figure(fig, "bad_plot", output_dir=str(tmp_path))
 
-
-def test_save_figure_failure_returns_none(tmp_path: Path) -> None:
-    """save_figure should return None when image writing fails."""
-    fig = DummyFigure(should_fail_write=True)
-
-    saved = save_figure(fig, "bad_plot", output_dir=str(tmp_path))
-
-    assert saved is None
+        assert saved is None

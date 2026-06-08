@@ -1,10 +1,4 @@
-"""Integration tests for BirthDeathProcess class.
-
-These tests verify that different components work together correctly
-and test realistic end-to-end workflows.
-"""
-
-# ruff: noqa: S101
+"""Integration tests verifying components work together in end-to-end workflows."""
 
 import numpy as np
 import pandas as pd

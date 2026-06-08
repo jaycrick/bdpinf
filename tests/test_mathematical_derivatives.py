@@ -1,5 +1,4 @@
-# ruff: noqa: S101
-# ruff: noqa: D101 D102
+"""Test suite for numerical derivative calculations in mathematical_derivatives.py."""
 
 import pytest
 import torch
@@ -958,5 +957,6 @@ class TestGradientValidation:
             torch.abs(analytical_grads) + 1e-10
         )
         assert torch.all(relative_error < 1e-5), (
-            f"Wrapper gradient error {relative_error.max().item():.2e} exceeds tolerance"
+            f"Wrapper gradient error {relative_error.max().item():.2e} "
+            "exceeds tolerance"
         )
