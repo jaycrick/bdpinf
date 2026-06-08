@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
+import torch
 from plotly.subplots import make_subplots
 
 logger = logging.getLogger(__name__)
@@ -559,3 +560,276 @@ def save_figure(
     except Exception as e:
         logger.warning("Failed to save %s.pdf: %s", filename, e)
         return None
+
+
+def save_multi_epoch_convergence_figure(
+    case_name: str,
+    result: dict[str, Any],
+    output_slug: str,
+    figures_dir: Path | None = None,
+) -> None:
+    """Save the log-likelihood convergence trace for one multi-epoch fit.
+
+    Parameters
+    ----------
+    case_name : str
+        Human-readable label used in the figure title.
+    result : dict[str, Any]
+        Fit result dict as returned by ``fit_birth_death_processes``.
+    output_slug : str
+        Filename stem passed to ``save_figure``.
+    figures_dir : Path | None
+        Directory for saved figures. Defaults to ``Path("figures")``.
+
+    """
+    from inf_bp_texts.analysis.validation_helpers import (  # noqa: PLC0415
+        get_selected_attempt,
+    )
+
+    if not result.get("success"):
+        return
+
+    selected_attempt = get_selected_attempt(result)
+    nll_history = (
+        selected_attempt.get("nll_history", [])
+        if isinstance(selected_attempt, dict)
+        else []
+    )
+    if not nll_history:
+        return
+
+    ll_history = [-value for value in nll_history]
+    iterations = list(range(1, len(ll_history) + 1))
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=iterations,
+            y=ll_history,
+            mode="lines+markers",
+            name="Log-likelihood",
+            line={"color": ptolqual[2], "width": 2},
+            marker={"size": 5},
+        )
+    )
+    fig = apply_professional_styling(
+        fig,
+        f"{case_name}: Log-likelihood Convergence",
+        "Iteration",
+        "Log-likelihood",
+    )
+    fig = apply_tufte_axes(fig)
+    fig.update_xaxes(tickformat=",d")
+    save_figure(
+        fig,
+        output_slug,
+        width=397,
+        height=300,
+        output_dir=str(figures_dir or "figures"),
+    )
+
+
+def save_multi_epoch_birth_time_figure(
+    case_name: str,
+    result: dict[str, Any],
+    epochs: list[Any],
+    manuscripts_df: pd.DataFrame,
+    times: torch.Tensor,
+    output_slug: str,
+    figures_dir: Path | None = None,
+) -> None:
+    """Save manuscript birth-time histogram with fitted density overlay.
+
+    Parameters
+    ----------
+    case_name : str
+        Human-readable label used in the figure title.
+    result : dict[str, Any]
+        Fit result dict as returned by ``fit_birth_death_processes``.
+    epochs : list[Any]
+        List of ``(start, end, label)`` epoch tuples.
+    manuscripts_df : pd.DataFrame
+        DataFrame with a ``"parsed_year"`` column of manuscript creation years.
+    times : torch.Tensor
+        Epoch boundary times as a 1-D float64 tensor.
+    output_slug : str
+        Filename stem passed to ``save_figure``.
+    figures_dir : Path | None
+        Directory for saved figures. Defaults to ``Path("figures")``.
+
+    """
+    from inf_bp_texts.inference.likelihood import (  # noqa: PLC0415
+        calculate_unknown_spine_mixture_birth_density,
+    )
+
+    if not result.get("success"):
+        return
+
+    birth_rates = np.asarray(result["birth_rates"], dtype=float)
+    death_rates = np.asarray(result["death_rates"], dtype=float)
+    observed_birth_years = manuscripts_df["parsed_year"].to_numpy(dtype=float)
+    if observed_birth_years.size == 0:
+        return
+
+    start_year = float(epochs[0][0])
+    plot_end_year = float(epochs[-1][0])
+    birth_year_grid = np.linspace(start_year, plot_end_year, 200)
+    birth_time_grid = birth_year_grid - start_year
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Histogram(
+            x=observed_birth_years,
+            nbinsx=50,
+            name="Observed Birth Years",
+            marker_color=ptolqual[0],
+            opacity=0.6,
+            showlegend=True,
+        )
+    )
+
+    try:
+        theoretical_birth_density = (
+            calculate_unknown_spine_mixture_birth_density(
+                birth_rates=torch.as_tensor(birth_rates, dtype=torch.float64),
+                death_rates=torch.as_tensor(death_rates, dtype=torch.float64),
+                birth_time_grid=torch.as_tensor(birth_time_grid, dtype=torch.float64),
+                times=times,
+                num_manuscripts=len(observed_birth_years),
+            )
+            .detach()
+            .cpu()
+            .numpy()
+        )
+        hist_count = len(observed_birth_years)
+        bin_width = (observed_birth_years.max() - observed_birth_years.min()) / 50
+        if bin_width <= 0:
+            bin_width = 1.0
+        theoretical_density_scaled = theoretical_birth_density * hist_count * bin_width
+        fig.add_trace(
+            go.Scatter(
+                x=birth_year_grid,
+                y=theoretical_density_scaled,
+                mode="lines",
+                name="Fitted Birth-Time Distribution",
+                line={"color": ptolqual[1], "width": 3},
+                showlegend=True,
+            )
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not generate theoretical overlay for %s: %s", case_name, exc
+        )
+
+    fig = apply_professional_styling(
+        fig,
+        f"{case_name}: Observed vs Fitted Manuscript Birth Times",
+        "Manuscript birth year (CE)",
+        "Frequency",
+    )
+    fig = apply_tufte_axes(fig)
+    fig.update_xaxes(tickformat=",d")
+    fig.update_yaxes(tickformat=",d")
+    save_figure(
+        fig,
+        output_slug,
+        width=397,
+        height=300,
+        output_dir=str(figures_dir or "figures"),
+    )
+
+
+def save_multi_epoch_fit_figure(
+    case_name: str,
+    result: dict[str, Any],
+    epochs: list[Any],
+    output_slug: str,
+    figures_dir: Path | None = None,
+) -> None:
+    """Save a compact birth/death rate bar chart for one multi-epoch fit.
+
+    Parameters
+    ----------
+    case_name : str
+        Human-readable label used in the figure title.
+    result : dict[str, Any]
+        Fit result dict as returned by ``fit_birth_death_processes``.
+    epochs : list[Any]
+        List of ``(start, end, label)`` epoch tuples used to label bars.
+    output_slug : str
+        Filename stem passed to ``save_figure``.
+    figures_dir : Path | None
+        Directory for saved figures. Defaults to ``Path("figures")``.
+
+    """
+    if not result.get("success"):
+        return
+
+    birth_rates = np.asarray(result["birth_rates"], dtype=float)
+    death_rates = np.asarray(result["death_rates"], dtype=float)
+    epoch_labels = [f"{start}-{end}" for start, end, _ in epochs]
+
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        subplot_titles=[
+            f"{case_name}: Birth Rates (λ)",
+            f"{case_name}: Death Rates (μ)",
+        ],
+        specs=[[{"type": "bar"}, {"type": "bar"}]],
+    )
+    fig.add_trace(
+        go.Bar(
+            x=epoch_labels,
+            y=birth_rates,
+            name="Birth rate",
+            marker_color=ptolqual[0],
+            showlegend=False,
+            text=[f"{rate:.6f}" for rate in birth_rates],
+            textposition="outside",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=epoch_labels,
+            y=death_rates,
+            name="Death rate",
+            marker_color=ptolqual[1],
+            showlegend=False,
+            text=[f"{rate:.6f}" for rate in death_rates],
+            textposition="outside",
+        ),
+        row=1,
+        col=2,
+    )
+    fig.update_yaxes(title_text="Rate", row=1, col=1, title_font=font_config)
+    fig.update_yaxes(title_text="Rate", row=1, col=2, title_font=font_config)
+    fig.update_layout(
+        height=360,
+        width=820,
+        plot_bgcolor=plot_bgcolor,
+        paper_bgcolor=paper_bgcolor,
+        font=font_config,
+        title_font=title_font_config,
+        xaxis={"gridcolor": gridcolor},
+        yaxis={"gridcolor": gridcolor},
+        xaxis2={"gridcolor": gridcolor},
+        yaxis2={"gridcolor": gridcolor},
+    )
+    fig = apply_professional_styling(
+        fig,
+        f"{case_name}: Multi-epoch Birth/Death Rates",
+        "Epoch",
+        "Rate",
+    )
+    fig = apply_tufte_axes(fig)
+    fig.update_yaxes(tickformat=".6f")
+    save_figure(
+        fig,
+        output_slug,
+        width=820,
+        height=360,
+        output_dir=str(figures_dir or "figures"),
+    )

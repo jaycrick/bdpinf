@@ -36,6 +36,7 @@ from typing import Any
 
 from inf_bp_texts.analysis import (
     FitModelConfig,
+    build_hist_bins,
     extract_rate_arrays,
     first_failed_fits,
     iqr_plotting_subset,
@@ -489,20 +490,6 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
 ## Stacked Histograms for λ and μ
 
 ```{python}
-def build_hist_bins(
-    primary_values: Any, secondary_values: Any, bins: int = 30
-) -> dict[str, float]:
-    combined = np.concatenate(
-        [np.asarray(primary_values), np.asarray(secondary_values)]
-    )
-    if combined.size == 0:
-        return dict(start=0.0, end=1.0, size=1.0 / bins)
-
-    max_x = float(np.max(combined))
-    upper = max_x * 1.05 if max_x > 0 else 1.0
-    return dict(start=0.0, end=upper, size=upper / bins)
-
-
 def _iqr_filter_1d(values: Any) -> tuple[np.ndarray, int]:
     filtered, mask = iqr_plotting_subset(
         {"values": np.asarray(values, dtype=np.float64)}
