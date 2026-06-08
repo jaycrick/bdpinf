@@ -20,7 +20,7 @@ from inf_bp_texts.models.mathematical_functions import (
 
 @pytest.fixture
 def standard_scalar_params() -> dict[str, torch.Tensor]:
-    """Standard scalar parameters for testing."""
+    """Return standard scalar parameters for testing."""
     return {
         "birth_rate": torch.tensor([0.1], dtype=torch.float64),
         "death_rate": torch.tensor([0.05], dtype=torch.float64),
@@ -347,8 +347,9 @@ class TestDerivativeIntegration:
 
 
 class TestGradientValidation:
-    """Comprehensive tests for analytical gradient functions
-    using PyTorch's native autograd.
+    """Comprehensive tests for analytical gradient functions.
+
+    Uses PyTorch's native autograd.
     """
 
     def test_populations_log_lik_derivatives_scalar_n(self) -> None:

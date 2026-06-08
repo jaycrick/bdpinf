@@ -15,6 +15,7 @@ def ensure_directory(path: str) -> None:
 
 
 def safe_int(value: str | None) -> int | None:
+    """Convert a string to int, returning None on failure or None input."""
     try:
         if value is not None:
             return int(value)
@@ -49,7 +50,30 @@ def ensure_1d_tensor(x: torch.Tensor | float) -> torch.Tensor:
 
 
 def ensure_1d_tensors(*values: torch.Tensor | float) -> tuple[torch.Tensor, ...]:
+    """Convert multiple scalars or tensors to 1D float64 tensors."""
     return tuple(ensure_1d_tensor(value) for value in values)
+
+
+def require_tensors(**named: object) -> None:
+    """Raise ValueError if any supplied argument is not a ``torch.Tensor``.
+
+    Parameters
+    ----------
+    **named : object
+        Keyword arguments mapping parameter name to its value.  Each value
+        is checked with ``torch.is_tensor``; the first non-tensor raises
+        ``ValueError`` with a message that includes the parameter name.
+
+    Raises
+    ------
+    ValueError
+        If any value is not a ``torch.Tensor``.
+
+    """
+    for name, value in named.items():
+        if not torch.is_tensor(value):
+            msg = f"{name} must be a torch.Tensor"
+            raise ValueError(msg)
 
 
 def json_safe(value: object) -> object:
@@ -140,6 +164,7 @@ def validate_matching_shapes(
     *tensors: torch.Tensor,
     names: tuple[str, ...] | None = None,
 ) -> None:
+    """Raise ValueError if any tensor's shape differs from the first tensor's shape."""
     if len(tensors) < 2:
         return
     if names is not None and len(names) != len(tensors):
@@ -175,6 +200,7 @@ def validate_matching_lengths(
     *tensors: torch.Tensor,
     names: tuple[str, ...] | None = None,
 ) -> None:
+    """Raise ValueError if any tensor's length differs from the first tensor's."""
     if len(tensors) < 2:
         return
     if names is not None and len(names) != len(tensors):

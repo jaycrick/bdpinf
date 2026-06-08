@@ -768,7 +768,8 @@ def simulate_subcritical_survival_splitting(
             )
             if not (_BAND_LOWER <= first_pr_ext <= _BAND_UPPER):
                 msg = (
-                    f"First increment extinction probability {first_pr_ext:.4f} is outside "
+                    f"First increment extinction probability {first_pr_ext:.4f} "
+                    "is outside "
                     f"the required band [{_BAND_LOWER:.4f}, {_BAND_UPPER:.4f}]. "
                     "Adjust level_times, leave level_times=None for auto-selection, "
                     "or supply splitting_factor to bypass this check."

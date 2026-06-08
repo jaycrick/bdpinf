@@ -5,11 +5,13 @@ process probabilities and densities. These functions are isolated from the
 main BirthDeathProcess class for better testability and modularity.
 """
 
+from typing import cast
+
 import scipy
 import torch
 
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
-from inf_bp_texts.utils import ensure_1d_tensors
+from inf_bp_texts.utils import ensure_1d_tensors, require_tensors
 
 
 def _reverse_time(
@@ -257,15 +259,10 @@ def calculate_populations_log_lik(
             times=times,
         )
     else:
-        if not torch.is_tensor(birth_rates):
-            msg = "birth_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(death_rates):
-            msg = "death_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(times):
-            msg = "times must be a torch.Tensor"
-            raise ValueError(msg)
+        require_tensors(birth_rates=birth_rates, death_rates=death_rates, times=times)
+        birth_rates = cast(torch.Tensor, birth_rates)
+        death_rates = cast(torch.Tensor, death_rates)
+        times = cast(torch.Tensor, times)
     (ns,) = ensure_1d_tensors(ns)
     if initial_population <= 0:
         msg = "initial_population must be a positive integer."
@@ -450,18 +447,13 @@ def calculate_non_spine_ages_log_lik(
             ages=ages,
         )
     else:
-        if not torch.is_tensor(birth_rates):
-            msg = "birth_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(death_rates):
-            msg = "death_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(times):
-            msg = "times must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(ages):
-            msg = "ages must be a torch.Tensor"
-            raise ValueError(msg)
+        require_tensors(
+            birth_rates=birth_rates, death_rates=death_rates, times=times, ages=ages
+        )
+        birth_rates = cast(torch.Tensor, birth_rates)
+        death_rates = cast(torch.Tensor, death_rates)
+        times = cast(torch.Tensor, times)
+        ages = cast(torch.Tensor, ages)
     end_time = times[-1]
 
     if len(times) > 1:
@@ -613,18 +605,13 @@ def calculate_spine_ages_log_lik(
             ages=ages,
         )
     else:
-        if not torch.is_tensor(birth_rates):
-            msg = "birth_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(death_rates):
-            msg = "death_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(times):
-            msg = "times must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(ages):
-            msg = "ages must be a torch.Tensor"
-            raise ValueError(msg)
+        require_tensors(
+            birth_rates=birth_rates, death_rates=death_rates, times=times, ages=ages
+        )
+        birth_rates = cast(torch.Tensor, birth_rates)
+        death_rates = cast(torch.Tensor, death_rates)
+        times = cast(torch.Tensor, times)
+        ages = cast(torch.Tensor, ages)
     end_time = times[-1]
 
     if len(times) > 1:
@@ -740,15 +727,16 @@ def calculate_ages_log_lik(
         Scalar for single epoch, 1D tensor for piecewise-constant rates.
         All values must be positive. Will be converted to torch.float64.
     ages : torch.Tensor | float
-        Manuscript age(s) $t$. Scalar or 1D tensor. All ages must satisfy $0 \leq t \leq T$.
+        Manuscript age(s) $t$. Scalar or 1D tensor.
+        All ages must satisfy $0 \leq t \leq T$.
         Will be converted to torch.float64.
     times : torch.Tensor | float
-        Observation time(s) $T$. Scalar for single epoch, 1D tensor of strictly increasing
-        epoch end times for piecewise-constant model.
+        Observation time(s) $T$. Scalar for single epoch, 1D tensor of strictly
+        increasing epoch end times for piecewise-constant model.
         Will be converted to torch.float64.
     are_spines : bool, optional
-        If True, computes spine likelihood (discrete mass at $T$, continuous for $0 \leq t < T$).
-        If False, computes non-spine likelihood. Default False.
+        If True, computes spine likelihood (discrete mass at $T$, continuous for
+        $0 \leq t < T$). If False, computes non-spine likelihood. Default False.
 
     Returns
     -------
@@ -765,7 +753,8 @@ def calculate_ages_log_lik(
 
     Notes
     -----
-    - Handles $\lambda \approx \mu$ limiting case for numerical stability using ``log1p/expm1``.
+    - Handles $\lambda \approx \mu$ limiting case for numerical stability
+      using ``log1p/expm1``.
     - Supports both single-epoch (scalar)
     and multi-epoch (array) piecewise-constant rates.
     - Multi-epoch cases use time-reversal transformation internally.
@@ -829,15 +818,10 @@ def calculate_extinction_pr(
             times=times,
         )
     else:
-        if not torch.is_tensor(birth_rates):
-            msg = "birth_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(death_rates):
-            msg = "death_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(times):
-            msg = "times must be a torch.Tensor"
-            raise ValueError(msg)
+        require_tensors(birth_rates=birth_rates, death_rates=death_rates, times=times)
+        birth_rates = cast(torch.Tensor, birth_rates)
+        death_rates = cast(torch.Tensor, death_rates)
+        times = cast(torch.Tensor, times)
 
     pr_extinction_numerator = _pr_extinction_numerator(
         birth_rates=birth_rates,
@@ -896,18 +880,12 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
             ages=lifetimes,
         )
     else:
-        if not torch.is_tensor(birth_rates):
-            msg = "birth_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(death_rates):
-            msg = "death_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(times):
-            msg = "times must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(lifetimes):
-            msg = "lifetimes must be a torch.Tensor"
-            raise ValueError(msg)
+        require_tensors(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            lifetimes=lifetimes,
+        )
 
     n = len(lifetimes)
 
@@ -994,18 +972,12 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
             ages=lifetimes,
         )
     else:
-        if not torch.is_tensor(birth_rates):
-            msg = "birth_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(death_rates):
-            msg = "death_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(times):
-            msg = "times must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(lifetimes):
-            msg = "lifetimes must be a torch.Tensor"
-            raise ValueError(msg)
+        require_tensors(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            lifetimes=lifetimes,
+        )
 
     n = len(lifetimes)
 
@@ -1105,18 +1077,13 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
             ages=lifetimes,
         )
     else:
-        if not torch.is_tensor(birth_rates):
-            msg = "birth_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(death_rates):
-            msg = "death_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(times):
-            msg = "times must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(lifetimes):
-            msg = "lifetimes must be a torch.Tensor"
-            raise ValueError(msg)
+        require_tensors(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times,
+            lifetimes=lifetimes,
+        )
+        lifetimes = cast(torch.Tensor, lifetimes)
 
     birth_rates_array = birth_rates
 
@@ -1256,15 +1223,7 @@ def calculate_log_lik_lifetimes(
     if not _skip_normalization:
         lifetimes, death_rates, times = ensure_1d_tensors(lifetimes, death_rates, times)
     else:
-        if not torch.is_tensor(lifetimes):
-            msg = "lifetimes must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(death_rates):
-            msg = "death_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(times):
-            msg = "times must be a torch.Tensor"
-            raise ValueError(msg)
+        require_tensors(lifetimes=lifetimes, death_rates=death_rates, times=times)
 
     death_rate_val_array = death_rates
 
@@ -1350,15 +1309,7 @@ def _population_geometric_parameter(
             times=times,
         )
     else:
-        if not torch.is_tensor(birth_rates):
-            msg = "birth_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(death_rates):
-            msg = "death_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(times):
-            msg = "times must be a torch.Tensor"
-            raise ValueError(msg)
+        require_tensors(birth_rates=birth_rates, death_rates=death_rates, times=times)
 
     # Compute epoch durations
     times_padded = torch.cat([torch.tensor([0.0], dtype=torch.float64), times])
@@ -1463,15 +1414,7 @@ def _pr_extinction_numerator(
             times=times,
         )
     else:
-        if not torch.is_tensor(birth_rates):
-            msg = "birth_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(death_rates):
-            msg = "death_rates must be a torch.Tensor"
-            raise ValueError(msg)
-        if not torch.is_tensor(times):
-            msg = "times must be a torch.Tensor"
-            raise ValueError(msg)
+        require_tensors(birth_rates=birth_rates, death_rates=death_rates, times=times)
 
     epoch_durations = torch.diff(times, prepend=times.new_zeros(1))
     growth_rates = birth_rates - death_rates

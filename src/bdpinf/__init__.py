@@ -12,11 +12,14 @@ The package is organized into focused modules:
 Import the components you need directly from their respective modules.
 """
 
+import logging
+
+from .models.birth_death_process import BirthDeathProcess
+
+logging.getLogger(__name__).addHandler(logging.NullHandler())
+
 __version__ = "0.1.0"
 __author__ = "JC"
 __email__ = "jcacademicresearch@gmail.com"
-
-# Import only the core model class at package level
-from .models.birth_death_process import BirthDeathProcess
 
 __all__ = ["BirthDeathProcess"]

@@ -98,7 +98,8 @@ class BirthDeathProcess:
             Construct from sampled ages and inspect results::
 
                     >>> proc = BirthDeathProcess.from_age_samples(
-                    ...     spine_ages=[10.0, 5.0], non_spine_ages=[2.0], epoch_end_times=50
+                    ...     spine_ages=[10.0, 5.0], non_spine_ages=[2.0],
+                    ...     epoch_end_times=50
                     ... )
                     >>> proc.spine_ages
                     tensor([10.,  5.])
@@ -519,7 +520,7 @@ class BirthDeathProcess:
 
     @property
     def non_spine_ages(self) -> torch.Tensor | None:
-        """Get sampled non-spine ages when the instance originates from that simulator."""
+        """Get sampled non-spine ages when instance originates from the simulator."""
         if self._non_spine_ages is None:
             return None
         return self._non_spine_ages.clone()

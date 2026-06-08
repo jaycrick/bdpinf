@@ -617,7 +617,8 @@ def _run_optimizer_strategies(
         convergence_config: Configuration for convergence criteria.
         param_constraints: Parameter constraints (fixed/equal params).
 
-    Returns:
+    Returns
+    -------
         OptimizerRunResult with optimized params, history, and metadata.
 
     """
@@ -699,7 +700,8 @@ def _run_single_optimizer(
 ) -> tuple[OptimizerAttemptResult, torch.Tensor | None]:
     """Run a single optimizer strategy and handle results.
 
-    Returns:
+    Returns
+    -------
         (attempt_result, best_log_params)
 
     """
@@ -819,7 +821,8 @@ def _run_lbfgs_optimizer(
 ) -> tuple[bool, Exception | None, torch.Tensor | None, int]:
     """Run LBFGS optimization loop.
 
-    Returns:
+    Returns
+    -------
         (did_converge, current_exception, best_log_params, iterations)
 
     """
@@ -975,7 +978,8 @@ def _run_first_order_optimizer(
 ) -> tuple[bool, Exception | None, torch.Tensor | None, int]:
     """Run first-order optimizer (Adam/SGD) loop.
 
-    Returns:
+    Returns
+    -------
         (did_converge, current_exception, best_log_params, iterations)
 
     """
@@ -1091,7 +1095,7 @@ def _run_first_order_optimizer(
     return False, current_exception, best_log_params, iterations
 
 
-def _get_crude_parameter_estimates(
+def get_crude_parameter_estimates(
     ages: torch.Tensor | float,
     times: torch.Tensor | float,
     *,
@@ -1228,7 +1232,7 @@ def _build_initial_params(
 ) -> torch.Tensor:
     """Build initial param vector; auto-estimate if needed."""
     if initial_birth_rates is None or initial_death_rates is None:
-        crude_birth, crude_death = _get_crude_parameter_estimates(
+        crude_birth, crude_death = get_crude_parameter_estimates(
             non_empty_age,
             times_tensor,
             birth_rates=initial_birth_rates,
@@ -1353,7 +1357,8 @@ def _check_convergence_criteria(
         convergence_config: Convergence configuration with thresholds.
         iterations_without_improvement: For non-LBFGS, iterations without improvement.
 
-    Returns:
+    Returns
+    -------
         True if convergence criteria are met, False otherwise.
 
     """

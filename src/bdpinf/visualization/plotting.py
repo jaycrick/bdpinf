@@ -5,6 +5,7 @@ process models and their results.
 
 """
 
+import logging
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,8 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
+
+logger = logging.getLogger(__name__)
 
 # Professional plotting style configuration
 # Configure professional font family for all plots
@@ -91,7 +94,8 @@ def apply_professional_styling(
         yaxis_title: Y-axis label
         height: Figure height in pixels (default: 400)
 
-    Returns:
+    Returns
+    -------
         Updated figure object with professional styling applied
 
     """
@@ -512,7 +516,8 @@ def save_figure(
         height: Figure height in pixels (default: 600)
         output_dir: Directory to save figures (default: "figures")
 
-    Returns:
+    Returns
+    -------
         Path to saved file if successful, None if failed
 
     """
@@ -552,5 +557,5 @@ def save_figure(
         fig.write_image(str(file_path))
         return file_path
     except Exception as e:
-        print(f"⚠️ Failed to save {filename}.pdf: {e}")
+        logger.warning("Failed to save %s.pdf: %s", filename, e)
         return None

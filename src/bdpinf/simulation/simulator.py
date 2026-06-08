@@ -3,7 +3,8 @@
 This module contains functions for simulating manuscript data from birth-death
 processes and making predictions using fitted models.
 
-Examples:
+Examples
+--------
     Simulating manuscript creation and survival with constant rates:
 
     >>> import numpy as np
@@ -639,7 +640,8 @@ def simulate_birth_death_process(
             birth_rates and death_rates if arrays are provided.
         random_seed: Random seed for reproducibility
 
-    Returns:
+    Returns
+    -------
         BirthDeathProcess instance containing the simulated manuscript records
 
     """
@@ -675,7 +677,7 @@ def simulate_birth_death_process(
 
     attempts_allowed = max_retries if ensure_non_extinct else 0
     # We allow (attempts_allowed + 1) attempts: initial + retries
-    for attempt in range(attempts_allowed + 1):
+    for _attempt in range(attempts_allowed + 1):
         # Create a per-attempt RNG so retries produce different draws but are
         # reproducible when `random_seed` is provided.
         if random_seed is None:
@@ -846,10 +848,12 @@ def simulate_bdp_ages_from_distributions(
         ensure_non_extinct: If True, force a non-zero population draw by sampling
             from the conditional geometric component only.
 
-    Returns:
+    Returns
+    -------
         BirthDeathProcess instance containing the sampled age groups.
 
-    Raises:
+    Raises
+    ------
         ValueError: If rates or max_time are not positive, or tensors are not scalar.
         RuntimeError: If rejection sampling cannot find an accepted draw.
 

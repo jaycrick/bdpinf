@@ -12,9 +12,9 @@ from .bayesian import (
     fit_birth_death_processes_bayesian_from_data_frame,
 )
 from .fitting import (
-    _get_crude_parameter_estimates,
     fit_birth_death_processes,
     fit_from_data_frame,
+    get_crude_parameter_estimates,
 )
 from .likelihood import (
     calculate_unknown_spine_mixture_age_density,
@@ -31,7 +31,7 @@ __all__ = [
     "BayesianMCMCConfig",
     "BayesianModelConfig",
     "BayesianPriorConfig",
-    "_get_crude_parameter_estimates",
+    "get_crude_parameter_estimates",
     "calculate_unknown_spine_mixture_age_density",
     "calculate_unknown_spine_mixture_birth_density",
     "confidence_intervals_from_log_covariance",
