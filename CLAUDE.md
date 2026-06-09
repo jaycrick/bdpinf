@@ -20,6 +20,8 @@ Example: `:zap: Add users endpoint, fixes #27`
 
 **Commit granularity:** Prefer bundled commits that group related code, tests, and docs into a single commit. Choose the prefix that reflects the commit's primary concern. Do not split a feature into separate per-prefix commits (e.g. one `:zap:` for the code, one `:cop:` for its tests, one `:abc:` for its docs) unless those pieces genuinely belong in separate commits for other reasons.
 
+**CHANGELOG.md**: Update `CHANGELOG.md` at the repo root whenever a commit adds a new feature, changes public API, or fixes a user-visible bug. Add a bullet under `## [Unreleased]` — one line describing the change and which module it affects. No need to touch `CHANGELOG.md` for pure tooling/CI changes (`:tv:`) or test-only commits (`:cop:`).
+
 ## Commands
 
 ```bash
@@ -30,6 +32,8 @@ uv sync --all-groups
 uv run pytest
 uv run pytest tests/test_fitting.py -v        # single file
 uv run pytest -m slow                          # run slow tests only
+uv run pytest -m regression                    # golden-value regression tests
+uv run pytest -m recovery                      # simulate-then-fit recovery tests (implies slow)
 uv run pytest -k "test_name"                   # single test by name
 
 # Linting and formatting
@@ -98,13 +102,16 @@ class TestSubject:
 
 ### Mathematical layer: `models/`
 
-`mathematical_functions.py` (pure functions, no class state):
-- `calculate_extinction_pr()` — probability population dies by time T
-- `calculate_spine_ages_log_lik()`, `calculate_non_spine_ages_log_lik()` — per-age densities
-- `calculate_populations_log_lik()` — probability of observed population counts
-- `_reverse_time()` — **time-reversal trick**: transforms multi-epoch non-spine ages into an extinction-conditioned backward-time problem, avoiding exponential complexity in the number of epochs
+`mathematical_functions.py` is a thin re-export façade over three private submodules (pure functions, no class state):
+- `_math_extinction.py` — `calculate_extinction_pr()`: probability population dies by time T
+- `_math_ages.py` — `calculate_spine_ages_log_lik()`, `calculate_non_spine_ages_log_lik()`, `_reverse_time()`
+- `_math_populations.py` — `calculate_populations_log_lik()`: probability of observed population counts
+
+`_reverse_time()` — **time-reversal trick**: transforms multi-epoch non-spine ages into an extinction-conditioned backward-time problem, avoiding exponential complexity in the number of epochs.
 
 `mathematical_derivatives.py` — numerical derivatives used during optimization.
+
+`validation.py` — `normalize_and_validate_inputs()` converts scalars/arrays to float64 tensors and enforces shape, range, and monotonicity constraints. `ValidationConfig` (Pydantic) controls which checks run.
 
 ### Inference layer: `inference/`
 
@@ -112,6 +119,7 @@ class TestSubject:
 - `fit_birth_death_processes()` — MLE via PyTorch optimizers (LBFGS, Adam); supports initial perturbation for robustness and convergence detection with multi-restart
 - `ParameterConstraints` dataclass — fixed parameters (index → value) and equality groups (lists of indices forced equal); validated before optimization to reduce parameter space
 - `estimate_mle_covariance()` — covariance via numerical Hessian inversion
+- Optimizer internals are split across `_fit_types.py` (shared dataclasses: `ConvergenceConfig`, `OptimizerStrategy`, etc.) and `_optimizer_runners.py` (`_run_lbfgs_optimizer`, `_run_first_order_optimizer`). `ConvergenceConfig` is re-exported from `fitting.py` for backward compatibility.
 
 `likelihood.py` — `log_likelihood()` / `negative_log_likelihood()` wrappers that handle log-scale vs. positive-scale parameters and marginalize over unknown spine positions.
 
@@ -131,11 +139,17 @@ class TestSubject:
 
 `xml_processing.py` — `analyze_all_manuscripts()` batch-parses a folder for book/section content.
 
-### Types and constants
+### Types, constants, and utilities
 
 `types.py` — Pydantic models `ValidBookSet`, `ValidSectionSet` for validated book/section sets.
 
 `constants.py` — canonical book ordering, German abbreviations, and section patterns used throughout the XML layer.
+
+`schemas.py` — `ValidationConfig` Pydantic model (also available from `models.validation`) controlling which validation checks are enforced.
+
+`_paths.py` — `get_project_root()` (exported from `inf_bp_texts` top-level): returns the Quarto project root via `$QUARTO_PROJECT_DIR` env var, or walks up from `cwd` to find `_quarto.yml`. Use this in notebooks and scripts instead of hardcoded relative paths.
+
+**CLI**: The package installs an `inf-bp-texts` command (entry point: `inf_bp_texts.cli:main`) via `[project.scripts]` in `pyproject.toml`.
 
 ## Key design decisions
 
@@ -184,4 +198,5 @@ Every executable notebook follows this structure:
 - **Cell options**: hash-pipe syntax inside code fences — `# | label:`, `# | cache: false`, `# | echo: false`, `# | include: false`.
 - **Import noqa**: import cells open with `# ruff: noqa: E402` (imports are not at the top of the Python file, which ruff would flag).
 - **Keep logic in `src/`**: cells import from `inf_bp_texts`; heavy computation belongs in the package, not inline.
-- **Figures**: saved via `save_figure` from `inf_bp_texts.visualization` into `figures/`, resolved as `figures_dir = Path("../../../figures")` from a three-level-deep notebook.
+- **Figures**: saved via `save_figure` from `inf_bp_texts.visualization` into `figures/`, resolved as `figures_dir = get_project_root() / "figures"` (import `get_project_root` from `inf_bp_texts`). Do not use hardcoded `Path("../../../figures")`.
+- **Design docs**: architecture/audit documents live in `docs/design/` (not the repo root).
