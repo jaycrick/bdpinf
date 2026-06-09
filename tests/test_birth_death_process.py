@@ -442,3 +442,86 @@ class TestBirthDeathProcessNewick:
 
         with pytest.raises(ValueError, match="requires manuscript_records"):
             process.to_newick()
+
+
+class TestBirthDeathProcessFactories:
+    """Test BirthDeathProcess class-method constructors."""
+
+    def test_from_age_samples_stores_spine_and_non_spine(self) -> None:
+        spine = [800.0, 900.0]
+        non_spine = [200.0, 400.0, 600.0]
+        T = 1000.0
+        process = BirthDeathProcess.from_age_samples(
+            spine_ages=spine,
+            non_spine_ages=non_spine,
+            epoch_end_times=T,
+        )
+        assert process.spine_ages is not None
+        assert process.non_spine_ages is not None
+        assert list(process.spine_ages) == pytest.approx(spine)
+        assert list(process.non_spine_ages) == pytest.approx(non_spine)
+
+    def test_from_age_samples_creation_times_consistent_with_ages(self) -> None:
+        spine = [300.0]
+        non_spine = [100.0, 700.0]
+        T = 1000.0
+        process = BirthDeathProcess.from_age_samples(
+            spine_ages=spine,
+            non_spine_ages=non_spine,
+            epoch_end_times=T,
+        )
+        expected_creation_times = sorted(
+            [T - age for age in [*spine, *non_spine]], reverse=False
+        )
+        assert sorted(process.creation_times) == pytest.approx(expected_creation_times)
+
+    def test_from_age_samples_with_rates(self) -> None:
+        process = BirthDeathProcess.from_age_samples(
+            spine_ages=[500.0],
+            non_spine_ages=[200.0, 400.0],
+            epoch_end_times=1000.0,
+            birth_rates=0.05,
+            death_rates=0.02,
+        )
+        assert process.birth_rates is not None
+        assert process.death_rates is not None
+        assert process.birth_rates[0].item() == pytest.approx(0.05)
+
+
+class TestBirthDeathProcessEquals:
+    """Test BirthDeathProcess.equals() identity and difference detection."""
+
+    def test_equals_returns_true_for_identical_construction(self) -> None:
+        p1 = BirthDeathProcess(
+            creation_times=[100.0, 200.0],
+            epoch_end_times=500.0,
+            birth_rates=0.05,
+            death_rates=0.02,
+        )
+        p2 = BirthDeathProcess(
+            creation_times=[100.0, 200.0],
+            epoch_end_times=500.0,
+            birth_rates=0.05,
+            death_rates=0.02,
+        )
+        assert bool(p1.equals(p2))
+
+    def test_equals_returns_false_when_birth_rates_differ(self) -> None:
+        p1 = BirthDeathProcess(
+            creation_times=[100.0],
+            epoch_end_times=500.0,
+            birth_rates=0.05,
+            death_rates=0.02,
+        )
+        p2 = BirthDeathProcess(
+            creation_times=[100.0],
+            epoch_end_times=500.0,
+            birth_rates=0.06,
+            death_rates=0.02,
+        )
+        assert not bool(p1.equals(p2))
+
+    def test_equals_returns_false_for_non_process_input(self) -> None:
+        p = BirthDeathProcess(creation_times=[], epoch_end_times=500.0)
+        assert p.equals("not a process") is False
+        assert p.equals(None) is False

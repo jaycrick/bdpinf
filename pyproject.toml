@@ -86,6 +86,8 @@ sort_table_keys = true
 addopts = "-m \"not slow\" --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml --cov-fail-under=80"
 markers = [
     "slow: long-running tests that are skipped in regular runs",
+    "regression: golden-value tests guarding against numerical drift",
+    "recovery: simulate-then-fit parameter recovery tests (implies slow)",
 ]
 python_classes = ["Test*"]
 python_files = ["test_*.py"]

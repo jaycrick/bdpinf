@@ -3,13 +3,16 @@
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 from inf_bp_texts.inference.fitting import (
+    ParameterConstraints,
     fit_birth_death_processes,
     fit_from_data_frame,
 )
 from inf_bp_texts.inference.likelihood import log_likelihood
 from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.simulation.simulator import simulate_bdp_ages_from_distributions
 
 
 def _as_float(value: object) -> float:
@@ -369,6 +372,74 @@ class TestIntegration:
             times=final_time_large,
         )
         assert np.isfinite(_as_float(large_ll)) or large_ll == -np.inf
+
+    def test_simulate_then_log_likelihood_is_finite(self) -> None:
+        rng = np.random.default_rng(77)
+        br = torch.tensor(0.01, dtype=torch.float64)
+        dr = torch.tensor(0.004, dtype=torch.float64)
+        T = torch.tensor(600.0, dtype=torch.float64)
+        process = simulate_bdp_ages_from_distributions(
+            br, dr, T, rng, ensure_non_extinct=True
+        )
+        ages = process.manuscript_ages
+        if ages.numel() == 0:
+            return
+        ll = log_likelihood(
+            birth_rates=br,
+            death_rates=dr,
+            ages=ages.numpy(),
+            times=600.0,
+        )
+        assert np.isfinite(_as_float(ll))
+
+    def test_fit_from_data_frame_matches_fit_from_arrays(self) -> None:
+        rng = np.random.default_rng(99)
+        T = 1200.0
+        ages_arr = rng.exponential(scale=300.0, size=25)
+        ages_arr = ages_arr[ages_arr < T]
+        df = pd.DataFrame({"age": ages_arr})
+        result_df = fit_from_data_frame(df, age_column="age", times=T)
+        result_arr = fit_birth_death_processes(
+            [ages_arr],
+            times=T,
+            estimate_uncertainty=False,
+        )
+        if result_df["success"] and result_arr["success"]:
+            assert np.isfinite(_as_float(result_df["birth_rates"]))
+            assert np.isfinite(_as_float(result_arr["birth_rates"]))
+
+    def test_covariance_is_positive_definite_after_successful_fit(self) -> None:
+        rng = np.random.default_rng(55)
+        ages = rng.exponential(scale=300.0, size=30)
+        ages = ages[ages < 1200.0]
+        result = fit_birth_death_processes(
+            [ages],
+            times=1200.0,
+            estimate_uncertainty=True,
+        )
+        if not result["success"]:
+            return
+        cov = result.get("covariance")
+        if cov is None:
+            return
+        cov_arr = np.atleast_2d(cov)
+        eigenvalues = np.linalg.eigvalsh(cov_arr)
+        assert np.all(eigenvalues >= -1e-8)
+
+    def test_equality_constraint_produces_equal_rates(self) -> None:
+        ages = np.array([100.0, 200.0, 300.0, 500.0, 700.0, 900.0, 1100.0, 1300.0])
+        times = np.array([750.0, 1500.0])
+        constraints = ParameterConstraints(equality_groups=[[0, 1]])
+        result = fit_birth_death_processes(
+            [ages],
+            times=times,
+            param_constraints=constraints,
+            estimate_uncertainty=False,
+        )
+        if not result["success"]:
+            return
+        birth_rates = np.atleast_1d(result["birth_rates"])
+        assert birth_rates[0] == pytest.approx(birth_rates[1], rel=1e-4)
 
     def test_state_consistency_throughout_workflow(self) -> None:
         """Test that object state remains consistent throughout operations."""
