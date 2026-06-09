@@ -5,8 +5,10 @@ initialization, and core functionality. Complex mathematical computations and
 fitting procedures are handled by separate modules.
 """
 
+from __future__ import annotations
+
 from collections.abc import Hashable
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -14,23 +16,13 @@ import plotly.graph_objs as go
 import torch
 from numpy.typing import NDArray
 
-from inf_bp_texts.inference.likelihood import log_likelihood as _log_likelihood
-from inf_bp_texts.inference.likelihood import (
-    negative_log_likelihood as _negative_log_likelihood,
-)
 from inf_bp_texts.models.validation import (
     ValidationConfig,
     normalize_and_validate_inputs,
 )
-from inf_bp_texts.visualization.genealogy import (
-    GenealogyPlotConfig,
-)
-from inf_bp_texts.visualization.genealogy import (
-    genealogy_dfs_order as _genealogy_dfs_order,
-)
-from inf_bp_texts.visualization.genealogy import (
-    plot_genealogy_tree as _plot_genealogy_tree,
-)
+
+if TYPE_CHECKING:
+    from inf_bp_texts.visualization.genealogy import GenealogyPlotConfig
 
 NumericInput = float | list[float] | NDArray[np.float64] | torch.Tensor
 RateLabel = Literal["birth", "death"]
@@ -198,7 +190,7 @@ class BirthDeathProcess:
         initial_population: int = 1,
         birth_rates: NumericInput | None = None,
         death_rates: NumericInput | None = None,
-    ) -> "BirthDeathProcess":
+    ) -> BirthDeathProcess:
         """Build a process from a full manuscript event table."""
         required_columns = {
             "manuscript_id",
@@ -239,7 +231,7 @@ class BirthDeathProcess:
         initial_population: int = 1,
         birth_rates: NumericInput | None = None,
         death_rates: NumericInput | None = None,
-    ) -> "BirthDeathProcess":
+    ) -> BirthDeathProcess:
         """Build a process from sampled spine and non-spine manuscript ages."""
         epoch_end_times_tensor = cls._to_static_float64_tensor(epoch_end_times)
         max_time = float(epoch_end_times_tensor.reshape(-1)[-1].item())
@@ -571,6 +563,10 @@ class BirthDeathProcess:
             )
             raise ValueError(msg)
 
+        from inf_bp_texts.visualization.genealogy import (
+            genealogy_dfs_order as _genealogy_dfs_order,
+        )
+
         return _genealogy_dfs_order(
             self._manuscript_records,
             start_time=self.start_time,
@@ -583,6 +579,10 @@ class BirthDeathProcess:
         config: GenealogyPlotConfig | None = None,
     ) -> go.Figure:
         """Return a Plotly figure showing manuscript lifetimes and genealogy."""
+        from inf_bp_texts.visualization.genealogy import (
+            plot_genealogy_tree as _plot_genealogy_tree,
+        )
+
         if self._manuscript_records is None:
             msg = (
                 "plot_genealogy_tree requires manuscript_records with "
@@ -847,6 +847,8 @@ class BirthDeathProcess:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
 
+        from inf_bp_texts.inference.likelihood import log_likelihood as _log_likelihood
+
         return _log_likelihood(
             birth_rates=self._birth_rates,
             death_rates=self._death_rates,
@@ -860,6 +862,10 @@ class BirthDeathProcess:
         if self._birth_rates is None or self._death_rates is None:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
+
+        from inf_bp_texts.inference.likelihood import (
+            negative_log_likelihood as _negative_log_likelihood,
+        )
 
         return _negative_log_likelihood(
             birth_rates=self._birth_rates,
