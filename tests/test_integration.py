@@ -419,7 +419,7 @@ class TestIntegration:
         )
         if not result["success"]:
             return
-        cov = result.get("covariance")
+        cov = result.get("uncertainty")
         if cov is None:
             return
         cov_arr = np.atleast_2d(cov)
