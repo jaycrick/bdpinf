@@ -487,6 +487,37 @@ class TestBirthDeathProcessFactories:
         assert process.death_rates is not None
         assert process.birth_rates[0].item() == pytest.approx(0.05)
 
+    def test_from_manuscript_records_creates_correct_epoch_structure(self) -> None:
+        """from_manuscript_records filters to survivors and stores records."""
+        T = 600.0
+        records = pd.DataFrame(
+            {
+                "manuscript_id": [1, 2, 3, 4],
+                "parent_id": [None, 1, 1, 2],
+                "creation_time": [0.0, 100.0, 200.0, 300.0],
+                "death_time": [T, T, 400.0, T],
+                "is_spine": [True, False, False, False],
+                "survived": [True, True, False, True],
+                "age": [T, T - 100.0, None, T - 300.0],
+                "lifespan": [T, T - 100.0, 200.0, T - 300.0],
+            }
+        )
+        process = BirthDeathProcess.from_manuscript_records(
+            records,
+            epoch_end_times=T,
+            birth_rates=0.01,
+            death_rates=0.003,
+        )
+        # Only survivors (3 of 4 manuscripts) contribute creation_times
+        assert len(process.creation_times) == 3
+        assert sorted(process.creation_times) == pytest.approx([0.0, 100.0, 300.0])
+        # manuscript_records stores all records (survived + dead)
+        assert process.manuscript_records is not None
+        assert len(process.manuscript_records) == 4
+        # epoch structure
+        assert len(process.epoch_end_times) == 1
+        assert float(process.epoch_end_times[0]) == pytest.approx(T)
+
 
 class TestBirthDeathProcessEquals:
     """Test BirthDeathProcess.equals() identity and difference detection."""

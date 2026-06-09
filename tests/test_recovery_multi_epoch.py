@@ -157,3 +157,37 @@ class TestRecoveryMultiEpoch:
             pytest.skip("optimizer did not converge for this seed")
         assert len(np.atleast_1d(result["birth_rates"])) == 2
         assert len(np.atleast_1d(result["death_rates"])) == 2
+
+    def test_recover_two_epoch_free_parameters(self) -> None:
+        """Unconstrained 4-parameter fit recovers all rates within 30%."""
+        true_birth = [0.012, 0.008]
+        true_death = [0.004, 0.004]
+        successes = 0
+        attempts = 0
+        seed = 0
+        while successes < 4 and attempts < _MAX_SEEDS:
+            ages = _simulate_two_epoch(true_birth, true_death, seed)
+            seed += 1
+            if ages is None:
+                continue
+            attempts += 1
+            result = _two_epoch_fit(
+                true_birth, true_death, seed, param_constraints=None
+            )
+            if result is None or not result["success"]:
+                continue
+            br = np.atleast_1d(result["birth_rates"])
+            dr = np.atleast_1d(result["death_rates"])
+            if len(br) != 2 or len(dr) != 2:
+                continue
+            recovered = all(
+                abs(br[i] - true_birth[i]) / true_birth[i] < 0.30
+                and abs(dr[i] - true_death[i]) / true_death[i] < 0.30
+                for i in range(2)
+            )
+            if recovered:
+                successes += 1
+        assert successes >= 4, (
+            f"Only {successes}/{attempts} replicates recovered all 4 parameters "
+            "within 30%"
+        )

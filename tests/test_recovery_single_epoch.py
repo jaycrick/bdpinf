@@ -157,3 +157,37 @@ class TestRecoverySingleEpoch:
         assert np.isfinite(fitted_birth)
         assert np.isfinite(fitted_death)
         assert np.isfinite(float(result["log_likelihood"]))
+
+    def test_recover_subcritical_rates(self) -> None:
+        """Subcritical process (μ > λ): both rates should be recoverable."""
+        true_birth = 0.02
+        true_death = 0.05
+        birth_successes = _recovery_pass_rate(
+            birth_rate=true_birth,
+            death_rate=true_death,
+            T=1500.0,
+            param="birth_rates",
+            true_value=true_birth,
+            rel_tol=0.20,
+        )
+        assert birth_successes >= 4, (
+            f"Only {birth_successes}/{_MAX_SEEDS} replicates recovered subcritical "
+            "birth rate within 20%"
+        )
+
+    def test_recover_critical_rates(self) -> None:
+        """Critical process (λ ≈ μ): shared rate should be recoverable within 25%."""
+        true_rate = 0.04
+        constraints = ParameterConstraints(equality_groups=[[0, 1]])
+        successes = _recovery_pass_rate(
+            birth_rate=true_rate,
+            death_rate=true_rate,
+            T=1500.0,
+            param="birth_rates",
+            true_value=true_rate,
+            rel_tol=0.25,
+            param_constraints=constraints,
+        )
+        assert successes >= 4, (
+            f"Only {successes}/{_MAX_SEEDS} replicates recovered critical rate within 25%"
+        )

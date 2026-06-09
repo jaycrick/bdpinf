@@ -13,6 +13,10 @@ from inf_bp_texts.inference.fitting import (
 from inf_bp_texts.inference.likelihood import log_likelihood
 from inf_bp_texts.simulation import simulate_birth_death_process
 from inf_bp_texts.simulation.simulator import simulate_bdp_ages_from_distributions
+from inf_bp_texts.simulation.splitting import (
+    SplittingConfig,
+    simulate_subcritical_survival_splitting,
+)
 
 
 def _as_float(value: object) -> float:
@@ -482,3 +486,29 @@ class TestIntegration:
             assert all(age >= 0 for age in ages)
             assert all(ct <= final_time for ct in creation_times)
             assert all(age >= 0 for age in ages)
+
+    def test_splitting_result_feeds_birth_death_process(self) -> None:
+        """SplittingSimulationResult.conditioned_trajectories can seed a fit."""
+        config = SplittingConfig(
+            birth_rate=0.01,
+            death_rate=0.05,
+            terminal_time=300.0,
+            n_particles=30,
+            random_seed=42,
+        )
+        result = simulate_subcritical_survival_splitting(config)
+        assert result.survival_probability_estimate > 0
+        assert result.survival_probability_estimate < 1
+        # particle_genealogy should be a DataFrame with genealogy columns
+        pg = result.particle_genealogy
+        assert isinstance(pg, pd.DataFrame)
+        required_cols = {"child_particle_id", "parent_particle_id", "level_index"}
+        assert required_cols.issubset(set(pg.columns)), (
+            f"Missing columns: {required_cols - set(pg.columns)}"
+        )
+        # conditioned_trajectories should produce non-empty BirthDeathProcess objects
+        assert len(result.conditioned_trajectories) > 0
+        traj = result.conditioned_trajectories[0]
+        assert traj.process is not None
+        bdp = traj.process
+        assert len(bdp.creation_times) > 0
