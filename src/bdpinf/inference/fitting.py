@@ -1,6 +1,7 @@
 """Maximum likelihood estimation for birth-death process parameters using PyTorch."""
 
 import dataclasses
+import logging
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -16,6 +17,8 @@ from inf_bp_texts.utils import ensure_1d_tensor
 
 from .likelihood import negative_log_likelihood
 from .uncertainty import estimate_mle_covariance
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_GRADIENT_THRESHOLD = 5e-4
 DEFAULT_ABSOLUTE_TOLERANCE = 1e-7
@@ -807,6 +810,29 @@ def _run_single_optimizer(
         )
 
 
+def _capture_grad_norm(log_params: torch.nn.Parameter) -> float:
+    """Safely compute gradient norm, returning inf on failure."""
+    try:
+        return (
+            float(torch.norm(log_params.grad).item())
+            if log_params.grad is not None
+            else float("inf")
+        )
+    except Exception as exc:
+        logger.warning("grad norm capture failed: %s", exc)
+        return float("inf")
+
+
+def _capture_param_snapshot(log_params: torch.nn.Parameter) -> list[float] | None:
+    """Safely snapshot current parameters, returning None on failure."""
+    try:
+        result: list[float] = log_params.detach().cpu().numpy().tolist()
+        return result
+    except Exception as exc:
+        logger.warning("param snapshot failed: %s", exc)
+        return None
+
+
 def _run_lbfgs_optimizer(
     strategy: OptimizerStrategy,
     log_params: torch.nn.Parameter,
@@ -855,18 +881,8 @@ def _run_lbfgs_optimizer(
             nll.backward()  # type: ignore[no-untyped-call]
             last_nll_value = float(nll.item())
             # capture grad norm and parameter snapshot inside closure
-            try:
-                last_grad_norm_local = (
-                    float(torch.norm(log_params.grad).item())
-                    if log_params.grad is not None
-                    else float("inf")
-                )
-            except Exception:
-                last_grad_norm_local = float("inf")
-            try:
-                last_param_snapshot_local = log_params.detach().cpu().numpy().tolist()
-            except Exception:
-                last_param_snapshot_local = None
+            last_grad_norm_local = _capture_grad_norm(log_params)
+            last_param_snapshot_local = _capture_param_snapshot(log_params)
             if last_nll_value < best_nll:
                 best_nll = last_nll_value
                 best_log_params = log_params.detach().clone()
@@ -906,10 +922,8 @@ def _run_lbfgs_optimizer(
                     first_nll = float(nll_history[0])
                 if min(nll_history) < first_nll - convergence_config.absolute_tolerance:
                     improved_once = True
-        except Exception:
-            # If anything goes wrong inspecting history, do not crash;
-            # leave improved_once as-is and continue.
-            pass
+        except Exception as exc:
+            logger.warning("NLL history inspection failed: %s", exc)
 
         if last_nll_value is None:
             current_exception = RuntimeError(
@@ -1008,20 +1022,14 @@ def _run_first_order_optimizer(
         nll.backward()  # type: ignore[no-untyped-call]
 
         # record gradient norm (pre-step) and optional parameter snapshot (post-step)
-        try:
-            grad_norm_pre = (
-                float(torch.norm(log_params.grad).item())
-                if log_params.grad is not None
-                else float("inf")
-            )
-        except Exception:
-            grad_norm_pre = float("inf")
+        grad_norm_pre = _capture_grad_norm(log_params)
 
         optimizer.step()
 
         try:
             nll_value = float(nll.item())
-        except Exception:
+        except Exception as exc:
+            logger.warning("NLL value extraction failed: %s", exc)
             nll_value = float("nan")
         nll_history.append(nll_value)
 
@@ -1029,10 +1037,7 @@ def _run_first_order_optimizer(
         record_every = int(strategy.optimizer_kwargs.get("record_every", 1))
         if (iteration % record_every) == 0:
             grad_to_append = grad_norm_pre
-            try:
-                param_snapshot = log_params.detach().cpu().numpy().tolist()
-            except Exception:
-                param_snapshot = None
+            param_snapshot = _capture_param_snapshot(log_params)
             grad_norms.append(grad_to_append)
             param_history.append(param_snapshot if param_snapshot is not None else [])
             timestamps.append(time.perf_counter())
