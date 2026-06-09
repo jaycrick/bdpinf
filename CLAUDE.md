@@ -37,6 +37,7 @@ uv run ruff check src tests
 uv run ruff format src tests
 uv run isort src tests
 uv run mypy src/                               # strict mode
+uv run basedpyright src/                       # staged migration; 0 errors target
 
 # All at once (pre-commit)
 uv run pre-commit run --all-files

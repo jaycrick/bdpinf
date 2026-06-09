@@ -27,6 +27,7 @@ inf-bp-texts = "inf_bp_texts.cli:main"
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.22.0",
     "isort>=7.0.0",
     "joblib-stubs>=1.5.3.1.20260117",
     "jupyter-cache>=1.0.1",
@@ -52,6 +53,26 @@ known_first_party = ["inf_bp_texts"]
 line_length = 88
 multi_line_output = 3
 profile = "black"
+
+[tool.basedpyright]
+include = ["src"]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = "warning"
+# types-torch community stubs are incomplete — suppress cascading failures until stubs improve
+reportUnknownMemberType = "none"
+reportUnknownVariableType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownParameterType = "none"
+reportAttributeAccessIssue = "none"
+# Cascade from unknown torch tensor types:
+reportIndexIssue = "none"
+reportOperatorIssue = "none"
+reportAbstractUsage = "none"
+reportArgumentType = "none"
+reportOptionalOperand = "none"
+reportReturnType = "none"
+reportGeneralTypeIssues = "none"
 
 [tool.mypy]
 pretty = true

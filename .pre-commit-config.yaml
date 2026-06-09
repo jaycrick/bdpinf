@@ -47,6 +47,17 @@ repos:
           - typer
         files: ^src/
 
+  # basedpyright type checking (staged migration from mypy — local hook uses venv install)
+  - repo: local
+    hooks:
+      - id: basedpyright
+        name: basedpyright
+        language: system
+        entry: uv run basedpyright src/
+        pass_filenames: false
+        types: [python]
+        files: ^src/
+
   # toml-sort
   - repo: https://github.com/pappasam/toml-sort
     rev: v0.24.3
