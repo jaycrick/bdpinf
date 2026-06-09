@@ -14,6 +14,7 @@ Import the components you need directly from their respective modules.
 
 import logging
 
+from ._paths import get_project_root
 from .models.birth_death_process import BirthDeathProcess
 
 logging.getLogger(__name__).addHandler(logging.NullHandler())
@@ -22,4 +23,4 @@ __version__ = "0.1.0"
 __author__ = "JC"
 __email__ = "jcacademicresearch@gmail.com"
 
-__all__ = ["BirthDeathProcess"]
+__all__ = ["BirthDeathProcess", "get_project_root"]
