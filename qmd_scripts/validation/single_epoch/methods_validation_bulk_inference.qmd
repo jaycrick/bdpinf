@@ -60,7 +60,7 @@ num_sims = 2000
 birth_rate = 0.5
 death_rate = birth_rate - 0.4
 time_span = 15.0
-seed = 42
+NOTEBOOK_SEED = 42  # fixed seed for reproducibility; used as base for per-simulation seeds
 
 
 def sample_age_vector(
@@ -86,7 +86,7 @@ list_of_ages = Parallel(n_jobs=-1)(
         br=birth_rate,
         dr=death_rate,
         span=time_span,
-        base_seed=seed,
+        base_seed=NOTEBOOK_SEED,
     )
     for i in range(num_sims)
 )

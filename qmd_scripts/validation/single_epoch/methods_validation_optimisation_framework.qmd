@@ -59,11 +59,6 @@ from inf_bp_texts.visualization.plotting import (
 )
 
 torch.set_default_dtype(torch.float64)
-
-
-def set_seeds(seed: int) -> None:
-    np.random.seed(seed)
-    torch.manual_seed(int(seed))
 ```
 
 ## Simulate One Dataset
@@ -72,9 +67,9 @@ def set_seeds(seed: int) -> None:
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500.0
-seed = 42
+NOTEBOOK_SEED = 42  # fixed seed for reproducibility
 
-rng = np.random.default_rng(seed)
+rng = np.random.default_rng(NOTEBOOK_SEED)
 sampled = simulate_bdp_ages_from_distributions(
     birth_rate=torch.tensor(birth_rate, dtype=torch.float64),
     death_rate=torch.tensor(death_rate, dtype=torch.float64),

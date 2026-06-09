@@ -493,9 +493,10 @@ High p-values indicate indistinguishable distributions.
 
 ```{python}
 MIN_SAMPLES = 10
+SIMULATION_SEED = 33943  # fixed seed for permutation test reproducibility
 
 ad_method = PermutationMethod(
-    n_resamples=1_111, batch=101, rng=np.random.default_rng(33943)
+    n_resamples=1_111, batch=101, rng=np.random.default_rng(SIMULATION_SEED)
 )
 
 for rd in regime_data:

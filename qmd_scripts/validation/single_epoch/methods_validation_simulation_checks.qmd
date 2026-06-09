@@ -64,7 +64,7 @@ num_sims = 5_000
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500.0
-seed = 42
+NOTEBOOK_SEED = 42  # fixed seed for reproducibility; used as base for per-simulation seeds
 population_bin_width = 100
 
 
@@ -117,7 +117,7 @@ list_of_ages_from_distribution = Parallel(n_jobs=-1)(
         br=birth_rate,
         dr=death_rate,
         span=time_span,
-        base_seed=seed,
+        base_seed=NOTEBOOK_SEED,
     )
     for i in range(num_sims)
 )
@@ -130,7 +130,7 @@ list_of_ages_full_process = Parallel(n_jobs=-1)(
         br=birth_rate,
         dr=death_rate,
         span=time_span,
-        base_seed=seed + 100_000,
+        base_seed=NOTEBOOK_SEED + 100_000,
     )
     for i in range(num_sims)
 )
@@ -531,9 +531,10 @@ The density of the spine age distribution does not include the point mass at the
 
 ```{python}
 # Anderson-Darling test comparing direct vs full process methods
+SIMULATION_SEED = 33943  # fixed seed for permutation test reproducibility
 
 ad_method = PermutationMethod(
-    n_resamples=1_111, batch=101, rng=np.random.default_rng(33943)
+    n_resamples=1_111, batch=101, rng=np.random.default_rng(SIMULATION_SEED)
 )
 
 # Spine age samples
