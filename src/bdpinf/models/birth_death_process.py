@@ -52,13 +52,6 @@ class BirthDeathProcess:
     - `surviving_manuscripts`, `extinct_manuscripts` (pd.DataFrame | None):
         convenience views into the record table.
 
-    Compatibility
-    - Provides lightweight compatibility with legacy simulator outputs:
-        - Indexing with `['spine']` and `['non_spine']` returns lists of ages
-            (from sampled tensors or from `manuscript_records`).
-        - Equality supports comparison against legacy dict outputs of the form
-            `{'spine': [...], 'non_spine': [...]}` for transitionary tests.
-
     Construction
     - `BirthDeathProcess(...)` accepts `creation_times` and `epoch_end_times`.
     - `from_age_samples(...)` builds a process from sampled spine and
@@ -81,9 +74,6 @@ class BirthDeathProcess:
         given per-epoch `birth_rates` and `death_rates` (stored internally as
         `torch.Tensor`).
     - `update_parameters`: update the model parameters after fitting.
-    - `__getitem__`: provide lightweight compatibility with legacy outputs and
-        record-style indexing (supports `'spine'`, `'non_spine'`, and column
-        access when `manuscript_records` is present).
 
     Examples
     --------
@@ -107,6 +97,7 @@ class BirthDeathProcess:
     """
 
     _NEWICK_LENGTH_EPSILON = 1e-12
+    __hash__ = None  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -704,55 +695,8 @@ class BirthDeathProcess:
         )
         return f"({root_fragment}):{root_branch_length};"
 
-    def __getitem__(self, key: Any) -> Any:
-        """Provide lightweight compatibility with the prior DataFrame/dict outputs."""
-        if isinstance(key, str):
-            if key == "spine":
-                if self._spine_ages is not None:
-                    return self._spine_ages.clone().tolist()
-                if (
-                    self._manuscript_records is not None
-                    and "is_spine" in self._manuscript_records
-                ):
-                    return (
-                        self._manuscript_records.loc[
-                            self._manuscript_records["is_spine"],
-                            "age",
-                        ]
-                        .astype(float)
-                        .tolist()
-                    )
-            if key == "non_spine":
-                if self._non_spine_ages is not None:
-                    return self._non_spine_ages.clone().tolist()
-                if (
-                    self._manuscript_records is not None
-                    and "is_spine" in self._manuscript_records
-                ):
-                    return (
-                        self._manuscript_records.loc[
-                            ~self._manuscript_records["is_spine"],
-                            "age",
-                        ]
-                        .astype(float)
-                        .tolist()
-                    )
-            if (
-                self._manuscript_records is not None
-                and key in self._manuscript_records.columns
-            ):
-                return self._manuscript_records[key]
-            raise KeyError(key)
-
-        if self._manuscript_records is not None:
-            return self._manuscript_records[key].copy()
-
-        raise TypeError(
-            "BirthDeathProcess only supports string and record-style indexing",
-        )
-
     def equals(self, other: Any) -> bool:
-        """Compare simulation objects using their manuscript records when available."""
+        """Test equality against another BirthDeathProcess instance."""
         if not isinstance(other, BirthDeathProcess):
             return False
         if (
@@ -768,14 +712,7 @@ class BirthDeathProcess:
         )
 
     def __eq__(self, other: object) -> bool:
-        """Compare against legacy dict outputs or another process instance."""
-        if isinstance(other, dict):
-            expected_keys = {"spine", "non_spine"}
-            if set(other) != expected_keys:
-                return False
-            return list(self["spine"]) == list(other["spine"]) and list(
-                self["non_spine"],
-            ) == list(other["non_spine"])
+        """Test equality against another BirthDeathProcess instance."""
         if isinstance(other, BirthDeathProcess):
             return self.equals(other)
         return NotImplemented

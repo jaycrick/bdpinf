@@ -58,7 +58,6 @@ class BayesianFitKwargs(TypedDict, total=False):
     model_config: BayesianModelConfig
     mcmc_config: BayesianMCMCConfig
     prior_config: BayesianPriorConfig
-    unbias: bool
 
 
 @dataclass(frozen=True)
@@ -275,7 +274,6 @@ def fit_birth_death_processes_bayesian(
     model_config: BayesianModelConfig | None = None,
     mcmc_config: BayesianMCMCConfig | None = None,
     prior_config: BayesianPriorConfig | None = None,
-    unbias: bool | None = None,
 ) -> dict[str, Any]:
     """Fit birth-death rates using Bayesian inference with Pyro NUTS.
 
@@ -299,17 +297,6 @@ def fit_birth_death_processes_bayesian(
 
     """
     model_config = model_config or BayesianModelConfig()
-    # Allow legacy callers to pass `unbias` directly via kwargs; override
-    # the config value if provided.
-    if unbias is not None:
-        model_config = BayesianModelConfig(
-            is_ordered=model_config.is_ordered,
-            spine_ages=model_config.spine_ages,
-            population_sizes=model_config.population_sizes,
-            initial_population=model_config.initial_population,
-            unbias=unbias,
-            rng_seed=model_config.rng_seed,
-        )
     mcmc_config = mcmc_config or BayesianMCMCConfig()
     prior_config = prior_config or BayesianPriorConfig()
 

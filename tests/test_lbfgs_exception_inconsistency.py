@@ -27,7 +27,11 @@ class TestLbfgsExceptionInconsistency:
             max_time=torch.tensor(time_span, dtype=torch.float64),
             rng=rng,
         )
-        ages = np.asarray(sampled["spine"] + sampled["non_spine"], dtype=np.float64)
+        assert sampled.spine_ages is not None and sampled.non_spine_ages is not None
+        ages = np.asarray(
+            sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
+            dtype=np.float64,
+        )
 
         start = time.perf_counter()
         res = fit_birth_death_processes(

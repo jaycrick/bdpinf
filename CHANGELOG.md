@@ -17,6 +17,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CI lint job (ruff + mypy) added to the GitHub Actions workflow
 - `CITATION.cff`, `CHANGELOG.md`, `CONTRIBUTING.md` provenance files
 
+### Removed
+
+- `BirthDeathProcess.__getitem__`: dict/DataFrame subscript interface removed;
+  use `.spine_ages`, `.non_spine_ages`, `.surviving_manuscripts`,
+  `.extinct_manuscripts`, and `.manuscript_records` properties instead
+- `BirthDeathProcess.__eq__` dict branch: comparison against `{"spine": [...],
+  "non_spine": [...]}` dicts no longer supported
+- `fit_birth_death_processes_bayesian()` `unbias` keyword argument removed;
+  pass `model_config=BayesianModelConfig(unbias=...)` instead
+
 ### Changed
 
 - All Quarto core-analysis notebooks now use `get_project_root()` instead
