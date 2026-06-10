@@ -139,13 +139,23 @@ Three submodules contain pure functions (no class state):
 
 `parameter_plots.py` — `KdePlotConfig`, `BoxPlotStyle`, `create_kde_density_plot`, `compute_boxplot_summary`, `create_parameter_box_plot` (re-exported from `analysis`).
 
-### Data pipeline: `ntvmr.py`, `data_cleaning.py`, `xml_processing.py`
+### Data pipeline: `data/`
+
+All NTVMR ETL modules live in the `inf_bp_texts/data/` subpackage. Key public API (also re-exported from `inf_bp_texts.data`):
 
 `ntvmr.py` — downloads from NTVMR API with resume support; `format_xml_files()` pretty-prints XML and strips Unicode line separators (U+2028/U+2029) for clean git diffs.
 
 `data_cleaning.py` — `examine_manuscript_xml()`, `clean_manuscript_dates()`, `generate_data_quality_report()`.
 
 `xml_processing.py` — `analyze_all_manuscripts()` batch-parses a folder for book/section content.
+
+`content_extraction.py` — `parse_biblical_books()`, `parse_content_overview()`.
+
+`pattern_analysis.py` — `analyze_section_combinations()`.
+
+`reports.py` — `generate_mismatch_report()`, `analyze_section_mismatches()`.
+
+`manuscript_analysis.py` — Typer CLI entry point wrapping `analyze_all_manuscripts`.
 
 ### Types, constants, and utilities
 
