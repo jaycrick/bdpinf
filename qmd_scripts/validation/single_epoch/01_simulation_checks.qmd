@@ -29,7 +29,7 @@ import numpy as np
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import torch
-from typing import Any, Callable
+from typing import Any
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
 from inf_bp_texts.models.math_ages import (

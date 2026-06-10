@@ -46,7 +46,7 @@ expected to be small.
 ## Setup
 
 ```{python}
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import plotly.graph_objs as go
@@ -54,12 +54,9 @@ from joblib import Parallel, delayed
 from plotly.subplots import make_subplots
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
-import torch
-
 from inf_bp_texts.analysis import (
     boundary_corrected_kde_on_support,
     proportion_not_at_upper,
-    robust_y_max,
     theoretical_age_density,
 )
 from inf_bp_texts.models.math_ages import (

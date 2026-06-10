@@ -134,8 +134,8 @@ fit_run_config = FittingRunConfig(
 # | label: run-simulations-and-fits
 replicate_rows: list[dict[str, object]] = []
 
-for regime_index, regime_config in enumerate(regime_configs):
-    for time_index, observation_time in enumerate(time_grid):
+for _regime_index, regime_config in enumerate(regime_configs):
+    for _time_index, observation_time in enumerate(time_grid):
         replicate_rows.extend(
             Parallel(n_jobs=-1)(
                 delayed(run_single_replicate)(

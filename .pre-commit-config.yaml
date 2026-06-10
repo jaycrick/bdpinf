@@ -35,7 +35,7 @@ repos:
       - id: basedpyright
         name: basedpyright
         language: system
-        entry: uv run basedpyright src/
+        entry: uv run basedpyright --project pyproject.toml src/
         pass_filenames: false
         types: [python]
         files: ^src/

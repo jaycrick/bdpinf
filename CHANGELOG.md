@@ -7,6 +7,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Standard `pyright` added as a dev dependency for type-checking `.qmd` notebook
+  cells via `lintquarto -l ruff pyright`; `pyrightconfig.json` suppresses torch-stub
+  false positives (mirroring `[tool.basedpyright]`); `basedpyright` invocations
+  updated to use `--project pyproject.toml` so the two type-checker configs remain
+  independent; per-file ruff ignores added for notebook-specific rules
+  (`D100`/`D101`/`D103`/`B018`/`B905`/`E501`/`I001`)
+
+### Fixed
+
+- Several notebooks used `sim[sim["death_time"].isna()]` DataFrame-style indexing on
+  `BirthDeathProcess` objects returned by `simulate_birth_death_process()`; replaced
+  with `.surviving_manuscripts` / `.extinct_manuscripts` properties
+  (`validation/multi_epoch/02_single_fit_debug`, `06_sensitivity_benchmark`,
+  `bayesian_multi_epoch/01–04`)
+- `seed` undefined in `validation/single_epoch/03_optimisation_framework.qmd`;
+  replaced with `NOTEBOOK_SEED`
+- Possibly-unbound `birth_ses_*` / `death_ses_*` / `birth_cis_*` / `death_cis_*`
+  variables in `core_analysis/03_multi_epoch/kashouh_multi_epoch_inference.qmd`
+  when the fit fails; `None`-initialise in the `else` branch
+- Possibly-unbound `*_constrained` posterior variables in
+  `core_analysis/04_bayesian/kashouh_family_k_bayesian_inference.qmd`; initialise in
+  the `else` branch and add `assert` guards in subsequent `if success:` blocks
+- `dict[str, object]` type annotation on `section_analysis_dict` in
+  `manuscript_data_exploration.qmd` caused a cascade of false type errors; removed
+  the annotation so `dict[str, Any]` is inferred from the function return type
+- `bins` passed as `ndarray[int_]` to `pd.cut()` in `kashouh_multi_epoch_inference.qmd`
+  (pandas-stubs expect `list[float]`); converted via `[float(b) for b in bins]`
+- `creation_times` passed as `list[Scalar]` to `BirthDeathProcess()` in
+  `kashouh_multi_epoch_inference.qmd`; converted with `.astype(float).tolist()`
+- Unused imports (`typing.Callable`, `typing.Any`, `torch`, `re`, `robust_y_max`,
+  `get_selected_attempt`, duplicate `pathlib.Path`) removed across multiple notebooks
+- Unused loop variables renamed to `_var` convention (`regime_index`, `time_index`,
+  `strategy_idx`, `section_col`, `n_mss`, `start`, `end`) across multiple notebooks
+
 - All 23 `qmd_scripts/` notebooks renamed: validation files drop their `methods_validation_[multi_epoch_][bayesian_]` prefix and gain a `<nn>_` ordering prefix; four `03_multi_epoch/` files made consistent with the `<dataset>_multi_epoch_inference.qmd` convention
 - `schemas` module with Pydantic v2 models for validated input types
 - `_paths.get_project_root()` helper (exported from the public API) for

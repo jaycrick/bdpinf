@@ -40,13 +40,13 @@ uv run pytest -k "test_name"                   # single test by name
 uv run ruff check src tests
 uv run ruff format src tests
 uv run isort src tests
-uv run basedpyright src/                       # strict mode; 0 errors enforced
+uv run basedpyright --project pyproject.toml src/  # strict mode; 0 errors enforced
 
 # All at once (pre-commit)
 uv run pre-commit run --all-files
 
 # Lint Python cells in Quarto notebooks — run whenever a .qmd file is created or updated
-uv run lintquarto -l ruff -p qmd_scripts docs -e .venv _output reference
+uv run lintquarto -l ruff pyright -p qmd_scripts docs -e .venv _output reference
 
 # Documentation — always use uv run to pick up the venv; plain `quarto` uses
 # system Python and fails with ModuleNotFoundError

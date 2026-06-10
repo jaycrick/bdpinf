@@ -33,7 +33,7 @@ uv run quarto render          # full site build
 uv run quarto preview         # live preview
 
 # Lint notebook Python cells
-uv run lintquarto -l ruff mypy -p qmd_scripts docs -e .venv _output reference
+uv run lintquarto -l ruff pyright -p qmd_scripts docs -e .venv _output reference
 ```
 
 ## Pull requests

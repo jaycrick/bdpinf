@@ -233,9 +233,11 @@ __marimo__/
 .streamlit/secrets.toml
 
 **/*.quarto_ipynb
-# qmd_scripts metadata
+# qmd_scripts metadata and lintquarto temp files
 qmd_scripts/.DS_Store
 qmd_scripts/.jupyter_cache/
+qmd_scripts/**/*.py
+docs/**/*.py
 
 # Claude Code
 .claude/settings.local.json
