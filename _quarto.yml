@@ -44,13 +44,13 @@ website:
           - text: "NTVMR Six-Epoch"
             file: qmd_scripts/core_analysis/03_multi_epoch/ntvmr_birth_death_inference.qmd
           - text: "NTVMR Multi-Initial"
-            file: qmd_scripts/core_analysis/03_multi_epoch/birth_death_inference_multi_initial_population.qmd
+            file: qmd_scripts/core_analysis/03_multi_epoch/ntvmr_multi_initial_population_inference.qmd
           - text: "Kashouh Classification"
             file: qmd_scripts/core_analysis/03_multi_epoch/kashouh_birth_death_analysis.qmd
           - text: "Likelihood Surface"
             file: qmd_scripts/core_analysis/03_multi_epoch/likelihood_single_vs_multi_epoch_comparison.qmd
           - text: "Optimizer"
-            file: qmd_scripts/core_analysis/03_multi_epoch/optimizer_comparison.qmd
+            file: qmd_scripts/core_analysis/03_multi_epoch/birth_death_optimizer_comparison.qmd
       - text: "Bayesian Analysis"
         menu:
           - text: "Kashouh FamilyK Bayesian"
