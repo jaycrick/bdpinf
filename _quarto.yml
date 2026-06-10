@@ -43,61 +43,60 @@ website:
         menu:
           - text: "NTVMR Six-Epoch"
             file: qmd_scripts/core_analysis/03_multi_epoch/ntvmr_birth_death_inference.qmd
-          - text: "NTVMR Multi-Initial"
-            file: qmd_scripts/core_analysis/03_multi_epoch/ntvmr_multi_initial_population_inference.qmd
+          - text: "NTVMR Initial Population"
+            file: qmd_scripts/core_analysis/03_multi_epoch/ntvmr_initial_population_inference.qmd
           - text: "Kashouh Classification"
-            file: qmd_scripts/core_analysis/03_multi_epoch/kashouh_birth_death_analysis.qmd
+            file: qmd_scripts/core_analysis/03_multi_epoch/kashouh_multi_epoch_inference.qmd
           - text: "Likelihood Surface"
-            file: qmd_scripts/core_analysis/03_multi_epoch/likelihood_single_vs_multi_epoch_comparison.qmd
+            file: qmd_scripts/core_analysis/03_multi_epoch/single_vs_multi_epoch_comparison.qmd
           - text: "Optimizer"
-            file: qmd_scripts/core_analysis/03_multi_epoch/birth_death_optimizer_comparison.qmd
+            file: qmd_scripts/core_analysis/03_multi_epoch/optimizer_comparison.qmd
       - text: "Bayesian Analysis"
         menu:
           - text: "Kashouh FamilyK Bayesian"
             file: qmd_scripts/core_analysis/04_bayesian/kashouh_family_k_bayesian_inference.qmd
       - text: "Validation: Single-Epoch"
         menu:
-          - text: "Asymptotic consistency"
-            file: qmd_scripts/validation/single_epoch/methods_validation_asymptotic_consistency.qmd
-          - text: "Asymptotic consistency (LLM)"
-            file: qmd_scripts/validation/single_epoch/methods_validation_asymptotic_consistency_llm.qmd
-          - text: "Subcritical splitting"
-            file: qmd_scripts/validation/single_epoch/methods_validation_subcritical_splitting.qmd
           - text: "Simulation checks"
-            file: qmd_scripts/validation/single_epoch/methods_validation_simulation_checks.qmd
-          - text: "Simulator comparison"
-            file: qmd_scripts/validation/single_epoch/methods_validation_simulator_comparison.qmd
+            file: qmd_scripts/validation/single_epoch/01_simulation_checks.qmd
           - text: "Single-fit debug"
-            file: qmd_scripts/validation/single_epoch/methods_validation_single_fit_debug.qmd
+            file: qmd_scripts/validation/single_epoch/02_single_fit_debug.qmd
           - text: "Optimisation framework"
-            file: qmd_scripts/validation/single_epoch/methods_validation_optimisation_framework.qmd
+            file: qmd_scripts/validation/single_epoch/03_optimisation_framework.qmd
+          - text: "Simulator comparison"
+            file: qmd_scripts/validation/single_epoch/05_simulator_comparison.qmd
           - text: "Bulk inference"
-            file: qmd_scripts/validation/single_epoch/methods_validation_bulk_inference.qmd
-          # Sensitivity + benchmark entry removed
+            file: qmd_scripts/validation/single_epoch/06_bulk_inference.qmd
+          - text: "Asymptotic consistency"
+            file: qmd_scripts/validation/single_epoch/07_asymptotic_consistency.qmd
+          - text: "Asymptotic consistency (LLM)"
+            file: qmd_scripts/validation/single_epoch/08_asymptotic_consistency_llm.qmd
+          - text: "Subcritical splitting"
+            file: qmd_scripts/validation/single_epoch/09_subcritical_splitting.qmd
       - text: "Validation: Multi-Epoch"
         menu:
           - text: "Simulation checks"
-            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_simulation_checks.qmd
+            file: qmd_scripts/validation/multi_epoch/01_simulation_checks.qmd
           - text: "Single-fit debug"
-            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_single_fit_debug.qmd
+            file: qmd_scripts/validation/multi_epoch/02_single_fit_debug.qmd
           - text: "Bulk inference"
-            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_bulk_inference.qmd
+            file: qmd_scripts/validation/multi_epoch/03_bulk_inference.qmd
           - text: "Bulk inference (single rate)"
-            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_bulk_inference_single_rate.qmd
-          - text: "Bulk inference (zero birth second epoch)"
-            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch.qmd
+            file: qmd_scripts/validation/multi_epoch/04_bulk_inference_single_rate.qmd
+          - text: "Bulk inference (zero birth)"
+            file: qmd_scripts/validation/multi_epoch/05_bulk_inference_zero_birth.qmd
           - text: "Sensitivity + benchmark"
-            file: qmd_scripts/validation/multi_epoch/methods_validation_multi_epoch_sensitivity_benchmark.qmd
+            file: qmd_scripts/validation/multi_epoch/06_sensitivity_benchmark.qmd
       - text: "Validation: Bayesian Multi-Epoch"
         menu:
           - text: "Simulation checks"
-            file: qmd_scripts/validation/bayesian_multi_epoch/methods_validation_multi_epoch_bayesian_simulation_checks.qmd
+            file: qmd_scripts/validation/bayesian_multi_epoch/01_simulation_checks.qmd
           - text: "Single-fit debug"
-            file: qmd_scripts/validation/bayesian_multi_epoch/methods_validation_multi_epoch_bayesian_single_fit_debug.qmd
+            file: qmd_scripts/validation/bayesian_multi_epoch/02_single_fit_debug.qmd
           - text: "Bulk inference"
-            file: qmd_scripts/validation/bayesian_multi_epoch/methods_validation_multi_epoch_bayesian_bulk_inference.qmd
+            file: qmd_scripts/validation/bayesian_multi_epoch/03_bulk_inference.qmd
           - text: "Diagnostics + benchmark"
-            file: qmd_scripts/validation/bayesian_multi_epoch/methods_validation_multi_epoch_bayesian_diagnostics_benchmark.qmd
+            file: qmd_scripts/validation/bayesian_multi_epoch/04_diagnostics_benchmark.qmd
       - text: "Docs"
         menu:
           - text: "Likelihoods"

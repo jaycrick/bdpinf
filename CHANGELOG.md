@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- All 23 `qmd_scripts/` notebooks renamed: validation files drop their `methods_validation_[multi_epoch_][bayesian_]` prefix and gain a `<nn>_` ordering prefix; four `03_multi_epoch/` files made consistent with the `<dataset>_multi_epoch_inference.qmd` convention
 - `schemas` module with Pydantic v2 models for validated input types
 - `_paths.get_project_root()` helper (exported from the public API) for
   robust path resolution in Quarto notebooks using `QUARTO_PROJECT_DIR`
