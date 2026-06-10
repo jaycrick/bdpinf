@@ -8,11 +8,11 @@ import warnings
 
 import torch
 
-from inf_bp_texts.models.mathematical_functions import (
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
-    calculate_populations_log_lik,
     calculate_spine_ages_log_lik,
 )
+from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 from inf_bp_texts.utils import ensure_1d_tensor, ensure_1d_tensors
 
 

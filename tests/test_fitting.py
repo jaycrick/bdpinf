@@ -8,9 +8,9 @@ import pandas as pd
 import pytest
 import torch
 
+from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference import uncertainty as uncertainty_module
 from inf_bp_texts.inference.fitting import (
-    ConvergenceConfig,
     OptimizerAttemptResult,
     OptimizerRunResult,
     OptimizerStrategy,

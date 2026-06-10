@@ -3,12 +3,12 @@
 import pytest
 import torch
 
-from inf_bp_texts.models.mathematical_functions import (
-    calculate_extinction_pr,
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
-    calculate_populations_log_lik,
     calculate_spine_ages_log_lik,
 )
+from inf_bp_texts.models.math_extinction import calculate_extinction_pr
+from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 
 
 class TestNumericalStability:

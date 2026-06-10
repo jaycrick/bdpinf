@@ -12,8 +12,7 @@ import numpy as np
 import torch
 
 from inf_bp_texts.analysis.spike_detection import bootstrap_seed, replicate_seed
-from inf_bp_texts.inference import fit_birth_death_processes
-from inf_bp_texts.inference.fitting import ConvergenceConfig
+from inf_bp_texts.inference import ConvergenceConfig, fit_birth_death_processes
 from inf_bp_texts.simulation import (
     simulate_bdp_ages_from_distributions,
     simulate_birth_death_process,

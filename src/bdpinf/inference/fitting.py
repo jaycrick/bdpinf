@@ -31,9 +31,6 @@ from .uncertainty import estimate_mle_covariance
 
 logger = logging.getLogger(__name__)
 
-# Re-export ConvergenceConfig so existing imports from this module continue to work.
-__all__ = ["ConvergenceConfig"]
-
 
 class FitKwargs(TypedDict, total=False):
     """TypedDict for fit_birth_death_processes kwargs."""

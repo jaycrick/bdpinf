@@ -1,13 +1,13 @@
 """Spine and non-spine manuscript age log-likelihood functions.
 
-Imports the extinction/lifetime base layer from _math_extinction.
+Imports the extinction/lifetime base layer from math_extinction.
 """
 
 from typing import cast
 
 import torch
 
-from inf_bp_texts.models._math_extinction import (
+from inf_bp_texts.models.math_extinction import (
     calculate_log_lik_initial_lifetimes_given_extinction,
     calculate_log_lik_initial_lifetimes_given_non_extinction,
 )

@@ -21,7 +21,7 @@ import pandas as pd
 import plotly.graph_objs as go
 
 from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.models.mathematical_functions import calculate_extinction_pr
+from inf_bp_texts.models.math_extinction import calculate_extinction_pr
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,
     apply_tufte_axes,

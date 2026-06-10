@@ -1,13 +1,13 @@
 """Population count log-likelihood functions.
 
-Imports the extinction base layer from _math_extinction.
+Imports the extinction base layer from math_extinction.
 """
 
 from typing import cast
 
 import torch
 
-from inf_bp_texts.models._math_extinction import (
+from inf_bp_texts.models.math_extinction import (
     _pr_extinction_numerator,
     calculate_extinction_pr,
 )

@@ -43,7 +43,7 @@ from inf_bp_texts.analysis.spike_detection import (
     select_extreme_replicates,
     select_max_ci_times,
 )
-from inf_bp_texts.inference.fitting import ConvergenceConfig
+from inf_bp_texts.inference import ConvergenceConfig
 
 from inf_bp_texts.analysis.asymptotic_consistency import (
     FittingRunConfig,

@@ -4,6 +4,7 @@ This package contains likelihood calculation, optimization, and fitting utilitie
 for birth-death process models.
 """
 
+from ._fit_types import ConvergenceConfig
 from .bayesian import (
     BayesianMCMCConfig,
     BayesianModelConfig,
@@ -28,6 +29,7 @@ from .uncertainty import (
 )
 
 __all__ = [
+    "ConvergenceConfig",
     "BayesianMCMCConfig",
     "BayesianModelConfig",
     "BayesianPriorConfig",

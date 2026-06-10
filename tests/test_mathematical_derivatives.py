@@ -4,17 +4,17 @@ import pytest
 import torch
 from numpy.testing import assert_allclose
 
+from inf_bp_texts.models.math_ages import (
+    calculate_ages_log_lik,
+    calculate_non_spine_ages_log_lik,
+    calculate_spine_ages_log_lik,
+)
+from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 from inf_bp_texts.models.mathematical_derivatives import (
     calculate_ages_log_lik_derivatives,
     calculate_non_spine_ages_log_lik_derivatives,
     calculate_populations_log_lik_derivatives,
     calculate_spine_ages_log_lik_derivatives,
-)
-from inf_bp_texts.models.mathematical_functions import (
-    calculate_ages_log_lik,
-    calculate_non_spine_ages_log_lik,
-    calculate_populations_log_lik,
-    calculate_spine_ages_log_lik,
 )
 
 

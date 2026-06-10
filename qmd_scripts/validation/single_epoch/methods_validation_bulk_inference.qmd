@@ -42,7 +42,8 @@ from inf_bp_texts.analysis import (
     iqr_plotting_subset,
     summarize_fit_success,
 )
-from inf_bp_texts.inference.fitting import ConvergenceConfig, fit_birth_death_processes
+from inf_bp_texts.inference import ConvergenceConfig
+from inf_bp_texts.inference.fitting import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.visualization import save_figure
 from inf_bp_texts.visualization.plotting import (

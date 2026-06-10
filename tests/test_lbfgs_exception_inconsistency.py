@@ -5,7 +5,8 @@ import time
 import numpy as np
 import torch
 
-from inf_bp_texts.inference.fitting import ConvergenceConfig, fit_birth_death_processes
+from inf_bp_texts.inference import ConvergenceConfig
+from inf_bp_texts.inference.fitting import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 
 

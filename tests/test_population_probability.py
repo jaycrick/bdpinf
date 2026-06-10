@@ -6,7 +6,7 @@ import pytest
 import torch
 from numpy.testing import assert_allclose
 
-from inf_bp_texts.models.mathematical_functions import calculate_extinction_pr
+from inf_bp_texts.models.math_extinction import calculate_extinction_pr
 from src.inf_bp_texts.inference.likelihood import log_likelihood
 from src.inf_bp_texts.models import BirthDeathProcess, calculate_populations_log_lik
 

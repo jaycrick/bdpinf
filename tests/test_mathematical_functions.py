@@ -1,4 +1,4 @@
-"""Comprehensive test suite for mathematical_functions.py."""
+"""Tests for the math_extinction, math_ages, and math_populations modules."""
 
 import math
 
@@ -7,21 +7,24 @@ import scipy
 import torch
 from torch.testing import assert_close
 
-# Import private functions for direct testing
-from inf_bp_texts.models.mathematical_functions import (
-    _integrand_surv_from_weighted_birth_time,
-    _population_geometric_parameter,
-    _pr_extinction_numerator,
+from inf_bp_texts.models.math_ages import (
     _reverse_time,
     calculate_ages_log_lik,
+    calculate_non_spine_ages_log_lik,
+    calculate_spine_ages_log_lik,
+)
+from inf_bp_texts.models.math_extinction import (
+    _integrand_surv_from_weighted_birth_time,
+    _pr_extinction_numerator,
     calculate_extinction_pr,
     calculate_log_lik_initial_lifetimes_given_extinction,
     calculate_log_lik_initial_lifetimes_given_non_extinction,
     calculate_log_lik_lifetimes,
     calculate_log_pr_extinction_given_initial_lifetimes,
-    calculate_non_spine_ages_log_lik,
+)
+from inf_bp_texts.models.math_populations import (
+    _population_geometric_parameter,
     calculate_populations_log_lik,
-    calculate_spine_ages_log_lik,
 )
 
 """

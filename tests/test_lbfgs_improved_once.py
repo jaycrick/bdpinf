@@ -2,10 +2,8 @@
 
 import torch
 
-from inf_bp_texts.inference.fitting import (
-    ConvergenceConfig,
-    fit_birth_death_processes,
-)
+from inf_bp_texts.inference import ConvergenceConfig
+from inf_bp_texts.inference.fitting import fit_birth_death_processes
 
 
 def _make_simple_ages():

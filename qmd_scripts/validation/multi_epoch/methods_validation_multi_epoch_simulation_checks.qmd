@@ -40,12 +40,12 @@ from inf_bp_texts.analysis import (
     robust_y_max,
     theoretical_age_density,
 )
-from inf_bp_texts.models.mathematical_functions import (
-    calculate_extinction_pr,
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
-    calculate_populations_log_lik,
     calculate_spine_ages_log_lik,
 )
+from inf_bp_texts.models.math_extinction import calculate_extinction_pr
+from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 from inf_bp_texts.simulation import simulate_birth_death_process
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,

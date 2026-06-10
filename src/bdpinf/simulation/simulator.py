@@ -57,12 +57,12 @@ import torch
 from numpy.typing import NDArray
 
 from inf_bp_texts.models.birth_death_process import BirthDeathProcess
-from inf_bp_texts.models.mathematical_functions import (
-    _population_geometric_parameter,
-    calculate_extinction_pr,
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
+from inf_bp_texts.models.math_extinction import calculate_extinction_pr
+from inf_bp_texts.models.math_populations import _population_geometric_parameter
 
 MAX_REJECTION_ATTEMPTS = 200_000
 MIN_CONTOUR_PROCESS_LENGTH = 3

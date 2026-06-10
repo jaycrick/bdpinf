@@ -20,7 +20,7 @@ from inf_bp_texts.analysis import (
     theoretical_age_density,
 )
 from inf_bp_texts.analysis import validation_helpers as vh
-from inf_bp_texts.models.mathematical_functions import calculate_non_spine_ages_log_lik
+from inf_bp_texts.models.math_ages import calculate_non_spine_ages_log_lik
 
 
 class TestValidationHelpers:

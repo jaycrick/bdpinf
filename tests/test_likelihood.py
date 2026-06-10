@@ -8,7 +8,7 @@ from inf_bp_texts.inference import (
     calculate_unknown_spine_mixture_birth_density,
     likelihood,
 )
-from inf_bp_texts.models.mathematical_functions import (
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )

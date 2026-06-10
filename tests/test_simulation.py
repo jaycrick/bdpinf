@@ -7,7 +7,7 @@ import torch
 
 import inf_bp_texts.simulation.simulator as simulator_module
 from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.models.mathematical_functions import (
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )

@@ -141,8 +141,6 @@ class TestSubject:
 
 ### Types, constants, and utilities
 
-`types.py` — Pydantic models `ValidBookSet`, `ValidSectionSet` for validated book/section sets.
-
 `constants.py` — canonical book ordering, German abbreviations, and section patterns used throughout the XML layer.
 
 `schemas.py` — `ValidationConfig` Pydantic model (also available from `models.validation`) controlling which validation checks are enforced.
