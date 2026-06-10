@@ -67,8 +67,8 @@ class BirthDeathProcess:
         (useful when simulators return detailed records including extinct
         manuscripts).
 
-    Methods
-    -------
+    Key methods
+
     - `to_newick`: export the full genealogy as a strict Newick-format tree
         string (requires `manuscript_records` with `manuscript_id` and
         `parent_id`).
