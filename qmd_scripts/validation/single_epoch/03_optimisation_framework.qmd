@@ -95,7 +95,7 @@ base_fit_kwargs = dict(
     times=float(time_span),
     is_ordered=True,
     perturb_initial_params_std=0.0,
-    random_seed=seed,
+    random_seed=NOTEBOOK_SEED,
     unbias=True,
 )
 

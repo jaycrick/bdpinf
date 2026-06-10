@@ -45,15 +45,18 @@ for i in range(num_sims):
     )
     simulated_processes.append(sim)
 
-    alive = sim[sim["death_time"].isna()].sort_values("is_spine", ascending=False)
+    alive = sim.surviving_manuscripts
+    assert alive is not None
+    alive = alive.sort_values("is_spine", ascending=False)
     ages = (times[-1] - alive["creation_time"].to_numpy(dtype=float)).astype(float)
 
+    extinct = sim.extinct_manuscripts
     rows.append(
         {
             "replicate": i,
             "n_total": int(len(sim)),
             "n_survivors": int(len(alive)),
-            "n_deaths": int(sim["death_time"].notna().sum()),
+            "n_deaths": int(len(extinct)) if extinct is not None else 0,
             "mean_age": float(np.mean(ages)) if len(ages) else np.nan,
         }
     )

@@ -61,7 +61,9 @@ for run in range(num_runs):
         times=times,
         random_seed=3000 + run,
     )
-    alive = sim[sim["death_time"].isna()].sort_values("is_spine", ascending=False)
+    alive = sim.surviving_manuscripts
+    assert alive is not None
+    alive = alive.sort_values("is_spine", ascending=False)
     ages = (times[-1] - alive["creation_time"].to_numpy(dtype=float)).astype(float)
 
     start = time.perf_counter()

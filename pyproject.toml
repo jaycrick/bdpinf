@@ -36,6 +36,7 @@ dev = [
     "pandas-stubs>=3.0.0.260204",
     "plotly-stubs>=0.1.2",
     "pre-commit>=4.5.1",
+    "pyright>=1.1.400",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "quarto>=0.1.0",
@@ -88,6 +89,26 @@ convention = "numpy"
     "D101", # test classes are self-documenting via their names
     "D102", # test methods are self-documenting via their names
     "E501", # test strings and fixture data are allowed to be long
+]
+# lintquarto extracts qmd cells to temporary .py files in the same directory.
+# These rules are false positives or impractical to enforce in notebook code:
+"qmd_scripts/**" = [
+    "D100", # notebooks have no module-level docstring
+    "D101", # notebook TypedDict/dataclasses don't need class docstrings
+    "D103", # notebook helper functions don't need docstrings
+    "B018", # bare last-line expressions are intentional display outputs
+    "B905", # zip() strict= is impractical to require in analysis notebooks
+    "E501", # analysis cells routinely have long lines
+    "I001", # import ordering across cells is flexible by design
+]
+"docs/**" = [
+    "D100",
+    "D101",
+    "D103",
+    "B018",
+    "B905",
+    "E501",
+    "I001",
 ]
 
 [tool.toml-sort]

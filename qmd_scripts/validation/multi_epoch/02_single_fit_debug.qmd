@@ -40,7 +40,9 @@ sim = simulate_birth_death_process(
     times=times,
     random_seed=42,
 )
-alive = sim[sim["death_time"].isna()].sort_values("is_spine", ascending=False)
+alive = sim.surviving_manuscripts
+assert alive is not None
+alive = alive.sort_values("is_spine", ascending=False)
 ages = (times[-1] - alive["creation_time"].to_numpy(dtype=np.float64)).astype(
     np.float64
 )

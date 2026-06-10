@@ -56,7 +56,9 @@ for cfg_idx, cfg in enumerate(configs):
 
     ages_list = []
     for sim in sims:
-        alive = sim[sim["death_time"].isna()].sort_values("is_spine", ascending=False)
+        alive = sim.surviving_manuscripts
+        assert alive is not None
+        alive = alive.sort_values("is_spine", ascending=False)
         ages_list.append(
             (times[-1] - alive["creation_time"].to_numpy(dtype=np.float64)).astype(
                 np.float64
