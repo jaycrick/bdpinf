@@ -102,10 +102,10 @@ class TestSubject:
 
 ### Mathematical layer: `models/`
 
-`mathematical_functions.py` is a thin re-export façade over three private submodules (pure functions, no class state):
-- `_math_extinction.py` — `calculate_extinction_pr()`: probability population dies by time T
-- `_math_ages.py` — `calculate_spine_ages_log_lik()`, `calculate_non_spine_ages_log_lik()`, `_reverse_time()`
-- `_math_populations.py` — `calculate_populations_log_lik()`: probability of observed population counts
+Three submodules contain pure functions (no class state):
+- `math_extinction.py` — `calculate_extinction_pr()`: probability population dies by time T
+- `math_ages.py` — `calculate_spine_ages_log_lik()`, `calculate_non_spine_ages_log_lik()`, `_reverse_time()`
+- `math_populations.py` — `calculate_populations_log_lik()`: probability of observed population counts
 
 `_reverse_time()` — **time-reversal trick**: transforms multi-epoch non-spine ages into an extinction-conditioned backward-time problem, avoiding exponential complexity in the number of epochs.
 
@@ -119,7 +119,7 @@ class TestSubject:
 - `fit_birth_death_processes()` — MLE via PyTorch optimizers (LBFGS, Adam); supports initial perturbation for robustness and convergence detection with multi-restart
 - `ParameterConstraints` dataclass — fixed parameters (index → value) and equality groups (lists of indices forced equal); validated before optimization to reduce parameter space
 - `estimate_mle_covariance()` — covariance via numerical Hessian inversion
-- Optimizer internals are split across `_fit_types.py` (shared dataclasses: `ConvergenceConfig`, `OptimizerStrategy`, etc.) and `_optimizer_runners.py` (`_run_lbfgs_optimizer`, `_run_first_order_optimizer`). `ConvergenceConfig` is re-exported from `fitting.py` for backward compatibility.
+- Optimizer internals are split across `_fit_types.py` (shared dataclasses: `ConvergenceConfig`, `OptimizerStrategy`, etc.) and `_optimizer_runners.py` (`_run_lbfgs_optimizer`, `_run_first_order_optimizer`). `ConvergenceConfig` is exported from `inference/__init__.py`.
 
 `likelihood.py` — `log_likelihood()` / `negative_log_likelihood()` wrappers that handle log-scale vs. positive-scale parameters and marginalize over unknown spine positions.
 
@@ -129,7 +129,15 @@ class TestSubject:
 
 `simulator.py` — `simulate_birth_death_process()` runs a Gillespie algorithm with time-varying rates; `predict_manuscript_counts()` predicts future population given current observations via rejection sampling.
 
-`splitting.py` — Multilevel splitting and Fleming–Viot particle methods for rare-event simulation (estimating small extinction probabilities).
+`splitting.py` — Multilevel splitting for rare-event simulation (estimating small extinction probabilities). Plotting functions for splitting results live in `visualization/splitting_plots.py`.
+
+### Visualization layer: `visualization/`
+
+`plotting.py` — core Plotly helpers: `save_figure`, `save_multi_epoch_*_figure`, `apply_professional_styling`, `apply_tufte_axes`, `plot_parameter_consistency`.
+
+`splitting_plots.py` — `plot_conditioned_trajectories`, `plot_empirical_population_mean`, `plot_level_survival_probabilities` (re-exported from `simulation`).
+
+`parameter_plots.py` — `KdePlotConfig`, `BoxPlotStyle`, `create_kde_density_plot`, `compute_boxplot_summary`, `create_parameter_box_plot` (re-exported from `analysis`).
 
 ### Data pipeline: `ntvmr.py`, `data_cleaning.py`, `xml_processing.py`
 
@@ -153,7 +161,7 @@ class TestSubject:
 
 1. **PyTorch everywhere**: All rates and ages are `torch.Tensor` (float64) — enables gradient-based optimization and ensures numerical precision throughout the pipeline.
 
-2. **Pure math functions, not methods**: `mathematical_functions.py` contains only free functions with no class state, keeping the math testable and composable independently of `BirthDeathProcess`.
+2. **Pure math functions, not methods**: `math_extinction.py`, `math_ages.py`, `math_populations.py` contain only free functions with no class state, keeping the math testable and composable independently of `BirthDeathProcess`.
 
 3. **Time-reversal for multi-epoch efficiency**: The non-spine likelihood is reformulated as an extinction-conditioned backward-time integral. This avoids summing over all possible genealogy orderings (exponential in epoch count) and reduces it to a single pass.
 

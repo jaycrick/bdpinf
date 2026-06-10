@@ -1,12 +1,15 @@
 """Analysis helpers for notebook and report workflows."""
 
-from .single_epoch import (
+from inf_bp_texts.visualization.parameter_plots import (
     BoxPlotStyle,
     KdePlotConfig,
     compute_boxplot_summary,
-    compute_parameter_summary,
     create_kde_density_plot,
     create_parameter_box_plot,
+)
+
+from .single_epoch import (
+    compute_parameter_summary,
     extract_alive_ages,
     extract_rate_arrays,
     summarize_fit_success,
