@@ -8,11 +8,11 @@ import warnings
 
 import torch
 
-from inf_bp_texts.models.mathematical_functions import (
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
-    calculate_populations_log_lik,
     calculate_spine_ages_log_lik,
 )
+from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 from inf_bp_texts.utils import ensure_1d_tensor, ensure_1d_tensors
 
 
@@ -44,7 +44,7 @@ def log_likelihood(
             (special conditional ages).
 
     Behavior and notes
-    - If log_scale_params is True, birth_rate and death_rate are interpreted as log(λ)
+    - If log_scale_params is True, birth_rates and death_rates are interpreted as log(λ)
         and log(μ); otherwise they are interpreted on the original (positive) scale.
     - If ns is None, the function assumes each provided age corresponds to
         one individual (i.e., a count of 1 per age) and constructs ns accordingly.
@@ -73,9 +73,9 @@ def log_likelihood(
 
     Parameters
     ----------
-    birth_rate : float | torch.Tensor
+    birth_rates : float | torch.Tensor
         Birth rate parameter λ > 0, or log(λ) if log_scale_params is True.
-    death_rate : float | torch.Tensor
+    death_rates : float | torch.Tensor
         Death rate parameter μ > 0, or log(μ) if log_scale_params is True.
     ages : torch.Tensor | float
         Observed ages of manuscripts. A scalar is treated as a single-element tensor.
@@ -98,7 +98,7 @@ def log_likelihood(
         ordinary observations. Cannot be used together with spine_ages. When False
         and spine_ages is None, the unknown-spine marginal likelihood is used.
     log_scale_params : bool, optional
-        If True, treat birth_rate and death_rate as log-scale parameters.
+        If True, treat birth_rates and death_rates as log-scale parameters.
 
     Returns
     -------
@@ -194,6 +194,7 @@ def log_likelihood(
                 "Sum of the populations exceeds the number of ages provided; "
                 "not all ages have been provided (age information is partial).",
                 UserWarning,
+                stacklevel=2,
             )
     else:
         ns = torch.tensor([num_ages], dtype=torch.int64)

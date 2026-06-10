@@ -20,6 +20,8 @@ Example: `:zap: Add users endpoint, fixes #27`
 
 **Commit granularity:** Prefer bundled commits that group related code, tests, and docs into a single commit. Choose the prefix that reflects the commit's primary concern. Do not split a feature into separate per-prefix commits (e.g. one `:zap:` for the code, one `:cop:` for its tests, one `:abc:` for its docs) unless those pieces genuinely belong in separate commits for other reasons.
 
+**CHANGELOG.md**: Update `CHANGELOG.md` at the repo root whenever a commit adds a new feature, changes public API, or fixes a user-visible bug. Add a bullet under `## [Unreleased]` — one line describing the change and which module it affects. No need to touch `CHANGELOG.md` for pure tooling/CI changes (`:tv:`) or test-only commits (`:cop:`).
+
 ## Commands
 
 ```bash
@@ -30,19 +32,21 @@ uv sync --all-groups
 uv run pytest
 uv run pytest tests/test_fitting.py -v        # single file
 uv run pytest -m slow                          # run slow tests only
+uv run pytest -m regression                    # golden-value regression tests
+uv run pytest -m recovery                      # simulate-then-fit recovery tests (implies slow)
 uv run pytest -k "test_name"                   # single test by name
 
 # Linting and formatting
 uv run ruff check src tests
 uv run ruff format src tests
 uv run isort src tests
-uv run mypy src/                               # strict mode
+uv run basedpyright src/                       # strict mode; 0 errors enforced
 
 # All at once (pre-commit)
 uv run pre-commit run --all-files
 
 # Lint Python cells in Quarto notebooks — run whenever a .qmd file is created or updated
-uv run lintquarto -l ruff mypy -p qmd_scripts docs -e .venv _output reference
+uv run lintquarto -l ruff -p qmd_scripts docs -e .venv _output reference
 
 # Documentation — always use uv run to pick up the venv; plain `quarto` uses
 # system Python and fails with ModuleNotFoundError
@@ -97,13 +101,16 @@ class TestSubject:
 
 ### Mathematical layer: `models/`
 
-`mathematical_functions.py` (pure functions, no class state):
-- `calculate_extinction_pr()` — probability population dies by time T
-- `calculate_spine_ages_log_lik()`, `calculate_non_spine_ages_log_lik()` — per-age densities
-- `calculate_populations_log_lik()` — probability of observed population counts
-- `_reverse_time()` — **time-reversal trick**: transforms multi-epoch non-spine ages into an extinction-conditioned backward-time problem, avoiding exponential complexity in the number of epochs
+Three submodules contain pure functions (no class state):
+- `math_extinction.py` — `calculate_extinction_pr()`: probability population dies by time T
+- `math_ages.py` — `calculate_spine_ages_log_lik()`, `calculate_non_spine_ages_log_lik()`, `_reverse_time()`
+- `math_populations.py` — `calculate_populations_log_lik()`: probability of observed population counts
+
+`_reverse_time()` — **time-reversal trick**: transforms multi-epoch non-spine ages into an extinction-conditioned backward-time problem, avoiding exponential complexity in the number of epochs.
 
 `mathematical_derivatives.py` — numerical derivatives used during optimization.
+
+`validation.py` — `normalize_and_validate_inputs()` converts scalars/arrays to float64 tensors and enforces shape, range, and monotonicity constraints. `ValidationConfig` (Pydantic) controls which checks run.
 
 ### Inference layer: `inference/`
 
@@ -111,6 +118,7 @@ class TestSubject:
 - `fit_birth_death_processes()` — MLE via PyTorch optimizers (LBFGS, Adam); supports initial perturbation for robustness and convergence detection with multi-restart
 - `ParameterConstraints` dataclass — fixed parameters (index → value) and equality groups (lists of indices forced equal); validated before optimization to reduce parameter space
 - `estimate_mle_covariance()` — covariance via numerical Hessian inversion
+- Optimizer internals are split across `_fit_types.py` (shared dataclasses: `ConvergenceConfig`, `OptimizerStrategy`, etc.) and `_optimizer_runners.py` (`_run_lbfgs_optimizer`, `_run_first_order_optimizer`). `ConvergenceConfig` is exported from `inference/__init__.py`.
 
 `likelihood.py` — `log_likelihood()` / `negative_log_likelihood()` wrappers that handle log-scale vs. positive-scale parameters and marginalize over unknown spine positions.
 
@@ -120,9 +128,19 @@ class TestSubject:
 
 `simulator.py` — `simulate_birth_death_process()` runs a Gillespie algorithm with time-varying rates; `predict_manuscript_counts()` predicts future population given current observations via rejection sampling.
 
-`splitting.py` — Multilevel splitting and Fleming–Viot particle methods for rare-event simulation (estimating small extinction probabilities).
+`splitting.py` — Multilevel splitting for rare-event simulation (estimating small extinction probabilities). Plotting functions for splitting results live in `visualization/splitting_plots.py`.
 
-### Data pipeline: `ntvmr.py`, `data_cleaning.py`, `xml_processing.py`
+### Visualization layer: `visualization/`
+
+`plotting.py` — core Plotly helpers: `save_figure`, `save_multi_epoch_*_figure`, `apply_professional_styling`, `apply_tufte_axes`, `plot_parameter_consistency`.
+
+`splitting_plots.py` — `plot_conditioned_trajectories`, `plot_empirical_population_mean`, `plot_level_survival_probabilities` (re-exported from `simulation`).
+
+`parameter_plots.py` — `KdePlotConfig`, `BoxPlotStyle`, `create_kde_density_plot`, `compute_boxplot_summary`, `create_parameter_box_plot` (re-exported from `analysis`).
+
+### Data pipeline: `data/`
+
+All NTVMR ETL modules live in the `inf_bp_texts/data/` subpackage. Key public API (also re-exported from `inf_bp_texts.data`):
 
 `ntvmr.py` — downloads from NTVMR API with resume support; `format_xml_files()` pretty-prints XML and strips Unicode line separators (U+2028/U+2029) for clean git diffs.
 
@@ -130,17 +148,29 @@ class TestSubject:
 
 `xml_processing.py` — `analyze_all_manuscripts()` batch-parses a folder for book/section content.
 
-### Types and constants
+`content_extraction.py` — `parse_biblical_books()`, `parse_content_overview()`.
 
-`types.py` — Pydantic models `ValidBookSet`, `ValidSectionSet` for validated book/section sets.
+`pattern_analysis.py` — `analyze_section_combinations()`.
+
+`reports.py` — `generate_mismatch_report()`, `analyze_section_mismatches()`.
+
+`manuscript_analysis.py` — Typer CLI entry point wrapping `analyze_all_manuscripts`.
+
+### Types, constants, and utilities
 
 `constants.py` — canonical book ordering, German abbreviations, and section patterns used throughout the XML layer.
+
+`schemas.py` — `ValidationConfig` Pydantic model (also available from `models.validation`) controlling which validation checks are enforced.
+
+`_paths.py` — `get_project_root()` (exported from `inf_bp_texts` top-level): returns the Quarto project root via `$QUARTO_PROJECT_DIR` env var, or walks up from `cwd` to find `_quarto.yml`. Use this in notebooks and scripts instead of hardcoded relative paths.
+
+**CLI**: The package installs an `inf-bp-texts` command (entry point: `inf_bp_texts.cli:main`) via `[project.scripts]` in `pyproject.toml`.
 
 ## Key design decisions
 
 1. **PyTorch everywhere**: All rates and ages are `torch.Tensor` (float64) — enables gradient-based optimization and ensures numerical precision throughout the pipeline.
 
-2. **Pure math functions, not methods**: `mathematical_functions.py` contains only free functions with no class state, keeping the math testable and composable independently of `BirthDeathProcess`.
+2. **Pure math functions, not methods**: `math_extinction.py`, `math_ages.py`, `math_populations.py` contain only free functions with no class state, keeping the math testable and composable independently of `BirthDeathProcess`.
 
 3. **Time-reversal for multi-epoch efficiency**: The non-spine likelihood is reformulated as an extinction-conditioned backward-time integral. This avoids summing over all possible genealogy orderings (exponential in epoch count) and reduces it to a single pass.
 
@@ -166,11 +196,11 @@ class TestSubject:
 |------|---------|-------------|
 | `qmd_scripts/core_analysis/01_data_exploration/` | EDA on real manuscript data | `<dataset>_data_exploration.qmd` |
 | `qmd_scripts/core_analysis/02_single_epoch/` | MLE fits to real data, single-epoch | `<dataset>_single_epoch_inference.qmd` |
-| `qmd_scripts/core_analysis/03_multi_epoch/` | MLE fits to real data, multi-epoch | `<dataset>_<topic>.qmd` |
+| `qmd_scripts/core_analysis/03_multi_epoch/` | MLE fits to real data, multi-epoch | `<dataset>_multi_epoch_inference.qmd`; topic-only (no dataset) for methods comparisons |
 | `qmd_scripts/core_analysis/04_bayesian/` | Bayesian inference on real data | excluded from default render (slow) |
-| `qmd_scripts/validation/single_epoch/` | Recover known params from synthetic data | `methods_validation_<topic>.qmd` |
-| `qmd_scripts/validation/multi_epoch/` | Same, multi-epoch | `methods_validation_multi_epoch_<topic>.qmd` |
-| `qmd_scripts/validation/bayesian_multi_epoch/` | Bayesian validation | excluded from default render (slow) |
+| `qmd_scripts/validation/single_epoch/` | Recover known params from synthetic data | `<nn>_<topic>.qmd` (e.g. `01_simulation_checks.qmd`) |
+| `qmd_scripts/validation/multi_epoch/` | Same, multi-epoch | `<nn>_<topic>.qmd` (e.g. `03_bulk_inference.qmd`) |
+| `qmd_scripts/validation/bayesian_multi_epoch/` | Bayesian validation | `<nn>_<topic>.qmd`; excluded from default render (slow) |
 | `docs/*.qmd` | Prose/math documentation | no executable cells |
 | `reference/*.qmd` | API reference | **auto-generated by quartodoc — do not hand-edit** |
 
@@ -183,4 +213,5 @@ Every executable notebook follows this structure:
 - **Cell options**: hash-pipe syntax inside code fences — `# | label:`, `# | cache: false`, `# | echo: false`, `# | include: false`.
 - **Import noqa**: import cells open with `# ruff: noqa: E402` (imports are not at the top of the Python file, which ruff would flag).
 - **Keep logic in `src/`**: cells import from `inf_bp_texts`; heavy computation belongs in the package, not inline.
-- **Figures**: saved via `save_figure` from `inf_bp_texts.visualization` into `figures/`, resolved as `figures_dir = Path("../../../figures")` from a three-level-deep notebook.
+- **Figures**: saved via `save_figure` from `inf_bp_texts.visualization` into `figures/`, resolved as `figures_dir = get_project_root() / "figures"` (import `get_project_root` from `inf_bp_texts`). Do not use hardcoded `Path("../../../figures")`.
+- **Design docs**: architecture/audit documents live in `docs/design/` (not the repo root).

@@ -91,9 +91,12 @@ print(f"Simulations: {len(list_of_ages)}")
 import torch
 from collections import Counter
 from inf_bp_texts.analysis.single_epoch import summarize_fit_success
-from inf_bp_texts.analysis.validation_helpers import FitModelConfig
-from inf_bp_texts.analysis.validation_helpers import first_failed_fits
-from inf_bp_texts.analysis.validation_helpers import iqr_plotting_subset
+from inf_bp_texts.analysis.validation_helpers import (
+    FitModelConfig,
+    build_hist_bins,
+    first_failed_fits,
+    iqr_plotting_subset,
+)
 from inf_bp_texts.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
@@ -443,20 +446,6 @@ if (
 ## Stacked Histograms for Epoch 1 Birth and Shared Death
 
 ```{python}
-def build_hist_bins(
-    primary_values: list[float], secondary_values: list[float], bins: int = 30
-) -> dict[str, float]:
-    combined = np.concatenate(
-        [np.asarray(primary_values), np.asarray(secondary_values)]
-    )
-    if combined.size == 0:
-        return dict(start=0.0, end=1.0, size=1.0 / bins)
-
-    max_x = float(np.max(combined))
-    upper = max_x * 1.05 if max_x > 0 else 1.0
-    return dict(start=0.0, end=upper, size=upper / bins)
-
-
 birth_bins = build_hist_bins(
     non_boundary_plotting_data["birth_rate"], boundary_plotting_data["birth_rate"]  # type: ignore[arg-type]
 )

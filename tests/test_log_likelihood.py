@@ -5,10 +5,8 @@ from numpy.testing import assert_allclose
 
 from inf_bp_texts.inference.likelihood import log_likelihood, negative_log_likelihood
 from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.models.mathematical_functions import (
-    calculate_ages_log_lik,
-    calculate_populations_log_lik,
-)
+from inf_bp_texts.models.math_ages import calculate_ages_log_lik
+from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 
 
 def _as_float(value: object) -> float:

@@ -3,7 +3,8 @@
 This module contains functions for simulating manuscript data from birth-death
 processes and making predictions using fitted models.
 
-Examples:
+Examples
+--------
     Simulating manuscript creation and survival with constant rates:
 
     >>> import numpy as np
@@ -56,12 +57,12 @@ import torch
 from numpy.typing import NDArray
 
 from inf_bp_texts.models.birth_death_process import BirthDeathProcess
-from inf_bp_texts.models.mathematical_functions import (
-    _population_geometric_parameter,
-    calculate_extinction_pr,
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
+from inf_bp_texts.models.math_extinction import calculate_extinction_pr
+from inf_bp_texts.models.math_populations import population_geometric_parameter
 
 MAX_REJECTION_ATTEMPTS = 200_000
 MIN_CONTOUR_PROCESS_LENGTH = 3
@@ -639,7 +640,8 @@ def simulate_birth_death_process(
             birth_rates and death_rates if arrays are provided.
         random_seed: Random seed for reproducibility
 
-    Returns:
+    Returns
+    -------
         BirthDeathProcess instance containing the simulated manuscript records
 
     """
@@ -670,12 +672,12 @@ def simulate_birth_death_process(
     # Base RNG used to derive per-attempt seeds for reproducibility
     base_seed_rng = np.random.default_rng(random_seed)
 
-    if ensure_non_extinct and (not isinstance(max_retries, int) or max_retries < 0):
+    if ensure_non_extinct and max_retries < 0:
         raise ValueError("max_retries must be a non-negative integer")
 
     attempts_allowed = max_retries if ensure_non_extinct else 0
     # We allow (attempts_allowed + 1) attempts: initial + retries
-    for attempt in range(attempts_allowed + 1):
+    for _attempt in range(attempts_allowed + 1):
         # Create a per-attempt RNG so retries produce different draws but are
         # reproducible when `random_seed` is provided.
         if random_seed is None:
@@ -763,7 +765,7 @@ def simulate_birth_death_process(
             else:
                 # Death event
                 death_idx = rng.integers(0, len(manuscripts_alive))
-                creation_time, dead_id = manuscripts_alive.pop(death_idx)
+                _, dead_id = manuscripts_alive.pop(death_idx)
 
                 # Update the record
                 for manuscript in all_manuscripts:
@@ -846,10 +848,12 @@ def simulate_bdp_ages_from_distributions(
         ensure_non_extinct: If True, force a non-zero population draw by sampling
             from the conditional geometric component only.
 
-    Returns:
+    Returns
+    -------
         BirthDeathProcess instance containing the sampled age groups.
 
-    Raises:
+    Raises
+    ------
         ValueError: If rates or max_time are not positive, or tensors are not scalar.
         RuntimeError: If rejection sampling cannot find an accepted draw.
 
@@ -872,13 +876,13 @@ def simulate_bdp_ages_from_distributions(
     pop_size: int
     if ensure_non_extinct:
         pop_size = rng.geometric(
-            _population_geometric_parameter(birth_rate, death_rate, max_time).item(),
+            population_geometric_parameter(birth_rate, death_rate, max_time).item(),
         )
     elif rng.uniform() < calculate_extinction_pr(birth_rate, death_rate, max_time):
         pop_size = 0
     else:
         pop_size = rng.geometric(
-            _population_geometric_parameter(
+            population_geometric_parameter(
                 birth_rate,
                 death_rate,
                 max_time,

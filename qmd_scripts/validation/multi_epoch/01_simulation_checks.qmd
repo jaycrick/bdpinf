@@ -34,13 +34,18 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 import torch
 
-from inf_bp_texts.analysis import boundary_corrected_kde_on_support
-from inf_bp_texts.models.mathematical_functions import (
-    calculate_extinction_pr,
+from inf_bp_texts.analysis import (
+    boundary_corrected_kde_on_support,
+    proportion_not_at_upper,
+    robust_y_max,
+    theoretical_age_density,
+)
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
-    calculate_populations_log_lik,
     calculate_spine_ages_log_lik,
 )
+from inf_bp_texts.models.math_extinction import calculate_extinction_pr
+from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 from inf_bp_texts.simulation import simulate_birth_death_process
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,
@@ -293,38 +298,6 @@ print(f"Saved population figure: {saved_population}")
 ## Spine and Non-Spine Age Checks
 
 ```{python}
-def theoretical_age_density(
-    log_lik_fn: Callable[..., Any],
-    support_upper: float,
-    n_grid: int = 300,
-    include_endpoint: bool = True,
-    proportion_not_at_upper: float | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    x_grid = np.linspace(0.0, support_upper, n_grid, endpoint=include_endpoint)
-    y_vals = []
-    for x_val in x_grid:
-        log_density = log_lik_fn(torch.tensor(float(x_val), dtype=torch.float64))
-        y_vals.append(
-            float(torch.exp(log_density).item()) if torch.isfinite(log_density) else 0.0
-        )
-    y_vals_arr = np.asarray(y_vals, dtype=np.float64)
-    if proportion_not_at_upper is not None:
-        p_not_upper = float(proportion_not_at_upper)
-        if np.isfinite(p_not_upper) and p_not_upper > 0.0:
-            y_vals_arr = y_vals_arr * (1.0 / p_not_upper)
-    return x_grid, y_vals_arr
-
-
-def proportion_not_at_upper(
-    samples: np.ndarray,
-    support_upper: float,
-    tol: float = 1e-12,
-) -> float:
-    samples = np.asarray(samples, dtype=np.float64)
-    finite = samples[np.isfinite(samples)]
-    if len(finite) == 0:
-        return 1.0
-    return float(np.mean(finite < (float(support_upper) - float(tol))))
 
 
 spine_age_samples_single = np.asarray(
@@ -423,31 +396,6 @@ non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
     time_span,
     proportion_not_at_upper=non_spine_prop_not_at_max,
 )
-
-
-def robust_y_max(
-    arrays: list[np.ndarray | None],
-    quantile: float = 99.0,
-    pad: float = 1.1,
-) -> float:
-    finite_parts: list[np.ndarray] = []
-    for arr in arrays:
-        if arr is None:
-            continue
-        values = np.asarray(arr, dtype=np.float64)
-        finite = values[np.isfinite(values)]
-        if finite.size > 0:
-            finite_parts.append(finite)
-    if not finite_parts:
-        return 1.0
-
-    joined = np.concatenate(finite_parts)
-    q = float(np.nanpercentile(joined, quantile))
-    if not np.isfinite(q) or q <= 0.0:
-        q = float(np.nanmax(joined)) if joined.size > 0 else 1.0
-    if not np.isfinite(q) or q <= 0.0:
-        q = 1.0
-    return q * float(pad)
 
 
 spine_grid_single, spine_kde_single = boundary_corrected_kde_on_support(

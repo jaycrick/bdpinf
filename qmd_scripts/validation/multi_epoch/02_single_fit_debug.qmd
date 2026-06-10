@@ -23,7 +23,7 @@ import numpy as np
 
 from inf_bp_texts.analysis import FitModelConfig, fit_single_model
 from inf_bp_texts.inference import negative_log_likelihood
-from inf_bp_texts.inference.fitting import _get_crude_parameter_estimates
+from inf_bp_texts.inference.fitting import get_crude_parameter_estimates
 from inf_bp_texts.simulation import simulate_birth_death_process
 ```
 
@@ -54,7 +54,7 @@ print(f"First 10 ages: {ages[:10].tolist()}")
 import torch as _torch
 
 times_tensor = _torch.tensor(times, dtype=_torch.float64)
-init_birth, init_death = _get_crude_parameter_estimates(ages, times_tensor)
+init_birth, init_death = get_crude_parameter_estimates(ages, times_tensor)
 if len(ages) > 0 and ages[0] == np.max(ages):
     spine_ages: _torch.Tensor | None = _torch.tensor(
         np.array([ages[0]], dtype=np.float64), dtype=_torch.float64
@@ -115,4 +115,34 @@ finally:
     report = buf.getvalue()
     Path(txt_file).write_text(report)
     print(report)
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+# | include: false
+import json
+import os
+from pathlib import Path
+import time
+
+doc_name = "methods_validation_multi_epoch_single_fit_debug.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+if compile_log.exists():
+    log_data = json.loads(compile_log.read_text())
+else:
+    log_data = {}
+
+log_data[doc_name] = {
+    "duration_seconds": duration_seconds,
+    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+}
+compile_log.write_text(json.dumps(log_data, indent=2))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
 ```

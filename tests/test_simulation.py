@@ -7,7 +7,7 @@ import torch
 
 import inf_bp_texts.simulation.simulator as simulator_module
 from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.models.mathematical_functions import (
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
@@ -73,8 +73,9 @@ class TestSimulation:
         assert len(df1) == len(df2)
 
         # Create process objects from simulation results
-        surviving1 = df1[df1["survived"]]
-        surviving2 = df2[df2["survived"]]
+        surviving1 = df1.surviving_manuscripts
+        surviving2 = df2.surviving_manuscripts
+        assert surviving1 is not None and surviving2 is not None
         creation_times1 = surviving1["creation_time"].tolist()
         creation_times2 = surviving2["creation_time"].tolist()
 
@@ -100,8 +101,9 @@ class TestSimulation:
         # (unless both simulations produce 0 manuscripts, which is possible but rare)
         if len(df1) > 0 and len(df2) > 0:
             # If both have manuscripts, they should be different
-            surviving1 = df1[df1["survived"]]
-            surviving2 = df2[df2["survived"]]
+            surviving1 = df1.surviving_manuscripts
+            surviving2 = df2.surviving_manuscripts
+            assert surviving1 is not None and surviving2 is not None
             creation_times1 = surviving1["creation_time"].tolist()
             creation_times2 = surviving2["creation_time"].tolist()
             assert not df1.equals(df2) or len(creation_times1) != len(creation_times2)
@@ -118,7 +120,8 @@ class TestSimulation:
 
         if len(df) > 0:
             # Check required columns for surviving manuscripts
-            surviving = df[df["survived"]]
+            surviving = df.surviving_manuscripts
+            assert surviving is not None
             if len(surviving) > 0:
                 required_cols = ["manuscript_id", "creation_time", "age", "survived"]
                 for col in required_cols:
@@ -132,7 +135,8 @@ class TestSimulation:
                 assert all(surviving["survived"])
 
             # Check dead manuscripts
-            dead = df[~df["survived"]]
+            dead = df.extinct_manuscripts
+            assert dead is not None
             if len(dead) > 0:
                 required_cols = [
                     "manuscript_id",
@@ -160,7 +164,8 @@ class TestSimulation:
         )
 
         # Create process object from simulation results
-        surviving_manuscripts = df[df["survived"]]
+        surviving_manuscripts = df.surviving_manuscripts
+        assert surviving_manuscripts is not None
         if len(surviving_manuscripts) > 0:
             creation_times = surviving_manuscripts["creation_time"].tolist()
             process = BirthDeathProcess(
@@ -230,7 +235,8 @@ class TestSimulation:
         )
 
         # Create new process from simulation results
-        surviving_manuscripts = df[df["survived"]]
+        surviving_manuscripts = df.surviving_manuscripts
+        assert surviving_manuscripts is not None
         new_creation_times = (
             surviving_manuscripts["creation_time"].tolist()
             if len(surviving_manuscripts) > 0
@@ -275,7 +281,10 @@ class TestSimulation:
             rng=DummyRng(),
         )
 
-        assert sampled == {"spine": [], "non_spine": []}
+        assert sampled.spine_ages is not None and sampled.spine_ages.tolist() == []
+        assert (
+            sampled.non_spine_ages is not None and sampled.non_spine_ages.tolist() == []
+        )
 
     def test_bdp_distribution_sampler_can_force_non_extinction(
         self,
@@ -290,7 +299,7 @@ class TestSimulation:
 
         monkeypatch.setattr(
             simulator_module,
-            "_population_geometric_parameter",
+            "population_geometric_parameter",
             lambda *args, **kwargs: torch.tensor(0.5, dtype=torch.float64),
         )
         monkeypatch.setattr(
@@ -312,8 +321,11 @@ class TestSimulation:
             ensure_non_extinct=True,
         )
 
-        assert sampled["spine"] == [1.23]
-        assert sampled["non_spine"] == [4.56]
+        assert sampled.spine_ages is not None and sampled.spine_ages.tolist() == [1.23]
+        assert (
+            sampled.non_spine_ages is not None
+            and sampled.non_spine_ages.tolist() == [4.56]
+        )
 
     def test_simulation_parameter_effects(self) -> None:
         """Test that birth/death rates affect simulation results as expected."""
@@ -338,8 +350,11 @@ class TestSimulation:
 
         # This is probabilistic, but with these extreme parameters,
         # high birth rate should generally produce more surviving manuscripts
-        surviving_high = len(df_high_birth[df_high_birth["survived"]])
-        surviving_low = len(df_low_birth[df_low_birth["survived"]])
+        high_surv = df_high_birth.surviving_manuscripts
+        low_surv = df_low_birth.surviving_manuscripts
+        assert high_surv is not None and low_surv is not None
+        surviving_high = len(high_surv)
+        surviving_low = len(low_surv)
 
         # Note: This test might occasionally fail due to randomness,
         # but with these extreme parameters it should usually pass
@@ -358,14 +373,17 @@ class TestSimulation:
         )
 
         # All creation times should be between 0 and max_time
-        surviving_manuscripts = df[df["survived"]]
+        surviving_manuscripts = df.surviving_manuscripts
+        assert surviving_manuscripts is not None
         if len(surviving_manuscripts) > 0:
             creation_times = surviving_manuscripts["creation_time"].tolist()
             assert all(0 <= ct <= max_time for ct in creation_times)
 
         # All creation times in DataFrame should also be within bounds
         if len(df) > 0:
-            assert all(0 <= ct <= max_time for ct in df["creation_time"])
+            df_records = df.manuscript_records
+            assert df_records is not None
+            assert all(0 <= ct <= max_time for ct in df_records["creation_time"])
 
     def test_simulation_ages_non_negative(self) -> None:
         """Test that all calculated ages are non-negative."""
@@ -377,7 +395,8 @@ class TestSimulation:
         )
 
         # Create process from simulation results to test age calculation
-        surviving_manuscripts = df[df["survived"]]
+        surviving_manuscripts = df.surviving_manuscripts
+        assert surviving_manuscripts is not None
         if len(surviving_manuscripts) > 0:
             creation_times = surviving_manuscripts["creation_time"].tolist()
             process = BirthDeathProcess(
@@ -663,9 +682,12 @@ class TestMultiEpochSimulation:
         # Should produce identical results
         assert len(df_scalar) == len(df_array)
         if len(df_scalar) > 0:
+            scalar_records = df_scalar.manuscript_records
+            array_records = df_array.manuscript_records
+            assert scalar_records is not None and array_records is not None
             np.testing.assert_array_almost_equal(
-                sorted(df_scalar["creation_time"]),
-                sorted(df_array["creation_time"]),
+                sorted(scalar_records["creation_time"]),
+                sorted(array_records["creation_time"]),
             )
 
 
@@ -686,19 +708,22 @@ class TestBdpAgeDistributionSampling:
                 max_time=max_time,
                 rng=rng,
             )
-            pop_size = len(ages["spine"]) + len(ages["non_spine"])
+            spine = ages.spine_ages
+            non_spine = ages.non_spine_ages
+            assert spine is not None and non_spine is not None
+            pop_size = len(spine) + len(non_spine)
             assert pop_size >= 0
             if pop_size == 0:
-                assert ages["spine"] == []
-                assert ages["non_spine"] == []
+                assert spine.tolist() == []
+                assert non_spine.tolist() == []
             else:
-                assert len(ages["spine"]) == 1
-                assert len(ages["non_spine"]) == pop_size - 1
+                assert len(spine) == 1
+                assert len(non_spine) == pop_size - 1
 
-                spine_age = ages["spine"][0]
+                spine_age = spine[0].item()
                 assert 0.0 <= spine_age <= float(max_time)
-                for age in ages["non_spine"]:
-                    assert 0.0 <= age <= float(max_time)
+                for age in non_spine:
+                    assert 0.0 <= float(age) <= float(max_time)
 
     def test_sampling_is_reproducible_with_seed(self) -> None:
         """Sampling should be deterministic with identical seeds."""
@@ -747,8 +772,12 @@ class TestBdpAgeDistributionSampling:
                 max_time=max_time,
                 rng=rng,
             )
-            sampled_spine.extend(ages["spine"])
-            sampled_non_spine.extend(ages["non_spine"])
+            sampled_spine.extend(
+                ages.spine_ages.tolist() if ages.spine_ages is not None else []
+            )
+            sampled_non_spine.extend(
+                ages.non_spine_ages.tolist() if ages.non_spine_ages is not None else []
+            )
 
         assert len(sampled_spine) > 200
         assert len(sampled_non_spine) > 200

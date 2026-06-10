@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+import torch
 
 from inf_bp_texts.models.birth_death_process import BirthDeathProcess
 
@@ -63,6 +64,16 @@ def sample_fit_results() -> dict[str, Any]:
         "log_likelihood": -150.5,
         "n_data_points": 50,
         "message": "Optimization completed successfully",
+    }
+
+
+@pytest.fixture
+def canonical_single_epoch_params() -> dict[str, Any]:
+    """Canonical single-epoch parameters reused across regression and recovery tests."""
+    return {
+        "birth_rates": torch.tensor([0.05], dtype=torch.float64),
+        "death_rates": torch.tensor([0.03], dtype=torch.float64),
+        "times": torch.tensor([1500.0], dtype=torch.float64),
     }
 
 

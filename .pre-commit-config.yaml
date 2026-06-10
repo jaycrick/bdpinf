@@ -29,22 +29,15 @@ repos:
     hooks:
       - id: isort
 
-  # MyPy type checking
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+  # basedpyright type checking (strict mode; local hook uses venv install)
+  - repo: local
     hooks:
-      - id: mypy
-        args: [--strict]
-        additional_dependencies:
-          - torch
-          - pydantic
-          - joblib-stubs
-          - pandas-stubs
-          - scipy-stubs
-          - plotly-stubs
-          - lxml-stubs
-          - types-torch
-          - typer
+      - id: basedpyright
+        name: basedpyright
+        language: system
+        entry: uv run basedpyright src/
+        pass_filenames: false
+        types: [python]
         files: ^src/
 
   # toml-sort

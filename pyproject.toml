@@ -22,14 +22,17 @@ dependencies = [
     "typer>=0.24.1",
 ]
 
+[project.scripts]
+inf-bp-texts = "inf_bp_texts.cli:main"
+
 [dependency-groups]
 dev = [
+    "basedpyright>=1.22.0",
     "isort>=7.0.0",
     "joblib-stubs>=1.5.3.1.20260117",
     "jupyter-cache>=1.0.1",
     "lintquarto>=0.11.0",
     "lxml-stubs>=0.5.1",
-    "mypy>=1.19.1",
     "pandas-stubs>=3.0.0.260204",
     "plotly-stubs>=0.1.2",
     "pre-commit>=4.5.1",
@@ -44,38 +47,53 @@ dev = [
     "typing-extensions>=4.15.0",
 ]
 
-[tool.black]
-include = '\.pyi?$'
-line-length = 88
-target-version = ['py313']
-
 [tool.isort]
 known_first_party = ["inf_bp_texts"]
 line_length = 88
 multi_line_output = 3
 profile = "black"
 
-[tool.mypy]
-pretty = true
-show_error_codes = true
-strict = true
+[tool.basedpyright]
+include = ["src"]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = "warning"
+# types-torch community stubs are incomplete — suppress cascading failures until stubs improve
+reportUnknownMemberType = "none"
+reportUnknownVariableType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownParameterType = "none"
+reportAttributeAccessIssue = "none"
+# Cascade from unknown torch tensor types:
+reportIndexIssue = "none"
+reportOperatorIssue = "none"
+reportAbstractUsage = "none"
+reportArgumentType = "none"
+reportOptionalOperand = "none"
+reportReturnType = "none"
+reportGeneralTypeIssues = "none"
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
     "S101", # asserts are the mechanism of the tests
     "D101", # test classes are self-documenting via their names
     "D102", # test methods are self-documenting via their names
+    "E501", # test strings and fixture data are allowed to be long
 ]
 
 [tool.toml-sort]
 all = true
 ignore_case = true
 in_place = true
-no_block_comments = true
-no_comments = true
-no_footer_comments = true
-no_header_comments = true
-no_inline_comments = true
 no_sort_tables = true
 sort_first = ["key1", "key2"]
 sort_inline_arrays = true
@@ -86,6 +104,8 @@ sort_table_keys = true
 addopts = "-m \"not slow\" --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml --cov-fail-under=80"
 markers = [
     "slow: long-running tests that are skipped in regular runs",
+    "regression: golden-value tests guarding against numerical drift",
+    "recovery: simulate-then-fit parameter recovery tests (implies slow)",
 ]
 python_classes = ["Test*"]
 python_files = ["test_*.py"]

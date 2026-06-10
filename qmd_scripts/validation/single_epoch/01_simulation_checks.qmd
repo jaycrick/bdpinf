@@ -32,17 +32,22 @@ import torch
 from typing import Any, Callable
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
-from inf_bp_texts.models.mathematical_functions import (
-    calculate_extinction_pr,
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
-    calculate_populations_log_lik,
     calculate_spine_ages_log_lik,
 )
+from inf_bp_texts.models.math_extinction import calculate_extinction_pr
+from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 from inf_bp_texts.simulation import (
     simulate_bdp_ages_from_distributions,
     simulate_birth_death_process,
 )
-from inf_bp_texts.analysis import boundary_corrected_kde_on_support
+from inf_bp_texts.analysis import (
+    boundary_corrected_kde_on_support,
+    proportion_not_at_upper,
+    robust_y_max,
+    theoretical_age_density,
+)
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,
     save_figure,
@@ -59,7 +64,7 @@ num_sims = 5_000
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500.0
-seed = 42
+NOTEBOOK_SEED = 42  # fixed seed for reproducibility; used as base for per-simulation seeds
 population_bin_width = 100
 
 
@@ -112,7 +117,7 @@ list_of_ages_from_distribution = Parallel(n_jobs=-1)(
         br=birth_rate,
         dr=death_rate,
         span=time_span,
-        base_seed=seed,
+        base_seed=NOTEBOOK_SEED,
     )
     for i in range(num_sims)
 )
@@ -125,7 +130,7 @@ list_of_ages_full_process = Parallel(n_jobs=-1)(
         br=birth_rate,
         dr=death_rate,
         span=time_span,
-        base_seed=seed + 100_000,
+        base_seed=NOTEBOOK_SEED + 100_000,
     )
     for i in range(num_sims)
 )
@@ -274,38 +279,6 @@ print(f"Saved population figure: {saved_population}")
 ## Spine and Non-Spine Age Checks
 
 ```{python}
-def theoretical_age_density(
-    log_lik_fn: Callable[[torch.Tensor], torch.Tensor],
-    support_upper: float,
-    n_grid: int = 300,
-    include_endpoint: bool = True,
-    proportion_not_at_upper: float | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    x_grid = np.linspace(0.0, support_upper, n_grid, endpoint=include_endpoint)
-    y_vals = []
-    for x_val in x_grid:
-        log_density = log_lik_fn(torch.tensor(float(x_val), dtype=torch.float64))
-        y_vals.append(
-            float(torch.exp(log_density).item()) if torch.isfinite(log_density) else 0.0
-        )
-    y_vals_arr = np.asarray(y_vals, dtype=np.float64)
-    if proportion_not_at_upper is not None:
-        p_not_upper = float(proportion_not_at_upper)
-        if np.isfinite(p_not_upper) and p_not_upper > 0.0:
-            y_vals_arr = y_vals_arr * (1.0 / p_not_upper)
-    return x_grid, y_vals_arr
-
-
-def proportion_not_at_upper(
-    samples: np.ndarray,
-    support_upper: float,
-    tol: float = 1e-12,
-) -> float:
-    samples = np.asarray(samples, dtype=np.float64)
-    finite = samples[np.isfinite(samples)]
-    if len(finite) == 0:
-        return 1.0
-    return float(np.mean(finite < (float(support_upper) - float(tol))))
 
 
 spine_age_samples_direct = np.asarray(
@@ -481,31 +454,6 @@ non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
 )
 
 
-def robust_y_max(
-    arrays: list[np.ndarray | None],
-    quantile: float = 99.0,
-    pad: float = 1.1,
-) -> float:
-    finite_parts: list[np.ndarray] = []
-    for arr in arrays:
-        if arr is None:
-            continue
-        values = np.asarray(arr, dtype=np.float64)
-        finite = values[np.isfinite(values)]
-        if finite.size > 0:
-            finite_parts.append(finite)
-    if not finite_parts:
-        return 1.0
-
-    joined = np.concatenate(finite_parts)
-    q = float(np.nanpercentile(joined, quantile))
-    if not np.isfinite(q) or q <= 0.0:
-        q = float(np.nanmax(joined)) if joined.size > 0 else 1.0
-    if not np.isfinite(q) or q <= 0.0:
-        q = 1.0
-    return q * float(pad)
-
-
 spine_y_max = robust_y_max([spine_kde_process, spine_kde_direct, spine_theory_y])
 non_spine_y_max = robust_y_max(
     [non_spine_kde_process, non_spine_kde_direct, non_spine_theory_y]
@@ -583,9 +531,10 @@ The density of the spine age distribution does not include the point mass at the
 
 ```{python}
 # Anderson-Darling test comparing direct vs full process methods
+SIMULATION_SEED = 33943  # fixed seed for permutation test reproducibility
 
 ad_method = PermutationMethod(
-    n_resamples=1_111, batch=101, rng=np.random.default_rng(33943)
+    n_resamples=1_111, batch=101, rng=np.random.default_rng(SIMULATION_SEED)
 )
 
 # Spine age samples

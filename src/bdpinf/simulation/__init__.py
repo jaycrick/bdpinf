@@ -4,6 +4,12 @@ This package contains simulation and prediction utilities for birth-death
 process models.
 """
 
+from inf_bp_texts.visualization.splitting_plots import (
+    plot_conditioned_trajectories,
+    plot_empirical_population_mean,
+    plot_level_survival_probabilities,
+)
+
 from .simulator import (
     simulate_bdp_ages_from_distributions,
     simulate_birth_death_process,
@@ -11,9 +17,6 @@ from .simulator import (
 )
 from .splitting import (
     SplittingConfig,
-    plot_conditioned_trajectories,
-    plot_empirical_population_mean,
-    plot_level_survival_probabilities,
     select_level_times_for_band,
     simulate_subcritical_survival_splitting,
 )

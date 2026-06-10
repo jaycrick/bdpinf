@@ -56,12 +56,17 @@ from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
 import torch
 
-from inf_bp_texts.analysis import boundary_corrected_kde_on_support
-from inf_bp_texts.models.mathematical_functions import (
-    calculate_extinction_pr,
+from inf_bp_texts.analysis import (
+    boundary_corrected_kde_on_support,
+    proportion_not_at_upper,
+    robust_y_max,
+    theoretical_age_density,
+)
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
+from inf_bp_texts.models.math_extinction import calculate_extinction_pr
 from inf_bp_texts.simulation import (
     SplittingConfig,
     select_level_times_for_band,
@@ -103,47 +108,6 @@ def extract_ages_from_process(
     return spine_age, non_spine_raw[np.isfinite(non_spine_raw)]
 
 
-def theoretical_age_density(
-    log_lik_fn: Callable[[torch.Tensor], torch.Tensor],
-    support_upper: float,
-    n_grid: int = 300,
-    include_endpoint: bool = True,
-    proportion_not_at_upper: float | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    x_grid = np.linspace(0.0, support_upper, n_grid, endpoint=include_endpoint)
-    y_vals = [
-        float(torch.exp(v).item()) if torch.isfinite(v) else 0.0
-        for v in (
-            log_lik_fn(torch.tensor(float(x), dtype=torch.float64)) for x in x_grid
-        )
-    ]
-    y_arr = np.asarray(y_vals, dtype=np.float64)
-    if proportion_not_at_upper is not None and proportion_not_at_upper > 0.0:
-        y_arr = y_arr / float(proportion_not_at_upper)
-    return x_grid, y_arr
-
-
-def proportion_not_at_upper(
-    samples: np.ndarray,
-    support_upper: float,
-    tol: float = 1e-12,
-) -> float:
-    finite = samples[np.isfinite(samples)]
-    return float(np.mean(finite < float(support_upper) - tol)) if len(finite) > 0 else 1.0
-
-
-def robust_y_max(
-    arrays: list[np.ndarray | None],
-    quantile: float = 99.0,
-    pad: float = 1.1,
-) -> float:
-    parts = [arr[np.isfinite(arr)] for arr in arrays if arr is not None and arr.size > 0]
-    if not parts:
-        return 1.0
-    joined = np.concatenate(parts)
-    q = float(np.nanpercentile(joined, quantile))
-    q = float(np.nanmax(joined)) if not np.isfinite(q) or q <= 0.0 else q
-    return max(q * float(pad), 1e-12)
 ```
 
 ## Parameter Regimes and Level Grid Precomputation
@@ -529,9 +493,10 @@ High p-values indicate indistinguishable distributions.
 
 ```{python}
 MIN_SAMPLES = 10
+SIMULATION_SEED = 33943  # fixed seed for permutation test reproducibility
 
 ad_method = PermutationMethod(
-    n_resamples=1_111, batch=101, rng=np.random.default_rng(33943)
+    n_resamples=1_111, batch=101, rng=np.random.default_rng(SIMULATION_SEED)
 )
 
 for rd in regime_data:

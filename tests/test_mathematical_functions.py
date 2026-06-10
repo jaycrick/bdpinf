@@ -1,4 +1,4 @@
-"""Comprehensive test suite for mathematical_functions.py."""
+"""Tests for the math_extinction, math_ages, and math_populations modules."""
 
 import math
 
@@ -7,21 +7,24 @@ import scipy
 import torch
 from torch.testing import assert_close
 
-# Import private functions for direct testing
-from inf_bp_texts.models.mathematical_functions import (
-    _integrand_surv_from_weighted_birth_time,
-    _population_geometric_parameter,
-    _pr_extinction_numerator,
+from inf_bp_texts.models.math_ages import (
     _reverse_time,
     calculate_ages_log_lik,
+    calculate_non_spine_ages_log_lik,
+    calculate_spine_ages_log_lik,
+)
+from inf_bp_texts.models.math_extinction import (
+    _integrand_surv_from_weighted_birth_time,
     calculate_extinction_pr,
     calculate_log_lik_initial_lifetimes_given_extinction,
     calculate_log_lik_initial_lifetimes_given_non_extinction,
     calculate_log_lik_lifetimes,
     calculate_log_pr_extinction_given_initial_lifetimes,
-    calculate_non_spine_ages_log_lik,
+    pr_extinction_numerator,
+)
+from inf_bp_texts.models.math_populations import (
     calculate_populations_log_lik,
-    calculate_spine_ages_log_lik,
+    population_geometric_parameter,
 )
 
 """
@@ -233,12 +236,12 @@ class TestMultiEpochNumericalAccuracy:
         assert result < 0
 
     def test_two_epoch_geometric_parameter(self) -> None:
-        """Test _population_geometric_parameter for two epochs."""
+        """Test population_geometric_parameter for two epochs."""
         birth_rates = torch.tensor([0.2, 0.3], dtype=torch.float64)
         death_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
         times = torch.tensor([50.0, 100.0], dtype=torch.float64)
 
-        result = _population_geometric_parameter(birth_rates, death_rates, times)
+        result = population_geometric_parameter(birth_rates, death_rates, times)
 
         # Should be in valid probability range
         assert 0 < result < 1
@@ -345,13 +348,13 @@ class TestMultiEpochEqualsSingleEpoch:
         assert_close(actual=multi, expected=single)
         assert 0 < single < 1
 
-    def test_population_geometric_parameter_multi_equals_single(self) -> None:
+    def testpopulation_geometric_parameter_multi_equals_single(self) -> None:
         birth_rate_val, death_rate_val, times = (
             torch.tensor([0.03], dtype=torch.float64),
             torch.tensor([0.02], dtype=torch.float64),
             torch.tensor([90.0], dtype=torch.float64),
         )
-        single = _population_geometric_parameter(birth_rate_val, death_rate_val, times)
+        single = population_geometric_parameter(birth_rate_val, death_rate_val, times)
         times = torch.tensor([30.0, 60.0, 90.0], dtype=torch.float64)
         birth_rates = torch.full(
             (3,),
@@ -363,16 +366,16 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
         )
-        multi = _population_geometric_parameter(birth_rates, death_rates, times)
+        multi = population_geometric_parameter(birth_rates, death_rates, times)
         assert_close(actual=multi, expected=single)
 
-    def test_pr_extinction_numerator_multi_equals_single(self) -> None:
+    def testpr_extinction_numerator_multi_equals_single(self) -> None:
         birth_rate_val, death_rate_val, times = (
             torch.tensor([0.015], dtype=torch.float64),
             torch.tensor([0.01], dtype=torch.float64),
             torch.tensor([100.0], dtype=torch.float64),
         )
-        single = _pr_extinction_numerator(birth_rate_val, death_rate_val, times)
+        single = pr_extinction_numerator(birth_rate_val, death_rate_val, times)
         times = torch.tensor([25.0, 50.0, 75.0, 100.0], dtype=torch.float64)
         birth_rates = torch.full(
             (4,),
@@ -384,7 +387,7 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
         )
-        multi = _pr_extinction_numerator(birth_rates, death_rates, times)
+        multi = pr_extinction_numerator(birth_rates, death_rates, times)
         assert_close(actual=multi, expected=single)
 
     def test_log_lik_lifetimes_multi_equals_single(self) -> None:
@@ -868,7 +871,7 @@ class TestNumericalAccuracy:
         )
         result = torch.tensor(
             [
-                _population_geometric_parameter(
+                population_geometric_parameter(
                     birth_rate_val,
                     death_rate_val,
                     final_time,
@@ -879,7 +882,7 @@ class TestNumericalAccuracy:
         assert_close(result, expected)
 
     def test_geometric_parameter_critical_case(self) -> None:
-        """Test _population_geometric_parameter when λ = μ."""
+        """Test population_geometric_parameter when λ = μ."""
         birth_rate_val = death_rate_val = torch.tensor([0.1], dtype=torch.float64)
         final_time = torch.tensor([20.0], dtype=torch.float64)
 
@@ -899,7 +902,7 @@ class TestNumericalAccuracy:
         )
         result = torch.tensor(
             [
-                _population_geometric_parameter(
+                population_geometric_parameter(
                     birth_rate_val,
                     death_rate_val,
                     final_time,
@@ -911,7 +914,7 @@ class TestNumericalAccuracy:
         assert_close(result, expected)
 
     def test_geometric_parameter_general_case(self) -> None:
-        """Test _population_geometric_parameter for λ ≠ μ."""
+        """Test population_geometric_parameter for λ ≠ μ."""
         birth_rates = torch.tensor([0.3, 0.4], dtype=torch.float64)
         death_rates = torch.tensor([0.1, 0.3], dtype=torch.float64)
         epoch_ends = torch.tensor([5.0, 9.0], dtype=torch.float64)
@@ -943,12 +946,12 @@ class TestNumericalAccuracy:
                 + epoch_ends[0] * (birth_rates[0] - death_rates[0])
             ),
         ) / (1 + integral)
-        result = _population_geometric_parameter(birth_rates, death_rates, epoch_ends)
+        result = population_geometric_parameter(birth_rates, death_rates, epoch_ends)
 
         assert_close(result, expected)
 
-    def test_pr_extinction_numerator_simple(self) -> None:
-        """Test _pr_extinction_numerator for simple case.
+    def testpr_extinction_numerator_simple(self) -> None:
+        """Test pr_extinction_numerator for simple case.
 
         Private function test: Validates that function returns a positive finite value.
         The exact formula is complex and involves integration - we validate properties.
@@ -957,7 +960,7 @@ class TestNumericalAccuracy:
         death_rate_val = torch.tensor([0.1], dtype=torch.float64)
         final_time = torch.tensor([10.0], dtype=torch.float64)
 
-        result = _pr_extinction_numerator(
+        result = pr_extinction_numerator(
             birth_rate_val,
             death_rate_val,
             final_time,
@@ -2765,7 +2768,7 @@ class TestSkipNormalizationWithNonTensorInputsRaises:
             ("times", 100.0, "times must be a torch.Tensor"),
         ],
     )
-    def test_population_geometric_parameter_non_tensor_raises(
+    def testpopulation_geometric_parameter_non_tensor_raises(
         self,
         arg_name: str,
         arg_value: float,
@@ -2779,7 +2782,7 @@ class TestSkipNormalizationWithNonTensorInputsRaises:
         }
         kwargs[arg_name] = arg_value
         with pytest.raises(ValueError, match=error_message):
-            _population_geometric_parameter(**kwargs)
+            population_geometric_parameter(**kwargs)
 
     @pytest.mark.parametrize(
         ("arg_name", "arg_value", "error_message"),
@@ -2789,7 +2792,7 @@ class TestSkipNormalizationWithNonTensorInputsRaises:
             ("times", 100.0, "times must be a torch.Tensor"),
         ],
     )
-    def test_pr_extinction_numerator_non_tensor_raises(
+    def testpr_extinction_numerator_non_tensor_raises(
         self,
         arg_name: str,
         arg_value: float,
@@ -2803,4 +2806,4 @@ class TestSkipNormalizationWithNonTensorInputsRaises:
         }
         kwargs[arg_name] = arg_value
         with pytest.raises(ValueError, match=error_message):
-            _pr_extinction_numerator(**kwargs)
+            pr_extinction_numerator(**kwargs)

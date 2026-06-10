@@ -8,7 +8,7 @@ from inf_bp_texts.inference import (
     calculate_unknown_spine_mixture_birth_density,
     likelihood,
 )
-from inf_bp_texts.models.mathematical_functions import (
+from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
@@ -729,3 +729,53 @@ class TestLikelihood:
         )
 
         assert torch.allclose(result_scalar, result_tensor)
+
+
+class TestMixtureDensityNormalization:
+    """Verify that mixture age densities integrate to approximately 1."""
+
+    def test_unknown_spine_mixture_age_density_integrates_to_one(self) -> None:
+        birth_rates = torch.tensor([0.1], dtype=torch.float64)
+        death_rates = torch.tensor([0.05], dtype=torch.float64)
+        T = 100.0
+        times = torch.tensor([T], dtype=torch.float64)
+        n_grid = 500
+        age_grid = torch.linspace(0.0, T, n_grid, dtype=torch.float64)
+
+        density = calculate_unknown_spine_mixture_age_density(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            age_grid=age_grid,
+            times=times,
+            num_manuscripts=5,
+        )
+
+        assert density.shape == (n_grid,)
+        assert torch.all(density >= 0.0)
+        integral = float(torch.trapezoid(density, age_grid).item())
+        assert 0.7 < integral < 1.3
+
+    def test_unknown_spine_mixture_birth_density_change_of_variables(self) -> None:
+        birth_rates = torch.tensor([0.1], dtype=torch.float64)
+        death_rates = torch.tensor([0.05], dtype=torch.float64)
+        T = 100.0
+        times = torch.tensor([T], dtype=torch.float64)
+        n_grid = 200
+        age_grid = torch.linspace(1.0, T - 1.0, n_grid, dtype=torch.float64)
+        birth_time_grid = T - age_grid
+
+        density_age = calculate_unknown_spine_mixture_age_density(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            age_grid=age_grid,
+            times=times,
+            num_manuscripts=3,
+        )
+        density_birth = calculate_unknown_spine_mixture_birth_density(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            birth_time_grid=birth_time_grid,
+            times=times,
+            num_manuscripts=3,
+        )
+        assert torch.allclose(density_age, density_birth, atol=1e-8)

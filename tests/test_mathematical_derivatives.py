@@ -4,23 +4,23 @@ import pytest
 import torch
 from numpy.testing import assert_allclose
 
+from inf_bp_texts.models.math_ages import (
+    calculate_ages_log_lik,
+    calculate_non_spine_ages_log_lik,
+    calculate_spine_ages_log_lik,
+)
+from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 from inf_bp_texts.models.mathematical_derivatives import (
     calculate_ages_log_lik_derivatives,
     calculate_non_spine_ages_log_lik_derivatives,
     calculate_populations_log_lik_derivatives,
     calculate_spine_ages_log_lik_derivatives,
 )
-from inf_bp_texts.models.mathematical_functions import (
-    calculate_ages_log_lik,
-    calculate_non_spine_ages_log_lik,
-    calculate_populations_log_lik,
-    calculate_spine_ages_log_lik,
-)
 
 
 @pytest.fixture
 def standard_scalar_params() -> dict[str, torch.Tensor]:
-    """Standard scalar parameters for testing."""
+    """Return standard scalar parameters for testing."""
     return {
         "birth_rate": torch.tensor([0.1], dtype=torch.float64),
         "death_rate": torch.tensor([0.05], dtype=torch.float64),
@@ -347,8 +347,9 @@ class TestDerivativeIntegration:
 
 
 class TestGradientValidation:
-    """Comprehensive tests for analytical gradient functions
-    using PyTorch's native autograd.
+    """Comprehensive tests for analytical gradient functions.
+
+    Uses PyTorch's native autograd.
     """
 
     def test_populations_log_lik_derivatives_scalar_n(self) -> None:
@@ -960,3 +961,72 @@ class TestGradientValidation:
             f"Wrapper gradient error {relative_error.max().item():.2e} "
             "exceeds tolerance"
         )
+
+
+class TestAutogradMatching:
+    """Verify analytical derivatives match torch.autograd.grad."""
+
+    def test_populations_log_lik_grad_matches_autograd(self) -> None:
+        birth_rate = torch.tensor([0.05], dtype=torch.float64, requires_grad=True)
+        death_rate = torch.tensor([0.02], dtype=torch.float64, requires_grad=True)
+        t = torch.tensor([300.0], dtype=torch.float64)
+
+        val = calculate_populations_log_lik(birth_rate, death_rate, ns=3, times=t)
+        if not torch.isfinite(val):
+            pytest.skip("non-finite log-lik at test params")
+        grad_b, grad_d = torch.autograd.grad(val, [birth_rate, death_rate])
+
+        with torch.no_grad():
+            analytical = calculate_populations_log_lik_derivatives(
+                birth_rate.detach(),
+                death_rate.detach(),
+                t,
+                ns=3,
+            )
+        assert float(grad_b) == pytest.approx(float(analytical[0]), rel=1e-4)
+        assert float(grad_d) == pytest.approx(float(analytical[1]), rel=1e-4)
+
+    @pytest.mark.xfail(
+        reason="spine ages analytical derivative known mismatch — pre-existing bug"
+    )
+    def test_spine_ages_log_lik_grad_matches_autograd(self) -> None:
+        birth_rate = torch.tensor([0.01], dtype=torch.float64, requires_grad=True)
+        death_rate = torch.tensor([0.003], dtype=torch.float64, requires_grad=True)
+        t = torch.tensor([600.0], dtype=torch.float64)
+        ages = torch.tensor([200.0, 400.0], dtype=torch.float64)
+
+        val = calculate_spine_ages_log_lik(birth_rate, death_rate, ages, t)
+        if not torch.isfinite(val):
+            pytest.skip("non-finite log-lik at test params")
+        grad_b, grad_d = torch.autograd.grad(val, [birth_rate, death_rate])
+
+        with torch.no_grad():
+            analytical = calculate_spine_ages_log_lik_derivatives(
+                birth_rate.detach(),
+                death_rate.detach(),
+                ages,
+                t,
+            )
+        assert float(grad_b) == pytest.approx(float(analytical[0]), rel=1e-4)
+        assert float(grad_d) == pytest.approx(float(analytical[1]), rel=1e-4)
+
+    def test_non_spine_ages_log_lik_grad_matches_autograd(self) -> None:
+        birth_rate = torch.tensor([0.01], dtype=torch.float64, requires_grad=True)
+        death_rate = torch.tensor([0.003], dtype=torch.float64, requires_grad=True)
+        t = torch.tensor([600.0], dtype=torch.float64)
+        ages = torch.tensor([100.0, 300.0, 500.0], dtype=torch.float64)
+
+        val = calculate_non_spine_ages_log_lik(birth_rate, death_rate, ages, t)
+        if not torch.isfinite(val):
+            pytest.skip("non-finite log-lik at test params")
+        grad_b, grad_d = torch.autograd.grad(val, [birth_rate, death_rate])
+
+        with torch.no_grad():
+            analytical = calculate_non_spine_ages_log_lik_derivatives(
+                birth_rate.detach(),
+                death_rate.detach(),
+                ages,
+                t,
+            )
+        assert float(grad_b) == pytest.approx(float(analytical[0]), rel=1e-4)
+        assert float(grad_d) == pytest.approx(float(analytical[1]), rel=1e-4)

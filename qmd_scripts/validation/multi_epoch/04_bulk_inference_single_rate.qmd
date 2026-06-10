@@ -1,6 +1,6 @@
 ---
 title: "Multi-Epoch Validation: Bulk Inference"
-subtitle: "Scenario 3: Epoch-Specific Recovery, Failed Fits, Histograms, and Scatterplot Matrix"
+subtitle: "Single-Rate Data Fit with a Two-Epoch Model"
 author: "JC"
 date: last-modified
 ---
@@ -28,74 +28,88 @@ import plotly.express as px
 import plotly.graph_objs as go
 from collections import Counter
 from plotly.subplots import make_subplots
-from joblib import Parallel, delayed
 
-from inf_bp_texts.analysis.validation_helpers import (
+from inf_bp_texts.analysis import (
     FitModelConfig,
-    fit_single_model,
+    extract_epoch_parameter_arrays,
     first_failed_fits,
+    fit_single_model,
+    has_ages_in_each_epoch,
     iqr_plotting_subset,
+    summarize_fit_success,
 )
-from inf_bp_texts.analysis.single_epoch import extract_alive_ages, summarize_fit_success
-from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.visualization import save_figure
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,
     apply_tufte_axes,
     ptolqual,
-    save_figure,
 )
+from joblib import Parallel, delayed
 ```
 
-Only simulations that contain at least one observed age in each fitted epoch are kept. This avoids sending single-epoch samples into a two-epoch fit, which would make the recovered rates harder to interpret.
+## Simulate and Fit
+
+Only simulations that contain at least one observed age in each fitted epoch are kept. This prevents a two-epoch fit from being applied to samples that live entirely on one side of the epoch boundary.
 
 ```{python}
-# | label: simulate-full-two-rate
-# Simulation: full two-epoch process with different rates per epoch
+# | label: simulate-sample
+# Simulation: sample age vectors using distribution sampler
 num_sims = 1000
-birth_rates_true = np.array([0.5, 0.7], dtype=float)
-death_rates_true = np.array([0.1, 0.15], dtype=float)
-times = np.array([7.5, 15.0], dtype=float)
+birth_rate = 0.5
+death_rate = birth_rate - 0.4
+time_span = 15.0
 seed = 42
 
-simulated_processes = Parallel(n_jobs=-1)(
-    delayed(simulate_birth_death_process)(
-        birth_rates=birth_rates_true,
-        death_rates=death_rates_true,
-        times=times,
-        random_seed=seed + i,
+import torch
+from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
+
+
+def sample_age_vector(
+    sim_idx: int, br: float, dr: float, span: float, base_seed: int
+) -> np.ndarray:
+    rng = np.random.default_rng(base_seed + sim_idx)
+    sampled = simulate_bdp_ages_from_distributions(
+        birth_rate=torch.tensor(br, dtype=torch.float64),
+        death_rate=torch.tensor(dr, dtype=torch.float64),
+        max_time=torch.tensor(span, dtype=torch.float64),
+        rng=rng,
+    )
+    assert sampled.spine_ages is not None and sampled.non_spine_ages is not None
+    return np.asarray(
+        sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
+        dtype=np.float64,
+    )
+
+
+fit_times = np.array([time_span / 2.0, time_span], dtype=float)
+
+
+
+
+raw_list_of_ages = Parallel(n_jobs=-1)(
+    delayed(sample_age_vector)(
+        sim_idx=i,
+        br=birth_rate,
+        dr=death_rate,
+        span=time_span,
+        base_seed=seed,
     )
     for i in range(num_sims)
 )
-
-
-def _has_ages_in_each_epoch(ages: np.ndarray, times: np.ndarray) -> bool:
-    ages = np.asarray(ages, dtype=np.float64)
-    times = np.asarray(times, dtype=np.float64)
-    if ages.size == 0 or times.size == 0:
-        return False
-
-    first_epoch_end = float(times[0])
-    final_time = float(times[-1])
-    return bool(np.any(ages < first_epoch_end)) and bool(np.any(
-        (ages >= first_epoch_end) & (ages <= final_time)
-    ))
-
-
-raw_list_of_ages = []
-for sim in simulated_processes:
-    raw_list_of_ages.append(extract_alive_ages(sim, float(times[-1])))
-
 list_of_ages = [
-    ages for ages in raw_list_of_ages if _has_ages_in_each_epoch(ages, times)
+    ages for ages in raw_list_of_ages if has_ages_in_each_epoch(ages, fit_times)
 ]
 print(f"Simulations kept for fitting: {len(list_of_ages)} / {len(raw_list_of_ages)}")
+# True epoch-specific rates for plotting (same in both epochs for this generative scenario)
+birth_rates_true = np.array([birth_rate, birth_rate], dtype=float)
+death_rates_true = np.array([death_rate, death_rate], dtype=float)
 ```
 
 ```{python}
-# | label: fit-full-two-rate
-# Fitting: configure and fit full two-epoch model
+# | label: fit-model
+# Fitting: configure and run model fits
 fit_config = FitModelConfig(
-    times=times,
+    times=fit_times,
     is_ordered=True,
     perturb_initial_params_std=0.0,
     random_seed=10925,
@@ -159,52 +173,7 @@ if failed:
 The figures below use a joint plotting subset with 1.5×IQR outliers removed across the plotted parameters.
 
 ```{python}
-def _extract_epoch_parameter_arrays(models: list[dict[str, Any] | None]) -> dict[str, np.ndarray]:
-    successful_models = [
-        model for model in models if model is not None and model.get("success", False)
-    ]
-    empty = np.array([], dtype=np.float64)
-    if not successful_models:
-        return {
-            "epoch_1_birth": empty,
-            "epoch_1_death": empty,
-            "epoch_2_birth": empty,
-            "epoch_2_death": empty,
-        }
-
-    return {
-        "epoch_1_birth": np.asarray(
-            [
-                float(np.atleast_1d(model["birth_rates"])[0])
-                for model in successful_models
-            ],
-            dtype=np.float64,
-        ),
-        "epoch_1_death": np.asarray(
-            [
-                float(np.atleast_1d(model["death_rates"])[0])
-                for model in successful_models
-            ],
-            dtype=np.float64,
-        ),
-        "epoch_2_birth": np.asarray(
-            [
-                float(np.atleast_1d(model["birth_rates"])[1])
-                for model in successful_models
-            ],
-            dtype=np.float64,
-        ),
-        "epoch_2_death": np.asarray(
-            [
-                float(np.atleast_1d(model["death_rates"])[1])
-                for model in successful_models
-            ],
-            dtype=np.float64,
-        ),
-    }
-
-
-epoch_parameter_arrays = _extract_epoch_parameter_arrays(fitted_results)
+epoch_parameter_arrays = extract_epoch_parameter_arrays(fitted_results)
 parameter_specs = [
     (
         r"$\hat{\lambda}_1$",
@@ -295,7 +264,7 @@ if plotting_row_count > 0:
     fig_hist.show()
     saved_hist = save_figure(
         fig_hist,
-        "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_histograms",
+        "methods_validation_multi_epoch_bulk_inference_single_rate_parameter_histograms",
         width=800,
         height=650,
     )
@@ -303,10 +272,10 @@ if plotting_row_count > 0:
 
 
 scatter_data = {
-    label: values for label, values, _, _ in parameter_specs if values.size > 0
+    label: values for label, values, _, _ in plotting_parameter_specs if values.size > 0
 }
 
-if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
+if plotting_row_count > 0 and len(scatter_data) == len(parameter_specs):
     scatter_df = pd.DataFrame(scatter_data)
     fig_pairs = px.scatter_matrix(
         scatter_df,
@@ -324,7 +293,7 @@ if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
     fig_pairs.show()
     saved_pairs = save_figure(
         fig_pairs,
-        "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_pairs_scatter_matrix",
+        "methods_validation_multi_epoch_bulk_inference_single_rate_parameter_pairs_scatter_matrix",
         width=900,
         height=900,
     )
@@ -335,27 +304,28 @@ if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
 # | label: compile-time-report
 # | cache: false
 # | echo: false
-
+# | include: false
 import json
 import os
 from pathlib import Path
 import time
 
-doc_name = "methods_validation_multi_epoch_bulk_inference.qmd"
+doc_name = "methods_validation_multi_epoch_bulk_inference_single_rate.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
 compile_log = project_dir / "_output" / "compile_times.json"
 compile_log.parent.mkdir(parents=True, exist_ok=True)
 
 duration_seconds = time.perf_counter() - __compile_start
-timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+if compile_log.exists():
+    log_data = json.loads(compile_log.read_text())
+else:
+    log_data = {}
 
-try:
-    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
-except Exception:
-    data = {}
-
-data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
-compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+log_data[doc_name] = {
+    "duration_seconds": duration_seconds,
+    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+}
+compile_log.write_text(json.dumps(log_data, indent=2))
 
 print(f"Render duration (non-cached): {duration_seconds:.2f}s")
 ```
