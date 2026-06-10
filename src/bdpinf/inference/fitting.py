@@ -23,8 +23,8 @@ from ._fit_types import (
     OptimizerStrategy,
 )
 from ._optimizer_runners import (
-    _run_first_order_optimizer,
-    _run_lbfgs_optimizer,
+    run_first_order_optimizer,
+    run_lbfgs_optimizer,
 )
 from .likelihood import negative_log_likelihood
 from .uncertainty import estimate_mle_covariance
@@ -687,7 +687,7 @@ def _run_single_optimizer(
 
         if strategy.name == "LBFGS":
             lbfgs_optimizer = cast("torch.optim.LBFGS", optimizer)
-            did_converge, exc, best_log_params, iterations = _run_lbfgs_optimizer(
+            did_converge, exc, best_log_params, iterations = run_lbfgs_optimizer(
                 strategy=strategy,
                 log_params=log_params,
                 optimizer=lbfgs_optimizer,
@@ -700,7 +700,7 @@ def _run_single_optimizer(
                 compute_nll_fn=compute_nll_fn,
             )
         else:
-            did_converge, exc, best_log_params, iterations = _run_first_order_optimizer(
+            did_converge, exc, best_log_params, iterations = run_first_order_optimizer(
                 strategy=strategy,
                 log_params=log_params,
                 optimizer=optimizer,

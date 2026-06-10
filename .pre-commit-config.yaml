@@ -29,25 +29,7 @@ repos:
     hooks:
       - id: isort
 
-  # MyPy type checking
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
-    hooks:
-      - id: mypy
-        args: [--strict]
-        additional_dependencies:
-          - torch
-          - pydantic
-          - joblib-stubs
-          - pandas-stubs
-          - scipy-stubs
-          - plotly-stubs
-          - lxml-stubs
-          - types-torch
-          - typer
-        files: ^src/
-
-  # basedpyright type checking (staged migration from mypy — local hook uses venv install)
+  # basedpyright type checking (strict mode; local hook uses venv install)
   - repo: local
     hooks:
       - id: basedpyright

@@ -139,7 +139,7 @@ def fit_replicate(
         convergence_config=fit_config.convergence_config,
     )
 
-    if fit_result is None or not fit_result.get("success", False):
+    if not fit_result.get("success", False):
         return {
             "regime": regime_config["name"],
             "sampling": regime_config["sampling"],

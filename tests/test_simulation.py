@@ -299,7 +299,7 @@ class TestSimulation:
 
         monkeypatch.setattr(
             simulator_module,
-            "_population_geometric_parameter",
+            "population_geometric_parameter",
             lambda *args, **kwargs: torch.tensor(0.5, dtype=torch.float64),
         )
         monkeypatch.setattr(

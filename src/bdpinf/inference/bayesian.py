@@ -6,12 +6,12 @@ from typing import Any, TypedDict, Unpack
 
 import numpy as np
 import pandas as pd
-import pyro  # type: ignore[import-not-found]
-import pyro.distributions as dist  # type: ignore[import-not-found]
+import pyro  # no type stubs — unknown members suppressed in pyproject.toml
+import pyro.distributions as dist  # no type stubs
 import torch
 from numpy.typing import NDArray
-from pyro.infer import MCMC, NUTS  # type: ignore[import-not-found]
-from pyro.infer.mcmc.util import summary  # type: ignore[import-not-found]
+from pyro.infer import MCMC, NUTS  # no type stubs
+from pyro.infer.mcmc.util import summary  # no type stubs
 
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
 from inf_bp_texts.utils import ensure_1d_tensor

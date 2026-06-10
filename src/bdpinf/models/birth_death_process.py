@@ -97,7 +97,7 @@ class BirthDeathProcess:
     """
 
     _NEWICK_LENGTH_EPSILON = 1e-12
-    __hash__ = None  # type: ignore[assignment]
+    __hash__ = None  # pyright: ignore[reportAssignmentType]  # intentionally unhashable: __eq__ is defined without __hash__
 
     def __init__(
         self,
@@ -312,9 +312,8 @@ class BirthDeathProcess:
 
     def _normalize_initial_population(self, initial_population: int) -> int:
         """Normalize and validate initial population size."""
-        if isinstance(initial_population, bool) or not isinstance(
-            initial_population,
-            int,
+        if isinstance(initial_population, bool) or not isinstance(  # pyright: ignore[reportUnnecessaryIsInstance]  # public API boundary: reject float/bool at runtime despite int annotation
+            initial_population, int
         ):
             msg = "initial_population must be an integer"
             raise TypeError(msg)

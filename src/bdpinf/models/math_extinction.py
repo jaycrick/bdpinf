@@ -13,7 +13,7 @@ from inf_bp_texts.models.validation import normalize_and_validate_inputs
 from inf_bp_texts.utils import ensure_1d_tensors, require_tensors
 
 
-def _pr_extinction_numerator(
+def pr_extinction_numerator(
     birth_rates: torch.Tensor,
     death_rates: torch.Tensor,
     times: torch.Tensor,
@@ -117,18 +117,18 @@ def calculate_extinction_pr(
         death_rates = cast(torch.Tensor, death_rates)
         times = cast(torch.Tensor, times)
 
-    pr_extinction_numerator = _pr_extinction_numerator(
+    extinction_num = pr_extinction_numerator(
         birth_rates=birth_rates,
         death_rates=death_rates,
         times=times,
         _skip_normalization=True,
     )
     if return_log_prob:
-        return torch.log(pr_extinction_numerator) - torch.log1p(
-            pr_extinction_numerator,
+        return torch.log(extinction_num) - torch.log1p(
+            extinction_num,
         )
 
-    return 1 - 1 / (1 + pr_extinction_numerator)
+    return 1 - 1 / (1 + extinction_num)
 
 
 def calculate_log_lik_lifetimes(

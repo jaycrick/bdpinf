@@ -8,8 +8,8 @@ from typing import cast
 import torch
 
 from inf_bp_texts.models.math_extinction import (
-    _pr_extinction_numerator,
     calculate_extinction_pr,
+    pr_extinction_numerator,
 )
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
 from inf_bp_texts.utils import ensure_1d_tensors, require_tensors
@@ -118,7 +118,7 @@ def _compute_populations_log_lik_multi_start(
     return log_pr
 
 
-def _population_geometric_parameter(
+def population_geometric_parameter(
     birth_rates: torch.Tensor,
     death_rates: torch.Tensor,
     times: torch.Tensor,
@@ -173,7 +173,7 @@ def _population_geometric_parameter(
     growth_rates = birth_rate_val_array - death_rate_val_array
     cum_growth = torch.cumsum(growth_rates * epoch_durations, dim=0)
 
-    geom_sum = _pr_extinction_numerator(
+    geom_sum = pr_extinction_numerator(
         birth_rates,
         death_rates,
         times,
@@ -292,7 +292,7 @@ def calculate_populations_log_lik(
             times,
             _skip_normalization=True,
         )
-        beta_t = 1 - _population_geometric_parameter(
+        beta_t = 1 - population_geometric_parameter(
             birth_rates,
             death_rates,
             times,

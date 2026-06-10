@@ -89,7 +89,7 @@ def _check_convergence_criteria(
     return iterations_without_improvement >= convergence_config.patience
 
 
-def _run_lbfgs_optimizer(
+def run_lbfgs_optimizer(
     strategy: OptimizerStrategy,
     log_params: torch.nn.Parameter,
     optimizer: torch.optim.LBFGS,
@@ -134,7 +134,7 @@ def _run_lbfgs_optimizer(
             nonlocal last_param_snapshot_local
             optimizer.zero_grad()
             nll = compute_nll_fn()
-            nll.backward()  # type: ignore[no-untyped-call]
+            nll.backward()
             last_nll_value = float(nll.item())
             # capture grad norm and parameter snapshot inside closure
             last_grad_norm_local = _capture_grad_norm(log_params)
@@ -145,7 +145,7 @@ def _run_lbfgs_optimizer(
             nll_history.append(last_nll_value)
             return nll
 
-        optimizer.step(closure)  # type: ignore[no-untyped-call]
+        optimizer.step(closure)
 
         # append diagnostics once per iteration according to record_every
         if (iteration % record_every) == 0:
@@ -234,7 +234,7 @@ def _run_lbfgs_optimizer(
     return False, current_exception, best_log_params, iterations
 
 
-def _run_first_order_optimizer(
+def run_first_order_optimizer(
     strategy: OptimizerStrategy,
     log_params: torch.nn.Parameter,
     optimizer: torch.optim.Optimizer,
@@ -275,7 +275,7 @@ def _run_first_order_optimizer(
             )
             return False, current_exception, None, iterations
 
-        nll.backward()  # type: ignore[no-untyped-call]
+        nll.backward()
 
         # record gradient norm (pre-step) and optional parameter snapshot (post-step)
         grad_norm_pre = _capture_grad_norm(log_params)

@@ -33,7 +33,6 @@ dev = [
     "jupyter-cache>=1.0.1",
     "lintquarto>=0.11.0",
     "lxml-stubs>=0.5.1",
-    "mypy>=1.19.1",
     "pandas-stubs>=3.0.0.260204",
     "plotly-stubs>=0.1.2",
     "pre-commit>=4.5.1",
@@ -57,7 +56,7 @@ profile = "black"
 [tool.basedpyright]
 include = ["src"]
 pythonVersion = "3.13"
-typeCheckingMode = "standard"
+typeCheckingMode = "strict"
 reportMissingTypeStubs = "warning"
 # types-torch community stubs are incomplete — suppress cascading failures until stubs improve
 reportUnknownMemberType = "none"
@@ -73,11 +72,6 @@ reportArgumentType = "none"
 reportOptionalOperand = "none"
 reportReturnType = "none"
 reportGeneralTypeIssues = "none"
-
-[tool.mypy]
-pretty = true
-show_error_codes = true
-strict = true
 
 [tool.ruff]
 line-length = 88
