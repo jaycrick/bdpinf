@@ -8,6 +8,11 @@ from inf_bp_texts.visualization.parameter_plots import (
     create_parameter_box_plot,
 )
 
+from .date_density import (
+    explode_date_ranges,
+    manuscript_date_density,
+    quantile_resample_dates,
+)
 from .single_epoch import (
     compute_parameter_summary,
     extract_alive_ages,
@@ -49,6 +54,7 @@ __all__ = [
     "compute_parameter_summary",
     "create_kde_density_plot",
     "create_parameter_box_plot",
+    "explode_date_ranges",
     "extract_alive_ages",
     "extract_epoch_parameter_arrays",
     "extract_rate_arrays",
@@ -57,7 +63,9 @@ __all__ = [
     "get_selected_attempt",
     "has_ages_in_each_epoch",
     "iqr_plotting_subset",
+    "manuscript_date_density",
     "proportion_not_at_upper",
+    "quantile_resample_dates",
     "robust_y_max",
     "select_extreme_replicates",
     "select_max_ci_times",

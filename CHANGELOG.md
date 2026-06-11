@@ -7,6 +7,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `analysis.date_density` — three new functions for manuscript date-range handling:
+  `explode_date_ranges` (year-explosion + 1/n weights), `manuscript_date_density`
+  (weighted boundary-corrected KDE in calendar-year space), and
+  `quantile_resample_dates` (Hazen-position deterministic resampling).  All three
+  are re-exported from `inf_bp_texts.analysis`.
+- `data_cleaning.add_resampled_year_column` — populates a `resampledYear` column in
+  cleaned manuscript DataFrames; written alongside `midYear`/`dateRange` so downstream
+  inference can opt in via `--date-column resampledYear` without disturbing existing
+  pipelines.
+- `boundary_corrected_kde_on_support` and `boundary_corrected_kde_at_zero` now accept
+  an optional `weights` parameter (`analysis.validation_helpers`); unweighted behaviour
+  is unchanged.
 - Standard `pyright` added as a dev dependency for type-checking `.qmd` notebook
   cells via `lintquarto -l ruff pyright`; `pyrightconfig.json` suppresses torch-stub
   false positives (mirroring `[tool.basedpyright]`); `basedpyright` invocations

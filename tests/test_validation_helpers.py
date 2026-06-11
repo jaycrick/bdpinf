@@ -55,6 +55,54 @@ class TestValidationHelpers:
         assert np.all(x_grid >= 0.0)
         assert np.all(y_kde >= 0.0)
 
+    def test_weighted_kde_on_support_stays_on_domain(self) -> None:
+        samples = np.array([10.0, 20.0, 25.0, 30.0, 35.0], dtype=np.float64)
+        weights = np.array([0.5, 0.5, 1.0, 1.0, 2.0], dtype=np.float64)
+        x_grid, y_kde = boundary_corrected_kde_on_support(
+            samples, support_upper=100.0, weights=weights
+        )
+        assert x_grid is not None
+        assert y_kde is not None
+        assert np.all(x_grid >= 0.0)
+        assert np.all(x_grid <= 100.0)
+        assert np.all(y_kde >= 0.0)
+        # density should integrate to ~1 on support
+        integral = float(np.trapezoid(y_kde, x_grid))
+        assert abs(integral - 1.0) < 0.01
+
+    def test_weighted_kde_at_zero_nonnegative(self) -> None:
+        samples = np.array([0.001, 0.002, 0.004, 0.006], dtype=np.float64)
+        weights = np.array([1.0, 2.0, 2.0, 1.0], dtype=np.float64)
+        x_grid, y_kde = boundary_corrected_kde_at_zero(samples, weights=weights)
+        assert x_grid is not None
+        assert y_kde is not None
+        assert x_grid[0] == 0.0
+        assert np.all(y_kde >= 0.0)
+
+    def test_uniform_weights_reproduce_unweighted_on_support(self) -> None:
+        samples = np.array([10.0, 20.0, 25.0, 30.0, 35.0], dtype=np.float64)
+        uniform_weights = np.ones(len(samples), dtype=np.float64)
+        x_unweighted, y_unweighted = boundary_corrected_kde_on_support(
+            samples, support_upper=100.0
+        )
+        x_weighted, y_weighted = boundary_corrected_kde_on_support(
+            samples, support_upper=100.0, weights=uniform_weights
+        )
+        assert x_unweighted is not None and y_unweighted is not None
+        assert x_weighted is not None and y_weighted is not None
+        np.testing.assert_allclose(y_weighted, y_unweighted, rtol=1e-10)
+
+    def test_uniform_weights_reproduce_unweighted_at_zero(self) -> None:
+        samples = np.array([0.001, 0.002, 0.004, 0.006], dtype=np.float64)
+        uniform_weights = np.ones(len(samples), dtype=np.float64)
+        x_unweighted, y_unweighted = boundary_corrected_kde_at_zero(samples)
+        x_weighted, y_weighted = boundary_corrected_kde_at_zero(
+            samples, weights=uniform_weights
+        )
+        assert x_unweighted is not None and y_unweighted is not None
+        assert x_weighted is not None and y_weighted is not None
+        np.testing.assert_allclose(y_weighted, y_unweighted, rtol=1e-10)
+
     def test_first_failed_fits_returns_original_indices(self) -> None:
         fitted_models = [
             {"success": True},
