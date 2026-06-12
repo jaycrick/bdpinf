@@ -26,6 +26,10 @@ dependencies = [
 inf-bp-texts = "inf_bp_texts.cli:main"
 
 [dependency-groups]
+altair-migration = [
+    "altair>=5",
+    "vl-convert-python>=1.9.0.post1",
+]
 dev = [
     "basedpyright>=1.22.0",
     "isort>=7.0.0",
