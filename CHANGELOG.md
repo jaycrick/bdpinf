@@ -12,10 +12,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (weighted boundary-corrected KDE in calendar-year space), and
   `quantile_resample_dates` (Hazen-position deterministic resampling).  All three
   are re-exported from `inf_bp_texts.analysis`.
-- `data_cleaning.add_resampled_year_column` — populates a `resampledYear` column in
-  cleaned manuscript DataFrames; written alongside `midYear`/`dateRange` so downstream
-  inference can opt in via `--date-column resampledYear` without disturbing existing
-  pipelines.
+- `data_cleaning.add_resampled_year_column` — populates a resampled-year column in
+  manuscript DataFrames; now accepts keyword arguments `early_col`, `late_col`,
+  `mid_col`, and `out_col` (all default to NTVMR names for backward compatibility)
+  so it can be applied to any dataset with arbitrary column names.
+- Kashouh families **jB** and **K** now use weighted date-range KDE `resampledYear`
+  creation dates for inference (single-epoch, multi-epoch, and Bayesian notebooks);
+  midpoint `parsed_year` is retained for plots and axes.  New KDE overlay figures
+  (`kashouh_family_k_date_range_kde`, `kashouh_family_jb_date_range_kde`) added to
+  the Kashouh data-exploration notebook.
 - `boundary_corrected_kde_on_support` and `boundary_corrected_kde_at_zero` now accept
   an optional `weights` parameter (`analysis.validation_helpers`); unweighted behaviour
   is unchanged.
