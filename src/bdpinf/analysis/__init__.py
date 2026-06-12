@@ -12,7 +12,6 @@ from .date_density import (
     explode_date_ranges,
     manuscript_date_density,
     quantile_resample_dates,
-    resample_dates_from_ranges,
 )
 from .single_epoch import (
     compute_parameter_summary,
@@ -67,7 +66,6 @@ __all__ = [
     "manuscript_date_density",
     "proportion_not_at_upper",
     "quantile_resample_dates",
-    "resample_dates_from_ranges",
     "robust_y_max",
     "select_extreme_replicates",
     "select_max_ci_times",

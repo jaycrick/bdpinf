@@ -148,13 +148,13 @@ def manuscript_date_density(
 
 
 def quantile_resample_dates(
-    early: NDArray[np.int_],
-    late: NDArray[np.int_],
-    current_year: int,
-    n_samples: int,
+    early: NDArray[np.int_] | Sequence[int],
+    late: NDArray[np.int_] | Sequence[int],
+    current_year: int = 2024,
+    n_samples: int | None = None,
     n_grid: int = 300,
 ) -> NDArray[np.int_]:
-    """Resample *n_samples* exact manuscript dates from the weighted date-range KDE.
+    """Resample exact manuscript dates from the weighted date-range KDE.
 
     Builds the date density via :func:`manuscript_date_density`, integrates it
     to form a CDF, then uses Hazen plotting positions
@@ -167,15 +167,15 @@ def quantile_resample_dates(
 
     Parameters
     ----------
-    early : NDArray[np.int_]
-        Array of earliest year estimates.
-    late : NDArray[np.int_]
-        Array of latest year estimates.
+    early : NDArray[np.int_] | Sequence[int]
+        Array or list of earliest year estimates.
+    late : NDArray[np.int_] | Sequence[int]
+        Array or list of latest year estimates.
     current_year : int
-        Reference year used internally for age computation.
-    n_samples : int
-        Number of exact dates to return (typically equal to the number of
-        manuscripts, ``len(early)``).
+        Reference year used internally for age computation. Default 2024.
+    n_samples : int | None
+        Number of exact dates to return.  Defaults to ``len(early)`` (one
+        resample per input manuscript).
     n_grid : int
         Number of density grid points. Default 300.
 
@@ -186,9 +186,14 @@ def quantile_resample_dates(
         distribution approximates the manuscript date density.
 
     """
+    early_arr = np.asarray(early, dtype=np.int64)
+    late_arr = np.asarray(late, dtype=np.int64)
+    if n_samples is None:
+        n_samples = len(early_arr)
+
     year_grid, density = manuscript_date_density(
-        early,
-        late,
+        early_arr,
+        late_arr,
         current_year,
         n_grid=n_grid,
     )
@@ -208,28 +213,7 @@ def quantile_resample_dates(
     # Invert CDF via linear interpolation, then clamp to the physical date range.
     # KDE bandwidth can place a small tail beyond max(late); dates there are artifacts.
     resampled_years = np.interp(quantiles, cdf, year_grid)
-    min_year = float(np.min(early))
-    max_year = float(np.max(late))
+    min_year = float(np.min(early_arr))
+    max_year = float(np.max(late_arr))
     resampled_years = np.clip(resampled_years, min_year, max_year)
     return np.round(resampled_years).astype(np.int64)
-
-
-def resample_dates_from_ranges(
-    early: NDArray[np.int_] | Sequence[int],
-    late: NDArray[np.int_] | Sequence[int],
-    *,
-    current_year: int = 2024,
-    n_samples: int | None = None,
-    n_grid: int = 300,
-) -> NDArray[np.int_]:
-    """Resample exact dates from the weighted date-range KDE of [early, late] pairs.
-
-    Convenience wrapper over :func:`quantile_resample_dates`: accepts lists/arrays of
-    early and late years and defaults *n_samples* to ``len(early)`` (one resample per
-    input).
-    """
-    early_arr = np.asarray(early, dtype=np.int64)
-    late_arr = np.asarray(late, dtype=np.int64)
-    if n_samples is None:
-        n_samples = len(early_arr)
-    return quantile_resample_dates(early_arr, late_arr, current_year, n_samples, n_grid)
