@@ -21,6 +21,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   midpoint `parsed_year` is retained for plots and axes.  New KDE overlay figures
   (`kashouh_family_k_date_range_kde`, `kashouh_family_jb_date_range_kde`) added to
   the Kashouh data-exploration notebook.
+- Kashouh multi-epoch Case 1-3 fits (`kashouh_multi_epoch_inference.qmd`) now pass
+  `resampledYear` (KDE-resampled) rather than `parsed_year` (midyear) as
+  `creation_times` via `prepare_multi_epoch_fit`, matching all other Kashouh and
+  NTVMR inference notebooks.  The helper also clamps `start_time` to the century
+  floor of the earliest resampled year to prevent creation-before-epoch-start errors.
 - `boundary_corrected_kde_on_support` and `boundary_corrected_kde_at_zero` now accept
   an optional `weights` parameter (`analysis.validation_helpers`); unweighted behaviour
   is unchanged.
