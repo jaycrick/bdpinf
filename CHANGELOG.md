@@ -5,7 +5,49 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `analysis.subset_inference.build_manuscript_subsets` — `_make()` now catches
+  `ValueError` from the KDE resampler (triggered when a subset has zero-variance date
+  ranges, e.g. Revelation with a handful of same-year manuscripts) and falls back to
+  `midYear`, preventing a hard crash at notebook render time.
+- `analysis.subset_inference.fit_manuscript_subset` — the per-epoch manuscript count
+  (`epoch_n`) now uses an inclusive upper bound (`<=`) for the last epoch, so
+  manuscripts dated exactly at the final year are no longer silently excluded.
+- `visualization.age_fit_plot.plot_creation_year_fit` — when all observed creation
+  years are identical the theoretical density overlay is now skipped entirely (with a
+  warning) rather than rendered with an incorrect `bin_width = 1.0` scale factor that
+  mis-scaled the curve by orders of magnitude.
+
 ### Added
+
+- `analysis.subset_inference` — new module with `build_manuscript_subsets` (splits the
+  cleaned NTVMR DataFrame into six canonical subsets with independent per-subset KDE
+  resampling) and `fit_manuscript_subset` (builds a BirthDeathProcess, fits via MLE,
+  and returns a `SubsetFitResult` dataclass with per-epoch rates, SEs, and 95% CIs).
+  `ManuscriptSubset` and `SubsetFitResult` also re-exported from `inf_bp_texts.analysis`.
+- `visualization.age_fit_plot.plot_creation_year_fit` — shared helper that renders
+  observed creation-year histograms with the theoretical birth-time density overlay
+  (replaces duplicated inline code across inference notebooks); re-exported from
+  `inf_bp_texts.visualization`.
+- NTVMR `ntvmr_single_epoch_inference.qmd` and `ntvmr_birth_death_inference.qmd` now
+  run the analysis on **six dataset subsets**: non-lectionaries combined (groups 1–3,
+  the new default), lectionaries (group 4), and four per-section non-lectionary analyses
+  (Gospels e, Acts+Catholic Epistles a, Pauline p, Revelation r).  Each subset gets
+  full per-subset diagnostics (convergence + age-fit figures) and the notebooks end with
+  a cross-subset comparison (single-epoch: grouped bar + table; multi-epoch: 2-panel λ/μ
+  line plot over epochs + birth-rate and death-rate summary tables).
+
+- `analysis.date_density.resample_dates_from_ranges` — convenience wrapper over
+  `quantile_resample_dates` that accepts lists/arrays and defaults `n_samples` to
+  `len(early)`; re-exported from `inf_bp_texts.analysis`.
+- `manuscript_data_exploration.qmd` — NTVMR subset analysis: filters `docID > 50000`
+  (versional/named items), adds a `group` column (`docID // 10000`), stacks the
+  Biblical Books histogram and the Manuscripts by Century chart by group
+  (papyri/majuscules/minuscules/lectionaries), adds a non-lectionary (groups 1–3)
+  date-range KDE plot, a lectionary (group 4) date-range KDE plot, and two 2×2
+  faceted per-section date distribution figures (non-lectionary and lectionary) with
+  100-year bins, shared legend, and shared axis titles.
 
 - `analysis.date_density` — three new functions for manuscript date-range handling:
   `explode_date_ranges` (year-explosion + 1/n weights), `manuscript_date_density`

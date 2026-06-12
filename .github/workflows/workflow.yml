@@ -73,5 +73,5 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check src tests
 
-      - name: mypy
-        run: uv run mypy src/
+      - name: basedpyright check
+        run: uv run basedpyright src/

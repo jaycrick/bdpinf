@@ -25,6 +25,12 @@ from .spike_detection import (
     select_extreme_replicates,
     select_max_ci_times,
 )
+from .subset_inference import (
+    ManuscriptSubset,
+    SubsetFitResult,
+    build_manuscript_subsets,
+    fit_manuscript_subset,
+)
 from .validation_helpers import (
     FitModelConfig,
     boundary_corrected_kde_at_zero,
@@ -45,6 +51,10 @@ __all__ = [
     "BoxPlotStyle",
     "FitModelConfig",
     "KdePlotConfig",
+    "ManuscriptSubset",
+    "SubsetFitResult",
+    "build_manuscript_subsets",
+    "fit_manuscript_subset",
     "bootstrap_percentile_ci",
     "boundary_corrected_kde_at_zero",
     "boundary_corrected_kde_on_support",

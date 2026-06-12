@@ -137,3 +137,35 @@ class TestDateDensity:
                 early, late, current_year=2024, n_samples=n
             )
             assert len(result) == n
+
+
+class TestQuantileResampleDatesDefaults:
+    """Test quantile_resample_dates default-argument and list-input behaviour."""
+
+    def test_default_n_samples_equals_len_early(self) -> None:
+        early = np.array([100, 200, 300, 400, 500], dtype=np.int64)
+        late = np.array([200, 300, 400, 500, 600], dtype=np.int64)
+        result = quantile_resample_dates(early, late)
+        assert len(result) == len(early)
+
+    def test_all_values_within_data_range(self) -> None:
+        early = np.array([300, 500, 700], dtype=np.int64)
+        late = np.array([400, 600, 800], dtype=np.int64)
+        result = quantile_resample_dates(early, late)
+        assert int(result.min()) >= 300
+        assert int(result.max()) <= 800
+
+    def test_accepts_plain_python_lists(self) -> None:
+        early = [100, 200, 300]
+        late = [150, 250, 350]
+        result = quantile_resample_dates(early, late)
+        assert len(result) == 3
+
+    def test_default_n_samples_matches_explicit_len(self) -> None:
+        early = np.array([100, 200, 300, 400], dtype=np.int64)
+        late = np.array([150, 250, 350, 450], dtype=np.int64)
+        result_default = quantile_resample_dates(early, late)
+        result_explicit = quantile_resample_dates(
+            early, late, current_year=2024, n_samples=len(early)
+        )
+        np.testing.assert_array_equal(result_default, result_explicit)
