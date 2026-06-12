@@ -5,6 +5,12 @@ process models and their results.
 """
 
 from .age_fit_plot import plot_creation_year_fit
+from .altair_theme import (
+    PTOLQUAL,
+    THEME_NAME,
+    register_export_fonts,
+    save_chart,
+)
 from .parameter_plots import (
     BoxPlotStyle,
     KdePlotConfig,
@@ -25,9 +31,13 @@ from .splitting_plots import (
 )
 
 __all__ = [
+    "PTOLQUAL",
+    "THEME_NAME",
     "BoxPlotStyle",
     "KdePlotConfig",
     "plot_creation_year_fit",
+    "register_export_fonts",
+    "save_chart",
     "compute_boxplot_summary",
     "create_kde_density_plot",
     "create_parameter_box_plot",

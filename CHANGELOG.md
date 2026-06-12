@@ -5,6 +5,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `visualization.altair_theme` — new module beginning the Plotly→Altair migration
+  (Phase 1). Registers and enables the `inf_bp_texts` Altair theme (ptolqual palette,
+  serif font stack, muted `#FAFAFA` background, non-bold titles/labels, Tufte axes) and
+  provides `save_chart`, the vl-convert PDF/SVG/PNG export chokepoint — pure and
+  fail-loud, unlike the Plotly `save_figure`. Re-exported from `inf_bp_texts.visualization`.
+
+### Removed
+
+- `visualization.plotting` — deleted dead code: the unused `layout_config` dict, the
+  seven unused `my_*` colour constants, and the never-called `apply_tufte_legend`
+  (superseded by the Altair theme). No public call sites existed.
+
 ### Fixed
 
 - `analysis.subset_inference.build_manuscript_subsets` — `_make()` now catches

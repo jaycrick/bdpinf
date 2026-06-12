@@ -34,15 +34,6 @@ plot_bgcolor = "#FAFAFA"  # Very light grey, high luminance, low saturation
 paper_bgcolor = "#FAFAFA"  # Same as plot background for consistency
 gridcolor = "#D0D0D0"  # Medium grey for grid lines (darker than background)
 
-# Custom color palette for plots
-my_blue = "#4477AA"
-my_red = "#EE6677"
-my_green = "#228833"
-my_yellow = "#CCBB44"
-my_cyan = "#66CCEE"
-my_violet = "#AA3377"
-my_gray = "#BBBBBB"
-
 ptolqual = [
     "#4477AA",  # Blue
     "#EE6677",  # Red
@@ -52,29 +43,6 @@ ptolqual = [
     "#AA3377",  # Violet
     "#BBBBBB",  # Gray
 ]
-
-# Global layout configuration
-layout_config = {
-    "plot_bgcolor": plot_bgcolor,
-    "paper_bgcolor": paper_bgcolor,
-    "font": font_config,
-    "title_font": title_font_config,
-    "xaxis": {
-        "gridcolor": gridcolor,
-        "gridwidth": 0.5,
-        "showgrid": False,
-        "zeroline": False,
-        "automargin": True,
-    },
-    "yaxis": {
-        "gridcolor": gridcolor,
-        "gridwidth": 0.5,
-        "showgrid": False,
-        "zeroline": False,
-        "automargin": True,
-    },
-    "margin": {"l": 0, "r": 0, "t": 1, "b": 1, "autoexpand": True},
-}
 
 
 def apply_professional_styling(
@@ -414,46 +382,6 @@ def plot_parameter_consistency(
         margin=dict(t=90, l=40, r=20, b=40),
     )
     fig = apply_tufte_axes(fig)
-    return fig
-
-
-def apply_tufte_legend(
-    fig: Any,
-    position: str = "top right",
-    bgcolor: str = "rgba(250,250,250,0.6)",
-    bordercolor: str = "rgba(0,0,0,0.08)",
-    font_size: int = FONT_SIZE - 2,
-    *,
-    showlegend: bool = True,
-) -> Any:
-    """Apply a small, Tufte-style internal legend to a Plotly figure.
-
-    position: one of ('top right', 'top left', 'bottom right', 'bottom left')
-    """
-    pos_map = {
-        "top right": {"x": 0.98, "y": 0.98, "xanchor": "right", "yanchor": "top"},
-        "top left": {"x": 0.02, "y": 0.98, "xanchor": "left", "yanchor": "top"},
-        "bottom right": {"x": 0.98, "y": 0.02, "xanchor": "right", "yanchor": "bottom"},
-        "bottom left": {"x": 0.02, "y": 0.02, "xanchor": "left", "yanchor": "bottom"},
-    }
-
-    p = pos_map.get(position, pos_map["top right"])
-
-    fig.update_layout(
-        showlegend=showlegend,
-        legend={
-            "orientation": "v",
-            "y": p["y"],
-            "x": p["x"],
-            "yanchor": p["yanchor"],
-            "xanchor": p["xanchor"],
-            "bgcolor": bgcolor,
-            "bordercolor": bordercolor,
-            "borderwidth": 0.5,
-            "font": {"size": font_size, "color": "black"},
-        },
-    )
-
     return fig
 
 
