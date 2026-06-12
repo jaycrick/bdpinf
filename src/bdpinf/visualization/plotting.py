@@ -10,11 +10,14 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import altair as alt
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
 import torch
 from plotly.subplots import make_subplots
+
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL, save_chart
 
 logger = logging.getLogger(__name__)
 
@@ -529,27 +532,22 @@ def save_multi_epoch_convergence_figure(
     ll_history = [-value for value in nll_history]
     iterations = list(range(1, len(ll_history) + 1))
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=iterations,
-            y=ll_history,
-            mode="lines+markers",
-            name="Log-likelihood",
-            line={"color": ptolqual[2], "width": 2},
-            marker={"size": 5},
+    frame = pd.DataFrame({"Iteration": iterations, "Log-likelihood": ll_history})
+    chart = (
+        alt.Chart(frame)
+        .mark_line(
+            point=alt.OverlayMarkDef(size=30, color=PTOLQUAL[2]),
+            strokeWidth=2,
+            color=PTOLQUAL[2],
         )
+        .encode(
+            x=alt.X("Iteration:Q", title="Iteration", axis=alt.Axis(format="d")),
+            y=alt.Y("Log-likelihood:Q", title="Log-likelihood"),
+        )
+        .properties(title=f"{case_name}: Log-likelihood Convergence")
     )
-    fig = apply_professional_styling(
-        fig,
-        f"{case_name}: Log-likelihood Convergence",
-        "Iteration",
-        "Log-likelihood",
-    )
-    fig = apply_tufte_axes(fig)
-    fig.update_xaxes(tickformat=",d")
-    save_figure(
-        fig,
+    save_chart(
+        chart,
         output_slug,
         width=397,
         height=300,
@@ -697,67 +695,25 @@ def save_multi_epoch_fit_figure(
     death_rates = np.asarray(result["death_rates"], dtype=float)
     epoch_labels = [f"{start}-{end}" for start, end, _ in epochs]
 
-    fig = make_subplots(
-        rows=1,
-        cols=2,
-        subplot_titles=[
-            f"{case_name}: Birth Rates (λ)",
-            f"{case_name}: Death Rates (μ)",
-        ],
-        specs=[[{"type": "bar"}, {"type": "bar"}]],
-    )
-    fig.add_trace(
-        go.Bar(
-            x=epoch_labels,
-            y=birth_rates,
-            name="Birth rate",
-            marker_color=ptolqual[0],
-            showlegend=False,
-            text=[f"{rate:.6f}" for rate in birth_rates],
-            textposition="outside",
-        ),
-        row=1,
-        col=1,
-    )
-    fig.add_trace(
-        go.Bar(
-            x=epoch_labels,
-            y=death_rates,
-            name="Death rate",
-            marker_color=ptolqual[1],
-            showlegend=False,
-            text=[f"{rate:.6f}" for rate in death_rates],
-            textposition="outside",
-        ),
-        row=1,
-        col=2,
-    )
-    fig.update_yaxes(title_text="Rate", row=1, col=1, title_font=font_config)
-    fig.update_yaxes(title_text="Rate", row=1, col=2, title_font=font_config)
-    fig.update_layout(
-        height=360,
-        width=820,
-        plot_bgcolor=plot_bgcolor,
-        paper_bgcolor=paper_bgcolor,
-        font=font_config,
-        title_font=title_font_config,
-        xaxis={"gridcolor": gridcolor},
-        yaxis={"gridcolor": gridcolor},
-        xaxis2={"gridcolor": gridcolor},
-        yaxis2={"gridcolor": gridcolor},
-    )
-    fig = apply_professional_styling(
-        fig,
-        f"{case_name}: Multi-epoch Birth/Death Rates",
-        "Epoch",
-        "Rate",
-    )
-    fig = apply_tufte_axes(fig)
-    fig.update_yaxes(tickformat=".6f")
-    save_figure(
-        fig,
+    def _rate_panel(rates: np.ndarray, color: str, subtitle: str) -> alt.LayerChart:
+        frame = pd.DataFrame({"Epoch": epoch_labels, "Rate": rates.astype(float)})
+        base = alt.Chart(frame).encode(
+            # sort=None keeps epochs in chronological (input) order, not alphabetical.
+            x=alt.X("Epoch:N", title="Epoch", sort=None),
+            y=alt.Y("Rate:Q", title="Rate", axis=alt.Axis(format=".6f")),
+        )
+        bars = base.mark_bar(color=color)
+        labels = base.mark_text(dy=-5, baseline="bottom").encode(
+            text=alt.Text("Rate:Q", format=".6f"),
+        )
+        return (bars + labels).properties(title=subtitle, width=360, height=300)
+
+    chart = alt.hconcat(
+        _rate_panel(birth_rates, PTOLQUAL[0], f"{case_name}: Birth Rates (λ)"),
+        _rate_panel(death_rates, PTOLQUAL[1], f"{case_name}: Death Rates (μ)"),
+    ).properties(title=f"{case_name}: Multi-epoch Birth/Death Rates")
+    save_chart(
+        chart,
         output_slug,
-        width=820,
-        height=360,
         output_dir=str(figures_dir or "figures"),
     )

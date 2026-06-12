@@ -122,6 +122,11 @@ def inf_bp_texts_theme() -> alt.theme.ThemeConfig:
     }
 
 
+# The figures here are static publication artifacts, not interactive dashboards,
+# so the 5000-row guard (meant to stop browsers choking on huge interactive specs)
+# only gets in the way — e.g. multi-trajectory splitting plots. Disable it globally.
+alt.data_transformers.disable_max_rows()
+
 _fonts_registered = False
 
 # Directories searched (in order) for the serif font files vl-convert needs to

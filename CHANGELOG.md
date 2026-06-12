@@ -12,6 +12,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   serif font stack, muted `#FAFAFA` background, non-bold titles/labels, Tufte axes) and
   provides `save_chart`, the vl-convert PDF/SVG/PNG export chokepoint — pure and
   fail-loud, unlike the Plotly `save_figure`. Re-exported from `inf_bp_texts.visualization`.
+  The 5000-row Altair guard is disabled (these are static publication figures).
+
+### Changed
+
+- `visualization.splitting_plots` (`plot_conditioned_trajectories`,
+  `plot_empirical_population_mean`, `plot_level_survival_probabilities`) and
+  `visualization.plotting` (`save_multi_epoch_convergence_figure`,
+  `save_multi_epoch_fit_figure`) — migrated to Altair (Phase 2, the easy figures). The
+  `plot_*` functions now return `alt.Chart`; the `save_*` functions render via Altair and
+  export through `save_chart`. Call signatures are unchanged, so notebooks and the
+  splitting test are unaffected.
 
 ### Removed
 
