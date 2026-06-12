@@ -7,6 +7,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `analysis.date_density` — three new functions for manuscript date-range handling:
+  `explode_date_ranges` (year-explosion + 1/n weights), `manuscript_date_density`
+  (weighted boundary-corrected KDE in calendar-year space), and
+  `quantile_resample_dates` (Hazen-position deterministic resampling).  All three
+  are re-exported from `inf_bp_texts.analysis`.
+- `data_cleaning.add_resampled_year_column` — populates a resampled-year column in
+  manuscript DataFrames; now accepts keyword arguments `early_col`, `late_col`,
+  `mid_col`, and `out_col` (all default to NTVMR names for backward compatibility)
+  so it can be applied to any dataset with arbitrary column names.
+- Kashouh families **jB** and **K** now use weighted date-range KDE `resampledYear`
+  creation dates for inference (single-epoch, multi-epoch, and Bayesian notebooks);
+  midpoint `parsed_year` is retained for plots and axes.  New KDE overlay figures
+  (`kashouh_family_k_date_range_kde`, `kashouh_family_jb_date_range_kde`) added to
+  the Kashouh data-exploration notebook.
+- Kashouh multi-epoch Case 1-3 fits (`kashouh_multi_epoch_inference.qmd`) now pass
+  `resampledYear` (KDE-resampled) rather than `parsed_year` (midyear) as
+  `creation_times` via `prepare_multi_epoch_fit`, matching all other Kashouh and
+  NTVMR inference notebooks.  The helper also clamps `start_time` to the century
+  floor of the earliest resampled year to prevent creation-before-epoch-start errors.
+- `boundary_corrected_kde_on_support` and `boundary_corrected_kde_at_zero` now accept
+  an optional `weights` parameter (`analysis.validation_helpers`); unweighted behaviour
+  is unchanged.
 - Standard `pyright` added as a dev dependency for type-checking `.qmd` notebook
   cells via `lintquarto -l ruff pyright`; `pyrightconfig.json` suppresses torch-stub
   false positives (mirroring `[tool.basedpyright]`); `basedpyright` invocations

@@ -170,14 +170,37 @@ def boundary_corrected_kde_on_support(
     samples: NDArray[np.float64],
     support_upper: float,
     n_grid: int = 300,
+    weights: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
-    """Reflection KDE on [0, support_upper], normalized on support."""
+    """Reflection KDE on [0, support_upper], normalized on support.
+
+    Parameters
+    ----------
+    samples : NDArray[np.float64]
+        1-D array of non-negative sample values.
+    support_upper : float
+        Upper boundary of the support.
+    n_grid : int
+        Number of evaluation grid points. Default 300.
+    weights : NDArray[np.float64] | None
+        Optional per-sample weights (same length as *samples*). Non-finite
+        samples are dropped together with their corresponding weights before the
+        KDE is fit.  When *None* all samples are weighted equally (Scott's rule
+        bandwidth; unchanged from the unweighted behaviour).
+
+    """
     samples = np.asarray(samples, dtype=np.float64)
-    finite_samples = samples[np.isfinite(samples)]
+    finite_mask = np.isfinite(samples)
+    finite_samples = samples[finite_mask]
     if len(finite_samples) < 2 or np.std(finite_samples) == 0.0:
         return None, None
 
-    kde = gaussian_kde(finite_samples)
+    finite_weights: NDArray[np.float64] | None = None
+    if weights is not None:
+        w = np.asarray(weights, dtype=np.float64)
+        finite_weights = w[finite_mask]
+
+    kde = gaussian_kde(finite_samples, weights=finite_weights)
     x_grid = np.linspace(0.0, float(support_upper), int(n_grid))
     y_kde = kde(x_grid) + kde(-x_grid) + kde(2.0 * support_upper - x_grid)
 
@@ -191,19 +214,42 @@ def boundary_corrected_kde_at_zero(
     samples: NDArray[np.float64],
     n_grid: int = 300,
     upper_padding: float = 1.15,
+    weights: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
-    """Reflection KDE for nonnegative support [0, inf), normalized on grid."""
+    """Reflection KDE for nonnegative support [0, inf), normalized on grid.
+
+    Parameters
+    ----------
+    samples : NDArray[np.float64]
+        1-D array of non-negative sample values.
+    n_grid : int
+        Number of evaluation grid points. Default 300.
+    upper_padding : float
+        Multiplier applied to the sample maximum to set the grid upper bound.
+        Default 1.15.
+    weights : NDArray[np.float64] | None
+        Optional per-sample weights (same length as *samples*). Non-finite
+        samples are dropped together with their corresponding weights before the
+        KDE is fit.  When *None* all samples are weighted equally.
+
+    """
     samples = np.asarray(samples, dtype=np.float64)
-    finite_samples = samples[np.isfinite(samples)]
+    finite_mask = np.isfinite(samples)
+    finite_samples = samples[finite_mask]
     if len(finite_samples) < 2 or np.std(finite_samples) == 0.0:
         return None, None
+
+    finite_weights: NDArray[np.float64] | None = None
+    if weights is not None:
+        w = np.asarray(weights, dtype=np.float64)
+        finite_weights = w[finite_mask]
 
     x_max = float(np.max(finite_samples))
     if not np.isfinite(x_max) or x_max <= 0.0:
         x_max = 1.0
     x_max *= float(upper_padding)
 
-    kde = gaussian_kde(finite_samples)
+    kde = gaussian_kde(finite_samples, weights=finite_weights)
     x_grid = np.linspace(0.0, x_max, int(n_grid))
     y_kde = kde(x_grid) + kde(-x_grid)
 
