@@ -12,9 +12,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `len(early)`; re-exported from `inf_bp_texts.analysis`.
 - `manuscript_data_exploration.qmd` — NTVMR subset analysis: filters `docID > 50000`
   (versional/named items), adds a `group` column (`docID // 10000`), stacks the
-  Biblical Books histogram by group (papyri/majuscules/minuscules/lectionaries),
-  and adds a non-lectionary (groups 1–3) date-range KDE plot plus four per-section
-  KDE plots (`mde_date_kde_e/a/p/r`), each with a fresh resample.
+  Biblical Books histogram and the Manuscripts by Century chart by group
+  (papyri/majuscules/minuscules/lectionaries), adds a non-lectionary (groups 1–3)
+  date-range KDE plot, a lectionary (group 4) date-range KDE plot, and two 2×2
+  faceted per-section date distribution figures (non-lectionary and lectionary) with
+  100-year bins, shared legend, and shared axis titles.
 
 - `analysis.date_density` — three new functions for manuscript date-range handling:
   `explode_date_ranges` (year-explosion + 1/n weights), `manuscript_date_density`
