@@ -7,6 +7,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `analysis.subset_inference` — new module with `build_manuscript_subsets` (splits the
+  cleaned NTVMR DataFrame into six canonical subsets with independent per-subset KDE
+  resampling) and `fit_manuscript_subset` (builds a BirthDeathProcess, fits via MLE,
+  and returns a `SubsetFitResult` dataclass with per-epoch rates, SEs, and 95% CIs).
+  `ManuscriptSubset` and `SubsetFitResult` also re-exported from `inf_bp_texts.analysis`.
+- `visualization.age_fit_plot.plot_creation_year_fit` — shared helper that renders
+  observed creation-year histograms with the theoretical birth-time density overlay
+  (replaces duplicated inline code across inference notebooks); re-exported from
+  `inf_bp_texts.visualization`.
+- NTVMR `ntvmr_single_epoch_inference.qmd` and `ntvmr_birth_death_inference.qmd` now
+  run the analysis on **six dataset subsets**: non-lectionaries combined (groups 1–3,
+  the new default), lectionaries (group 4), and four per-section non-lectionary analyses
+  (Gospels e, Acts+Catholic Epistles a, Pauline p, Revelation r).  Each subset gets
+  full per-subset diagnostics (convergence + age-fit figures) and the notebooks end with
+  a cross-subset comparison (single-epoch: grouped bar + table; multi-epoch: 2-panel λ/μ
+  line plot over epochs + birth-rate and death-rate summary tables).
+
 - `analysis.date_density.resample_dates_from_ranges` — convenience wrapper over
   `quantile_resample_dates` that accepts lists/arrays and defaults `n_samples` to
   `len(early)`; re-exported from `inf_bp_texts.analysis`.
