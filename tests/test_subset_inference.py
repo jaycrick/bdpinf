@@ -102,6 +102,21 @@ class TestBuildManuscriptSubsets:
         # Should not raise and should still produce 6 subsets
         assert len(subsets) == 6
 
+    def test_zero_variance_dates_fallback_to_midyear(self) -> None:
+        # All manuscripts have identical earlyYear == lateYear → zero-variance KDE
+        # build_manuscript_subsets must not raise; resampledYear falls back to midYear.
+        df = _make_test_df()
+        df["earlyYear"] = 500.0
+        df["lateYear"] = 500.0
+        df["midYear"] = 500.0
+        subsets = build_manuscript_subsets(df)
+        assert len(subsets) == 6
+        for s in subsets:
+            if len(s.frame) > 0:
+                assert "resampledYear" in s.frame.columns, (
+                    f"{s.key} missing resampledYear after KDE fallback"
+                )
+
 
 class TestFitManuscriptSubset:
     """Test fit_manuscript_subset."""

@@ -138,7 +138,19 @@ def build_manuscript_subsets(
     def _make(key: str, label: str, mask: pd.Series[bool]) -> ManuscriptSubset:
         frame = df.loc[mask].copy()
         if len(frame) >= 2:
-            add_resampled_year_column(frame, current_year=current_year)
+            try:
+                add_resampled_year_column(frame, current_year=current_year)
+            except ValueError:
+                # Zero-variance or near-degenerate date ranges: KDE cannot fit.
+                # Fall back to midYear so fit_manuscript_subset can still attempt
+                # inference (it will return success=False if rates are not finite).
+                logger.warning(
+                    "Subset %s: KDE resampling failed (n=%d, likely zero-variance"
+                    " dates). Falling back to midYear.",
+                    key,
+                    len(frame),
+                )
+                frame["resampledYear"] = frame["midYear"].round().astype(np.int64)
         elif len(frame) == 1:
             # Single-manuscript subsets: midYear ≈ resampledYear
             frame["resampledYear"] = frame["midYear"].round().astype(np.int64)
@@ -269,10 +281,20 @@ def fit_manuscript_subset(
     times: torch.Tensor = bdp.adjusted_epoch_end_times
     ages_np: NDArray[np.float64] = ages_tensor.detach().cpu().numpy().astype(np.float64)
 
-    # Per-epoch manuscript counts
+    # Per-epoch manuscript counts.  The last epoch uses an inclusive upper bound
+    # so manuscripts dated exactly at the final year are not silently excluded.
     epoch_n: list[int] = [
-        int(((frame[age_column] >= e_start) & (frame[age_column] < e_end)).sum())
-        for e_start, e_end, _ in epochs
+        int(
+            (
+                (frame[age_column] >= e_start)
+                & (
+                    frame[age_column] <= e_end
+                    if i == len(epochs) - 1
+                    else frame[age_column] < e_end
+                )
+            ).sum()
+        )
+        for i, (e_start, e_end, _) in enumerate(epochs)
     ]
 
     # Run the fit

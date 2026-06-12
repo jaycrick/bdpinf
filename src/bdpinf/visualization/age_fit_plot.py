@@ -118,7 +118,18 @@ def plot_creation_year_fit(
 
             y_min = float(observed_birth_years.min())
             y_max = float(observed_birth_years.max())
-            bin_width = (y_max - y_min) / nbins if y_max > y_min else 1.0
+            if y_max <= y_min:
+                # All manuscripts share the same creation year; any bin_width
+                # guess would mis-scale the overlay by orders of magnitude.
+                # Skip the theoretical curve rather than show a misleading one.
+                logger.warning(
+                    "Skipping theoretical overlay: all %d observations share"
+                    " the same creation year (%.0f CE).",
+                    n,
+                    y_min,
+                )
+                raise ValueError("zero-spread creation years")
+            bin_width = (y_max - y_min) / nbins
             theoretical_density_scaled = theoretical_birth_density * n * bin_width
 
             fig.add_trace(

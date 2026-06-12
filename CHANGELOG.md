@@ -5,6 +5,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `analysis.subset_inference.build_manuscript_subsets` — `_make()` now catches
+  `ValueError` from the KDE resampler (triggered when a subset has zero-variance date
+  ranges, e.g. Revelation with a handful of same-year manuscripts) and falls back to
+  `midYear`, preventing a hard crash at notebook render time.
+- `analysis.subset_inference.fit_manuscript_subset` — the per-epoch manuscript count
+  (`epoch_n`) now uses an inclusive upper bound (`<=`) for the last epoch, so
+  manuscripts dated exactly at the final year are no longer silently excluded.
+- `visualization.age_fit_plot.plot_creation_year_fit` — when all observed creation
+  years are identical the theoretical density overlay is now skipped entirely (with a
+  warning) rather than rendered with an incorrect `bin_width = 1.0` scale factor that
+  mis-scaled the curve by orders of magnitude.
+
 ### Added
 
 - `analysis.subset_inference` — new module with `build_manuscript_subsets` (splits the
