@@ -65,7 +65,14 @@ def inf_bp_texts_theme() -> alt.theme.ThemeConfig:
             "background": BACKGROUND,
             "font": FONT,
             "view": {
-                "fill": BACKGROUND,
+                # Leave the inner data rectangle unfilled (the Vega-Lite default)
+                # rather than painting it BACKGROUND: config.background already
+                # tints the whole canvas, so the figure still reads as uniformly
+                # muted, but a single knob (background) now controls the look in
+                # every context — override it for a paper/slide or a transparent
+                # export and the whole figure recolours, with no orphaned grey
+                # data rectangle left behind.
+                "fill": None,
                 "stroke": None,
                 "continuousWidth": 480,
                 "continuousHeight": 320,

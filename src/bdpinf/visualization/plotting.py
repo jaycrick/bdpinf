@@ -542,7 +542,13 @@ def save_multi_epoch_convergence_figure(
         )
         .encode(
             x=alt.X("Iteration:Q", title="Iteration", axis=alt.Axis(format="d")),
-            y=alt.Y("Log-likelihood:Q", title="Log-likelihood"),
+            # Log-likelihood is meaningful relative to itself, not to zero, so
+            # fit the axis to the data range instead of stretching down to 0.
+            y=alt.Y(
+                "Log-likelihood:Q",
+                title="Log-likelihood",
+                scale=alt.Scale(zero=False),
+            ),
         )
         .properties(title=f"{case_name}: Log-likelihood Convergence")
     )
