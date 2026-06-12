@@ -18,6 +18,8 @@ quantile resampling.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -210,3 +212,24 @@ def quantile_resample_dates(
     max_year = float(np.max(late))
     resampled_years = np.clip(resampled_years, min_year, max_year)
     return np.round(resampled_years).astype(np.int64)
+
+
+def resample_dates_from_ranges(
+    early: NDArray[np.int_] | Sequence[int],
+    late: NDArray[np.int_] | Sequence[int],
+    *,
+    current_year: int = 2024,
+    n_samples: int | None = None,
+    n_grid: int = 300,
+) -> NDArray[np.int_]:
+    """Resample exact dates from the weighted date-range KDE of [early, late] pairs.
+
+    Convenience wrapper over :func:`quantile_resample_dates`: accepts lists/arrays of
+    early and late years and defaults *n_samples* to ``len(early)`` (one resample per
+    input).
+    """
+    early_arr = np.asarray(early, dtype=np.int64)
+    late_arr = np.asarray(late, dtype=np.int64)
+    if n_samples is None:
+        n_samples = len(early_arr)
+    return quantile_resample_dates(early_arr, late_arr, current_year, n_samples, n_grid)

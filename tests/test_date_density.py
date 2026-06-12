@@ -7,6 +7,7 @@ from inf_bp_texts.analysis.date_density import (
     explode_date_ranges,
     manuscript_date_density,
     quantile_resample_dates,
+    resample_dates_from_ranges,
 )
 
 
@@ -137,3 +138,36 @@ class TestDateDensity:
                 early, late, current_year=2024, n_samples=n
             )
             assert len(result) == n
+
+
+class TestResampleDatesFromRanges:
+    """Test resample_dates_from_ranges convenience wrapper."""
+
+    def test_default_n_samples_equals_len_early(self) -> None:
+        early = np.array([100, 200, 300, 400, 500], dtype=np.int64)
+        late = np.array([200, 300, 400, 500, 600], dtype=np.int64)
+        result = resample_dates_from_ranges(early, late)
+        assert len(result) == len(early)
+
+    def test_all_values_within_data_range(self) -> None:
+        early = np.array([300, 500, 700], dtype=np.int64)
+        late = np.array([400, 600, 800], dtype=np.int64)
+        result = resample_dates_from_ranges(early, late)
+        assert int(result.min()) >= 300
+        assert int(result.max()) <= 800
+
+    def test_accepts_plain_python_lists(self) -> None:
+        early = [100, 200, 300]
+        late = [150, 250, 350]
+        result = resample_dates_from_ranges(early, late)
+        assert len(result) == 3
+
+    def test_explicit_n_samples_matches_quantile_resample(self) -> None:
+        early = np.array([100, 200, 300, 400], dtype=np.int64)
+        late = np.array([150, 250, 350, 450], dtype=np.int64)
+        n = 10
+        result_wrapper = resample_dates_from_ranges(early, late, n_samples=n)
+        result_direct = quantile_resample_dates(
+            early, late, current_year=2024, n_samples=n
+        )
+        np.testing.assert_array_equal(result_wrapper, result_direct)
