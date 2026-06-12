@@ -1,11 +1,11 @@
-"""Plotly rendering functions for birth-death parameter estimate visualizations."""
+"""Altair rendering functions for birth-death parameter estimate visualizations."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import altair as alt
 import numpy as np
 import pandas as pd
-import plotly.graph_objs as go
 from numpy.typing import NDArray
 
 _MIN_KDE_SAMPLES = 2
@@ -40,8 +40,13 @@ def create_kde_density_plot(
     rates: Sequence[float] | NDArray[np.float64],
     true_rate: float,
     config: KdePlotConfig,
-) -> go.Figure:
-    """Create a 1D KDE plot with true-value reference line and annotation."""
+) -> alt.LayerChart:
+    """Create a 1D KDE plot with a dashed true-value reference line and label.
+
+    Vega-Lite has no arrow-annotation primitive, so the Plotly arrow pointing at
+    the true value is reproduced as a dashed ``mark_rule`` plus a ``mark_text``
+    label above it (a documented fidelity compromise of the Altair migration).
+    """
     values = np.asarray(rates, dtype=np.float64)
     values = values[np.isfinite(values)]
     if values.size < _MIN_KDE_SAMPLES:
@@ -60,43 +65,45 @@ def create_kde_density_plot(
         msg = "Could not build boundary-corrected KDE from the provided rates"
         raise ValueError(msg)
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=x_vals,
-            y=y_vals,
-            mode="lines",
-            name="Density",
-            line={"color": config.density_color},
-            showlegend=False,
-        ),
+    y_max = float(np.max(y_vals))
+    density = (
+        alt.Chart(
+            pd.DataFrame(
+                {
+                    "estimate": np.asarray(x_vals, dtype=np.float64),
+                    "density": np.asarray(y_vals, dtype=np.float64),
+                }
+            )
+        )
+        .mark_line(color=config.density_color)
+        .encode(
+            x=alt.X(
+                "estimate:Q",
+                title=config.estimate_axis_label,
+                axis=alt.Axis(format=".4f"),
+            ),
+            y=alt.Y("density:Q", title="Density"),
+        )
     )
-    fig.add_trace(
-        go.Scatter(
-            x=[true_rate, true_rate],
-            y=[0, float(np.max(y_vals))],
-            mode="lines",
-            name=config.true_label,
-            line={"color": config.true_line_color, "dash": "dash"},
-            showlegend=False,
-        ),
+    true_line = (
+        alt.Chart(pd.DataFrame({"estimate": [float(true_rate)]}))
+        .mark_rule(color=config.true_line_color, strokeDash=[4, 4])
+        .encode(x="estimate:Q")
     )
-    fig.add_annotation(
-        x=true_rate,
-        y=float(np.max(y_vals)) * 1.05,
-        text=config.true_label,
-        showarrow=True,
-        arrowhead=2,
-        ax=0,
-        ay=-30,
-        xanchor="center",
-        font={"color": config.true_line_color, "size": 11},
-        bgcolor="rgba(255,255,255,0.75)",
+    true_label = (
+        alt.Chart(
+            pd.DataFrame(
+                {
+                    "estimate": [float(true_rate)],
+                    "density": [y_max * 1.05],
+                    "label": [config.true_label],
+                }
+            )
+        )
+        .mark_text(dy=-2, baseline="bottom", color=config.true_line_color, fontSize=11)
+        .encode(x="estimate:Q", y="density:Q", text="label:N")
     )
-    fig.update_layout(showlegend=False)
-    fig.update_xaxes(tickformat=".4f", title=config.estimate_axis_label)
-    fig.update_yaxes(rangemode="tozero", title="Density")
-    return fig
+    return alt.layer(density, true_line, true_label)
 
 
 def compute_boxplot_summary(
@@ -151,55 +158,68 @@ def create_parameter_box_plot(
     death_rates: Sequence[float] | NDArray[np.float64],
     true_rates: tuple[float, float],
     style: BoxPlotStyle,
-) -> go.Figure:
-    """Create a two-parameter box plot with true, mean, and median overlays."""
-    box_data = [
-        np.asarray(birth_rates, dtype=np.float64),
-        np.asarray(death_rates, dtype=np.float64),
-    ]
-    labels = ["MLE Birth Rates", "MLE Death Rates"]
-    means = [float(np.mean(box_data[0])), float(np.mean(box_data[1]))]
-    medians = [float(np.median(box_data[0])), float(np.median(box_data[1]))]
+) -> alt.LayerChart:
+    """Create a two-parameter box plot with true, mean, and median overlays.
 
-    fig = go.Figure()
-    for idx, data in enumerate(box_data):
-        fig.add_trace(
-            go.Box(
-                y=data,
-                name=labels[idx],
-                boxmean=True,
-                boxpoints="outliers",
-                marker_color=style.base_color,
-            ),
+    The Plotly ``boxmean=True`` mean line has no ``mark_boxplot`` equivalent; it
+    is replaced by an explicit colour-coded mean marker (clearer than a second,
+    hidden encoding of the mean), alongside true-value and median markers.
+    """
+    birth = np.asarray(birth_rates, dtype=np.float64)
+    death = np.asarray(death_rates, dtype=np.float64)
+    labels = ("MLE Birth Rates", "MLE Death Rates")
+
+    box_frame = pd.DataFrame(
+        {
+            "Parameter": [labels[0]] * birth.size + [labels[1]] * death.size,
+            "Rate": np.concatenate([birth, death]),
+        }
+    )
+    box = (
+        alt.Chart(box_frame)
+        .mark_boxplot(color=style.base_color, size=40, outliers=True)
+        .encode(
+            x=alt.X("Parameter:N", title=None, sort=list(labels)),
+            y=alt.Y("Rate:Q", title="Rate"),
         )
-        fig.add_trace(
-            go.Scatter(
-                x=[labels[idx]],
-                y=[true_rates[idx]],
-                mode="markers",
-                marker={"color": style.true_color, "size": 8, "symbol": "circle"},
-                name="True",
-                showlegend=(idx == 0),
-            ),
+    )
+
+    kinds = ("True", "Mean", "Median")
+    marker_frame = pd.DataFrame(
+        {
+            "Parameter": list(labels) * 3,
+            "value": [
+                true_rates[0],
+                true_rates[1],
+                float(np.mean(birth)),
+                float(np.mean(death)),
+                float(np.median(birth)),
+                float(np.median(death)),
+            ],
+            "kind": ["True", "True", "Mean", "Mean", "Median", "Median"],
+        }
+    )
+    color = alt.Color(
+        "kind:N",
+        title=None,
+        scale=alt.Scale(
+            domain=list(kinds),
+            range=[style.true_color, style.mean_color, style.median_color],
+        ),
+    )
+    shape = alt.Shape(
+        "kind:N",
+        title=None,
+        scale=alt.Scale(domain=list(kinds), range=["circle", "circle", "square"]),
+    )
+    markers = (
+        alt.Chart(marker_frame)
+        .mark_point(filled=True, size=90, opacity=1.0)
+        .encode(
+            x=alt.X("Parameter:N", sort=list(labels)),
+            y=alt.Y("value:Q"),
+            color=color,
+            shape=shape,
         )
-        fig.add_trace(
-            go.Scatter(
-                x=[labels[idx]],
-                y=[means[idx]],
-                mode="markers",
-                marker={"color": style.mean_color, "size": 10, "symbol": "circle"},
-                name="Mean",
-                showlegend=(idx == 0),
-            ),
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=[labels[idx]],
-                y=[medians[idx]],
-                mode="markers",
-                marker={"color": style.median_color, "size": 10, "symbol": "square"},
-                name="Median",
-                showlegend=(idx == 0),
-            ),
-        )
-    return fig
+    )
+    return alt.layer(box, markers)

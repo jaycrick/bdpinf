@@ -593,6 +593,9 @@ def save_multi_epoch_birth_time_figure(
     from inf_bp_texts.inference.likelihood import (  # noqa: PLC0415
         calculate_unknown_spine_mixture_birth_density,
     )
+    from inf_bp_texts.visualization.age_fit_plot import (  # noqa: PLC0415
+        creation_year_fit_chart,
+    )
 
     if not result.get("success"):
         return
@@ -608,20 +611,9 @@ def save_multi_epoch_birth_time_figure(
     birth_year_grid = np.linspace(start_year, plot_end_year, 200)
     birth_time_grid = birth_year_grid - start_year
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Histogram(
-            x=observed_birth_years,
-            nbinsx=50,
-            name="Observed Birth Years",
-            marker_color=ptolqual[0],
-            opacity=0.6,
-            showlegend=True,
-        )
-    )
-
+    density_values: np.ndarray | None = None
     try:
-        theoretical_birth_density = (
+        density_values = (
             calculate_unknown_spine_mixture_birth_density(
                 birth_rates=torch.as_tensor(birth_rates, dtype=torch.float64),
                 death_rates=torch.as_tensor(death_rates, dtype=torch.float64),
@@ -633,37 +625,24 @@ def save_multi_epoch_birth_time_figure(
             .cpu()
             .numpy()
         )
-        hist_count = len(observed_birth_years)
-        bin_width = (observed_birth_years.max() - observed_birth_years.min()) / 50
-        if bin_width <= 0:
-            bin_width = 1.0
-        theoretical_density_scaled = theoretical_birth_density * hist_count * bin_width
-        fig.add_trace(
-            go.Scatter(
-                x=birth_year_grid,
-                y=theoretical_density_scaled,
-                mode="lines",
-                name="Fitted Birth-Time Distribution",
-                line={"color": ptolqual[1], "width": 3},
-                showlegend=True,
-            )
-        )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - overlay is optional; skip on failure
         logger.warning(
             "Could not generate theoretical overlay for %s: %s", case_name, exc
         )
+        density_values = None
 
-    fig = apply_professional_styling(
-        fig,
-        f"{case_name}: Observed vs Fitted Manuscript Birth Times",
-        "Manuscript birth year (CE)",
-        "Frequency",
+    chart = creation_year_fit_chart(
+        observed_birth_years,
+        birth_year_grid if density_values is not None else None,
+        density_values,
+        title=f"{case_name}: Observed vs Fitted Manuscript Birth Times",
+        nbins=50,
+        x_title="Manuscript birth year (CE)",
+        observed_label="Observed Birth Years",
+        density_label="Fitted Birth-Time Distribution",
     )
-    fig = apply_tufte_axes(fig)
-    fig.update_xaxes(tickformat=",d")
-    fig.update_yaxes(tickformat=",d")
-    save_figure(
-        fig,
+    save_chart(
+        chart,
         output_slug,
         width=397,
         height=300,

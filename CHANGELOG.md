@@ -23,6 +23,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `plot_*` functions now return `alt.Chart`; the `save_*` functions render via Altair and
   export through `save_chart`. Call signatures are unchanged, so notebooks and the
   splitting test are unaffected.
+- `visualization.parameter_plots` (`create_kde_density_plot`,
+  `create_parameter_box_plot`) and `visualization.age_fit_plot`
+  (`plot_creation_year_fit`) — migrated to Altair (Phase 3, moderate figures), now
+  returning `alt.LayerChart`. The KDE arrow annotation becomes a dashed `mark_rule` +
+  `mark_text` label; the box plot's `boxmean` line becomes an explicit mean marker. The
+  observed-creation-year histogram + density logic is consolidated into a single shared
+  `visualization.age_fit_plot.creation_year_fit_chart` builder reused by both
+  `plot_creation_year_fit` and `save_multi_epoch_birth_time_figure` (removing duplicated
+  density-scaling code). The two NTVMR inference notebooks switch the age-fit figure to
+  `display(...)` + `save_chart(...)`.
 
 ### Removed
 
