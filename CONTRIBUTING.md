@@ -19,10 +19,10 @@ uv run pytest
 # All linting and formatting at once
 uv run pre-commit run --all-files
 
-# Individual tools
-uv run ruff check src tests
+# Individual tools (always auto-fix before checking compliance)
 uv run ruff format src tests
-uv run mypy src/
+uv run ruff check --fix src tests
+uv run basedpyright --project pyproject.toml src/
 ```
 
 ## Quarto notebooks
@@ -33,7 +33,7 @@ uv run quarto render          # full site build
 uv run quarto preview         # live preview
 
 # Lint notebook Python cells
-uv run lintquarto -l ruff pyright -p qmd_scripts docs -e .venv _output reference
+uv run lintquarto -l ruff basedpyright -p qmd_scripts docs -e .venv _output reference
 ```
 
 ## Pull requests

@@ -37,8 +37,10 @@ uv run pytest -m recovery                      # simulate-then-fit recovery test
 uv run pytest -k "test_name"                   # single test by name
 
 # Linting and formatting
-uv run ruff check src tests
+# Always run format and auto-fix first — let ruff correct what it can automatically
+# before checking compliance, rather than hand-editing formatting or style issues.
 uv run ruff format src tests
+uv run ruff check --fix src tests
 uv run isort src tests
 uv run basedpyright --project pyproject.toml src/  # strict mode; 0 errors enforced
 
@@ -46,7 +48,7 @@ uv run basedpyright --project pyproject.toml src/  # strict mode; 0 errors enfor
 uv run pre-commit run --all-files
 
 # Lint Python cells in Quarto notebooks — run whenever a .qmd file is created or updated
-uv run lintquarto -l ruff pyright -p qmd_scripts docs -e .venv _output reference
+uv run lintquarto -l ruff basedpyright -p qmd_scripts docs -e .venv _output reference
 
 # Documentation — always use uv run to pick up the venv; plain `quarto` uses
 # system Python and fails with ModuleNotFoundError

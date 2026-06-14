@@ -35,12 +35,11 @@ dev = [
     "isort>=7.0.0",
     "joblib-stubs>=1.5.3.1.20260117",
     "jupyter-cache>=1.0.1",
-    "lintquarto>=0.11.0",
+    "lintquarto>=0.13.1",
     "lxml-stubs>=0.5.1",
     "pandas-stubs>=3.0.0.260204",
     "plotly-stubs>=0.1.2",
     "pre-commit>=4.5.1",
-    "pyright>=1.1.400",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "quarto>=0.1.0",
@@ -77,6 +76,11 @@ reportArgumentType = "none"
 reportOptionalOperand = "none"
 reportReturnType = "none"
 reportGeneralTypeIssues = "none"
+reportUnusedExpression = "none"
+# lintquarto concatenates all cells into one temp .py file; the timing-bracket pattern
+# (import time in both the first and last cell) triggers this in every notebook.
+# ruff F811 catches genuine duplicate imports in src/, so suppressing here is safe.
+reportDuplicateImport = "none"
 
 [tool.ruff]
 line-length = 88

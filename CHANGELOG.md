@@ -57,6 +57,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Plotly figure constructors. The asymptotic-consistency notebook switches to
   `display(...)`.
 
+- Notebook type-checking switched from `pyright` to `basedpyright` via
+  `lintquarto -l ruff basedpyright`; `lintquarto` bumped to ≥0.13.1; the standalone
+  `pyright` dev dependency and `pyrightconfig.json` have been removed.
+
 ### Removed
 
 - `visualization.plotting` — deleted dead code: the unused `layout_config` dict, the
