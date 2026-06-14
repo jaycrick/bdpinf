@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `visualization.date_distribution_plots.plot_date_range_kde_comparison` — new reusable
+  Altair builder for the recurring "date-range KDE" figure (midpoint histogram +
+  weighted date-range KDE curve + resampled-date histogram, overlaid on one axis),
+  re-exported from `inf_bp_texts.visualization`. Introduced while migrating the
+  data-exploration notebooks (Phase 5), replacing the inline per-notebook `go.Figure`
+  copies.
+
 - `visualization.altair_theme` — new module beginning the Plotly→Altair migration
   (Phase 1). Registers and enables the `inf_bp_texts` Altair theme (ptolqual palette,
   serif font stack, muted `#FAFAFA` background, non-bold titles/labels, Tufte axes) and
