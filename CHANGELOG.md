@@ -27,12 +27,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `create_parameter_box_plot`) and `visualization.age_fit_plot`
   (`plot_creation_year_fit`) — migrated to Altair (Phase 3, moderate figures), now
   returning `alt.LayerChart`. The KDE arrow annotation becomes a dashed `mark_rule` +
-  `mark_text` label; the box plot's `boxmean` line becomes an explicit mean marker. The
+  `mark_text` label; the box plot drops the redundant median dot (the box already draws
+  the median line) and reproduces `boxmean` as an explicit mean marker. The
   observed-creation-year histogram + density logic is consolidated into a single shared
   `visualization.age_fit_plot.creation_year_fit_chart` builder reused by both
   `plot_creation_year_fit` and `save_multi_epoch_birth_time_figure` (removing duplicated
   density-scaling code). The two NTVMR inference notebooks switch the age-fit figure to
   `display(...)` + `save_chart(...)`.
+- `visualization.genealogy.plot_genealogy_tree` and
+  `models.BirthDeathProcess.plot_genealogy_tree` — migrated to Altair (Phase 4), now
+  returning `alt.LayerChart` instead of a Plotly figure. Lifetimes are horizontal
+  `mark_rule` segments colour/size-coded by lineage (extinct / surviving / spine) on a
+  per-row ordinal axis labelled by `manuscript_id`; parent→child connectors are dashed
+  vertical `mark_rule` segments. `BirthDeathProcess` no longer imports Plotly.
 
 ### Removed
 

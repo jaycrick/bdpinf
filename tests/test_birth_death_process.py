@@ -1,8 +1,8 @@
 """Test suite for BirthDeathProcess class initialization and basic functionality."""
 
+import altair as alt
 import numpy as np
 import pandas as pd
-import plotly.graph_objs as go
 import pytest
 import torch
 from numpy.testing import assert_array_equal
@@ -362,31 +362,39 @@ class TestBirthDeathProcessGenealogy:
         assert order.loc[order["manuscript_id"] == 2, "plot_death_time"].item() == 10.0
         assert order.loc[order["manuscript_id"] == 0, "plot_death_time"].item() == 0.5
 
-    def test_plot_genealogy_tree_returns_expected_shapes_and_ticks(self) -> None:
+    def test_plot_genealogy_tree_builds_layered_rule_chart(self) -> None:
         process = BirthDeathProcess.from_manuscript_records(
             self._sample_genealogy_records(),
             epoch_end_times=10.0,
             start_time=0.0,
         )
 
-        fig = process.plot_genealogy_tree()
+        chart = process.plot_genealogy_tree()
 
-        assert isinstance(fig, go.Figure)
-        assert fig.layout.yaxis.autorange == "reversed"
-        assert tuple(fig.layout.yaxis.tickvals) == (0, 1, 2, 3, 4)
-        assert tuple(fig.layout.yaxis.ticktext) == ("0", "2", "1", "4", "3")
-        assert len(fig.layout.shapes) == 9
+        assert isinstance(chart, alt.LayerChart)
+        spec = chart.to_dict()
+        lifetimes, connectors = spec["layer"]
+        assert lifetimes["mark"]["type"] == "rule"
+        assert connectors["mark"]["type"] == "rule"
 
-        shape_dicts = [shape.to_plotly_json() for shape in fig.layout.shapes]
-        assert any(
-            shape["line"]["color"] == "#000000" and shape["line"]["width"] == 2.0
-            for shape in shape_dicts
-        )
-        assert any(
-            shape["line"]["color"] == "#228833" and shape["line"]["width"] == 4.0
-            for shape in shape_dicts
-        )
-        assert any(shape["line"].get("dash") == "dot" for shape in shape_dicts)
+        # y axis labelled by manuscript_id in DFS order (root 0 on top), the same
+        # ordering the previous Plotly ticktext produced.
+        assert lifetimes["encoding"]["y"]["scale"]["domain"] == [
+            "0",
+            "2",
+            "1",
+            "4",
+            "3",
+        ]
+
+        # Lifetimes are colour/size-coded by lineage category.
+        color_scale = lifetimes["encoding"]["color"]["scale"]
+        assert color_scale["domain"] == ["extinct", "survivor", "spine"]
+        assert color_scale["range"][0] == "#000000"  # extinct
+        assert color_scale["range"][2] == "#228833"  # spine
+
+        # Parent-child connectors are dashed.
+        assert connectors["mark"]["strokeDash"] == [2, 2]
 
     def test_genealogy_helpers_require_records(self) -> None:
         process = BirthDeathProcess(creation_times=[1.0], epoch_end_times=10.0)
