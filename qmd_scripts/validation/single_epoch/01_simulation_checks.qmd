@@ -377,7 +377,7 @@ if spine_grid_direct is not None:
     )
 
 spine_theory_x, spine_theory_y = theoretical_age_density(
-    lambda age: calculate_spine_ages_log_lik(
+    lambda age: calculate_spine_ages_log_lik(  # pyright: ignore[reportUnknownLambdaType]
         birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
     ),
     time_span,
@@ -446,7 +446,7 @@ if non_spine_grid_direct is not None:
     )
 
 non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
-    lambda age: calculate_non_spine_ages_log_lik(
+    lambda age: calculate_non_spine_ages_log_lik(  # pyright: ignore[reportUnknownLambdaType]
         birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
     ),
     time_span,

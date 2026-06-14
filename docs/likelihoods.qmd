@@ -163,7 +163,7 @@ rates are identical.
 
 ```python
 import torch
-from inf_bp_texts.models.mathematical_functions import calculate_non_spine_ages_log_lik
+from inf_bp_texts.models import calculate_non_spine_ages_log_lik
 
 ages = torch.tensor([15.0, 60.0, 95.0], dtype=torch.float64)
 birth_rates_val = torch.tensor([0.02], dtype=torch.float64)

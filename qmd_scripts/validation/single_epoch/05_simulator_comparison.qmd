@@ -138,7 +138,7 @@ for dr in DEATH_RATES:
     regime_grids.append(lvl)
     first_inc = float(lvl[1]) - float(lvl[0])
     # R = ceil(1 / pr_ext) for the first increment
-    from inf_bp_texts.simulation.splitting import _calculate_extinction_probability  # noqa: PLC0415
+    from inf_bp_texts.simulation.splitting import _calculate_extinction_probability  # noqa: PLC0415  # pyright: ignore[reportPrivateUsage]
     pr = _calculate_extinction_probability(
         birth_rate=BIRTH_RATE,
         death_rate=dr,

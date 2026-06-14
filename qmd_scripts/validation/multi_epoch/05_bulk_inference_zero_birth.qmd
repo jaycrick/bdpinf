@@ -148,7 +148,7 @@ def fit_constrained_model(
     except Exception:
         return None
 
-    if result is not None and result.get("success", False):
+    if result.get("success", False):
         birth_rates = np.asarray(result.get("birth_rates"), dtype=np.float64)
         if birth_rates.size >= 2:
             birth_rates = birth_rates.copy()
