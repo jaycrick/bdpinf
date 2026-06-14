@@ -159,11 +159,12 @@ def create_parameter_box_plot(
     true_rates: tuple[float, float],
     style: BoxPlotStyle,
 ) -> alt.LayerChart:
-    """Create a two-parameter box plot with true, mean, and median overlays.
+    """Create a two-parameter box plot with true and mean overlays.
 
-    The Plotly ``boxmean=True`` mean line has no ``mark_boxplot`` equivalent; it
-    is replaced by an explicit colour-coded mean marker (clearer than a second,
-    hidden encoding of the mean), alongside true-value and median markers.
+    The median is already drawn as the box's centre line, so only true-value and
+    mean markers are overlaid. The Plotly ``boxmean=True`` mean line (which
+    ``mark_boxplot`` has no equivalent for) is reproduced by the explicit mean
+    marker.
     """
     birth = np.asarray(birth_rates, dtype=np.float64)
     death = np.asarray(death_rates, dtype=np.float64)
@@ -184,33 +185,23 @@ def create_parameter_box_plot(
         )
     )
 
-    kinds = ("True", "Mean", "Median")
+    kinds = ("True", "Mean")
     marker_frame = pd.DataFrame(
         {
-            "Parameter": list(labels) * 3,
+            "Parameter": list(labels) * 2,
             "value": [
                 true_rates[0],
                 true_rates[1],
                 float(np.mean(birth)),
                 float(np.mean(death)),
-                float(np.median(birth)),
-                float(np.median(death)),
             ],
-            "kind": ["True", "True", "Mean", "Mean", "Median", "Median"],
+            "kind": ["True", "True", "Mean", "Mean"],
         }
     )
     color = alt.Color(
         "kind:N",
         title=None,
-        scale=alt.Scale(
-            domain=list(kinds),
-            range=[style.true_color, style.mean_color, style.median_color],
-        ),
-    )
-    shape = alt.Shape(
-        "kind:N",
-        title=None,
-        scale=alt.Scale(domain=list(kinds), range=["circle", "circle", "square"]),
+        scale=alt.Scale(domain=list(kinds), range=[style.true_color, style.mean_color]),
     )
     markers = (
         alt.Chart(marker_frame)
@@ -219,7 +210,6 @@ def create_parameter_box_plot(
             x=alt.X("Parameter:N", sort=list(labels)),
             y=alt.Y("value:Q"),
             color=color,
-            shape=shape,
         )
     )
     return alt.layer(box, markers)
