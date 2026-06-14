@@ -7,12 +7,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `visualization.date_distribution_plots.plot_date_range_kde_comparison` — new reusable
-  Altair builder for the recurring "date-range KDE" figure (midpoint histogram +
-  weighted date-range KDE curve + resampled-date histogram, overlaid on one axis),
-  re-exported from `inf_bp_texts.visualization`. Introduced while migrating the
-  data-exploration notebooks (Phase 5), replacing the inline per-notebook `go.Figure`
-  copies.
+- `visualization.date_distribution_plots` — new module of reusable Altair builders for
+  the recurring data-exploration date figures, re-exported from
+  `inf_bp_texts.visualization` (Phase 5):
+  `plot_date_range_kde_comparison` (midpoint histogram + weighted KDE curve +
+  resampled-date histogram, with a configurable `midpoint_label`) and
+  `plot_grouped_date_distribution` (stacked per-group midpoint histograms + weighted KDE
+  line + resampled-date frequency polygon). These replace the inline per-notebook
+  `go.Figure` copies in the data-exploration notebooks.
+- `manuscript_data_exploration.qmd` migrated to Altair: the books and by-century stacked
+  histograms, the section-correlation **heatmap** (`mark_rect` + `mark_text`), the
+  date-range KDE charts (via the new builders), the 2×2 faceted per-section date
+  distributions (a layered chart faceted off one combined long-form frame), and the
+  age-vs-content scatter. `kashouh_data_exploration.qmd` likewise migrated, with the
+  parsed-date histogram stacked by relabelled source and an interactive legend selection.
 
 - `visualization.altair_theme` — new module beginning the Plotly→Altair migration
   (Phase 1). Registers and enables the `inf_bp_texts` Altair theme (ptolqual palette,
