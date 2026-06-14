@@ -35,6 +35,7 @@ from typing import Any, TypedDict, cast
 
 import numpy as np
 import pandas as pd
+from IPython.display import display
 from joblib import Parallel, delayed
 from itables import show as show_table
 
@@ -313,7 +314,7 @@ fig_birth = plot_parameter_consistency(
     true_rate_key="birth_rate",
     title="Birth-rate consistency across observation time",
 )
-fig_birth.show()
+display(fig_birth)
 fig_death = plot_parameter_consistency(
     summary_df=summary_df,
     results_df=results_df,
@@ -324,7 +325,7 @@ fig_death = plot_parameter_consistency(
     true_rate_key="death_rate",
     title="Death-rate consistency across observation time",
 )
-fig_death.show()
+display(fig_death)
 ```
 
 ```{python}

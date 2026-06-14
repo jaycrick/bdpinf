@@ -40,6 +40,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `mark_rule` segments colour/size-coded by lineage (extinct / surviving / spine) on a
   per-row ordinal axis labelled by `manuscript_id`; parent→child connectors are dashed
   vertical `mark_rule` segments. `BirthDeathProcess` no longer imports Plotly.
+- `visualization.plotting.plot_parameter_consistency` — migrated to Altair (Phase 4),
+  now returning an `alt.FacetChart` faceted by regime (rows) × statistic (columns) with
+  `mark_area` bootstrap CI bands, log-scaled `T`, and dashed true-value rules. The
+  bootstrap statistics are extracted into a new pure, testable
+  `visualization.plotting.compute_consistency_bands` returning a tidy long-form frame
+  (regime, T, statistic, estimate, lower, upper, true_value), replacing the previous
+  ~270-line hand-built 36-trace subplot grid. `visualization.plotting` no longer imports
+  Plotly figure constructors. The asymptotic-consistency notebook switches to
+  `display(...)`.
 
 ### Removed
 
