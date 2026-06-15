@@ -10,10 +10,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `visualization.date_distribution_plots.plot_date_range_kde_comparison` — new reusable
   Altair builder for the recurring date-range figure (midpoint histogram + weighted KDE
   curve + resampled-date histogram), re-exported from `inf_bp_texts.visualization`
-  (Phase 5). Configurable `midpoint_label` and an `interaction` mode (`"none"`/`"filter"`/
-  `"highlight"`) that binds a legend `selection_point`: `"filter"` shows only the clicked
-  series, `"highlight"` dims the unselected ones (both HTML-only; PDFs keep the static
-  default). Replaces inline per-notebook `go.Figure` copies.
+  (Phase 5). Configurable `midpoint_label`, an `interaction` mode (`"none"`/`"filter"`/
+  `"highlight"`) that binds a legend `selection_point` (`"filter"` shows only the clicked
+  series, `"highlight"` dims the unselected ones; both HTML-only, PDFs keep the static
+  default), and an `x_domain` that pins the bin extent and x scale so the axis does not
+  rescale when a series is filtered out. Replaces inline per-notebook `go.Figure` copies.
+- `visualization.altair_theme` — the theme now draws faint horizontal (y-axis) gridlines
+  (`config.axisY`, `#E8E8E8`) in a Tufte style; the x-axis stays gridless.
 - Data-exploration notebooks migrated to Altair with HTML interactivity:
   `manuscript_data_exploration.qmd` (books/by-century stacked histograms with legend
   filtering and Lectionaries stacked on top; section-correlation **heatmap** via

@@ -36,6 +36,7 @@ BACKGROUND: str = "#FAFAFA"  # very light grey, high luminance, low saturation
 AXIS_COLOR: str = "#BBBBBB"  # thin domain line
 TICK_COLOR: str = "#777777"  # muted outward ticks
 GRID_COLOR: str = "#D0D0D0"  # only used where a figure opts back into gridlines
+GRID_COLOR_LIGHT: str = "#E8E8E8"  # faint Tufte horizontal gridlines
 
 # Paul Tol qualitative palette — the project's categorical colour order.
 PTOLQUAL: list[str] = [
@@ -100,6 +101,14 @@ def inf_bp_texts_theme() -> alt.theme.ThemeConfig:
                 "titleFontWeight": _NORMAL,
                 "labelFontSize": LABEL_FONT_SIZE,
                 "titleFontSize": FONT_SIZE,
+            },
+            # Faint horizontal (y) gridlines only — they aid reading counts/values
+            # while the x-axis stays clean (Tufte-style). The base axis config
+            # keeps grids off, so this override applies to the y-axis alone.
+            "axisY": {
+                "grid": True,
+                "gridColor": GRID_COLOR_LIGHT,
+                "gridWidth": 0.5,
             },
             "legend": {
                 "labelFont": FONT,

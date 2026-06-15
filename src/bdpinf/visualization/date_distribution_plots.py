@@ -37,6 +37,7 @@ def plot_date_range_kde_comparison(
     x_title: str = "Year (CE)",
     midpoint_label: str = _MIDPOINT_LABEL,
     interaction: LegendInteraction = "none",
+    x_domain: tuple[float, float] | None = None,
 ) -> alt.LayerChart:
     """Overlay the midpoint histogram, weighted KDE, and resampled histogram.
 
@@ -66,8 +67,20 @@ def plot_date_range_kde_comparison(
         shows only the clicked series; ``"highlight"`` keeps every series but dims
         the unselected ones. Both are inert in the static PDF export (an empty
         selection matches all series, so the default appearance is unchanged).
+    x_domain : tuple[float, float] | None
+        Fixed ``(min, max)`` x-axis range. When set, both the bin extent and the
+        x scale are pinned to it, so the axis does not rescale when a series is
+        filtered out. Defaults to auto-fitting the data.
     """
     y_title = f"Manuscripts per {int(bin_width)}-year bin"
+    x_scale = (
+        alt.Scale(domain=list(x_domain)) if x_domain is not None else alt.Undefined
+    )
+    x_bin = (
+        alt.Bin(step=bin_width, extent=list(x_domain))
+        if x_domain is not None
+        else alt.Bin(step=bin_width)
+    )
     color = alt.Color(
         "series:N",
         title=None,
@@ -105,9 +118,10 @@ def plot_date_range_kde_comparison(
             .encode(
                 x=alt.X(
                     f"{x_title}:Q",
-                    bin=alt.Bin(step=bin_width),
+                    bin=x_bin,
                     title=x_title,
                     axis=alt.Axis(format="d"),
+                    scale=x_scale,
                 ),
                 y=alt.Y("count():Q", title=y_title),
                 color=color,
@@ -126,7 +140,7 @@ def plot_date_range_kde_comparison(
         alt.Chart(kde_frame)
         .mark_line(strokeWidth=2)
         .encode(
-            x=alt.X(f"{x_title}:Q"),
+            x=alt.X(f"{x_title}:Q", scale=x_scale),
             y=alt.Y("value:Q", title=y_title),
             color=color,
             **_highlight_opacity(1.0),
