@@ -20,6 +20,7 @@ from .parameter_plots import (
     create_parameter_box_plot,
 )
 from .plotting import (
+    convergence_chart,
     save_figure,
     save_multi_epoch_birth_time_figure,
     save_multi_epoch_convergence_figure,
@@ -36,6 +37,7 @@ __all__ = [
     "THEME_NAME",
     "BoxPlotStyle",
     "KdePlotConfig",
+    "convergence_chart",
     "plot_creation_year_fit",
     "plot_date_range_kde_comparison",
     "register_export_fonts",

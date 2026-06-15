@@ -428,6 +428,39 @@ def save_figure(
         return None
 
 
+def convergence_chart(ll_history: Sequence[float], *, title: str) -> alt.Chart:
+    """Line chart of log-likelihood versus iteration for an optimizer trace.
+
+    Parameters
+    ----------
+    ll_history : Sequence[float]
+        Per-iteration log-likelihood values (already negated from the NLL).
+    title : str
+        Figure title.
+    """
+    iterations = list(range(1, len(ll_history) + 1))
+    frame = pd.DataFrame({"Iteration": iterations, "Log-likelihood": list(ll_history)})
+    return (
+        alt.Chart(frame)
+        .mark_line(
+            point=alt.OverlayMarkDef(size=30, color=PTOLQUAL[2]),
+            strokeWidth=2,
+            color=PTOLQUAL[2],
+        )
+        .encode(
+            x=alt.X("Iteration:Q", title="Iteration", axis=alt.Axis(format="d")),
+            # Log-likelihood is meaningful relative to itself, not to zero, so
+            # fit the axis to the data range instead of stretching down to 0.
+            y=alt.Y(
+                "Log-likelihood:Q",
+                title="Log-likelihood",
+                scale=alt.Scale(zero=False),
+            ),
+        )
+        .properties(title=title)
+    )
+
+
 def save_multi_epoch_convergence_figure(
     case_name: str,
     result: dict[str, Any],
@@ -465,27 +498,8 @@ def save_multi_epoch_convergence_figure(
         return
 
     ll_history = [-value for value in nll_history]
-    iterations = list(range(1, len(ll_history) + 1))
-
-    frame = pd.DataFrame({"Iteration": iterations, "Log-likelihood": ll_history})
-    chart = (
-        alt.Chart(frame)
-        .mark_line(
-            point=alt.OverlayMarkDef(size=30, color=PTOLQUAL[2]),
-            strokeWidth=2,
-            color=PTOLQUAL[2],
-        )
-        .encode(
-            x=alt.X("Iteration:Q", title="Iteration", axis=alt.Axis(format="d")),
-            # Log-likelihood is meaningful relative to itself, not to zero, so
-            # fit the axis to the data range instead of stretching down to 0.
-            y=alt.Y(
-                "Log-likelihood:Q",
-                title="Log-likelihood",
-                scale=alt.Scale(zero=False),
-            ),
-        )
-        .properties(title=f"{case_name}: Log-likelihood Convergence")
+    chart = convergence_chart(
+        ll_history, title=f"{case_name}: Log-likelihood Convergence"
     )
     save_chart(
         chart,
