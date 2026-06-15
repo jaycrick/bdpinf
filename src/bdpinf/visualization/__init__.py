@@ -11,10 +11,7 @@ from .altair_theme import (
     register_export_fonts,
     save_chart,
 )
-from .date_distribution_plots import (
-    plot_date_range_kde_comparison,
-    plot_grouped_date_distribution,
-)
+from .date_distribution_plots import plot_date_range_kde_comparison
 from .parameter_plots import (
     BoxPlotStyle,
     KdePlotConfig,
@@ -41,7 +38,6 @@ __all__ = [
     "KdePlotConfig",
     "plot_creation_year_fit",
     "plot_date_range_kde_comparison",
-    "plot_grouped_date_distribution",
     "register_export_fonts",
     "save_chart",
     "compute_boxplot_summary",
