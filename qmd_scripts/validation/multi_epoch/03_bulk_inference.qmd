@@ -20,12 +20,11 @@ __compile_start = time.perf_counter()
 ## Setup
 
 ```{python}
+import altair as alt
 import numpy as np
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objs as go
 from collections import Counter
-from plotly.subplots import make_subplots
+from IPython.display import display
 from joblib import Parallel, delayed
 
 from inf_bp_texts.analysis.validation_helpers import (
@@ -38,12 +37,8 @@ from inf_bp_texts.analysis.validation_helpers import (
 )
 from inf_bp_texts.analysis.single_epoch import extract_alive_ages, summarize_fit_success
 from inf_bp_texts.simulation import simulate_birth_death_process
-from inf_bp_texts.visualization.plotting import (
-    apply_professional_styling,
-    apply_tufte_axes,
-    ptolqual,
-    save_figure,
-)
+from inf_bp_texts.visualization import save_chart
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
 
 Only simulations that contain at least one observed age in each fitted epoch are kept. This avoids sending single-epoch samples into a two-epoch fit, which would make the recovered rates harder to interpret.
@@ -154,25 +149,25 @@ parameter_specs = [
         r"$\hat{\lambda}_1$",
         epoch_parameter_arrays["epoch_1_birth"],
         birth_rates_true[0],
-        ptolqual[0],
+        PTOLQUAL[0],
     ),
     (
         r"$\hat{\mu}_1$",
         epoch_parameter_arrays["epoch_1_death"],
         death_rates_true[0],
-        ptolqual[1],
+        PTOLQUAL[1],
     ),
     (
         r"$\hat{\lambda}_2$",
         epoch_parameter_arrays["epoch_2_birth"],
         birth_rates_true[1],
-        ptolqual[2],
+        PTOLQUAL[2],
     ),
     (
         r"$\hat{\mu}_2$",
         epoch_parameter_arrays["epoch_2_death"],
         death_rates_true[1],
-        ptolqual[3],
+        PTOLQUAL[3],
     ),
 ]
 
@@ -195,55 +190,38 @@ if plotting_row_count > 0:
             + f"median: {np.median(values):.6f} (true={true_value:.6f})"
         )
 
-if plotting_row_count > 0:
-    fig_hist = make_subplots(
-        rows=2,
-        cols=2,
-        subplot_titles=[spec[0] for spec in plotting_parameter_specs],
-        horizontal_spacing=0.08,
-        vertical_spacing=0.12,
+def _param_hist_panel(
+    values: np.ndarray, true_value: float, color: str, panel_title: str
+) -> alt.LayerChart:
+    _df = pd.DataFrame({"rate": values.tolist()})
+    _bins = alt.Bin(maxbins=30)
+    _hist = (
+        alt.Chart(_df)
+        .mark_bar(opacity=0.8, color=color)
+        .encode(
+            x=alt.X("rate:Q", bin=_bins, title="Fitted rate", scale=alt.Scale(zero=True)),
+            y=alt.Y("count():Q", title="Count"),
+        )
+        .properties(title=panel_title, width=260, height=200)
     )
-    for index, (label, values, true_value, color) in enumerate(
-        plotting_parameter_specs
-    ):
-        row = index // 2 + 1
-        col = index % 2 + 1
-        fig_hist.add_trace(
-            go.Histogram(
-                x=values,
-                nbinsx=30,
-                marker=dict(color=color),
-                opacity=0.8,
-                name=label,
-                showlegend=False,
-            ),
-            row=row,
-            col=col,
-        )
-        fig_hist.add_vline(
-            x=true_value,
-            line_color=color,
-            line_dash="dash",
-            row=row,
-            col=col,
-        )
+    _vline = alt.Chart(pd.DataFrame({"x": [true_value]})).mark_rule(
+        strokeDash=[4, 2], color=color, strokeWidth=2
+    ).encode(x=alt.X("x:Q"))
+    return _hist + _vline
 
-    fig_hist = apply_professional_styling(
-        fig_hist,
-        "Epoch-Specific Parameter Histograms",
-        "Fitted rate",
-        "Count",
-    )
-    fig_hist = apply_tufte_axes(fig_hist)
-    fig_hist.update_xaxes(range=[0.0, None])
-    fig_hist.show()
-    saved_hist = save_figure(
-        fig_hist,
-        "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_histograms",
-        width=800,
-        height=650,
-    )
-    print(f"Saved parameter histogram figure: {saved_hist}")
+
+if plotting_row_count > 0:
+    _panels = [
+        _param_hist_panel(values, true_value, color, label)
+        for label, values, true_value, color in plotting_parameter_specs
+    ]
+    fig_hist = alt.vconcat(
+        alt.hconcat(_panels[0], _panels[1]),
+        alt.hconcat(_panels[2], _panels[3]),
+    ).properties(title="Epoch-Specific Parameter Histograms")
+    display(fig_hist)
+    save_chart(fig_hist, "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_histograms")
+    print("Saved parameter histogram figure")
 
 
 scatter_data = {
@@ -251,28 +229,21 @@ scatter_data = {
 }
 
 if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
-    scatter_df = pd.DataFrame(scatter_data)
-    fig_pairs = px.scatter_matrix(
-        scatter_df,
-        dimensions=list(scatter_df.columns),
-        title="Pairs-Style Scatterplot Matrix of Fitted Parameters",
+    _col_names = ["lambda_1", "mu_1", "lambda_2", "mu_2"]
+    scatter_df = pd.DataFrame(dict(zip(_col_names, [v for v in scatter_data.values()])))
+    fig_pairs = (
+        alt.Chart(scatter_df)
+        .mark_point(size=4, opacity=0.1)
+        .encode(
+            alt.X(alt.repeat("column"), type="quantitative"),
+            alt.Y(alt.repeat("row"), type="quantitative"),
+        )
+        .properties(width=200, height=200)
+        .repeat(row=_col_names, column=_col_names)
     )
-    fig_pairs.update_traces(marker=dict(size=4, opacity=0.1), diagonal_visible=False)
-    fig_pairs = apply_professional_styling(
-        fig_pairs,
-        "Pairs-Style Scatterplot Matrix of Fitted Parameters",
-        "Fitted value",
-        "Fitted value",
-    )
-    fig_pairs = apply_tufte_axes(fig_pairs)
-    fig_pairs.show()
-    saved_pairs = save_figure(
-        fig_pairs,
-        "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_pairs_scatter_matrix",
-        width=900,
-        height=900,
-    )
-    print(f"Saved pairs scatter matrix figure: {saved_pairs}")
+    display(fig_pairs)
+    save_chart(fig_pairs, "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_pairs_scatter_matrix")
+    print("Saved pairs scatter matrix figure")
 ```
 
 ```{python}
