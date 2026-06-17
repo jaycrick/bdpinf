@@ -61,6 +61,32 @@ _GOLDEN_COMBINED_LL_10AGES = -381.6393679271
 
 _ATOL = 1e-4
 
+# ---------------------------------------------------------------------------
+# Canonical parameter set (two-epoch, supercritical → subcritical)
+# Epoch 1: birth 0.05, death 0.03, T=750  (supercritical)
+# Epoch 2: birth 0.01, death 0.02, T=1500 (subcritical)
+# ---------------------------------------------------------------------------
+_BIRTH_2 = torch.tensor([0.05, 0.01], dtype=torch.float64)
+_DEATH_2 = torch.tensor([0.03, 0.02], dtype=torch.float64)
+_TIMES_2 = torch.tensor([750.0, 1500.0], dtype=torch.float64)
+_AGE_300 = torch.tensor([300.0], dtype=torch.float64)
+_NS_2 = torch.tensor([3, 5], dtype=torch.int64)
+_AGES_10_MULTI = np.array(
+    [80.0, 200.0, 350.0, 500.0, 650.0, 720.0, 900.0, 1050.0, 1200.0, 1400.0]
+)
+
+# ---------------------------------------------------------------------------
+# Multi-epoch golden values — computed 2026-06-15 from the initial implementation
+# ---------------------------------------------------------------------------
+# Spine age log-lik at age=300, 2-epoch
+_GOLDEN_SPINE_LL_300_MULTI = -6.9630921864
+# Non-spine age log-lik at age=300, 2-epoch
+_GOLDEN_NON_SPINE_LL_300_MULTI = -7.6053693664
+# Population log-lik at ns=[3,5], 2-epoch
+_GOLDEN_POPULATIONS_LL_NS_2_MULTI = -18.6682576565
+# Combined log-likelihood (unknown-spine marginalisation) for 10 ages, 2-epoch
+_GOLDEN_COMBINED_LL_10AGES_MULTI = -178.5901579681
+
 
 @pytest.mark.regression
 class TestRegressionLikelihoods:
@@ -134,3 +160,49 @@ class TestRegressionLikelihoods:
             times=1500.0,
         )
         assert abs(float(result) - _GOLDEN_COMBINED_LL_10AGES) < _ATOL
+
+    # ------------------------------------------------------------------
+    # Multi-epoch golden tests (two-epoch parameter set)
+    # These are the reference numbers that Phase 2 (NumPyro/JAX) must
+    # match within _ATOL before that backend is trusted.
+    # ------------------------------------------------------------------
+
+    def test_spine_ages_log_lik_golden_single_age_multi_epoch(self) -> None:
+        result = calculate_spine_ages_log_lik(_BIRTH_2, _DEATH_2, _AGE_300, _TIMES_2)
+        assert_close(
+            result,
+            torch.tensor(_GOLDEN_SPINE_LL_300_MULTI, dtype=torch.float64),
+            atol=_ATOL,
+            rtol=0.0,
+        )
+
+    def test_non_spine_ages_log_lik_golden_single_age_multi_epoch(self) -> None:
+        result = calculate_non_spine_ages_log_lik(
+            _BIRTH_2, _DEATH_2, _AGE_300, _TIMES_2
+        )
+        assert_close(
+            result,
+            torch.tensor(_GOLDEN_NON_SPINE_LL_300_MULTI, dtype=torch.float64),
+            atol=_ATOL,
+            rtol=0.0,
+        )
+
+    def test_populations_log_lik_golden_ns_2_multi_epoch(self) -> None:
+        result = calculate_populations_log_lik(
+            _BIRTH_2, _DEATH_2, _NS_2, _TIMES_2, initial_population=1, unbias=False
+        )
+        assert_close(
+            result,
+            torch.tensor(_GOLDEN_POPULATIONS_LL_NS_2_MULTI, dtype=torch.float64),
+            atol=_ATOL,
+            rtol=0.0,
+        )
+
+    def test_combined_log_likelihood_golden_ten_ages_multi_epoch(self) -> None:
+        result = log_likelihood(
+            birth_rates=_BIRTH_2,
+            death_rates=_DEATH_2,
+            ages=_AGES_10_MULTI,
+            times=_TIMES_2,
+        )
+        assert abs(float(result) - _GOLDEN_COMBINED_LL_10AGES_MULTI) < _ATOL

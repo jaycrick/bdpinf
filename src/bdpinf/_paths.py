@@ -19,10 +19,12 @@ def get_project_root() -> Path:
         Absolute path to the project root.
 
     """
+    p = Path.cwd()
     quarto_root = os.environ.get("QUARTO_PROJECT_DIR")
     if quarto_root:
-        return Path(quarto_root).resolve()
-    p = Path.cwd()
+        candidate = Path(quarto_root).resolve()
+        if (candidate / "_quarto.yml").exists():
+            return candidate
     for parent in [p, *p.parents]:
         if (parent / "_quarto.yml").exists():
             return parent

@@ -25,7 +25,9 @@ def _validate_times_strictly_increasing(
     """Validate that times are strictly increasing."""
     error_message = f"times must be strictly increasing. Got times: {times}"
     if all_positive:
-        diffs = torch.diff(torch.cat([torch.tensor([0.0], dtype=torch.float64), times]))
+        diffs = torch.diff(
+            torch.cat([torch.zeros(1, dtype=torch.float64, device=times.device), times])
+        )
     else:
         diffs = torch.diff(times)
     if torch.any(diffs <= 0):

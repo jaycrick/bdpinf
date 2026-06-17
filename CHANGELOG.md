@@ -7,6 +7,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `inference.bayesian` — extended `BayesianPriorConfig` with per-family loc/scale
+  (`birth_loc`, `birth_scale`, `death_loc`, `death_scale`); added `constraints:
+  ParameterConstraints | None` and `device: str` to `BayesianModelConfig` so NUTS
+  samples only free log-rates and expands them inside the model (statistically
+  correct in-model constraints, replacing post-hoc sample projection); GPU/CUDA
+  device support with a `num_chains > 1` warning; `mp_context="spawn"` for
+  multi-chain runs to avoid PyTorch autograd + fork incompatibility.  Result dict
+  adds `posterior_log_samples`, `posterior_log_samples_by_chain`, `n_epochs`.
+- `qmd_scripts/core_analysis/04_bayesian/` — five Bayesian inference notebooks:
+  `kashouh_family_k_bayesian_inference.qmd` (rewritten; in-model constraints, CPU/GPU
+  benchmark), `kashouh_single_epoch_bayesian.qmd`, `ntvmr_single_epoch_bayesian.qmd`,
+  `ntvmr_birth_death_bayesian.qmd` (six-epoch), `ntvmr_initial_population_bayesian.qmd`
+  (N₀=150 sensitivity).
+- `tests/test_regression_likelihoods.py` — multi-epoch (2-epoch) golden-value
+  regression fixtures for spine ages, non-spine ages, population, and combined
+  log-likelihood.
+- `tests/test_bayesian_mle_consistency.py` — MLE-vs-posterior consistency baseline
+  (marked `slow`).
+- `inference.bayesian` — `mle_init_log_rates()` helper extracts free-parameter
+  log-rates from an MLE result for use as NUTS warmup start point; added
+  `init_log_rates` field to `BayesianModelConfig` and per-chain ±0.1 noise for
+  multi-chain runs; wider default prior (`scale=4.0`); reduced `max_tree_depth=8`.
+
+### Changed
+
+- `models.math_extinction` — replaced `scipy.integrate.quad` loop in
+  `calculate_log_pr_extinction_given_initial_lifetimes` with a closed-form
+  analytic expression derived from the Poisson generating functional; fully
+  vectorised over lifetimes, autograd-compatible, and device-agnostic (CPU/GPU).
+  Performance: 433 ms/call → 1.4 ms/call (310× speedup); enables practical NUTS
+  sampling for multi-epoch models.  The `_integrand_surv_from_weighted_birth_time`
+  helper is retained for testing.
+
+
+
 - `visualization.date_distribution_plots` — new module of reusable Altair builders for
   the recurring data-exploration date figures, re-exported from
   `inf_bp_texts.visualization` (Phase 5):

@@ -61,7 +61,10 @@ def _reverse_time(
     """
     end_time = times[-1]
     inverted_times = torch.flip(
-        end_time - torch.cat([torch.tensor([0.0], dtype=torch.float64), times])[:-1],
+        end_time
+        - torch.cat([torch.zeros(1, dtype=torch.float64, device=times.device), times])[
+            :-1
+        ],
         dims=[0],
     )
     reflected_birth_rates = torch.flip(death_rates, dims=[0])
@@ -153,9 +156,11 @@ def calculate_non_spine_ages_log_lik(
 
     birth_rate_val = birth_rates[0]
     death_rate_val = death_rates[0]
+    _dev = ages.device
+    _ninf = torch.tensor(float("-inf"), dtype=torch.float64, device=_dev)
 
     if birth_rate_val == 0 or death_rate_val <= 0:
-        return torch.tensor(float("-inf"), dtype=torch.float64)
+        return _ninf
 
     is_critical = torch.isclose(birth_rate_val, death_rate_val, rtol=1e-12).item()
 
@@ -171,7 +176,7 @@ def calculate_non_spine_ages_log_lik(
         if not (
             torch.all(torch.isfinite(log_numerator)) and torch.isfinite(log_denominator)
         ):
-            return torch.tensor(float("-inf"), dtype=torch.float64)
+            return _ninf
 
     else:  # λ ≠ μ
         growth_rate = birth_rate_val - death_rate_val
@@ -188,7 +193,7 @@ def calculate_non_spine_ages_log_lik(
         denominator = 1 - torch.exp(-prod_growth_rate_end_time)
 
         if not torch.all(torch.sign(numerator) == torch.sign(denominator)):
-            return torch.tensor(float("-inf"), dtype=torch.float64)
+            return _ninf
 
         log_numerator = torch.log(torch.abs(numerator))
         log_denominator = torch.log(torch.abs(denominator))
@@ -200,7 +205,7 @@ def calculate_non_spine_ages_log_lik(
             return (
                 torch.full_like(ages, float("-inf"), dtype=torch.float64)
                 if return_array
-                else torch.tensor(float("-inf"), dtype=torch.float64)
+                else _ninf
             )
 
     # Calculate final log density contributions
@@ -211,7 +216,7 @@ def calculate_non_spine_ages_log_lik(
         return (
             torch.full_like(ages, float("-inf"), dtype=torch.float64)
             if return_array
-            else torch.tensor(float("-inf"), dtype=torch.float64)
+            else _ninf
         )
 
     return log_density if return_array else torch.sum(log_density)
@@ -311,9 +316,11 @@ def calculate_spine_ages_log_lik(
 
     birth_rate = birth_rates[0]
     death_rate = death_rates[0]
+    _dev = ages.device
+    _ninf = torch.tensor(float("-inf"), dtype=torch.float64, device=_dev)
 
     if birth_rate < 0 or death_rate < 0:
-        return torch.tensor(float("-inf"), dtype=torch.float64)
+        return _ninf
 
     is_critical = torch.isclose(birth_rate, death_rate, rtol=1e-12).item()
     at_boundary = ages == end_time
@@ -342,7 +349,7 @@ def calculate_spine_ages_log_lik(
         ) - death_rate * torch.exp(-birth_rate * end_time)
 
         if not torch.all(torch.sign(numerator_boundary) == sign_denominator):
-            return torch.tensor(float("-inf"), dtype=torch.float64)
+            return _ninf
 
         log_numerator[at_boundary] = torch.log(torch.abs(numerator_boundary))
 
@@ -350,7 +357,7 @@ def calculate_spine_ages_log_lik(
         numerator_1 = torch.exp(-death_rate * ages) - torch.exp(-birth_rate * ages)
 
         if not torch.all(torch.sign(numerator_1) == sign_denominator):
-            return torch.tensor(float("-inf"), dtype=torch.float64)
+            return _ninf
 
         log_numerator[not_at_boundary] = (
             torch.log(birth_rate)
@@ -365,7 +372,7 @@ def calculate_spine_ages_log_lik(
         return (
             torch.full_like(ages, float("-inf"), dtype=torch.float64)
             if return_array
-            else torch.tensor(float("-inf"), dtype=torch.float64)
+            else _ninf
         )
 
     # Calculate final log density contributions
@@ -376,7 +383,7 @@ def calculate_spine_ages_log_lik(
         return (
             torch.full_like(ages, float("-inf"), dtype=torch.float64)
             if return_array
-            else torch.tensor(float("-inf"), dtype=torch.float64)
+            else _ninf
         )
 
     return log_density if return_array else torch.sum(log_density)

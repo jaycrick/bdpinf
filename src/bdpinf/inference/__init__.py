@@ -11,6 +11,7 @@ from .bayesian import (
     BayesianPriorConfig,
     fit_birth_death_processes_bayesian,
     fit_birth_death_processes_bayesian_from_data_frame,
+    mle_init_log_rates,
 )
 from .fitting import (
     fit_birth_death_processes,
@@ -42,6 +43,7 @@ __all__ = [
     "fit_birth_death_processes_bayesian",
     "fit_birth_death_processes_bayesian_from_data_frame",
     "fit_from_data_frame",
+    "mle_init_log_rates",
     "log_likelihood",
     "negative_log_likelihood",
 ]

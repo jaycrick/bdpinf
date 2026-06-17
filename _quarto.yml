@@ -55,6 +55,14 @@ website:
         menu:
           - text: "Kashouh FamilyK Bayesian"
             file: qmd_scripts/core_analysis/04_bayesian/kashouh_family_k_bayesian_inference.qmd
+          - text: "Kashouh Single-Epoch Bayesian"
+            file: qmd_scripts/core_analysis/04_bayesian/kashouh_single_epoch_bayesian.qmd
+          - text: "NTVMR Single-Epoch Bayesian"
+            file: qmd_scripts/core_analysis/04_bayesian/ntvmr_single_epoch_bayesian.qmd
+          - text: "NTVMR Six-Epoch Bayesian"
+            file: qmd_scripts/core_analysis/04_bayesian/ntvmr_birth_death_bayesian.qmd
+          - text: "NTVMR Initial-Population Bayesian"
+            file: qmd_scripts/core_analysis/04_bayesian/ntvmr_initial_population_bayesian.qmd
       - text: "Validation: Single-Epoch"
         menu:
           - text: "Simulation checks"
