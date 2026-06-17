@@ -496,12 +496,17 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
 
     n = len(lifetimes)
 
+    # as_array=True is always passed here so that the array path in this
+    # function receives per-lifetime values rather than a scalar sum.
+    # For the scalar path (as_array=False) torch.sum() of the per-element
+    # array gives the same result as calling with as_array=False would.
     log_prs_extinction_given_lifetimes = (
         calculate_log_pr_extinction_given_initial_lifetimes(
             lifetimes=lifetimes,
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
+            as_array=True,
             _skip_normalization=True,
         )
     )

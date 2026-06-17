@@ -223,17 +223,26 @@ def calculate_spine_ages_log_lik_derivatives(
             )
             d_death_rate[at_boundary] = mu_numerator / denominator
         if torch.any(not_at_boundary):
-            B = torch.exp(-death_rate_val * T_t) - torch.exp(-birth_rate_val * T_t)
+            # Interior formula: derivative of
+            #   log b + log d + log(exp(-d*t) - exp(-b*t)) - log(b-d)
+            # w.r.t. b:  1/b + t*exp(-b*t)/(exp(-d*t) - exp(-b*t)) - 1/(b-d)
+            # w.r.t. d:  1/d - t*exp(-d*t)/(exp(-d*t) - exp(-b*t)) + 1/(b-d)
+            # where t = ages (not T, the epoch end time).
+            ages_interior = ages_t_t[not_at_boundary]
+            B_t = (
+                torch.exp(-death_rate_val * ages_interior)
+                - torch.exp(-birth_rate_val * ages_interior)
+            )
 
             d_birth_rate[not_at_boundary] = (
                 1 / birth_rate_val
-                + T_t * torch.exp(-birth_rate_val * T_t) / B
+                + ages_interior * torch.exp(-birth_rate_val * ages_interior) / B_t
                 - 1 / (birth_rate_val - death_rate_val)
             )
 
             d_death_rate[not_at_boundary] = (
                 1 / death_rate_val
-                - T_t * torch.exp(-death_rate_val * T_t) / B
+                - ages_interior * torch.exp(-death_rate_val * ages_interior) / B_t
                 + 1 / (birth_rate_val - death_rate_val)
             )
 

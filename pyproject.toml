@@ -30,6 +30,17 @@ altair-migration = [
     "altair>=5",
     "vl-convert-python>=1.9.0.post1",
 ]
+# Phase 2 JAX migration group — torch/pyro remain in main deps during the
+# equivalence-gate phase; they will be dropped in Phase 2e once this group's
+# tests pass.  For GPU use on the A40 run:
+#   pip install "jax[cuda12]"   (after uv sync --group jax-port)
+jax-port = [
+    "jax>=0.4.38",
+    "jaxtyping>=0.2.38",
+    "numpyro>=0.16.0",
+    "optax>=0.2.4",
+    "optimistix>=0.0.9",
+]
 dev = [
     "basedpyright>=1.22.0",
     "isort>=7.0.0",

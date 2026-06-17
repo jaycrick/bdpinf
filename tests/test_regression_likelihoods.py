@@ -84,8 +84,12 @@ _GOLDEN_SPINE_LL_300_MULTI = -6.9630921864
 _GOLDEN_NON_SPINE_LL_300_MULTI = -7.6053693664
 # Population log-lik at ns=[3,5], 2-epoch
 _GOLDEN_POPULATIONS_LL_NS_2_MULTI = -18.6682576565
-# Combined log-likelihood (unknown-spine marginalisation) for 10 ages, 2-epoch
-_GOLDEN_COMBINED_LL_10AGES_MULTI = -178.5901579681
+# Combined log-likelihood (unknown-spine marginalisation) for 10 ages, 2-epoch.
+# Updated 2026-06-18: fixed calculate_log_lik_initial_lifetimes_given_extinction
+# which previously called calculate_log_pr_extinction_given_initial_lifetimes
+# without as_array=True, so the return_array=True path (used inside
+# log_likelihood) received a scalar SUM instead of per-lifetime values.
+_GOLDEN_COMBINED_LL_10AGES_MULTI = -177.7867323299
 
 
 @pytest.mark.regression

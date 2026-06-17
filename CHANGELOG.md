@@ -111,6 +111,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `models.math_extinction.calculate_log_lik_initial_lifetimes_given_extinction` —
+  internal call to `calculate_log_pr_extinction_given_initial_lifetimes` was missing
+  `as_array=True`, so the `return_array=True` path returned a scalar SUM of
+  log-probabilities rather than a per-lifetime array. This caused the multi-epoch
+  combined log-likelihood (used in `inference.likelihood.log_likelihood`) to be
+  incorrect; golden value updated from −178.5901579681 to −177.7867323299.
+- `models.mathematical_derivatives.calculate_spine_ages_log_lik_derivatives` —
+  the interior (non-boundary) branch used `T` (epoch end time) instead of the
+  manuscript age `t` in the formulas for `B_t`, `exp(-b*T)`, and `exp(-d*T)`, giving
+  incorrect gradient values for any age that does not lie exactly at the epoch boundary.
+
 - `analysis.subset_inference.build_manuscript_subsets` — `_make()` now catches
   `ValueError` from the KDE resampler (triggered when a subset has zero-variance date
   ranges, e.g. Revelation with a handful of same-year manuscripts) and falls back to
