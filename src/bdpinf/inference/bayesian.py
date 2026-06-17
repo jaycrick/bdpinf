@@ -876,7 +876,9 @@ def fit_birth_death_processes_bayesian(
 
     # ---- Credible intervals --------------------------------------------------
 
-    quantiles = torch.tensor([0.05, 0.95], dtype=torch.float64)
+    quantiles = torch.tensor(
+        [0.05, 0.95], dtype=torch.float64, device=birth_flat.device
+    )
     birth_ci = torch.quantile(birth_flat, quantiles, dim=0).transpose(0, 1)
     death_ci = torch.quantile(death_flat, quantiles, dim=0).transpose(0, 1)
 
