@@ -30,32 +30,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `init_log_rates` field to `BayesianModelConfig` and per-chain ±0.1 noise for
   multi-chain runs; wider default prior (`scale=4.0`); reduced `max_tree_depth=8`.
 
-### Changed
-
-- `models.math_extinction` — replaced `scipy.integrate.quad` loop in
-  `calculate_log_pr_extinction_given_initial_lifetimes` with a closed-form
-  analytic expression derived from the Poisson generating functional; fully
-  vectorised over lifetimes, autograd-compatible, and device-agnostic (CPU/GPU).
-  Performance: 433 ms/call → 1.4 ms/call (310× speedup); enables practical NUTS
-  sampling for multi-epoch models.  The `_integrand_surv_from_weighted_birth_time`
-  helper is retained for testing.
-
-
-
-- `visualization.date_distribution_plots` — new module of reusable Altair builders for
-  the recurring data-exploration date figures, re-exported from
-  `inf_bp_texts.visualization` (Phase 5):
-  `plot_date_range_kde_comparison` (midpoint histogram + weighted KDE curve +
-  resampled-date histogram, with a configurable `midpoint_label`) and
-  `plot_grouped_date_distribution` (stacked per-group midpoint histograms + weighted KDE
-  line + resampled-date frequency polygon). These replace the inline per-notebook
-  `go.Figure` copies in the data-exploration notebooks.
-- `manuscript_data_exploration.qmd` migrated to Altair: the books and by-century stacked
-  histograms, the section-correlation **heatmap** (`mark_rect` + `mark_text`), the
-  date-range KDE charts (via the new builders), the 2×2 faceted per-section date
-  distributions (a layered chart faceted off one combined long-form frame), and the
-  age-vs-content scatter. `kashouh_data_exploration.qmd` likewise migrated, with the
-  parsed-date histogram stacked by relabelled source and an interactive legend selection.
+- `visualization.date_distribution_plots.plot_date_range_kde_comparison` — new reusable
+  Altair builder for the recurring date-range figure (midpoint histogram + weighted KDE
+  curve + resampled-date histogram), re-exported from `inf_bp_texts.visualization`
+  (Phase 5). Configurable `midpoint_label`, an `interaction` mode (`"none"`/`"filter"`/
+  `"highlight"`) that binds a legend `selection_point` (`"filter"` shows only the clicked
+  series, `"highlight"` dims the unselected ones; both HTML-only, PDFs keep the static
+  default), and an `x_domain` that pins the bin extent and x scale so the axis does not
+  rescale when a series is filtered out. Replaces inline per-notebook `go.Figure` copies.
+- `visualization.altair_theme` — the theme now draws faint horizontal (y-axis) gridlines
+  (`config.axisY`, `#E8E8E8`) in a Tufte style; the x-axis stays gridless.
+- Data-exploration notebooks migrated to Altair with HTML interactivity:
+  `manuscript_data_exploration.qmd` (books/by-century stacked histograms with legend
+  filtering and Lectionaries stacked on top; section-correlation **heatmap** via
+  `mark_rect` + `mark_text`; date-range KDE charts with filter/highlight legends; 2×2
+  faceted per-section distributions with y-axis zoom; age-vs-content scatter with a
+  `gaNum` hover tooltip) and `kashouh_data_exploration.qmd` (parsed-date histogram that
+  filters to the clicked source; FamilyK/FamilyJB legends filter to the clicked series).
 
 - `visualization.altair_theme` — new module beginning the Plotly→Altair migration
   (Phase 1). Registers and enables the `inf_bp_texts` Altair theme (ptolqual palette,
@@ -65,6 +56,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The 5000-row Altair guard is disabled (these are static publication figures).
 
 ### Changed
+
+- `models.math_extinction` — replaced `scipy.integrate.quad` loop in
+  `calculate_log_pr_extinction_given_initial_lifetimes` with a closed-form
+  analytic expression derived from the Poisson generating functional; fully
+  vectorised over lifetimes, autograd-compatible, and device-agnostic (CPU/GPU).
+  Performance: 433 ms/call → 1.4 ms/call (310× speedup); enables practical NUTS
+  sampling for multi-epoch models.  The `_integrand_surv_from_weighted_birth_time`
+  helper is retained for testing.
 
 - `visualization.splitting_plots` (`plot_conditioned_trajectories`,
   `plot_empirical_population_mean`, `plot_level_survival_probabilities`) and

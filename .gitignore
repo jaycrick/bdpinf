@@ -241,3 +241,9 @@ docs/**/*.py
 
 # Claude Code
 .claude/settings.local.json
+
+# Skills manager artifacts (downloaded skill defs + symlinks, unrelated to this project)
+.agents/
+.claude/skills/
+data/skills/
+skills-lock.json

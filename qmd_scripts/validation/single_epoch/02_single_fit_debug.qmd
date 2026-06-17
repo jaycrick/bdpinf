@@ -25,21 +25,14 @@ __compile_start = time.perf_counter()
 ## Setup
 
 ```{python}
+import altair as alt
 import numpy as np
-import plotly.graph_objs as go
+import pandas as pd
+from IPython.display import display
 
 from inf_bp_texts.analysis import FitModelConfig, fit_single_model
-from inf_bp_texts.simulation import (
-    simulate_birth_death_process
-)
-from inf_bp_texts.visualization.plotting import (
-    apply_professional_styling,
-    apply_tufte_axes,
-    gridcolor,
-    paper_bgcolor,
-    plot_bgcolor,
-    ptolqual,
-)
+from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
 
 ## Simulate One Dataset
@@ -157,29 +150,24 @@ nll_history = (
 )
 
 if nll_history:
-    fig_nll = go.Figure()
-    fig_nll.add_trace(
-        go.Scatter(
-            x=list(range(1, len(nll_history) + 1)),
-            y=nll_history,
-            mode="lines",
-            line=dict(color=ptolqual[1], width=2),
-            name="NLL",
+    _nll_df = pd.DataFrame({
+        "Step": list(range(1, len(nll_history) + 1)),
+        "NLL": nll_history,
+    })
+    fig_nll = (
+        alt.Chart(_nll_df)
+        .mark_line(
+            point=alt.OverlayMarkDef(size=30, color=PTOLQUAL[1]),
+            color=PTOLQUAL[1],
+            strokeWidth=2,
         )
+        .encode(
+            x=alt.X("Step:Q", title="Step", axis=alt.Axis(format="d")),
+            y=alt.Y("NLL:Q", title="Negative Log-Likelihood", scale=alt.Scale(zero=False)),
+        )
+        .properties(title="Negative Log-Likelihood vs Optimization Step", width=700, height=350)
     )
-    fig_nll.update_layout(
-        title="Negative Log-Likelihood vs Optimization Step",
-        xaxis_title="Step",
-        yaxis_title="Negative Log-Likelihood",
-        showlegend=False,
-        plot_bgcolor=plot_bgcolor,
-        paper_bgcolor=paper_bgcolor,
-    )
-    fig_nll = apply_professional_styling(fig_nll, "", "Step", "Negative Log-Likelihood")
-    fig_nll = apply_tufte_axes(fig_nll)
-    fig_nll.update_xaxes(showgrid=True, gridcolor=gridcolor)
-    fig_nll.update_yaxes(showgrid=True, gridcolor=gridcolor)
-    fig_nll.show()
+    display(fig_nll)
 else:
     print("No NLL history available for this fit.")
 ```

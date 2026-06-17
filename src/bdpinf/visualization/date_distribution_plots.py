@@ -8,7 +8,7 @@ single reusable builder rather than being re-coded inline per notebook.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from typing import Any, Literal
 
 import altair as alt
 import numpy as np
@@ -20,8 +20,9 @@ from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 _MIDPOINT_LABEL = "Midpoint (parsed_year)"
 _KDE_LABEL = "Weighted date-range KDE"
 _RESAMPLED_LABEL = "Resampled dates"
-_GROUPED_KDE_LABEL = "Weighted KDE"
-_GROUPED_RESAMPLED_LABEL = "Resampled dates"
+_DIMMED_OPACITY = 0.15
+
+LegendInteraction = Literal["none", "filter", "highlight"]
 
 
 def plot_date_range_kde_comparison(
@@ -35,6 +36,8 @@ def plot_date_range_kde_comparison(
     title: str,
     x_title: str = "Year (CE)",
     midpoint_label: str = _MIDPOINT_LABEL,
+    interaction: LegendInteraction = "none",
+    x_domain: tuple[float, float] | None = None,
 ) -> alt.LayerChart:
     """Overlay the midpoint histogram, weighted KDE, and resampled histogram.
 
@@ -59,8 +62,25 @@ def plot_date_range_kde_comparison(
         Legend label for the midpoint histogram (default
         ``"Midpoint (parsed_year)"``); pass e.g. ``"Midpoint (midYear)"`` for
         datasets keyed on a different column.
+    interaction : {"none", "filter", "highlight"}
+        Legend-click behaviour in the interactive (HTML) render. ``"filter"``
+        shows only the clicked series; ``"highlight"`` keeps every series but dims
+        the unselected ones. Both are inert in the static PDF export (an empty
+        selection matches all series, so the default appearance is unchanged).
+    x_domain : tuple[float, float] | None
+        Fixed ``(min, max)`` x-axis range. When set, both the bin extent and the
+        x scale are pinned to it, so the axis does not rescale when a series is
+        filtered out. Defaults to auto-fitting the data.
     """
     y_title = f"Manuscripts per {int(bin_width)}-year bin"
+    x_scale = (
+        alt.Scale(domain=list(x_domain)) if x_domain is not None else alt.Undefined
+    )
+    x_bin = (
+        alt.Bin(step=bin_width, extent=list(x_domain))
+        if x_domain is not None
+        else alt.Bin(step=bin_width)
+    )
     color = alt.Color(
         "series:N",
         title=None,
@@ -70,23 +90,42 @@ def plot_date_range_kde_comparison(
         ),
         legend=alt.Legend(orient="top"),
     )
+    series_select = alt.selection_point(fields=["series"], bind="legend")
+
+    def _highlight_opacity(base: float) -> dict[str, Any]:
+        # Preserve each layer's natural opacity when selected/default so the
+        # static PDF still reads as overlaid; dim the rest on legend click.
+        if interaction == "highlight":
+            return {
+                "opacity": alt.condition(
+                    series_select, alt.value(base), alt.value(_DIMMED_OPACITY)
+                )
+            }
+        return {}
+
+    def _maybe_filter(chart: alt.Chart) -> alt.Chart:
+        return (
+            chart.transform_filter(series_select) if interaction == "filter" else chart
+        )
 
     def _histogram(years: ArrayLike, label: str) -> alt.Chart:
         frame = pd.DataFrame(
             {x_title: np.asarray(years, dtype=np.float64), "series": label}
         )
-        return (
+        return _maybe_filter(
             alt.Chart(frame)
             .mark_bar(opacity=0.5)
             .encode(
                 x=alt.X(
                     f"{x_title}:Q",
-                    bin=alt.Bin(step=bin_width),
+                    bin=x_bin,
                     title=x_title,
                     axis=alt.Axis(format="d"),
+                    scale=x_scale,
                 ),
                 y=alt.Y("count():Q", title=y_title),
                 color=color,
+                **_highlight_opacity(0.5),
             )
         )
 
@@ -97,120 +136,22 @@ def plot_date_range_kde_comparison(
             "series": _KDE_LABEL,
         }
     )
-    kde_line = (
+    kde_line = _maybe_filter(
         alt.Chart(kde_frame)
         .mark_line(strokeWidth=2)
         .encode(
-            x=alt.X(f"{x_title}:Q"),
+            x=alt.X(f"{x_title}:Q", scale=x_scale),
             y=alt.Y("value:Q", title=y_title),
             color=color,
+            **_highlight_opacity(1.0),
         )
     )
 
-    return alt.layer(
+    layered = alt.layer(
         _histogram(midpoint_years, midpoint_label),
         _histogram(resampled_years, _RESAMPLED_LABEL),
         kde_line,
     ).properties(title=title)
-
-
-def plot_grouped_date_distribution(
-    midyear_frame: pd.DataFrame,
-    year_grid: ArrayLike,
-    density: ArrayLike,
-    resampled_mids: ArrayLike,
-    resampled_counts: ArrayLike,
-    *,
-    n: int,
-    bin_width: float,
-    group_order: Sequence[str],
-    group_colors: Sequence[str],
-    title: str,
-    x_title: str = "Year (CE)",
-) -> alt.LayerChart:
-    """Stacked per-group midpoint histograms with KDE and resampled overlays.
-
-    Parameters
-    ----------
-    midyear_frame : pd.DataFrame
-        Long-form per-manuscript frame with a ``year`` column (midpoint) and a
-        ``group`` column (group label); the histograms stack by group.
-    year_grid, density : ArrayLike
-        Weighted date-range KDE grid and density, scaled to counts via
-        ``density * n * bin_width``.
-    resampled_mids, resampled_counts : ArrayLike
-        Bin midpoints and counts of the resampled dates, drawn as a dotted
-        frequency-polygon line.
-    n : int
-        Manuscript count used to scale the KDE.
-    bin_width : float
-        Histogram bin width in years.
-    group_order, group_colors : Sequence[str]
-        Group labels (stacking order) and their matching colours.
-    title : str
-        Figure title.
-    x_title : str
-        X-axis label (default ``"Year (CE)"``).
-    """
-    y_title = f"Manuscripts per {int(bin_width)}-year bin"
-    domain = [*group_order, _GROUPED_KDE_LABEL, _GROUPED_RESAMPLED_LABEL]
-    color = alt.Color(
-        "series:N",
-        title=None,
-        scale=alt.Scale(
-            domain=domain,
-            range=[*group_colors, PTOLQUAL[4], PTOLQUAL[5]],
-        ),
-        legend=alt.Legend(orient="top"),
-    )
-
-    histograms = (
-        alt.Chart(midyear_frame.rename(columns={"year": x_title, "group": "series"}))
-        .mark_bar(opacity=0.6)
-        .encode(
-            x=alt.X(
-                f"{x_title}:Q",
-                bin=alt.Bin(step=bin_width),
-                title=x_title,
-                axis=alt.Axis(format="d"),
-            ),
-            y=alt.Y("count():Q", title=y_title),
-            color=color,
-        )
-    )
-    kde_line = (
-        alt.Chart(
-            pd.DataFrame(
-                {
-                    x_title: np.asarray(year_grid, dtype=np.float64),
-                    "value": np.asarray(density, dtype=np.float64) * n * bin_width,
-                    "series": _GROUPED_KDE_LABEL,
-                }
-            )
-        )
-        .mark_line(strokeWidth=2)
-        .encode(
-            x=alt.X(f"{x_title}:Q"),
-            y=alt.Y("value:Q", title=y_title),
-            color=color,
-        )
-    )
-    resampled_line = (
-        alt.Chart(
-            pd.DataFrame(
-                {
-                    x_title: np.asarray(resampled_mids, dtype=np.float64),
-                    "value": np.asarray(resampled_counts, dtype=np.float64),
-                    "series": _GROUPED_RESAMPLED_LABEL,
-                }
-            )
-        )
-        .mark_line(strokeWidth=1.5, strokeDash=[2, 2])
-        .encode(
-            x=alt.X(f"{x_title}:Q"),
-            y=alt.Y("value:Q", title=y_title),
-            color=color,
-        )
-    )
-
-    return alt.layer(histograms, kde_line, resampled_line).properties(title=title)
+    if interaction != "none":
+        layered = layered.add_params(series_select)
+    return layered

@@ -1,6 +1,47 @@
 # Implementation Plan: Plotly → Altair Migration
 
-**Status:** proposed · **Author:** review by Claude · **Date:** 2026-06-12
+**Status:** in progress · **Author:** review by Claude · **Date:** 2026-06-12 · **Last updated:** 2026-06-17
+
+## Progress summary
+
+| Phase | Status | Completed |
+|-------|--------|-----------|
+| 0 — Spike & gate | ✅ Done | 2026-06-12 |
+| 1 — Theme + export chokepoint | ✅ Done | 2026-06-12 |
+| 2 — Easy helpers + review gate | ✅ Done | 2026-06-12 |
+| 3 — Moderate helpers | ✅ Done | 2026-06-13 |
+| 4 — Hard helpers + tests | ✅ Done | 2026-06-13 |
+| 5 — Notebooks (18 of 19) | 🔄 In progress | see below |
+| 6 — Remove Plotly | ⏳ Pending | — |
+
+### Phase 5 notebook status
+
+| Notebook group | Status |
+|---|---|
+| `01_data_exploration/manuscript_data_exploration.qmd` | ✅ Done |
+| `01_data_exploration/kashouh_data_exploration.qmd` | ✅ Done |
+| `02_single_epoch/kashouh_single_epoch_inference.qmd` | ✅ Done |
+| `02_single_epoch/ntvmr_single_epoch_inference.qmd` | ✅ Done |
+| `03_multi_epoch/kashouh_multi_epoch_inference.qmd` | ✅ Done |
+| `03_multi_epoch/ntvmr_birth_death_inference.qmd` | ✅ Done |
+| `03_multi_epoch/ntvmr_initial_population_inference.qmd` | ✅ Done |
+| `03_multi_epoch/optimizer_comparison.qmd` | ✅ Done |
+| `03_multi_epoch/single_vs_multi_epoch_comparison.qmd` | ✅ Done |
+| `validation/single_epoch/` (all 5 notebooks) | ✅ Done |
+| `validation/multi_epoch/` (all 5 notebooks) | ✅ Done |
+| `validation/bayesian_multi_epoch/` (3 notebooks) | ✅ Done (no figures; were already clean) |
+| `04_bayesian/kashouh_family_k_bayesian_inference.qmd` | ❌ Remaining |
+
+### What remains
+
+1. **Phase 5 final notebook** — `04_bayesian/kashouh_family_k_bayesian_inference.qmd`: 4 figures
+   (`prior_posterior` 2×2 KDE, `posterior_rates` bar, `trace_plots` 2×2 line, `ppc` line+band),
+   all currently using `make_subplots` + `go.Scatter`. Excluded from default render (slow); do last.
+
+2. **Phase 6** — Remove `plotly`, `kaleido`, `plotly-stubs` from `pyproject.toml` once the Bayesian
+   notebook is done and `grep -rn "plotly" src tests qmd_scripts pyproject.toml` is empty.
+
+---
 
 This is the actionable companion to [`PLOTLY_TO_ALTAIR_EVALUATION.md`](./PLOTLY_TO_ALTAIR_EVALUATION.md).
 The evaluation answered *whether* to migrate (verdict: yes, phased, Altair-based). This document

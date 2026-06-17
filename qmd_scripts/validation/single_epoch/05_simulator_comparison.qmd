@@ -48,10 +48,11 @@ expected to be small.
 ```{python}
 from typing import Any
 
+import altair as alt
 import numpy as np
-import plotly.graph_objs as go
+import pandas as pd
+from IPython.display import display
 from joblib import Parallel, delayed
-from plotly.subplots import make_subplots
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
 from inf_bp_texts.analysis import (
@@ -70,12 +71,8 @@ from inf_bp_texts.simulation import (
     simulate_birth_death_process_from_contour_process,
     simulate_subcritical_survival_splitting,
 )
-from inf_bp_texts.visualization.plotting import (
-    apply_professional_styling,
-    apply_tufte_axes,
-    ptolqual,
-    save_figure,
-)
+from inf_bp_texts.visualization import save_chart
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
 
 ## Helper Functions
@@ -332,37 +329,24 @@ individual.  Solid fill = empirical KDE; dashed = theoretical density.  Both met
 should agree with theory.
 
 ```{python}
-regime_labels = [f"μ = {float(rd['death_rate']):.1f}" for rd in regime_data]
-method_colors = [ptolqual[0], ptolqual[2]]  # contour, splitting
+method_colors = [PTOLQUAL[0], PTOLQUAL[2]]  # contour, splitting
 
-fig_ages = make_subplots(
-    rows=2,
-    cols=3,
-    horizontal_spacing=0.06,
-    vertical_spacing=0.12,
-    shared_xaxes="columns",
-    shared_yaxes="rows",
-    subplot_titles=regime_labels + [""] * 3,
-)
-
-for col_idx, rd in enumerate(regime_data, start=1):
+regime_cols: list[tuple[alt.LayerChart, alt.LayerChart]] = []
+for rd in regime_data:
     dr_val = float(rd["death_rate"])
     c_spine = np.asarray(rd["contour_spine"], dtype=np.float64)
     c_ns = np.asarray(rd["contour_non_spine"], dtype=np.float64)
     s_spine = np.asarray(rd["splitting_spine"], dtype=np.float64)
     s_ns = np.asarray(rd["splitting_non_spine"], dtype=np.float64)
 
-    # Spine KDE: exclude the point mass at T
-    c_spine_kde_samples = c_spine[c_spine < TERMINAL_TIME]
-    s_spine_kde_samples = s_spine[s_spine < TERMINAL_TIME]
+    c_spine_kde_s = c_spine[c_spine < TERMINAL_TIME]
+    s_spine_kde_s = s_spine[s_spine < TERMINAL_TIME]
 
-    # Proportion of spine ages not equal to T (for rescaling theory density)
     all_spine = np.concatenate([a for a in [c_spine, s_spine] if a.size > 0])
     spine_prop = proportion_not_at_upper(all_spine, TERMINAL_TIME) if all_spine.size > 0 else 1.0
     all_ns = np.concatenate([a for a in [c_ns, s_ns] if a.size > 0])
     ns_prop = proportion_not_at_upper(all_ns, TERMINAL_TIME) if all_ns.size > 0 else 1.0
 
-    # Theoretical curves for this regime
     spine_x, spine_y = theoretical_age_density(
         lambda age, br=BIRTH_RATE, dr=dr_val, t=TERMINAL_TIME: calculate_spine_ages_log_lik(  # type: ignore[misc]
             birth_rates=br, death_rates=dr, ages=age, times=t
@@ -379,107 +363,88 @@ for col_idx, rd in enumerate(regime_data, start=1):
         proportion_not_at_upper=ns_prop if ns_prop > 0.0 else None,
     )
 
-    # KDE for each method
-    for method_name, color, sp_kde_s, ns_kde_s in [
-        ("Contour", method_colors[0], c_spine_kde_samples, c_ns),
-        ("Splitting", method_colors[1], s_spine_kde_samples, s_ns),
+    # Compute KDEs for both methods
+    c_ns_grid, c_ns_kde = (
+        boundary_corrected_kde_on_support(c_ns, support_upper=TERMINAL_TIME)
+        if c_ns.size > 1 else (None, None)
+    )
+    s_ns_grid, s_ns_kde = (
+        boundary_corrected_kde_on_support(s_ns, support_upper=TERMINAL_TIME)
+        if s_ns.size > 1 else (None, None)
+    )
+    c_sp_grid, c_sp_kde = (
+        boundary_corrected_kde_on_support(c_spine_kde_s, support_upper=TERMINAL_TIME)
+        if c_spine_kde_s.size > 1 else (None, None)
+    )
+    s_sp_grid, s_sp_kde = (
+        boundary_corrected_kde_on_support(s_spine_kde_s, support_upper=TERMINAL_TIME)
+        if s_spine_kde_s.size > 1 else (None, None)
+    )
+
+    # Y domains from both methods combined
+    from inf_bp_texts.analysis import robust_y_max  # noqa: PLC0415
+    ns_y_max = robust_y_max([c_ns_kde, s_ns_kde, ns_y])
+    sp_y_max = robust_y_max([c_sp_kde, s_sp_kde, spine_y])
+    ns_dom = [0.0, ns_y_max]
+    sp_dom = [0.0, sp_y_max]
+
+    regime_label = f"μ = {dr_val:.1f}"
+    # Build two-layer panels per regime column: one for each method, overlaid
+    ns_layers: list[alt.Chart] = []
+    sp_layers: list[alt.Chart] = []
+    for color, ns_grid_m, ns_kde_m, sp_grid_m, sp_kde_m in [
+        (method_colors[0], c_ns_grid, c_ns_kde, c_sp_grid, c_sp_kde),
+        (method_colors[1], s_ns_grid, s_ns_kde, s_sp_grid, s_sp_kde),
     ]:
-        show_legend = col_idx == 1
-
-        # Non-spine (row 1)
-        ns_grid, ns_kde = (
-            boundary_corrected_kde_on_support(ns_kde_s, support_upper=TERMINAL_TIME)
-            if ns_kde_s.size > 1
-            else (None, None)
-        )
-        if ns_grid is not None and ns_kde is not None:
-            fig_ages.add_trace(
-                go.Scatter(
-                    x=ns_grid,
-                    y=ns_kde,
-                    mode="lines",
-                    line=dict(color=color, width=2),
-                    fill="tozeroy",
-                    fillcolor=color,
-                    opacity=0.5,
-                    name=method_name,
-                    showlegend=show_legend,
-                ),
-                row=1,
-                col=col_idx,
+        x_dom = [0.0, float(TERMINAL_TIME)]
+        if ns_grid_m is not None and ns_kde_m is not None:
+            ns_df = pd.DataFrame({"Age": ns_grid_m.tolist(), "Density": ns_kde_m.tolist()})
+            ns_layers.append(
+                alt.Chart(ns_df)
+                .mark_area(opacity=0.4, color=color, line={"color": color, "strokeWidth": 2})
+                .encode(
+                    x=alt.X("Age:Q", scale=alt.Scale(domain=x_dom)),
+                    y=alt.Y("Density:Q", scale=alt.Scale(domain=ns_dom)),
+                )
             )
-
-        # Non-spine theory (row 1)
-        fig_ages.add_trace(
-            go.Scatter(
-                x=ns_x,
-                y=ns_y,
-                mode="lines",
-                line=dict(color=ptolqual[1], width=2, dash="dash"),
-                name="Theoretical",
-                showlegend=show_legend and method_name == "Contour",
-            ),
-            row=1,
-            col=col_idx,
-        )
-
-        # Spine (row 2)
-        sp_grid, sp_kde = (
-            boundary_corrected_kde_on_support(sp_kde_s, support_upper=TERMINAL_TIME)
-            if sp_kde_s.size > 1
-            else (None, None)
-        )
-        if sp_grid is not None and sp_kde is not None:
-            fig_ages.add_trace(
-                go.Scatter(
-                    x=sp_grid,
-                    y=sp_kde,
-                    mode="lines",
-                    line=dict(color=color, width=2),
-                    fill="tozeroy",
-                    fillcolor=color,
-                    opacity=0.5,
-                    name=method_name,
-                    showlegend=False,
-                ),
-                row=2,
-                col=col_idx,
+        if sp_grid_m is not None and sp_kde_m is not None:
+            sp_df = pd.DataFrame({"Age": sp_grid_m.tolist(), "Density": sp_kde_m.tolist()})
+            sp_layers.append(
+                alt.Chart(sp_df)
+                .mark_area(opacity=0.4, color=color, line={"color": color, "strokeWidth": 2})
+                .encode(
+                    x=alt.X("Age:Q", scale=alt.Scale(domain=x_dom)),
+                    y=alt.Y("Density:Q", scale=alt.Scale(domain=sp_dom)),
+                )
             )
+    # Add theory lines
+    ns_theory_df = pd.DataFrame({"Age": ns_x.tolist(), "Density": ns_y.tolist()})
+    sp_theory_df = pd.DataFrame({"Age": spine_x.tolist(), "Density": spine_y.tolist()})
+    ns_layers.append(
+        alt.Chart(ns_theory_df)
+        .mark_line(strokeDash=[4, 2], color=PTOLQUAL[1], strokeWidth=2)
+        .encode(x=alt.X("Age:Q"), y=alt.Y("Density:Q", scale=alt.Scale(domain=ns_dom)))
+    )
+    sp_layers.append(
+        alt.Chart(sp_theory_df)
+        .mark_line(strokeDash=[4, 2], color=PTOLQUAL[1], strokeWidth=2)
+        .encode(x=alt.X("Age:Q"), y=alt.Y("Density:Q", scale=alt.Scale(domain=sp_dom)))
+    )
+    ns_panel = alt.layer(*ns_layers).properties(
+        title=regime_label, width=220, height=160
+    )
+    sp_panel = alt.layer(*sp_layers).properties(
+        title="", width=220, height=160
+    )
+    regime_cols.append((ns_panel, sp_panel))
 
-        # Spine theory (row 2)
-        fig_ages.add_trace(
-            go.Scatter(
-                x=spine_x,
-                y=spine_y,
-                mode="lines",
-                line=dict(color=ptolqual[1], width=2, dash="dash"),
-                name="Theoretical",
-                showlegend=False,
-            ),
-            row=2,
-            col=col_idx,
-        )
-
-    fig_ages.update_xaxes(range=[0.0, TERMINAL_TIME], row=1, col=col_idx)
-    fig_ages.update_xaxes(range=[0.0, TERMINAL_TIME], title_text="Age", row=2, col=col_idx)
-
-fig_ages.update_yaxes(title_text="Density (non-spine)", row=1, col=1)
-fig_ages.update_yaxes(title_text="Density (spine)", row=2, col=1)
-
-fig_ages = apply_professional_styling(fig_ages, "Age Densities vs Theory: Three Regimes", "", "")
-fig_ages = apply_tufte_axes(fig_ages)
-fig_ages.update_layout(
-    margin=dict(t=60),
-    legend=dict(x=0.99, y=0.99, xanchor="right", yanchor="top"),
-)
-fig_ages.show()
-saved_ages = save_figure(
-    fig_ages,
-    "methods_validation_simulator_comparison_age_densities",
-    width=800,
-    height=420,
-)
-print(f"Saved age-density figure: {saved_ages}")
+fig_ages = alt.vconcat(
+    alt.hconcat(*[col[0] for col in regime_cols]),
+    alt.hconcat(*[col[1] for col in regime_cols]),
+).properties(title="Age Densities vs Theory: Three Regimes")
+display(fig_ages)
+save_chart(fig_ages, "methods_validation_simulator_comparison_age_densities")
+print("Saved age-density figure")
 ```
 
 ## Statistical Goodness-of-Fit Tests
