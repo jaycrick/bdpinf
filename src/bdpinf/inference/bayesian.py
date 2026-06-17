@@ -638,6 +638,8 @@ def _metric_as_array(
     metric_value = summary_dict.get(metric_name)
     if metric_value is None:
         return np.full(expected_length, np.nan, dtype=np.float64)
+    if isinstance(metric_value, torch.Tensor):
+        metric_value = metric_value.detach().cpu()
     metric_array = np.asarray(metric_value, dtype=np.float64)
     if metric_array.ndim == 0:
         return np.full(expected_length, float(metric_array), dtype=np.float64)
