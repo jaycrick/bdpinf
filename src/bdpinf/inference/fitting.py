@@ -1,20 +1,22 @@
-"""Maximum likelihood estimation for birth-death process parameters using PyTorch."""
+"""Maximum likelihood estimation for birth-death process parameters using JAX."""
 
 import dataclasses
 import logging
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, TypedDict, Unpack, cast
+from typing import Any, TypedDict, Unpack
 
+import jax
+import jax.numpy as jnp
 import numpy as np
-import pandas as pd
-import torch
+import optax
 from numpy.typing import NDArray
 
 from inf_bp_texts.models.validation import (
     normalize_and_validate_inputs as _jax_normalize,
 )
-from inf_bp_texts.utils import ensure_1d_torch_tensor as ensure_1d_tensor
+from inf_bp_texts.utils import ensure_1d_tensor
 
 from ._fit_types import (
     DEFAULT_ITERATIONS,
@@ -32,9 +34,9 @@ from .likelihood import negative_log_likelihood
 from .uncertainty import estimate_mle_covariance
 
 
-def normalize_and_validate_inputs(**kwargs: object) -> tuple[torch.Tensor, ...]:
-    """Thin wrapper: validate via the JAX layer and return torch tensors."""
-    return tuple(ensure_1d_tensor(arr) for arr in _jax_normalize(**kwargs))
+def normalize_and_validate_inputs(**kwargs: object) -> tuple[jax.Array, ...]:
+    """Validate via the JAX layer and return JAX arrays."""
+    return tuple(_jax_normalize(**kwargs))
 
 
 logger = logging.getLogger(__name__)
@@ -43,11 +45,11 @@ logger = logging.getLogger(__name__)
 class FitKwargs(TypedDict, total=False):
     """TypedDict for fit_birth_death_processes kwargs."""
 
-    initial_birth_rates: torch.Tensor | None
-    initial_death_rates: torch.Tensor | None
+    initial_birth_rates: jax.Array | NDArray[np.float64] | None
+    initial_death_rates: jax.Array | NDArray[np.float64] | None
     is_ordered: bool
-    spine_ages: torch.Tensor | None
-    population_sizes: torch.Tensor | None
+    spine_ages: jax.Array | NDArray[np.float64] | None
+    population_sizes: jax.Array | NDArray[np.float64] | None
     initial_population: int
     optimizers: Sequence[str] | str
     unbias: bool
@@ -158,15 +160,15 @@ class ParameterConstraints:
 
 
 def _apply_constraints_to_full_params(
-    free_params: torch.Tensor,
+    free_params: jax.Array,
     constraints: ParameterConstraints,
     n_total_params: int,
-) -> torch.Tensor:
+) -> jax.Array:
     """Expand free parameters to full parameter space applying all constraints.
 
     Parameters
     ----------
-    free_params : torch.Tensor
+    free_params : jax.Array
         Parameters corresponding to free indices only.
     constraints : ParameterConstraints
         The constraint specification.
@@ -175,7 +177,7 @@ def _apply_constraints_to_full_params(
 
     Returns
     -------
-    torch.Tensor
+    jax.Array
         Full parameter vector with constraints applied.
 
     """
@@ -188,34 +190,30 @@ def _apply_constraints_to_full_params(
         for idx in group:
             representative_by_index[idx] = representative_idx
 
-    parts: list[torch.Tensor] = []
+    parts: list[jax.Array] = []
     for idx in range(n_total_params):
         if idx in constraints.fixed_params:
             parts.append(
-                torch.tensor(
-                    constraints.fixed_params[idx],
-                    dtype=free_params.dtype,
-                    device=free_params.device,
-                ),
+                jnp.array(constraints.fixed_params[idx], dtype=free_params.dtype),
             )
             continue
 
         source_idx = representative_by_index.get(idx, idx)
         parts.append(free_params[free_position_by_index[source_idx]])
 
-    return torch.stack(parts)
+    return jnp.stack(parts)
 
 
 def _reduce_to_free_params(
-    full_params: torch.Tensor,
+    full_params: jax.Array,
     constraints: ParameterConstraints,
     n_total_params: int,
-) -> torch.Tensor:
+) -> jax.Array:
     """Extract only free parameters from full parameter space.
 
     Parameters
     ----------
-    full_params : torch.Tensor
+    full_params : jax.Array
         Full parameter vector.
     constraints : ParameterConstraints
         The constraint specification.
@@ -224,23 +222,23 @@ def _reduce_to_free_params(
 
     Returns
     -------
-    torch.Tensor
+    jax.Array
         Reduced parameter vector containing only free parameters.
 
     """
     free_indices = constraints.get_free_param_indices(n_total_params)
-    return full_params[free_indices]
+    return full_params[jnp.array(free_indices)]
 
 
 def fit_birth_death_processes(
-    list_of_ages: list[torch.Tensor],
-    times: torch.Tensor | float,
+    list_of_ages: list[jax.Array | NDArray[np.float64]],
+    times: jax.Array | NDArray[np.float64] | float,
     *,
-    initial_birth_rates: torch.Tensor | None = None,
-    initial_death_rates: torch.Tensor | None = None,
+    initial_birth_rates: jax.Array | NDArray[np.float64] | None = None,
+    initial_death_rates: jax.Array | NDArray[np.float64] | None = None,
     is_ordered: bool = False,
-    spine_ages: torch.Tensor | None = None,
-    population_sizes: torch.Tensor | None = None,
+    spine_ages: jax.Array | NDArray[np.float64] | None = None,
+    population_sizes: jax.Array | NDArray[np.float64] | None = None,
     initial_population: int = 1,
     optimizers: Sequence[str] | str = ("LBFGS", "Adam"),
     optimizer_kwargs: dict[str, dict[str, Any]] | None = None,
@@ -251,30 +249,30 @@ def fit_birth_death_processes(
     param_constraints: ParameterConstraints | None = None,
     estimate_uncertainty: bool = True,
 ) -> dict[str, Any]:
-    """Fit birth-death parameters to grouped age data via PyTorch.
+    """Fit birth-death parameters to grouped age data via JAX.
 
     Optimizes log-parameters with requested optimizers (defaults: LBFGS, Adam).
 
     Parameters
     ----------
-    list_of_ages : List[torch.Tensor]
-        Age tensors per group; ≥1 non-empty array required.
-    times : torch.Tensor | float
+    list_of_ages : list[jax.Array | NDArray]
+        Age arrays per group; ≥1 non-empty array required.
+    times : jax.Array | NDArray | float
         Observation time(s), must be positive.
     is_ordered : bool
         If True, extract spine from first element per array.
-    initial_birth_rates, initial_death_rates : torch.Tensor | None
+    initial_birth_rates, initial_death_rates : jax.Array | NDArray | None
         Initial guesses; auto-estimated if None.
-    spine_ages : torch.Tensor | None
+    spine_ages : jax.Array | NDArray | None
         Explicit spine ages (if not auto-extracted).
-    population_sizes : torch.Tensor | None
+    population_sizes : jax.Array | NDArray | None
         Counts per group; auto-computed if None.
     initial_population : int
         The number of initial individuals at time 0. Default is 1.
     optimizers : Sequence[str] | str
         Optimizer names ('LBFGS', 'Adam', 'SGD') to try sequentially.
         Defaults to ('LBFGS', 'Adam').
-    optimizer_kwargs : Dict[str, Dict[str, Any]] | None
+    optimizer_kwargs : dict[str, dict[str, Any]] | None
         Custom per-optimizer hyperparameters (e.g. {'adam': {'lr': 0.01}}).
     perturb_initial_params_std : float
         Noise std as fraction of initial params; 0 = no noise.
@@ -318,7 +316,7 @@ def fit_birth_death_processes(
         times_tensor,
         initial_population=initial_population,
     )
-    if torch.any(initial_params <= 0):
+    if bool(jnp.any(initial_params <= 0)):
         msg = "Initial parameters must be positive before log transform"
         raise ValueError(msg)
 
@@ -329,11 +327,8 @@ def fit_birth_death_processes(
             "Initial parameters size mismatch with times: "
             f"expected {expected_len}, got {len(initial_params)}"
         )
-        raise ValueError(
-            msg,
-        )
+        raise ValueError(msg)
 
-    # Initialize and validate constraints
     if param_constraints is None:
         param_constraints = ParameterConstraints()
     param_constraints.validate(len(initial_params))
@@ -343,11 +338,6 @@ def fit_birth_death_processes(
         perturb_initial_params_std=perturb_initial_params_std,
         random_seed=random_seed,
     )
-
-    # For constrained params, reduce to free parameter space
-    free_indices = param_constraints.get_free_param_indices(len(initial_params))
-    free_initial_params = initial_params[free_indices]
-    log_params = torch.nn.Parameter(torch.log(free_initial_params.clone().detach()))
 
     convergence_config = convergence_config or ConvergenceConfig.default()
     strategies_map = _build_optimizer_strategies(
@@ -359,7 +349,6 @@ def fit_birth_death_processes(
     optimizer_run_result = _run_optimizer_strategies(
         strategies_map=strategies_map,
         requested_keys=requested_keys,
-        log_params=log_params,
         initial_params=initial_params,
         n_epochs=n_epochs,
         non_spine_ages=non_spine_ages,
@@ -377,13 +366,12 @@ def fit_birth_death_processes(
 
     optimization_result = _build_optimization_result_payload(optimizer_run_result)
 
-    # Expand log_params from reduced to full space for finalization
     full_params = _apply_constraints_to_full_params(
-        torch.exp(log_params),
+        jnp.exp(log_params),
         param_constraints,
         2 * n_epochs,
     )
-    full_log_params = torch.log(full_params).detach()
+    full_log_params = jnp.log(full_params)
 
     finalized = _finalize_fit(
         full_log_params,
@@ -402,7 +390,7 @@ def fit_birth_death_processes(
         }
 
     birth_rates, death_rates, final_log_likelihood, final_loss = finalized
-    result = {
+    result: dict[str, Any] = {
         "success": converged,
         "birth_rates": birth_rates,
         "death_rates": death_rates,
@@ -415,17 +403,17 @@ def fit_birth_death_processes(
 
     if estimate_uncertainty:
 
-        def full_log_params_fn(theta_free: torch.Tensor) -> torch.Tensor:
-            return torch.log(
+        def full_log_params_fn(theta_free: jax.Array) -> jax.Array:
+            return jnp.log(
                 _apply_constraints_to_full_params(
-                    torch.exp(theta_free),
+                    jnp.exp(theta_free),
                     param_constraints,
                     2 * n_epochs,
                 ),
             )
 
         covariance = estimate_mle_covariance(
-            free_log_params=log_params.detach(),
+            free_log_params=log_params,
             n_epochs=n_epochs,
             full_log_params_fn=full_log_params_fn,
             non_spine_ages=non_spine_ages,
@@ -435,7 +423,7 @@ def fit_birth_death_processes(
             initial_population=initial_population,
             unbias=unbias,
         )
-        result["uncertainty"] = covariance.detach().cpu().numpy()
+        result["uncertainty"] = np.array(covariance)
 
     return result
 
@@ -490,8 +478,8 @@ def _build_optimization_result_payload(
 
 
 def fit_from_data_frame(
-    df: pd.DataFrame,
-    times: float | NDArray[np.float64] | torch.Tensor,
+    df: "Any",
+    times: float | NDArray[np.float64] | jax.Array,
     *,
     age_column: str | None = None,
     **fit_kwargs: Unpack[FitKwargs],
@@ -502,7 +490,7 @@ def fit_from_data_frame(
     ----------
     df : pd.DataFrame
         Input data_frame containing age data.
-    times : float | NDArray | torch.Tensor
+    times : float | NDArray | jax.Array
         Observation time(s).
     age_column : str | None
         Name of age column; auto-detected if None.
@@ -531,19 +519,19 @@ def fit_from_data_frame(
             raise ValueError(msg)
         age_column = candidates[0]
 
-    ages_tensor = torch.as_tensor(
+    ages_arr = jnp.array(
         df[age_column].to_numpy(dtype=np.float64, copy=True),
-        dtype=torch.float64,
+        dtype=jnp.float64,
     )
-    times_tensor = torch.as_tensor(times, dtype=torch.float64)
-    times_tensor, ages_tensor = normalize_and_validate_inputs(
-        times=times_tensor,
-        ages=ages_tensor,
+    times_arr = jnp.array(times, dtype=jnp.float64)
+    times_arr, ages_arr = normalize_and_validate_inputs(
+        times=times_arr,
+        ages=ages_arr,
     )
 
     return fit_birth_death_processes(
-        list_of_ages=[ages_tensor],
-        times=times_tensor,
+        list_of_ages=[ages_arr],
+        times=times_arr,
         **fit_kwargs,
     )
 
@@ -551,60 +539,39 @@ def fit_from_data_frame(
 def _run_optimizer_strategies(
     strategies_map: dict[str, OptimizerStrategy],
     requested_keys: list[str],
-    log_params: torch.nn.Parameter,
-    initial_params: torch.Tensor,
+    initial_params: jax.Array,
     n_epochs: int,
-    non_spine_ages: torch.Tensor,
-    times_tensor: torch.Tensor,
-    spine_ages_tensor: torch.Tensor | None,
-    population_sizes_tensor: torch.Tensor,
+    non_spine_ages: jax.Array,
+    times_tensor: jax.Array,
+    spine_ages_tensor: jax.Array | None,
+    population_sizes_tensor: jax.Array,
     initial_population: int,
     convergence_config: ConvergenceConfig,
     param_constraints: ParameterConstraints | None = None,
     unbias: bool = True,
 ) -> OptimizerRunResult:
-    """Run optimizers sequentially until convergence; return params, history, metadata.
-
-    Args:
-        strategies_map: Optimizer configs.
-        requested_keys: Optimizer names to try sequentially.
-        log_params: Parameter tensor (log-scale, may be reduced if constraints apply).
-        initial_params: Initial params on original scale (full space).
-        n_epochs: Number of time epochs.
-        non_spine_ages: Non-spine age data.
-        initial_population: Initial population size.
-        times_tensor: Time points.
-        spine_ages_tensor: Spine ages if provided.
-        population_sizes_tensor: Population sizes per group.
-        convergence_config: Configuration for convergence criteria.
-        param_constraints: Parameter constraints (fixed/equal params).
-
-    Returns
-    -------
-        OptimizerRunResult with optimized params, history, and metadata.
-
-    """
+    """Run optimizers sequentially until convergence; return params and metadata."""
     if param_constraints is None:
         param_constraints = ParameterConstraints()
 
     n_total_params = 2 * n_epochs
 
-    converged = False
-    selected_attempt_index: int | None = None
-    attempts: list[OptimizerAttemptResult] = []
+    free_initial_params = _reduce_to_free_params(
+        initial_params, param_constraints, n_total_params
+    )
+    log_params_initial = jnp.log(free_initial_params)
+    log_params = log_params_initial
 
-    def _compute_nll() -> torch.Tensor:
-        """Compute negative log likelihood for current log_params."""
-        # Expand from reduced to full parameter space with constraints applied
-        full_log_params = _apply_constraints_to_full_params(
-            torch.exp(log_params),
+    def _compute_nll(log_params_free: jax.Array) -> jax.Array:
+        full_params = _apply_constraints_to_full_params(
+            jnp.exp(log_params_free),
             param_constraints,
             n_total_params,
         )
-        full_log_params_log = torch.log(full_log_params)
+        full_log_params = jnp.log(full_params)
         return negative_log_likelihood(
-            birth_rates=full_log_params_log[:n_epochs],
-            death_rates=full_log_params_log[n_epochs:],
+            birth_rates=full_log_params[:n_epochs],
+            death_rates=full_log_params[n_epochs:],
             ages=non_spine_ages,
             times=times_tensor,
             spine_ages=spine_ages_tensor,
@@ -615,24 +582,24 @@ def _run_optimizer_strategies(
             log_scale_params=True,
         )
 
+    converged = False
+    selected_attempt_index: int | None = None
+    attempts: list[OptimizerAttemptResult] = []
+
     for idx, key in enumerate(requested_keys):
         strategy = strategies_map[key]
 
         attempt, best_log_params = _run_single_optimizer(
             strategy=strategy,
             attempt_index=idx,
-            log_params=log_params,
-            initial_params=initial_params,
+            log_params=log_params_initial,
             convergence_config=convergence_config,
             compute_nll_fn=_compute_nll,
-            param_constraints=param_constraints,
-            n_total_params=n_total_params,
         )
         attempts.append(attempt)
 
         if best_log_params is not None:
-            with torch.no_grad():
-                log_params.copy_(best_log_params)
+            log_params = best_log_params
 
         if attempt.converged:
             converged = True
@@ -653,13 +620,10 @@ def _run_optimizer_strategies(
 def _run_single_optimizer(
     strategy: OptimizerStrategy,
     attempt_index: int,
-    log_params: torch.nn.Parameter,
-    initial_params: torch.Tensor,
+    log_params: jax.Array,
     convergence_config: ConvergenceConfig,
-    compute_nll_fn: Callable[[], torch.Tensor],
-    param_constraints: ParameterConstraints | None = None,
-    n_total_params: int | None = None,
-) -> tuple[OptimizerAttemptResult, torch.Tensor | None]:
+    compute_nll_fn: Callable[[jax.Array], jax.Array],
+) -> tuple[OptimizerAttemptResult, jax.Array | None]:
     """Run a single optimizer strategy and handle results.
 
     Returns
@@ -667,11 +631,6 @@ def _run_single_optimizer(
         (attempt_result, best_log_params)
 
     """
-    if param_constraints is None:
-        param_constraints = ParameterConstraints()
-    if n_total_params is None:
-        n_total_params = len(initial_params)
-
     attempt_nll_history: list[float] = []
     attempt_grad_norms: list[float] = []
     attempt_param_history: list[list[float]] = []
@@ -679,47 +638,22 @@ def _run_single_optimizer(
     iterations = 0
 
     try:
-        with torch.no_grad():
-            # Reduce initial_params to free space with constraints applied
-            free_initial_params = _reduce_to_free_params(
-                initial_params,
-                param_constraints,
-                n_total_params,
-            )
-            log_params.copy_(torch.log(free_initial_params.clone().detach()))
-        # remove internal-only kwargs before constructing torch optimizer
-        opt_kwargs = {k: v for k, v in strategy.optimizer_kwargs.items()}
-        opt_kwargs.pop("record_every", None)
-        opt_kwargs.pop("min_iterations", None)
-        optimizer = strategy.optimizer_class([log_params], **opt_kwargs)
-
-        if strategy.name == "LBFGS":
-            lbfgs_optimizer = cast("torch.optim.LBFGS", optimizer)
-            did_converge, exc, best_log_params, iterations = run_lbfgs_optimizer(
-                strategy=strategy,
-                log_params=log_params,
-                optimizer=lbfgs_optimizer,
-                max_iters=strategy.max_iters,
-                nll_history=attempt_nll_history,
-                grad_norms=attempt_grad_norms,
-                param_history=attempt_param_history,
-                timestamps=attempt_timestamps,
-                convergence_config=convergence_config,
-                compute_nll_fn=compute_nll_fn,
-            )
-        else:
-            did_converge, exc, best_log_params, iterations = run_first_order_optimizer(
-                strategy=strategy,
-                log_params=log_params,
-                optimizer=optimizer,
-                max_iters=strategy.max_iters,
-                nll_history=attempt_nll_history,
-                grad_norms=attempt_grad_norms,
-                param_history=attempt_param_history,
-                timestamps=attempt_timestamps,
-                convergence_config=convergence_config,
-                compute_nll_fn=compute_nll_fn,
-            )
+        runner = (
+            run_lbfgs_optimizer
+            if strategy.name == "LBFGS"
+            else run_first_order_optimizer
+        )
+        did_converge, run_exc, best_log_params, iterations = runner(
+            strategy=strategy,
+            log_params=log_params,
+            max_iters=strategy.max_iters,
+            nll_history=attempt_nll_history,
+            grad_norms=attempt_grad_norms,
+            param_history=attempt_param_history,
+            timestamps=attempt_timestamps,
+            convergence_config=convergence_config,
+            compute_nll_fn=compute_nll_fn,
+        )
     except (RuntimeError, ValueError) as exc:
         return (
             OptimizerAttemptResult(
@@ -736,94 +670,86 @@ def _run_single_optimizer(
             ),
             None,
         )
-    else:
-        if exc is not None:
-            return (
-                OptimizerAttemptResult(
-                    optimizer=strategy.name,
-                    attempt_index=attempt_index,
-                    converged=False,
-                    iterations=iterations,
-                    nll_history=attempt_nll_history,
-                    exception_type=type(exc).__name__,
-                    exception_message=str(exc),
-                    grad_norms=attempt_grad_norms or None,
-                    param_history=attempt_param_history or None,
-                    timestamps=attempt_timestamps or None,
-                ),
-                None,
-            )
 
+    if run_exc is not None:
         return (
             OptimizerAttemptResult(
                 optimizer=strategy.name,
                 attempt_index=attempt_index,
-                converged=did_converge,
+                converged=False,
                 iterations=iterations,
                 nll_history=attempt_nll_history,
+                exception_type=type(run_exc).__name__,
+                exception_message=str(run_exc),
                 grad_norms=attempt_grad_norms or None,
                 param_history=attempt_param_history or None,
                 timestamps=attempt_timestamps or None,
             ),
-            best_log_params,
+            None,
         )
+
+    return (
+        OptimizerAttemptResult(
+            optimizer=strategy.name,
+            attempt_index=attempt_index,
+            converged=did_converge,
+            iterations=iterations,
+            nll_history=attempt_nll_history,
+            grad_norms=attempt_grad_norms or None,
+            param_history=attempt_param_history or None,
+            timestamps=attempt_timestamps or None,
+        ),
+        best_log_params,
+    )
 
 
 def get_crude_parameter_estimates(
-    ages: torch.Tensor | float,
-    times: torch.Tensor | float,
+    ages: jax.Array | NDArray[np.float64] | float,
+    times: jax.Array | NDArray[np.float64] | float,
     *,
-    birth_rates: torch.Tensor | float | None = None,
-    death_rates: torch.Tensor | float | None = None,
+    birth_rates: jax.Array | NDArray[np.float64] | float | None = None,
+    death_rates: jax.Array | NDArray[np.float64] | float | None = None,
     initial_population: int = 1,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[jax.Array, jax.Array]:
     """Get crude initial parameter estimates from age data."""
     if birth_rates is not None and death_rates is not None:
         msg = "Cannot provide both birth_rates and death_rates"
         raise ValueError(msg)
 
-    times, ages = normalize_and_validate_inputs(times=times, ages=ages)
+    times_arr, ages_arr = normalize_and_validate_inputs(times=times, ages=ages)
 
-    observation_time = times[-1]
-    n_manuscripts = len(ages)
+    observation_time = times_arr[-1]
+    n_manuscripts = len(ages_arr)
     if n_manuscripts == 0:
         msg = "Cannot estimate parameters from empty age data"
         raise ValueError(msg)
 
-    mean_age = float(ages.mean())
+    mean_age = float(ages_arr.mean())
 
-    # Simple heuristic: death rate inversely related to max survival age
-    # birth rate related to total observed manuscripts
     if birth_rates is None:
-        est_birth_rates = torch.ones_like(times, dtype=torch.float64) / mean_age
+        est_birth_rates = jnp.ones_like(times_arr, dtype=jnp.float64) / mean_age
     else:
         est_birth_rates = ensure_1d_tensor(birth_rates)
 
     if death_rates is None:
-        est_death_rates = torch.maximum(
+        est_death_rates = jnp.maximum(
             est_birth_rates
-            - torch.log(
-                torch.tensor(
-                    float(n_manuscripts / initial_population),
-                    dtype=torch.float64,
-                ),
+            - jnp.log(
+                jnp.array(float(n_manuscripts / initial_population), dtype=jnp.float64),
             )
             / observation_time,
-            torch.full_like(times, 1e-8, dtype=torch.float64),
+            jnp.full_like(times_arr, 1e-8, dtype=jnp.float64),
         )
     else:
         est_death_rates = ensure_1d_tensor(death_rates)
 
-    # Validate that all arrays have consistent sizes
-    if len(times) != len(est_birth_rates) or len(times) != len(est_death_rates):
+    if len(times_arr) != len(est_birth_rates) or len(times_arr) != len(est_death_rates):
         msg = (
-            f"Size mismatch: times ({len(times)}), "
+            f"Size mismatch: times ({len(times_arr)}), "
             f"est_birth_rates ({len(est_birth_rates)}), "
             f"est_death_rates ({len(est_death_rates)}) must all be equal"
         )
-        raise ValueError(
-            msg,
-        )
+        raise ValueError(msg)
 
     est_birth_rates = est_birth_rates + (est_death_rates - est_birth_rates) / 4
     est_death_rates = est_death_rates - (est_death_rates - est_birth_rates) / 4
@@ -831,79 +757,81 @@ def get_crude_parameter_estimates(
     return (est_birth_rates, est_death_rates)
 
 
-def _find_non_empty_age(list_of_ages: list[torch.Tensor]) -> torch.Tensor:
+def _find_non_empty_age(
+    list_of_ages: list[jax.Array | NDArray[np.float64]],
+) -> jax.Array:
     """Return first non-empty age array; raise ValueError if all empty."""
     for ages in list_of_ages:
         if len(ages) > 0:
-            return ages
+            return ensure_1d_tensor(ages)
     msg = "No valid data points for fitting"
     raise ValueError(msg)
 
 
 def _prepare_population_sizes(
-    list_of_ages: list[torch.Tensor],
-    population_sizes: torch.Tensor | None,
-    spine_ages: torch.Tensor | None,
-) -> torch.Tensor:
+    list_of_ages: list[jax.Array | NDArray[np.float64]],
+    population_sizes: jax.Array | NDArray[np.float64] | None,
+    spine_ages: jax.Array | NDArray[np.float64] | None,
+) -> jax.Array:
     """Return population_sizes or auto-compute from list_of_ages + spine_ages."""
     if population_sizes is not None:
-        population_sizes_tensor = ensure_1d_tensor(population_sizes).to(
-            dtype=torch.int64,
-        )
-        if population_sizes_tensor.numel() != len(list_of_ages):
+        ps = ensure_1d_tensor(population_sizes)
+        ps_int = jnp.array(ps, dtype=jnp.int32)
+        if ps_int.size != len(list_of_ages):
             msg = "Length of population_sizes must match length of list_of_ages"
-            raise ValueError(
-                msg,
-            )
-        return population_sizes_tensor
+            raise ValueError(msg)
+        return ps_int
 
-    return torch.as_tensor(
+    return jnp.array(
         [len(ages) + int(spine_ages is not None) for ages in list_of_ages],
-        dtype=torch.int64,
+        dtype=jnp.int32,
     )
 
 
 def _extract_spine_and_ages(
-    list_of_ages: list[torch.Tensor],
+    list_of_ages: list[jax.Array | NDArray[np.float64]],
     *,
     is_ordered: bool,
-    spine_ages: torch.Tensor | None,
-) -> tuple[torch.Tensor | None, torch.Tensor]:
+    spine_ages: jax.Array | NDArray[np.float64] | None,
+) -> tuple[jax.Array | None, jax.Array]:
     """Extract/auto-extract spine ages and return (spine_ages, non_spine_ages)."""
-    spine_ages_tensor: torch.Tensor | None
+    spine_ages_tensor: jax.Array | None
     if is_ordered and (spine_ages is None):
         spine_list: list[float] = []
-        remaining: list[torch.Tensor] = []
+        remaining: list[jax.Array] = []
         for arr in list_of_ages:
             if len(arr) == 0:
                 continue
-            arr_tensor = ensure_1d_tensor(arr)
-            spine_list.append(float(arr_tensor[0]))
-            if len(arr_tensor) > 1:
-                remaining.append(arr_tensor[1:])
+            arr_jax = ensure_1d_tensor(arr)
+            spine_list.append(float(arr_jax[0]))
+            if len(arr_jax) > 1:
+                remaining.append(arr_jax[1:])
 
-        spine_ages_tensor = ensure_1d_tensor(
-            torch.tensor(spine_list, dtype=torch.float64),
-        )
+        spine_ages_tensor = jnp.array(spine_list, dtype=jnp.float64)
         non_spine_ages = (
-            torch.cat(remaining) if remaining else torch.tensor([], dtype=torch.float64)
+            jnp.concatenate(remaining)
+            if remaining
+            else jnp.array([], dtype=jnp.float64)
         )
         return spine_ages_tensor, non_spine_ages
 
     spine_ages_tensor = None if spine_ages is None else ensure_1d_tensor(spine_ages)
-    non_spine_ages = torch.cat(
-        [ensure_1d_tensor(arr) for arr in list_of_ages if len(arr) > 0],
+    non_spine_tensors = [ensure_1d_tensor(arr) for arr in list_of_ages if len(arr) > 0]
+    non_spine_ages = (
+        jnp.concatenate(non_spine_tensors)
+        if non_spine_tensors
+        else jnp.array([], dtype=jnp.float64)
     )
     return spine_ages_tensor, non_spine_ages
 
 
 def _build_initial_params(
-    initial_birth_rates: torch.Tensor | None,
-    initial_death_rates: torch.Tensor | None,
-    non_empty_age: torch.Tensor,
-    times_tensor: torch.Tensor,
+    initial_birth_rates: jax.Array | NDArray[np.float64] | None,
+    initial_death_rates: jax.Array | NDArray[np.float64] | None,
+    non_empty_age: jax.Array,
+    times_tensor: jax.Array,
     initial_population: int = 1,
-) -> torch.Tensor:
+) -> jax.Array:
     """Build initial param vector; auto-estimate if needed."""
     if initial_birth_rates is None or initial_death_rates is None:
         crude_birth, crude_death = get_crude_parameter_estimates(
@@ -913,35 +841,28 @@ def _build_initial_params(
             death_rates=initial_death_rates,
             initial_population=initial_population,
         )
-        return torch.cat((crude_birth, crude_death))
+        return jnp.concatenate([crude_birth, crude_death])
 
-    return torch.cat(
-        (
+    return jnp.concatenate(
+        [
             ensure_1d_tensor(initial_birth_rates),
             ensure_1d_tensor(initial_death_rates),
-        ),
+        ],
     )
 
 
 def _apply_param_perturbation(
-    initial_params: torch.Tensor,
+    initial_params: jax.Array,
     perturb_initial_params_std: float,
     random_seed: int | None,
-) -> torch.Tensor:
-    """Add Gaussian noise to params."""
+) -> jax.Array:
+    """Add multiplicative log-normal noise to params."""
     if perturb_initial_params_std <= 0:
         return initial_params
-    if random_seed is not None:
-        torch.manual_seed(random_seed)
-    noise = torch.clamp(
-        torch.normal(
-            mean=1.0,
-            std=perturb_initial_params_std,
-            size=initial_params.shape,
-            dtype=initial_params.dtype,
-        ),
-        min=0.1,
-    )
+    seed = random_seed if random_seed is not None else 0
+    key = jax.random.PRNGKey(seed)
+    raw_noise = jax.random.normal(key, shape=initial_params.shape, dtype=jnp.float64)
+    noise = jnp.maximum(raw_noise * perturb_initial_params_std + 1.0, 0.1)
     return initial_params * noise
 
 
@@ -952,26 +873,25 @@ def _build_optimizer_strategies(
     """Build optimizer config dict."""
     strategies_map: dict[str, OptimizerStrategy] = {
         "adam": OptimizerStrategy(
-            "Adam",
-            torch.optim.Adam,
-            DEFAULT_ITERATIONS,
-            {"lr": 0.1},
+            name="Adam",
+            solver_factory=optax.adam,
+            max_iters=DEFAULT_ITERATIONS,
+            solver_kwargs={"lr": 0.1},
         ),
         "lbfgs": OptimizerStrategy(
-            "LBFGS",
-            torch.optim.LBFGS,
-            DEFAULT_ITERATIONS // 20,
-            {
-                "lr": 1.0,
+            name="LBFGS",
+            solver_factory=lambda **_: None,
+            max_iters=DEFAULT_ITERATIONS // 20,
+            solver_kwargs={
                 "tolerance_grad": convergence_config.gradient_threshold,
                 "tolerance_change": convergence_config.absolute_tolerance,
             },
         ),
         "sgd": OptimizerStrategy(
-            "SGD",
-            torch.optim.SGD,
-            DEFAULT_ITERATIONS,
-            {"lr": 0.001},
+            name="SGD",
+            solver_factory=optax.sgd,
+            max_iters=DEFAULT_ITERATIONS,
+            solver_kwargs={"lr": 0.001},
         ),
     }
 
@@ -982,12 +902,12 @@ def _build_optimizer_strategies(
         key_lower = key.lower()
         if key_lower in strategies_map:
             strategy = strategies_map[key_lower]
-            merged_opt_kwargs = {**strategy.optimizer_kwargs, **custom_kwargs}
+            merged_solver_kwargs = {**strategy.solver_kwargs, **custom_kwargs}
             strategies_map[key_lower] = OptimizerStrategy(
                 name=strategy.name,
-                optimizer_class=strategy.optimizer_class,
+                solver_factory=strategy.solver_factory,
                 max_iters=strategy.max_iters,
-                optimizer_kwargs=merged_opt_kwargs,
+                solver_kwargs=merged_solver_kwargs,
             )
     return strategies_map
 
@@ -1006,43 +926,40 @@ def _normalize_requested_optimizers(
                 f"Unsupported optimizer '{key}'. "
                 f"Choose from {list(strategies_map.keys())}."
             )
-            raise ValueError(
-                msg,
-            )
+            raise ValueError(msg)
     return requested_keys
 
 
 def _finalize_fit(
-    log_params: torch.Tensor,
+    log_params: jax.Array,
     n_epochs: int,
-    non_spine_ages: torch.Tensor,
-    times_tensor: torch.Tensor,
+    non_spine_ages: jax.Array,
+    times_tensor: jax.Array,
     *,
-    spine_ages_tensor: torch.Tensor | None,
-    population_sizes_tensor: torch.Tensor,
+    spine_ages_tensor: jax.Array | None,
+    population_sizes_tensor: jax.Array,
     initial_population: int = 1,
     unbias: bool = True,
-) -> tuple[np.ndarray, np.ndarray, float, float] | None:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], float, float] | None:
     """Convert log params to original scale; return rates + final likelihoods."""
-    with torch.no_grad():
-        final_nll = negative_log_likelihood(
-            birth_rates=log_params[:n_epochs],
-            death_rates=log_params[n_epochs:],
-            ages=non_spine_ages,
-            times=times_tensor,
-            spine_ages=spine_ages_tensor,
-            ns=population_sizes_tensor,
-            initial_population=initial_population,
-            unbias=unbias,
-            is_ordered=False,
-            log_scale_params=True,
-        )
+    final_nll = negative_log_likelihood(
+        birth_rates=log_params[:n_epochs],
+        death_rates=log_params[n_epochs:],
+        ages=non_spine_ages,
+        times=times_tensor,
+        spine_ages=spine_ages_tensor,
+        ns=population_sizes_tensor,
+        initial_population=initial_population,
+        unbias=unbias,
+        is_ordered=False,
+        log_scale_params=True,
+    )
 
-        if not torch.isfinite(final_nll):
-            return None
+    if not math.isfinite(float(final_nll)):
+        return None
 
-        birth_rates = torch.exp(log_params[:n_epochs]).detach().cpu().numpy()
-        death_rates = torch.exp(log_params[n_epochs:]).detach().cpu().numpy()
-        final_log_likelihood = -float(final_nll.item())
+    birth_rates = np.array(jnp.exp(log_params[:n_epochs]))
+    death_rates = np.array(jnp.exp(log_params[n_epochs:]))
+    final_log_likelihood = -float(final_nll)
 
-    return birth_rates, death_rates, final_log_likelihood, float(final_nll.item())
+    return birth_rates, death_rates, final_log_likelihood, float(final_nll)

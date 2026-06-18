@@ -2,62 +2,50 @@
 
 import math
 from collections.abc import Callable
-from contextlib import suppress
-from typing import Any, cast
 
-import torch
+import jax
+import jax.numpy as jnp
+import jax.scipy.special
 
 from .likelihood import negative_log_likelihood
 
 
 def _invert_observed_fisher(
-    observed_fisher: torch.Tensor,
-) -> torch.Tensor:
-    """Invert the observed Fisher information with simple fallbacks."""
-    if observed_fisher.numel() == 0:
-        return observed_fisher.clone()
+    observed_fisher: jax.Array,
+) -> jax.Array:
+    """Invert the observed Fisher information with NaN-checked jitter fallbacks."""
+    if observed_fisher.size == 0:
+        return observed_fisher
 
-    with suppress(RuntimeError):
-        torch.linalg.cond(observed_fisher)
+    result = jnp.linalg.inv(observed_fisher)
+    if not bool(jnp.any(jnp.isnan(result))):
+        return result
 
-    try:
-        return cast("torch.Tensor", torch.linalg.inv(observed_fisher))  # pyright: ignore[reportAnyReturnType]
-    except RuntimeError:
-        pass
-
-    identity = torch.eye(
-        observed_fisher.shape[0],
-        dtype=observed_fisher.dtype,
-        device=observed_fisher.device,
-    )
+    identity = jnp.eye(observed_fisher.shape[0], dtype=observed_fisher.dtype)
     for jitter in (1e-10, 1e-8, 1e-6, 1e-4):
-        try:
-            return cast(
-                "torch.Tensor",
-                torch.linalg.inv(observed_fisher + jitter * identity),
-            )  # pyright: ignore[reportAnyReturnType]
-        except RuntimeError:
-            continue
+        result = jnp.linalg.inv(observed_fisher + jitter * identity)
+        if not bool(jnp.any(jnp.isnan(result))):
+            return result
 
-    return cast("torch.Tensor", torch.linalg.pinv(observed_fisher))
+    return jnp.linalg.pinv(observed_fisher)
 
 
 def estimate_mle_covariance(
-    free_log_params: torch.Tensor,
+    free_log_params: jax.Array,
     n_epochs: int,
-    full_log_params_fn: Callable[[torch.Tensor], torch.Tensor],
-    non_spine_ages: torch.Tensor,
-    times_tensor: torch.Tensor,
+    full_log_params_fn: Callable[[jax.Array], jax.Array],
+    non_spine_ages: jax.Array,
+    times_tensor: jax.Array,
     *,
-    spine_ages_tensor: torch.Tensor | None,
-    population_sizes_tensor: torch.Tensor,
+    spine_ages_tensor: jax.Array | None,
+    population_sizes_tensor: jax.Array,
     initial_population: int,
     unbias: bool = True,
-) -> torch.Tensor:
+) -> jax.Array:
     """Estimate covariance of fitted log-parameters using the Hessian."""
-    theta_hat = cast("Any", free_log_params.detach().clone().to(dtype=torch.float64))
+    theta_hat = jnp.array(free_log_params, dtype=jnp.float64)
 
-    def objective(theta_free: torch.Tensor) -> torch.Tensor:
+    def objective(theta_free: jax.Array) -> jax.Array:
         full_log_params = full_log_params_fn(theta_free)
         return negative_log_likelihood(
             birth_rates=full_log_params[:n_epochs],
@@ -72,52 +60,41 @@ def estimate_mle_covariance(
             log_scale_params=True,
         )
 
-    hessian_fn = cast("Any", torch.autograd.functional.hessian)
-    hessian_nll = hessian_fn(objective, theta_hat)
-    hessian_nll = 0.5 * (hessian_nll + hessian_nll.transpose(-1, -2))
+    hessian_nll = jax.hessian(objective)(theta_hat)
+    hessian_nll = 0.5 * (hessian_nll + hessian_nll.T)
 
     covariance_log_free = _invert_observed_fisher(hessian_nll)
-    covariance_log_free = 0.5 * (
-        covariance_log_free + covariance_log_free.transpose(-1, -2)
-    )
+    covariance_log_free = 0.5 * (covariance_log_free + covariance_log_free.T)
 
-    jacobian_fn = cast("Any", torch.autograd.functional.jacobian)
-    theta_hat_detached = theta_hat.detach()
-    jacobian_full_log = jacobian_fn(full_log_params_fn, theta_hat_detached)
+    jacobian_full_log = jax.jacobian(full_log_params_fn)(theta_hat)
 
     covariance_log_full = jacobian_full_log @ covariance_log_free @ jacobian_full_log.T
-    covariance_log_full = 0.5 * (
-        covariance_log_full + covariance_log_full.transpose(-1, -2)
-    )
+    covariance_log_full = 0.5 * (covariance_log_full + covariance_log_full.T)
 
-    return cast("torch.Tensor", covariance_log_full)
+    return covariance_log_full
 
 
 def confidence_intervals_from_log_covariance(
-    log_parameter_estimates: torch.Tensor,
-    covariance_log_parameters: torch.Tensor,
+    log_parameter_estimates: jax.Array,
+    covariance_log_parameters: jax.Array,
     *,
     confidence_level: float = 0.95,
-) -> torch.Tensor:
+) -> jax.Array:
     """Build Wald confidence intervals on the original scale.
 
     Uses log-scale uncertainty and exponentiates the resulting interval bounds
     back to the original scale.
     """
-    if log_parameter_estimates.numel() == 0:
-        return log_parameter_estimates.new_empty((0, 2))
+    if log_parameter_estimates.size == 0:
+        return jnp.empty((0, 2), dtype=log_parameter_estimates.dtype)
 
-    standard_errors = torch.sqrt(
-        torch.clamp(torch.diag(covariance_log_parameters), min=0.0),
+    standard_errors = jnp.sqrt(
+        jnp.maximum(jnp.diag(covariance_log_parameters), 0.0),
     )
-    z_value = math.sqrt(2.0) * torch.erfinv(
-        torch.tensor(
-            confidence_level,
-            dtype=log_parameter_estimates.dtype,
-            device=log_parameter_estimates.device,
-        ),
+    z_value = math.sqrt(2.0) * float(
+        jax.scipy.special.erfinv(jnp.array(confidence_level, dtype=jnp.float64))
     )
 
-    lower = torch.exp(log_parameter_estimates - z_value * standard_errors)
-    upper = torch.exp(log_parameter_estimates + z_value * standard_errors)
-    return torch.stack((lower, upper), dim=-1)
+    lower = jnp.exp(log_parameter_estimates - z_value * standard_errors)
+    upper = jnp.exp(log_parameter_estimates + z_value * standard_errors)
+    return jnp.stack([lower, upper], axis=-1)

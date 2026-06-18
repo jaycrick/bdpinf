@@ -57,6 +57,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `inference.fitting`, `inference._optimizer_runners`, `inference._fit_types`,
+  `inference.uncertainty` — Phase 2c: optimizer layer migrated from PyTorch
+  (LBFGS closure / `nn.Parameter`) to JAX + optimistix BFGS/LBFGS and optax Adam;
+  `estimate_mle_covariance` uses `jax.hessian`; result-dict schema and public API
+  are unchanged.
+- `inference.bayesian` — Phase 2d: fully migrated from Pyro/PyTorch to
+  NumPyro/JAX.  `BayesianLikelihoodModel` calls JAX math functions directly
+  (`calculate_populations_log_lik`, `calculate_non_spine_ages_log_lik`,
+  `calculate_spine_ages_log_lik`, all with `_skip_normalization=True`) to avoid
+  `ConcretizationTypeError` inside NumPyro's JIT-compiled `lax.while_loop`.
+  Model data stored as NumPy arrays (not JAX arrays) to remain concrete in the
+  NUTS trace.  `chain_method="vectorized"` (JAX vmap) replaces Pyro's subprocess
+  multi-chain.  The `device` parameter is accepted for API compatibility but
+  ignored (JAX uses its default backend).  `BayesianPriorConfig.resolve_tensors`
+  now returns NumPy arrays instead of `torch.Tensor`.
+
 - `models.math_extinction` — replaced `scipy.integrate.quad` loop in
   `calculate_log_pr_extinction_given_initial_lifetimes` with a closed-form
   analytic expression derived from the Poisson generating functional; fully

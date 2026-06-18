@@ -4,10 +4,11 @@ Isolated here so that _optimizer_runners can import them without
 creating a circular dependency with fitting.py.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import torch
+import jax
 
 DEFAULT_GRADIENT_THRESHOLD = 5e-4
 DEFAULT_ABSOLUTE_TOLERANCE = 1e-7
@@ -21,16 +22,16 @@ class OptimizerStrategy:
     """Configuration for a single optimizer strategy."""
 
     name: str
-    optimizer_class: type[torch.optim.Optimizer]
+    solver_factory: Callable[..., Any]
     max_iters: int
-    optimizer_kwargs: dict[str, Any]
+    solver_kwargs: dict[str, Any]
 
 
 @dataclass
 class OptimizerRunResult:
     """Result payload from running optimizer strategies."""
 
-    log_params: torch.nn.Parameter
+    log_params: jax.Array
     converged: bool
     selected_attempt_index: int | None
     attempts: list["OptimizerAttemptResult"]

@@ -1,12 +1,16 @@
 """Test suite for modular fitting functionality."""
 
 import inspect
+import math
 from pathlib import Path
 
+import jax
+import jax.numpy as jnp
+import jax.scipy.special
 import numpy as np
+import optax
 import pandas as pd
 import pytest
-import torch
 
 from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference import uncertainty as uncertainty_module
@@ -14,6 +18,7 @@ from inf_bp_texts.inference.fitting import (
     OptimizerAttemptResult,
     OptimizerRunResult,
     OptimizerStrategy,
+    ParameterConstraints,
     _apply_param_perturbation,
     _build_initial_params,
     _build_optimizer_strategies,
@@ -32,25 +37,25 @@ from inf_bp_texts.models.validation import _validate_times_properties
 
 class TestFittingHelpers:
     def test_find_non_empty_age_returns_first(self) -> None:
-        ages_list = [torch.tensor([]), torch.tensor([1.0, 2.0])]
+        ages_list = [np.array([]), np.array([1.0, 2.0])]
         result = _find_non_empty_age(ages_list)
-        assert torch.equal(result, ages_list[1])
+        np.testing.assert_array_equal(np.array(result), ages_list[1])
 
     def test__validate_times_properties_rejects_non_positive(self) -> None:
         with pytest.raises(ValueError, match="must be positive"):
             _validate_times_properties(np.array([1.0, 0.0]))
 
     def test_prepare_population_sizes_length_mismatch(self) -> None:
-        ages_list = [torch.tensor([1.0]), torch.tensor([2.0])]
+        ages_list = [np.array([1.0]), np.array([2.0])]
         with pytest.raises(ValueError, match="Length of population_sizes"):
             _prepare_population_sizes(
                 ages_list,
-                torch.tensor([1], dtype=torch.int64),
+                np.array([1], dtype=np.int32),
                 None,
             )
 
     def test_extract_spine_and_ages_ordered(self) -> None:
-        ages_list = [torch.tensor([10.0, 20.0]), torch.tensor([30.0])]
+        ages_list = [np.array([10.0, 20.0]), np.array([30.0])]
         spine_ages, non_spine = _extract_spine_and_ages(
             ages_list,
             is_ordered=True,
@@ -58,18 +63,18 @@ class TestFittingHelpers:
         )
 
         assert spine_ages is not None
-        expected_spine = torch.tensor([10.0, 30.0], dtype=spine_ages.dtype)
-        expected_non_spine = torch.tensor([20.0], dtype=non_spine.dtype)
-        assert torch.allclose(spine_ages, expected_spine)
-        assert torch.allclose(non_spine, expected_non_spine)
+        np.testing.assert_allclose(np.array(spine_ages), [10.0, 30.0])
+        np.testing.assert_allclose(np.array(non_spine), [20.0])
 
     def test_apply_param_perturbation_is_deterministic(self) -> None:
-        params = torch.tensor([1.0, 2.0], dtype=torch.float64)
+        params = jnp.array([1.0, 2.0], dtype=jnp.float64)
         perturbed_first = _apply_param_perturbation(params, 0.1, random_seed=7)
         perturbed_second = _apply_param_perturbation(params, 0.1, random_seed=7)
 
-        assert torch.allclose(perturbed_first, perturbed_second)
-        assert torch.all(perturbed_first > 0)
+        np.testing.assert_allclose(
+            np.array(perturbed_first), np.array(perturbed_second)
+        )
+        assert bool(jnp.all(perturbed_first > 0))
 
     def test_build_optimizer_strategies_merges_kwargs(self) -> None:
         lr = 0.01
@@ -77,7 +82,7 @@ class TestFittingHelpers:
             {"adam": {"lr": lr}},
             convergence_config=ConvergenceConfig.default(),
         )
-        assert strategies["adam"].optimizer_kwargs["lr"] == lr
+        assert strategies["adam"].solver_kwargs["lr"] == lr
 
     def test_normalize_requested_optimizers_rejects_unknown(self) -> None:
         strategies = _build_optimizer_strategies(
@@ -88,10 +93,10 @@ class TestFittingHelpers:
             _normalize_requested_optimizers(["Adam", "Bogus"], strategies)
 
     def test_build_initial_params_with_custom_rates(self) -> None:
-        birth_rates = torch.tensor([0.1, 0.2])
-        death_rates = torch.tensor([0.03, 0.04])
-        non_empty_age = torch.tensor([10.0])
-        times_tensor = torch.tensor([100.0, 200.0])
+        birth_rates = np.array([0.1, 0.2])
+        death_rates = np.array([0.03, 0.04])
+        non_empty_age = np.array([10.0])
+        times_tensor = jnp.array([100.0, 200.0], dtype=jnp.float64)
 
         initial_params = _build_initial_params(
             birth_rates,
@@ -99,11 +104,8 @@ class TestFittingHelpers:
             non_empty_age,
             times_tensor,
         )
-        expected_params = torch.tensor(
-            [0.1, 0.2, 0.03, 0.04],
-            dtype=initial_params.dtype,
-        )
-        assert torch.allclose(initial_params, expected_params)
+        expected = np.array([0.1, 0.2, 0.03, 0.04])
+        np.testing.assert_allclose(np.array(initial_params), expected)
 
 
 class TestFitting:
@@ -130,13 +132,11 @@ class TestFitting:
 
     def test_fit_birth_death_process_success(self) -> None:
         """Test successful fitting with ages array."""
-        # Create some test ages
         ages = np.array([100.0, 200.0, 300.0, 500.0, 700.0], dtype=np.float64)
         times = 1000.0
 
         result = fit_birth_death_processes([ages], times)
 
-        # Should return valid result structure
         assert isinstance(result, dict)
         assert "success" in result
         assert result["success"]
@@ -168,21 +168,18 @@ class TestFitting:
             initial_death_rates=initial_death_rates,
         )
 
-        # Should succeed regardless of initial parameters
         assert isinstance(result, dict)
         assert result["success"]
         assert "success" in result
 
     def test_fit_from_data_frame_success(self) -> None:
         """Test successful fitting with external DataFrame."""
-        # Create test data
         rng = np.random.default_rng(42)
         ages = rng.exponential(scale=200, size=50)
         df = pd.DataFrame({"age": ages, "count": np.ones(len(ages))})
 
         result = fit_from_data_frame(df, age_column="age", times=1000.0)
 
-        # Should return valid result structure
         assert isinstance(result, dict)
         assert "success" in result
         assert result["success"]
@@ -195,7 +192,6 @@ class TestFitting:
 
     def test_fit_from_data_frame_individual_records(self) -> None:
         """Test fitting with individual manuscript records."""
-        # Create individual manuscript records instead of aggregated counts
         ages = []
         for age, count in [(100.0, 5), (200.0, 3), (300.0, 2), (400.0, 1)]:
             ages.extend([age] * count)
@@ -204,14 +200,12 @@ class TestFitting:
 
         result = fit_from_data_frame(df, age_column="age", times=1000.0)
 
-        # Should return valid result structure
         assert result["success"]
         assert isinstance(result, dict)
         assert "success" in result
 
     def test_fit_from_data_frame_no_valid_data_points(self) -> None:
         """Test fitting fails with no valid data points."""
-        # DataFrame with no data
         df = pd.DataFrame({"age": []})
 
         with pytest.raises(ValueError, match="No valid data points for fitting"):
@@ -225,13 +219,11 @@ class TestFitting:
             fit_from_data_frame(df, age_column="age", times=1000.0)
 
     def test_fit_birth_death_process_different_methods(self) -> None:
-        """Test fitting with the default optimization strategy."""
-        # Test that the function works with the default optimization strategy
+        """Test that the function works with the default optimization strategy."""
         ages = np.array([100.0, 200.0, 300.0, 400.0], dtype=np.float64)
         times = 1000.0
 
         result = fit_birth_death_processes([ages], times)
-        # Should return a result
         assert isinstance(result, dict)
         assert "success" in result
         if result["success"]:
@@ -257,7 +249,6 @@ class TestFitting:
         for key in expected_keys:
             assert key in result, f"Missing key: {key}"
 
-        # Check types
         assert isinstance(result["birth_rates"], (float, np.float64, np.ndarray))
         assert isinstance(result["death_rates"], (float, np.float64, np.ndarray))
         assert isinstance(result["log_likelihood"], (float, np.float64))
@@ -300,7 +291,7 @@ class TestFitting:
                     exception_message="Adam failed",
                 ),
             ]
-            fake_log_params = torch.nn.Parameter(torch.log(torch.tensor([0.1, 0.1])))
+            fake_log_params = jnp.log(jnp.array([0.1, 0.1], dtype=jnp.float64))
             return OptimizerRunResult(
                 log_params=fake_log_params,
                 converged=False,
@@ -340,21 +331,17 @@ class TestFitting:
 
     def test_process_integration_with_fitting(self) -> None:
         """Test integration between BirthDeathProcess and fitting functions."""
-        # Create process
         process = BirthDeathProcess(
             creation_times=[100.0, 200.0, 300.0],
             epoch_end_times=1000.0,
         )
 
-        # Get ages and fit
         ages = process.manuscript_ages
         result = fit_birth_death_processes([ages], process.epoch_end_times[-1])
 
         assert result["success"]
-        # Update process with fitted parameters
         process.update_parameters(result["birth_rates"], result["death_rates"], result)
 
-        # Process should now be fitted
         assert process.fitted
         assert process.fit_results is not None
         assert process.birth_rates == result["birth_rates"]
@@ -382,20 +369,19 @@ class TestFitting:
             epoch_end_times=500.0,
         )
 
-        original_ages = process.manuscript_ages.clone()
+        original_ages = np.array(process.manuscript_ages)
         original_creation_times = process.creation_times.copy()
-        original_epoch_end_times = process.epoch_end_times.clone()
+        original_epoch_end_times = np.array(process.epoch_end_times)
 
-        # Fit with external data
         df = pd.DataFrame({"age": [100.0, 200.0, 300.0], "count": [1.0, 1.0, 1.0]})
         result = fit_from_data_frame(df, age_column="age", times=1000.0)
 
-        # Original process data should be preserved
-        np.testing.assert_array_equal(process.manuscript_ages, original_ages)
+        np.testing.assert_array_equal(np.array(process.manuscript_ages), original_ages)
         assert process.creation_times == original_creation_times
-        np.testing.assert_array_equal(process.epoch_end_times, original_epoch_end_times)
+        np.testing.assert_array_equal(
+            np.array(process.epoch_end_times), original_epoch_end_times
+        )
 
-        # But we can still update it with fit results if desired
         assert result["success"]
         process.update_parameters(result["birth_rates"], result["death_rates"], result)
         assert process.fitted
@@ -406,9 +392,8 @@ class TestMultiEpochFitting:
 
     def test_two_epoch_fitting_basic(self) -> None:
         """Test basic two-epoch fitting."""
-        # Create ages spanning two epochs
         ages = np.array([50.0, 150.0, 250.0, 350.0, 450.0], dtype=np.float64)
-        times = np.array([250.0, 500.0])  # Two epochs
+        times = np.array([250.0, 500.0])
 
         result = fit_birth_death_processes([ages], times)
 
@@ -419,14 +404,10 @@ class TestMultiEpochFitting:
             assert "birth_rates" in result
             assert "death_rates" in result
             assert "log_likelihood" in result
-
-            # Should return arrays for multi-epoch
             assert isinstance(result["birth_rates"], np.ndarray)
             assert isinstance(result["death_rates"], np.ndarray)
             assert len(result["birth_rates"]) == len(times)
             assert len(result["death_rates"]) == len(times)
-
-            # All rates should be positive
             assert all(result["birth_rates"] > 0)
             assert all(result["death_rates"] > 0)
 
@@ -448,14 +429,13 @@ class TestMultiEpochFitting:
         assert "success" in result
 
         if result["success"]:
-            # Check structure
             assert len(result["birth_rates"]) == len(times)
             assert len(result["death_rates"]) == len(times)
 
     def test_three_epoch_fitting(self) -> None:
         """Test fitting with three epochs."""
         ages = np.array([30.0, 80.0, 130.0, 180.0, 230.0, 280.0], dtype=np.float64)
-        times = np.array([100.0, 200.0, 300.0])  # Three epochs
+        times = np.array([100.0, 200.0, 300.0])
 
         result = fit_birth_death_processes([ages], times)
 
@@ -463,7 +443,6 @@ class TestMultiEpochFitting:
         assert "success" in result
 
         if result["success"]:
-            # Should have 3 parameters for each rate
             assert len(result["birth_rates"]) == len(times)
             assert len(result["death_rates"]) == len(times)
             assert all(result["birth_rates"] > 0)
@@ -477,7 +456,6 @@ class TestMultiEpochFitting:
         result = fit_birth_death_processes([ages], times)
 
         if result["success"]:
-            # Number of rate parameters should match number of epochs
             n_epochs = len(times)
             assert len(result["birth_rates"]) == n_epochs
             assert len(result["death_rates"]) == n_epochs
@@ -487,23 +465,14 @@ class TestMultiEpochFitting:
         ages = np.array([100.0, 200.0, 300.0, 400.0], dtype=np.float64)
         total_time = 500.0
 
-        # Single epoch fit
         result_single = fit_birth_death_processes([ages], total_time)
-
-        # Two epoch fit
         result_multi = fit_birth_death_processes([ages], np.array([250.0, total_time]))
 
-        # Both should succeed
         assert result_single["success"]
         assert result_multi["success"]
 
-        # Multi-epoch should return arrays
         assert isinstance(result_multi["birth_rates"], np.ndarray)
         assert isinstance(result_multi["death_rates"], np.ndarray)
-
-        # Single-epoch returns scalars (backward compatible)
-        # Note: Current implementation may return arrays even for single epoch
-        # This test documents the expected behavior
 
     def test_multi_epoch_no_ages_fails(self) -> None:
         """Test that multi-epoch fitting fails with no ages."""
@@ -522,7 +491,6 @@ class TestMultiEpochFitting:
 
         if result["success"]:
             assert np.isfinite(result["log_likelihood"])
-            # Log-likelihood should be negative (log of probability < 1)
             assert result["log_likelihood"] < 0
 
     def test_multi_epoch_from_data_frame(self) -> None:
@@ -537,7 +505,6 @@ class TestMultiEpochFitting:
         assert "success" in result
 
         if result["success"]:
-            # Should have multi-epoch parameters
             assert len(result["birth_rates"]) == len(times)
             assert len(result["death_rates"]) == len(times)
 
@@ -558,7 +525,6 @@ class TestMultiEpochFitting:
         assert "success" in result
 
         if result["success"]:
-            # Should have multi-epoch parameters
             assert len(result["birth_rates"]) == len(times)
             assert len(result["death_rates"]) == len(times)
 
@@ -571,9 +537,9 @@ class TestConvergenceFlags:
         ages = np.array([100.0, 200.0, 300.0], dtype=np.float64)
         sentinel_covariance = np.array([[1.0, 0.2], [0.2, 2.0]], dtype=np.float64)
 
-        def fake_estimate_uncertainty(*args: object, **kwargs: object) -> torch.Tensor:
+        def fake_estimate_uncertainty(*args: object, **kwargs: object) -> np.ndarray:
             del args, kwargs
-            return torch.as_tensor(sentinel_covariance, dtype=torch.float64)
+            return sentinel_covariance
 
         monkeypatch.setattr(
             "inf_bp_texts.inference.fitting.estimate_mle_covariance",
@@ -599,10 +565,10 @@ class TestConvergenceFlags:
         def fake_estimate_uncertainty(
             *args: object,
             **kwargs: object,
-        ) -> torch.Tensor:
+        ) -> np.ndarray:
             del args, kwargs
             called["value"] = True
-            return torch.eye(2, dtype=torch.float64)
+            return np.eye(2, dtype=np.float64)
 
         monkeypatch.setattr(
             "inf_bp_texts.inference.fitting.estimate_mle_covariance",
@@ -619,37 +585,42 @@ class TestConvergenceFlags:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        free_log_params = torch.tensor([0.0], dtype=torch.float64)
-        non_spine_ages = torch.tensor([100.0], dtype=torch.float64)
-        times_tensor = torch.tensor([1000.0], dtype=torch.float64)
-        population_sizes_tensor = torch.tensor([1], dtype=torch.int64)
+        free_log_params = jnp.array([0.0], dtype=jnp.float64)
+        non_spine_ages = jnp.array([100.0], dtype=jnp.float64)
+        times_tensor = jnp.array([1000.0], dtype=jnp.float64)
+        population_sizes_tensor = jnp.array([1], dtype=jnp.int32)
 
-        def full_log_params_fn(theta_free: torch.Tensor) -> torch.Tensor:
-            return torch.stack(
-                (
-                    theta_free[0] + torch.tensor(np.log(2.0), dtype=torch.float64),
-                    torch.tensor(np.log(0.5), dtype=torch.float64),
-                ),
+        def full_log_params_fn(theta_free: jax.Array) -> jax.Array:
+            return jnp.stack(
+                [
+                    theta_free[0] + jnp.log(jnp.array(2.0, dtype=jnp.float64)),
+                    jnp.log(jnp.array(0.5, dtype=jnp.float64)),
+                ],
             )
 
-        def fake_hessian(objective: object, theta: torch.Tensor) -> torch.Tensor:
-            del objective, theta
-            return torch.tensor([[2.0]], dtype=torch.float64)
+        fake_hess_value = jnp.array([[2.0]], dtype=jnp.float64)
+        fake_jac_value = jnp.array([[1.0], [0.0]], dtype=jnp.float64)
 
-        def fake_jacobian(function: object, theta: torch.Tensor) -> torch.Tensor:
-            del function, theta
-            return torch.tensor([[1.0], [0.0]], dtype=torch.float64)
+        def fake_hessian(fn: object) -> object:
+            del fn
 
-        monkeypatch.setattr(
-            torch.autograd.functional,
-            "hessian",
-            fake_hessian,
-        )
-        monkeypatch.setattr(
-            torch.autograd.functional,
-            "jacobian",
-            fake_jacobian,
-        )
+            def _inner(x: object) -> jax.Array:
+                del x
+                return fake_hess_value
+
+            return _inner
+
+        def fake_jacobian(fn: object) -> object:
+            del fn
+
+            def _inner(x: object) -> jax.Array:
+                del x
+                return fake_jac_value
+
+            return _inner
+
+        monkeypatch.setattr(jax, "hessian", fake_hessian)
+        monkeypatch.setattr(jax, "jacobian", fake_jacobian)
 
         covariance = uncertainty_module.estimate_mle_covariance(
             free_log_params=free_log_params,
@@ -663,18 +634,18 @@ class TestConvergenceFlags:
         )
 
         assert covariance.shape == (2, 2)
-        assert covariance[0, 0] == pytest.approx(0.5)
-        assert covariance[1, 1] == 0.0
-        assert covariance[1, 0] == 0.0
-        assert covariance[0, 1] == 0.0
+        assert float(covariance[0, 0]) == pytest.approx(0.5)
+        assert float(covariance[1, 1]) == pytest.approx(0.0, abs=1e-12)
+        assert float(covariance[1, 0]) == pytest.approx(0.0, abs=1e-12)
+        assert float(covariance[0, 1]) == pytest.approx(0.0, abs=1e-12)
 
     def test_log_space_confidence_intervals_are_exponentiated(self) -> None:
-        log_parameter_estimates = torch.tensor(
+        log_parameter_estimates = jnp.array(
             [np.log(2.0), np.log(4.0)],
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )
-        covariance_log = torch.diag(
-            torch.tensor([0.25, 0.0], dtype=torch.float64),
+        covariance_log = jnp.diag(
+            jnp.array([0.25, 0.0], dtype=jnp.float64),
         )
 
         intervals = uncertainty_module.confidence_intervals_from_log_covariance(
@@ -682,29 +653,33 @@ class TestConvergenceFlags:
             covariance_log,
         )
 
-        z_value = torch.sqrt(torch.tensor(2.0, dtype=torch.float64)) * torch.erfinv(
-            torch.tensor(0.95, dtype=torch.float64),
+        z_value = math.sqrt(2.0) * float(
+            jax.scipy.special.erfinv(jnp.array(0.95, dtype=jnp.float64))
         )
-        expected_lower = torch.exp(
-            log_parameter_estimates
-            - z_value * torch.tensor([0.5, 0.0], dtype=torch.float64),
-        )
-        expected_upper = torch.exp(
-            log_parameter_estimates
-            + z_value * torch.tensor([0.5, 0.0], dtype=torch.float64),
-        )
+        ses = np.array([0.5, 0.0])
+        log_ests = np.array([np.log(2.0), np.log(4.0)])
+        expected_lower = np.exp(log_ests - z_value * ses)
+        expected_upper = np.exp(log_ests + z_value * ses)
 
         assert intervals.shape == (2, 2)
-        assert torch.allclose(intervals[:, 0], expected_lower)
-        assert torch.allclose(intervals[:, 1], expected_upper)
+        np.testing.assert_allclose(
+            np.array(intervals[:, 0]), expected_lower, rtol=1e-10
+        )
+        np.testing.assert_allclose(
+            np.array(intervals[:, 1]), expected_upper, rtol=1e-10
+        )
 
     def test_max_iters_no_convergence(self) -> None:
-        ages = torch.tensor([100.0, 200.0], dtype=torch.float64)
-        times_tensor = torch.tensor([1000.0], dtype=torch.float64)
+        ages = jnp.array([100.0, 200.0], dtype=jnp.float64)
+        times_tensor = jnp.array([1000.0], dtype=jnp.float64)
         initial_params = _build_initial_params(None, None, ages, times_tensor)
-        log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
         strategies_map = {
-            "sgd": OptimizerStrategy("SGD", torch.optim.SGD, 1, {"lr": 0.0001}),
+            "sgd": OptimizerStrategy(
+                name="SGD",
+                solver_factory=optax.sgd,
+                max_iters=1,
+                solver_kwargs={"lr": 0.0001},
+            ),
         }
 
         convergence_config = ConvergenceConfig(
@@ -716,13 +691,12 @@ class TestConvergenceFlags:
         run_result = _run_optimizer_strategies(
             strategies_map,
             ["sgd"],
-            log_params,
             initial_params,
             n_epochs=len(times_tensor),
             non_spine_ages=ages,
             times_tensor=times_tensor,
             spine_ages_tensor=None,
-            population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
+            population_sizes_tensor=jnp.array([len(ages)], dtype=jnp.int32),
             initial_population=1,
             convergence_config=convergence_config,
         )
@@ -736,28 +710,32 @@ class TestConvergenceFlags:
         assert len(attempt.nll_history) == 1
 
     @pytest.mark.parametrize(
-        ("opt_key", "opt_class", "opt_kwargs"),
+        ("opt_key", "solver_factory", "solver_kwargs"),
         [
-            ("sgd", torch.optim.SGD, {"lr": 0.0001}),
+            ("sgd", optax.sgd, {"lr": 0.0001}),
             (
                 "lbfgs",
-                torch.optim.LBFGS,
-                {"lr": 1.0, "max_iter": 5, "line_search_fn": "strong_wolfe"},
+                lambda **_: None,
+                {"lr": 1.0},
             ),
         ],
     )
     def test_converged_on_gradient_threshold(
         self,
         opt_key: str,
-        opt_class: type,
-        opt_kwargs: dict[str, float | int | str],
+        solver_factory: object,
+        solver_kwargs: dict[str, float],
     ) -> None:
-        ages = torch.tensor([100.0, 200.0], dtype=torch.float64)
-        times_tensor = torch.tensor([1000.0], dtype=torch.float64)
+        ages = jnp.array([100.0, 200.0], dtype=jnp.float64)
+        times_tensor = jnp.array([1000.0], dtype=jnp.float64)
         initial_params = _build_initial_params(None, None, ages, times_tensor)
-        log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
         strategies_map = {
-            opt_key: OptimizerStrategy(opt_key.upper(), opt_class, 100, opt_kwargs),
+            opt_key: OptimizerStrategy(
+                name=opt_key.upper(),
+                solver_factory=solver_factory,  # type: ignore[arg-type]
+                max_iters=100,
+                solver_kwargs=solver_kwargs,
+            ),
         }
 
         convergence_config = ConvergenceConfig(
@@ -769,13 +747,12 @@ class TestConvergenceFlags:
         run_result = _run_optimizer_strategies(
             strategies_map,
             [opt_key],
-            log_params,
             initial_params,
             n_epochs=len(times_tensor),
             non_spine_ages=ages,
             times_tensor=times_tensor,
             spine_ages_tensor=None,
-            population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
+            population_sizes_tensor=jnp.array([len(ages)], dtype=jnp.int32),
             initial_population=1,
             convergence_config=convergence_config,
         )
@@ -783,14 +760,23 @@ class TestConvergenceFlags:
         assert run_result.converged
 
     def test_collects_exceptions_across_optimizer_attempts(self) -> None:
-        ages = torch.tensor([100.0, 200.0], dtype=torch.float64)
-        times_tensor = torch.tensor([1000.0], dtype=torch.float64)
+        ages = jnp.array([100.0, 200.0], dtype=jnp.float64)
+        times_tensor = jnp.array([1000.0], dtype=jnp.float64)
         initial_params = _build_initial_params(None, None, ages, times_tensor)
-        log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
 
         strategies_map = {
-            "sgd": OptimizerStrategy("SGD", torch.optim.SGD, 1, {"lr": 0.0001}),
-            "adam": OptimizerStrategy("Adam", torch.optim.Adam, 1, {"lr": 0.001}),
+            "sgd": OptimizerStrategy(
+                name="SGD",
+                solver_factory=optax.sgd,
+                max_iters=1,
+                solver_kwargs={"lr": 0.0001},
+            ),
+            "adam": OptimizerStrategy(
+                name="Adam",
+                solver_factory=optax.adam,
+                max_iters=1,
+                solver_kwargs={"lr": 0.001},
+            ),
         }
         convergence_config = ConvergenceConfig(
             gradient_threshold=-1.0,
@@ -801,13 +787,12 @@ class TestConvergenceFlags:
         run_result = _run_optimizer_strategies(
             strategies_map,
             ["sgd", "adam"],
-            log_params,
             initial_params,
             n_epochs=len(times_tensor),
             non_spine_ages=ages,
             times_tensor=times_tensor,
             spine_ages_tensor=None,
-            population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
+            population_sizes_tensor=jnp.array([len(ages)], dtype=jnp.int32),
             initial_population=1,
             convergence_config=convergence_config,
         )
@@ -820,17 +805,16 @@ class TestConvergenceFlags:
 
     def test_lbfgs_failed_run_reports_nonzero_iterations_regression(self) -> None:
         """Regression test: failed LBFGS runs should report executed iterations."""
-        ages = torch.tensor([100.0, 200.0], dtype=torch.float64)
-        times_tensor = torch.tensor([1000.0], dtype=torch.float64)
+        ages = jnp.array([100.0, 200.0], dtype=jnp.float64)
+        times_tensor = jnp.array([1000.0], dtype=jnp.float64)
         initial_params = _build_initial_params(None, None, ages, times_tensor)
-        log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
 
         strategies_map = {
             "lbfgs": OptimizerStrategy(
-                "LBFGS",
-                torch.optim.LBFGS,
-                1,
-                {"lr": 1.0, "max_iter": 1},
+                name="LBFGS",
+                solver_factory=lambda **_: None,
+                max_iters=1,
+                solver_kwargs={"lr": 1.0},
             ),
         }
         convergence_config = ConvergenceConfig(
@@ -842,13 +826,12 @@ class TestConvergenceFlags:
         run_result = _run_optimizer_strategies(
             strategies_map,
             ["lbfgs"],
-            log_params,
             initial_params,
             n_epochs=len(times_tensor),
             non_spine_ages=ages,
             times_tensor=times_tensor,
             spine_ages_tensor=None,
-            population_sizes_tensor=torch.tensor([len(ages)], dtype=torch.int64),
+            population_sizes_tensor=jnp.array([len(ages)], dtype=jnp.int32),
             initial_population=1,
             convergence_config=convergence_config,
         )
@@ -902,9 +885,9 @@ class TestFittingDiagnostics:
 
         assert len(all_ages) > 0, "No ages prepared from epoch split"
 
-        times_tensor = torch.as_tensor([e[0] for e in epochs], dtype=torch.float64)
-        non_spine_ages = torch.as_tensor(all_ages, dtype=torch.float64)
-        population_sizes = torch.tensor([len(non_spine_ages)], dtype=torch.int64)
+        times_tensor = jnp.array([e[0] for e in epochs], dtype=jnp.float64)
+        non_spine_ages = jnp.array(all_ages, dtype=jnp.float64)
+        population_sizes = jnp.array([len(non_spine_ages)], dtype=jnp.int32)
 
         initial_params = _build_initial_params(
             initial_birth_rates=None,
@@ -912,13 +895,14 @@ class TestFittingDiagnostics:
             non_empty_age=non_spine_ages,
             times_tensor=times_tensor,
         )
-        assert torch.all(initial_params > 0)
+        assert bool(jnp.all(initial_params > 0))
 
-        base_log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
+        log_params_initial = jnp.log(initial_params)
+        constraints = ParameterConstraints()
         initial_nll = float(
             negative_log_likelihood(
-                birth_rates=base_log_params[: len(times_tensor)],
-                death_rates=base_log_params[len(times_tensor) :],
+                birth_rates=log_params_initial[: len(times_tensor)],
+                death_rates=log_params_initial[len(times_tensor) :],
                 ages=non_spine_ages,
                 times=times_tensor,
                 spine_ages=None,
@@ -926,18 +910,28 @@ class TestFittingDiagnostics:
                 initial_population=1,
                 is_ordered=False,
                 log_scale_params=True,
-            ).item(),
+            ),
         )
         assert np.isfinite(initial_nll), f"Initial objective non-finite: {initial_nll}"
 
         optimizer_setups = {
-            "adam": OptimizerStrategy("Adam", torch.optim.Adam, 300, {"lr": 0.001}),
-            "sgd": OptimizerStrategy("SGD", torch.optim.SGD, 300, {"lr": 0.0001}),
+            "adam": OptimizerStrategy(
+                name="Adam",
+                solver_factory=optax.adam,
+                max_iters=300,
+                solver_kwargs={"lr": 0.001},
+            ),
+            "sgd": OptimizerStrategy(
+                name="SGD",
+                solver_factory=optax.sgd,
+                max_iters=300,
+                solver_kwargs={"lr": 0.0001},
+            ),
             "lbfgs": OptimizerStrategy(
-                "LBFGS",
-                torch.optim.LBFGS,
-                120,
-                {"lr": 1.0, "line_search_fn": "strong_wolfe"},
+                name="LBFGS",
+                solver_factory=lambda **_: None,
+                max_iters=120,
+                solver_kwargs={"lr": 1.0},
             ),
         }
 
@@ -945,7 +939,6 @@ class TestFittingDiagnostics:
         any_converged = False
 
         for optimizer_key, strategy in optimizer_setups.items():
-            log_params = torch.nn.Parameter(torch.log(initial_params.clone().detach()))
             convergence_config = ConvergenceConfig(
                 gradient_threshold=1e-5,
                 absolute_tolerance=1e-6,
@@ -954,7 +947,6 @@ class TestFittingDiagnostics:
             run_result = _run_optimizer_strategies(
                 strategies_map={optimizer_key: strategy},
                 requested_keys=[optimizer_key],
-                log_params=log_params,
                 initial_params=initial_params,
                 n_epochs=len(times_tensor),
                 non_spine_ages=non_spine_ages,
@@ -963,6 +955,7 @@ class TestFittingDiagnostics:
                 spine_ages_tensor=None,
                 population_sizes_tensor=population_sizes,
                 convergence_config=convergence_config,
+                param_constraints=constraints,
             )
 
             assert len(run_result.attempts) == 1
@@ -998,16 +991,13 @@ class TestFittingDiagnostics:
 
     def test_actual_fit(self) -> None:
         """Test that the full fitting function can run on the realistic dataset."""
-        # Load cleaned manuscript data
         project_root = Path(__file__).resolve().parents[1]
         data_file = project_root / "manuscript_analysis_cleaned.csv"
         if data_file.exists():
             df = pd.read_csv(data_file)
         else:
-            # Fallback to raw data if cleaned version doesn't exist
             pytest.fail(f"Expected data file not found: {data_file}")
 
-        # Filter to manuscripts with dating information
         manuscripts_with_dates = df.dropna(subset=["earlyYear", "lateYear"]).copy()
         manuscripts_with_dates["midYear"] = (
             manuscripts_with_dates["earlyYear"] + manuscripts_with_dates["lateYear"]
@@ -1015,9 +1005,7 @@ class TestFittingDiagnostics:
         manuscripts_with_dates["dateRange"] = (
             manuscripts_with_dates["lateYear"] - manuscripts_with_dates["earlyYear"]
         )
-        # | label: setup-epochs
 
-        # Define epochs for analysis
         epochs = [
             (100, 325, "Ante Nicaea"),
             (325, 636, "Post Nicaea"),
@@ -1027,12 +1015,9 @@ class TestFittingDiagnostics:
             (1516, 2000, "Modern Era"),
         ]
 
-        # Collect ages and metadata for each epoch
         all_ages = []
-        epoch_counts = []
-        epoch_metadata = []
 
-        for start_time, end_time, period_name in epochs:
+        for start_time, end_time, _period_name in epochs:
             manuscripts_epoch = manuscripts_with_dates[
                 (manuscripts_with_dates["midYear"] >= start_time)
                 & (manuscripts_with_dates["midYear"] < end_time)
@@ -1046,15 +1031,8 @@ class TestFittingDiagnostics:
                 )
                 ages = model.manuscript_ages
                 all_ages.extend(ages)
-                epoch_counts.append(len(manuscripts_epoch))
-                epoch_metadata.append(
-                    (period_name, start_time, end_time, len(manuscripts_epoch)),
-                )
 
-        # Create list with single combined array of all ages
         epoch_ages_list = [np.array(all_ages)]
-
-        # Fit all epochs jointly
         times = np.array([e[1] for e in epochs], dtype=float)
 
         result = fit_birth_death_processes(

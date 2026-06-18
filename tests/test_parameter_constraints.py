@@ -1,7 +1,8 @@
 """Tests for parameter constraints in fitting module."""
 
+import jax.numpy as jnp
+import numpy as np
 import pytest
-import torch
 
 from inf_bp_texts.inference.fitting import (
     ParameterConstraints,
@@ -71,35 +72,35 @@ class TestConstraintTransforms:
 
     def test_apply_constraints_no_constraints(self) -> None:
         """With no constraints, full params should match input free params."""
-        free_params = torch.tensor([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+        free_params = jnp.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
         constraints = ParameterConstraints()
         full_params = _apply_constraints_to_full_params(free_params, constraints, 6)
-        assert torch.allclose(full_params, free_params)
+        assert jnp.allclose(full_params, free_params)
 
     def test_apply_constraints_with_fixed(self) -> None:
         """Fixed parameters should be set correctly."""
-        free_params = torch.tensor([0.1, 0.2, 0.4, 0.5])
+        free_params = jnp.array([0.1, 0.2, 0.4, 0.5])
         constraints = ParameterConstraints(fixed_params={0: 0.99, 2: 0.88})
         full_params = _apply_constraints_to_full_params(free_params, constraints, 6)
 
-        assert full_params[0].item() == pytest.approx(0.99)
-        assert full_params[2].item() == pytest.approx(0.88)
+        assert float(full_params[0]) == pytest.approx(0.99)
+        assert float(full_params[2]) == pytest.approx(0.88)
         # Free params should be in their positions
         free_idx = 0
         for i in [1, 3, 4, 5]:  # free indices
-            assert full_params[i].item() == pytest.approx(free_params[free_idx].item())
+            assert float(full_params[i]) == pytest.approx(float(free_params[free_idx]))
             free_idx += 1
 
     def test_apply_constraints_with_equality(self) -> None:
         """Equal parameters should have same value."""
-        free_params = torch.tensor([0.1, 0.2, 0.3, 0.4])
+        free_params = jnp.array([0.1, 0.2, 0.3, 0.4])
         constraints = ParameterConstraints(equality_groups=[[1, 2], [4, 5]])
         full_params = _apply_constraints_to_full_params(free_params, constraints, 6)
 
         # Indices 1 and 2 should be equal
-        assert full_params[1].item() == pytest.approx(full_params[2].item())
+        assert float(full_params[1]) == pytest.approx(float(full_params[2]))
         # Indices 4 and 5 should be equal
-        assert full_params[4].item() == pytest.approx(full_params[5].item())
+        assert float(full_params[4]) == pytest.approx(float(full_params[5]))
 
     def test_round_trip_transform(self) -> None:
         """Reducing and expanding should be inverse operations."""
@@ -109,16 +110,16 @@ class TestConstraintTransforms:
         )
 
         # Apply equality constraints to original
-        full_params_constrained = torch.tensor([0.1, 0.2, 0.2, 0.4, 0.5, 0.5])
+        full_params_constrained = jnp.array([0.1, 0.2, 0.2, 0.4, 0.5, 0.5])
 
         reduced = _reduce_to_free_params(full_params_constrained, constraints, 6)
         expanded = _apply_constraints_to_full_params(reduced, constraints, 6)
 
-        assert torch.allclose(expanded, full_params_constrained)
+        assert jnp.allclose(expanded, full_params_constrained)
 
     def test_reduce_to_free_params(self) -> None:
         """Should extract only free parameters in correct order."""
-        full_params = torch.tensor([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+        full_params = jnp.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
         constraints = ParameterConstraints(fixed_params={0: 0.1, 3: 0.4})
 
         reduced = _reduce_to_free_params(full_params, constraints, 6)
@@ -130,28 +131,30 @@ class TestConstraintTransforms:
 
 
 class TestConstraintDataTypes:
-    """Test constraint handling with different tensor dtypes."""
+    """Test constraint handling with different array dtypes."""
 
     def test_constraints_float32(self) -> None:
-        """Constraints should work with float32 tensors."""
-        free_params = torch.tensor([0.1, 0.2, 0.3], dtype=torch.float32)
+        """Constraints should work with float32 arrays."""
+        free_params = jnp.array([0.1, 0.2, 0.3], dtype=jnp.float32)
         constraints = ParameterConstraints()
         full_params = _apply_constraints_to_full_params(free_params, constraints, 3)
-        assert full_params.dtype == torch.float32
+        assert full_params.dtype == jnp.float32
 
     def test_constraints_float64(self) -> None:
-        """Constraints should work with float64 tensors."""
-        free_params = torch.tensor([0.1, 0.2, 0.3], dtype=torch.float64)
+        """Constraints should work with float64 arrays."""
+        free_params = jnp.array([0.1, 0.2, 0.3], dtype=jnp.float64)
         constraints = ParameterConstraints()
         full_params = _apply_constraints_to_full_params(free_params, constraints, 3)
-        assert full_params.dtype == torch.float64
+        assert full_params.dtype == jnp.float64
 
-    def test_constraints_device_consistency(self) -> None:
-        """Constraints should preserve device."""
-        free_params = torch.tensor([0.1, 0.2, 0.3])
+    def test_constraints_returns_jax_array(self) -> None:
+        """Output should be a JAX array (not numpy or other type)."""
+        import jax
+
+        free_params = jnp.array([0.1, 0.2, 0.3])
         constraints = ParameterConstraints()
         full_params = _apply_constraints_to_full_params(free_params, constraints, 3)
-        assert full_params.device == free_params.device
+        assert isinstance(full_params, jax.Array)
 
 
 class TestComplexConstraintScenarios:
@@ -172,13 +175,13 @@ class TestComplexConstraintScenarios:
         assert len(free_indices) == 2
 
         # Apply constraints
-        free_params = torch.tensor([0.1, 0.05])
+        free_params = jnp.array([0.1, 0.05])
         full_params = _apply_constraints_to_full_params(free_params, constraints, 6)
 
         # All birth rates should be 0.1
-        assert torch.allclose(full_params[:3], torch.full((3,), 0.1))
+        assert jnp.allclose(full_params[:3], jnp.full((3,), 0.1))
         # All death rates should be 0.05
-        assert torch.allclose(full_params[3:], torch.full((3,), 0.05))
+        assert jnp.allclose(full_params[3:], jnp.full((3,), 0.05))
 
     def test_partial_pooling(self) -> None:
         """Early and late periods have constant rates within group."""
@@ -195,14 +198,14 @@ class TestComplexConstraintScenarios:
         free_indices = constraints.get_free_param_indices(8)
         assert len(free_indices) == 4  # One from each group
 
-        free_params = torch.tensor([0.1, 0.15, 0.05, 0.08])
+        free_params = jnp.array([0.1, 0.15, 0.05, 0.08])
         full_params = _apply_constraints_to_full_params(free_params, constraints, 8)
 
         # Check pooling worked
-        assert torch.allclose(full_params[0], full_params[1])
-        assert torch.allclose(full_params[2], full_params[3])
-        assert torch.allclose(full_params[4], full_params[5])
-        assert torch.allclose(full_params[6], full_params[7])
+        assert jnp.allclose(full_params[0], full_params[1])
+        assert jnp.allclose(full_params[2], full_params[3])
+        assert jnp.allclose(full_params[4], full_params[5])
+        assert jnp.allclose(full_params[6], full_params[7])
 
 
 class TestConstraintSatisfactionAfterFitting:
@@ -210,9 +213,9 @@ class TestConstraintSatisfactionAfterFitting:
 
     def test_fit_preserves_fixed_parameter_values(self) -> None:
         """Fixed parameters should remain fixed after fitting."""
-        ages_epoch_1 = torch.tensor([100.0, 180.0, 240.0], dtype=torch.float64)
-        ages_epoch_2 = torch.tensor([120.0, 260.0, 390.0], dtype=torch.float64)
-        times = torch.tensor([500.0, 1000.0], dtype=torch.float64)
+        ages_epoch_1 = np.array([100.0, 180.0, 240.0], dtype=np.float64)
+        ages_epoch_2 = np.array([120.0, 260.0, 390.0], dtype=np.float64)
+        times = np.array([500.0, 1000.0], dtype=np.float64)
         fixed_birth_0 = 0.01
         fixed_death_1 = 0.02
         constraints = ParameterConstraints(
@@ -231,9 +234,9 @@ class TestConstraintSatisfactionAfterFitting:
 
     def test_fit_preserves_equality_groups(self) -> None:
         """Equal-parameter groups should still be equal after fitting."""
-        ages_epoch_1 = torch.tensor([80.0, 140.0, 210.0], dtype=torch.float64)
-        ages_epoch_2 = torch.tensor([110.0, 230.0, 360.0], dtype=torch.float64)
-        times = torch.tensor([500.0, 1000.0], dtype=torch.float64)
+        ages_epoch_1 = np.array([80.0, 140.0, 210.0], dtype=np.float64)
+        ages_epoch_2 = np.array([110.0, 230.0, 360.0], dtype=np.float64)
+        times = np.array([500.0, 1000.0], dtype=np.float64)
         constraints = ParameterConstraints(
             equality_groups=[[0, 1], [2, 3]],
         )
