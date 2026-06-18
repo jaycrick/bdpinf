@@ -4,9 +4,10 @@ from collections.abc import Callable
 from numbers import Integral, Real
 from pathlib import Path
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
-import torch
 
 
 def ensure_directory(path: str) -> None:
@@ -24,76 +25,63 @@ def safe_int(value: str | None) -> int | None:
         return None
 
 
-def ensure_1d_tensor(x: torch.Tensor | float) -> torch.Tensor:
-    """Convert scalar or array-like input to a 1D PyTorch tensor.
+def ensure_1d_tensor(x: object) -> jax.Array:
+    """Convert scalar or array-like input to a 1D float64 JAX array.
 
     Parameters
     ----------
-    x : torch.Tensor | float | int
-        Input value to convert. Can be a scalar or tensor of any shape.
+    x : array-like
+        Input value to convert. Can be a scalar, numpy array, JAX array, or
+        torch.Tensor (CPU). Multi-dimensional arrays are flattened.
 
     Returns
     -------
-    torch.Tensor
-        1D tensor with dtype torch.float64. Scalars become shape (1,),
-        multi-dimensional arrays are flattened.
+    jax.Array
+        1D float64 JAX array. Scalars become shape (1,).
 
     Examples
     --------
     >>> ensure_1d_tensor(5.0)
-    tensor([5.], dtype=torch.float64)
-    >>> ensure_1d_tensor(torch.tensor([[1, 2], [3, 4]]))
-    tensor([1., 2., 3., 4.], dtype=torch.float64)
+    Array([5.], dtype=float64)
+    >>> ensure_1d_tensor(np.array([[1, 2], [3, 4]]))
+    Array([1., 2., 3., 4.], dtype=float64)
 
     """
-    return torch.as_tensor(x, dtype=torch.float64).reshape(-1)
+    # Torch tensors expose __array__ but must be detached first
+    if hasattr(x, "detach"):
+        x = x.detach().cpu().numpy()  # type: ignore[union-attr]
+    return jnp.atleast_1d(jnp.asarray(x, dtype=jnp.float64)).reshape(-1)
 
 
-def ensure_1d_tensors(*values: torch.Tensor | float) -> tuple[torch.Tensor, ...]:
-    """Convert multiple scalars or tensors to 1D float64 tensors."""
-    return tuple(ensure_1d_tensor(value) for value in values)
+def ensure_1d_tensors(*values: object) -> tuple[jax.Array, ...]:
+    """Convert multiple scalars or array-likes to 1D float64 JAX arrays."""
+    return tuple(ensure_1d_tensor(v) for v in values)
 
 
 def require_tensors(**named: object) -> None:
-    """Raise ValueError if any supplied argument is not a ``torch.Tensor``.
+    """No-op kept for API compatibility.
 
-    Parameters
-    ----------
-    **named : object
-        Keyword arguments mapping parameter name to its value.  Each value
-        is checked with ``torch.is_tensor``; the first non-tensor raises
-        ``ValueError`` with a message that includes the parameter name.
-
-    Raises
-    ------
-    ValueError
-        If any value is not a ``torch.Tensor``.
-
+    In the JAX backend all inputs are normalised at the module boundary;
+    this guard is no longer needed but is retained so call sites that pass
+    ``_skip_normalization=True`` do not have to change.
     """
-    for name, value in named.items():
-        if not torch.is_tensor(value):
-            msg = f"{name} must be a torch.Tensor"
-            raise ValueError(msg)
 
 
 def json_safe(value: object) -> object:
-    """Convert common numpy/torch/pandas types to JSON-serializable Python types."""
-    try:
-        import numpy as _np
-        import pandas as _pd
-        import torch as _torch
-    except Exception:
-        return value
-
-    if isinstance(value, (_np.integer, int)):
+    """Convert common numpy/JAX/pandas types to JSON-serializable Python types."""
+    if isinstance(value, (np.integer, int)):
         return int(value)
-    if isinstance(value, (_np.floating, float)):
+    if isinstance(value, (np.floating, float)):
         return float(value)
-    if isinstance(value, _np.ndarray):
+    if isinstance(value, np.ndarray):
         return value.tolist()
-    if isinstance(value, _torch.Tensor):
-        return value.detach().cpu().numpy().tolist()
-    if isinstance(value, (_pd.Timestamp,)):
+    # JAX arrays
+    if hasattr(value, "tolist") and hasattr(value, "device"):
+        return np.array(value).tolist()  # type: ignore[arg-type]
+    # Torch tensors (if still present during transition)
+    if hasattr(value, "detach") and hasattr(value, "numpy"):
+        return value.detach().cpu().numpy().tolist()  # type: ignore[union-attr]
+    if isinstance(value, pd.Timestamp):
         return value.isoformat()
     if value is None:
         return None
@@ -161,35 +149,33 @@ def format_table_dataframe(
 
 
 def validate_matching_shapes(
-    *tensors: torch.Tensor,
+    *arrays: jax.Array,
     names: tuple[str, ...] | None = None,
 ) -> None:
-    """Raise ValueError if any tensor's shape differs from the first tensor's shape."""
-    if len(tensors) < 2:
+    """Raise ValueError if any array's shape differs from the first array's shape."""
+    if len(arrays) < 2:
         return
-    if names is not None and len(names) != len(tensors):
+    if names is not None and len(names) != len(arrays):
         msg = (
-            "names must be the same length as tensors when provided. "
-            f"Got names={len(names)}, tensors={len(tensors)}"
+            "names must be the same length as arrays when provided. "
+            f"Got names={len(names)}, arrays={len(arrays)}"
         )
-        raise ValueError(
-            msg,
-        )
+        raise ValueError(msg)
 
-    reference_shape = tensors[0].shape
+    reference_shape = arrays[0].shape
     mismatches = [
-        (idx, tensor.shape)
-        for idx, tensor in enumerate(tensors)
-        if tensor.shape != reference_shape
+        (idx, arr.shape)
+        for idx, arr in enumerate(arrays)
+        if arr.shape != reference_shape
     ]
     if mismatches:
         parts = []
         for idx, shape in mismatches:
-            label = names[idx] if names is not None else f"tensor_{idx}"
+            label = names[idx] if names is not None else f"array_{idx}"
             parts.append(f"{label} shape={shape}")
-        reference_label = names[0] if names is not None else "tensor_0"
+        reference_label = names[0] if names is not None else "array_0"
         message = (
-            "Tensors must have matching shapes. "
+            "Arrays must have matching shapes. "
             f"Reference {reference_label} shape={reference_shape}. "
             "Mismatches: " + ", ".join(parts)
         )
@@ -197,35 +183,33 @@ def validate_matching_shapes(
 
 
 def validate_matching_lengths(
-    *tensors: torch.Tensor,
+    *arrays: jax.Array,
     names: tuple[str, ...] | None = None,
 ) -> None:
-    """Raise ValueError if any tensor's length differs from the first tensor's."""
-    if len(tensors) < 2:
+    """Raise ValueError if any array's length differs from the first array's."""
+    if len(arrays) < 2:
         return
-    if names is not None and len(names) != len(tensors):
+    if names is not None and len(names) != len(arrays):
         msg = (
-            "names must be the same length as tensors when provided. "
-            f"Got names={len(names)}, tensors={len(tensors)}"
+            "names must be the same length as arrays when provided. "
+            f"Got names={len(names)}, arrays={len(arrays)}"
         )
-        raise ValueError(
-            msg,
-        )
+        raise ValueError(msg)
 
-    reference_len = len(tensors[0])
+    reference_len = len(arrays[0])
     mismatches = [
-        (idx, len(tensor))
-        for idx, tensor in enumerate(tensors)
-        if len(tensor) != reference_len
+        (idx, len(arr))
+        for idx, arr in enumerate(arrays)
+        if len(arr) != reference_len
     ]
     if mismatches:
         parts = []
         for idx, length in mismatches:
-            label = names[idx] if names is not None else f"tensor_{idx}"
+            label = names[idx] if names is not None else f"array_{idx}"
             parts.append(f"{label} length={length}")
-        reference_label = names[0] if names is not None else "tensor_0"
+        reference_label = names[0] if names is not None else "array_0"
         message = (
-            "Tensors must have matching lengths. "
+            "Arrays must have matching lengths. "
             f"Reference {reference_label} length={reference_len}. "
             "Mismatches: " + ", ".join(parts)
         )

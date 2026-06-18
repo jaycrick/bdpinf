@@ -6,7 +6,8 @@ birth-death process models, used in parameter fitting and model evaluation.
 
 import warnings
 
-import torch
+import jax.numpy as jnp
+import numpy as np
 
 from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
@@ -17,18 +18,18 @@ from inf_bp_texts.utils import ensure_1d_tensor, ensure_1d_tensors
 
 
 def log_likelihood(
-    birth_rates: torch.Tensor | float,
-    death_rates: torch.Tensor | float,
-    ages: torch.Tensor | float,
-    times: torch.Tensor | float,
+    birth_rates: object,
+    death_rates: object,
+    ages: object,
+    times: object,
     *,
-    spine_ages: torch.Tensor | None = None,
-    ns: torch.Tensor | None = None,
+    spine_ages: object | None = None,
+    ns: object | None = None,
     initial_population: int = 1,
     unbias: bool = False,
     is_ordered: bool = False,
     log_scale_params: bool = False,
-) -> torch.Tensor:
+) -> jnp.ndarray:
     """Compute the log-likelihood of observed manuscript ages in a birth--death process.
 
     This function evaluates the joint log-likelihood
@@ -73,22 +74,22 @@ def log_likelihood(
 
     Parameters
     ----------
-    birth_rates : float | torch.Tensor
+    birth_rates : float | jax.Array
         Birth rate parameter λ > 0, or log(λ) if log_scale_params is True.
-    death_rates : float | torch.Tensor
+    death_rates : float | jax.Array
         Death rate parameter μ > 0, or log(μ) if log_scale_params is True.
-    ages : torch.Tensor | float
-        Observed ages of manuscripts. A scalar is treated as a single-element tensor.
+    ages : jax.Array | float
+        Observed ages of manuscripts. A scalar is treated as a single-element array.
         All ages must satisfy 0 <= age <= observation_time.
-    times : torch.Tensor | float
+    times : jax.Array | float
         Observation times (> 0) at which the population/ages are observed.
-    spine_ages : torch.Tensor | None, optional
+    spine_ages : jax.Array | None, optional
         Ages to be treated as spines (special conditional observations). If provided,
         these ages must also satisfy 0 <= age <= observation_time and are used
         explicitly. If not provided and is_ordered=False, the spine is treated as
         unknown among the provided ages and marginalized out. Mutually exclusive
         with is_ordered=True.
-    ns : torch.Tensor | None, optional
+    ns : jax.Array | None, optional
         Counts per population/class that sum to the total number of ages. If None,
         a single population with one count per provided age is assumed.
     initial_population: int
@@ -102,7 +103,7 @@ def log_likelihood(
 
     Returns
     -------
-    torch.Tensor
+    jnp.ndarray
         The computed total log-likelihood (log P_n(T) + Σ log f(t_i)).
         Returns -inf for numerical issues
         (non-positive rates, overflow, invalid domains).
@@ -112,15 +113,14 @@ def log_likelihood(
     ValueError
         If both is_ordered=True and spine_ages is provided, or if the sum of ns does
         not equal the number of provided ages.
-    TypeError, IndexError, etc.
-        Programming errors (type mismatches, array indexing errors) raise exceptions
-        instead of returning -inf for easier debugging.
 
     See Also
     --------
         calculate_populations_log_likelihood, calculate_ages_log_likelihood
 
     """
+    _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
+
     birth_rates, death_rates, ages, times = ensure_1d_tensors(
         birth_rates,
         death_rates,
@@ -133,16 +133,13 @@ def log_likelihood(
             "birth_rates, death_rates, and times must have the same shape, "
             f"got {birth_rates.shape}, {death_rates.shape}, {times.shape}."
         )
-        raise ValueError(
-            msg,
-        )
+        raise ValueError(msg)
 
-    # Handle parameter conversion if in log scale
     if log_scale_params:
-        birth_rates = torch.exp(birth_rates)
-        death_rates = torch.exp(death_rates)
-    elif torch.any(birth_rates <= 0) or torch.any(death_rates <= 0):
-        return torch.tensor(-torch.inf, dtype=torch.float64)
+        birth_rates = jnp.exp(birth_rates)
+        death_rates = jnp.exp(death_rates)
+    elif bool(jnp.any(birth_rates <= 0)) or bool(jnp.any(death_rates <= 0)):
+        return _ninf
 
     if spine_ages is not None:
         spine_ages = ensure_1d_tensor(spine_ages)
@@ -151,44 +148,38 @@ def log_likelihood(
         else:
             if is_ordered:
                 msg = "Cannot have both is_ordered=True and spine_ages provided."
-                raise ValueError(
-                    msg,
-                )
+                raise ValueError(msg)
             if ns is None:
                 if len(spine_ages) > 1:
                     msg = (
                         "When multiple spine ages are provided, "
                         "population sizes (ns) must also be provided."
                     )
-                    raise ValueError(
-                        msg,
-                    )
-                ns = torch.tensor([len(ages) + len(spine_ages)], dtype=torch.int64)
-            if torch.any(spine_ages < 0) or torch.any(spine_ages > times[-1]):
+                    raise ValueError(msg)
+                ns = jnp.array([len(ages) + len(spine_ages)], dtype=jnp.float64)
+            if bool(jnp.any(spine_ages < 0)) or bool(jnp.any(spine_ages > times[-1])):
                 msg = f"Spine ages must be in the range [0, {times[-1]}]."
                 raise ValueError(msg)
 
-    if times[0] <= 0:
+    if float(times[0]) <= 0:
         msg = "Observation times must be positive."
         raise ValueError(msg)
 
-    if torch.any(torch.diff(times) < 0):
+    if bool(jnp.any(jnp.diff(times) < 0)):
         msg = "Observation times must be non-decreasing."
         raise ValueError(msg)
 
-    if torch.any(ages < 0) or torch.any(ages > times[-1]):
-        msg = f"Ages must be in the range [0, {times[-1]}]."
+    if bool(jnp.any(ages < 0)) or bool(jnp.any(ages > times[-1])):
+        msg = f"Ages must be in the range [0, {float(times[-1])}]."
         raise ValueError(msg)
 
-    # Total number of observed manuscripts
     num_ages = len(ages) + (len(spine_ages) if spine_ages is not None else 0)
     if ns is not None:
-        total_pop_size = sum(ns)
+        ns_arr = ensure_1d_tensor(ns)
+        total_pop_size = int(float(ns_arr.sum()))
         if total_pop_size < num_ages:
             msg = "Sum of the populations must equal the number of ages provided."
-            raise ValueError(
-                msg,
-            )
+            raise ValueError(msg)
         if total_pop_size > num_ages:
             warnings.warn(
                 "Sum of the populations exceeds the number of ages provided; "
@@ -197,36 +188,37 @@ def log_likelihood(
                 stacklevel=2,
             )
     else:
-        ns = torch.tensor([num_ages], dtype=torch.int64)
+        ns_arr = jnp.array([num_ages], dtype=jnp.float64)
         total_pop_size = num_ages
 
-    # Input validation
     if not (
-        torch.all(torch.isfinite(birth_rates))
-        and torch.all(torch.isfinite(death_rates))
+        bool(jnp.all(jnp.isfinite(birth_rates)))
+        and bool(jnp.all(jnp.isfinite(death_rates)))
     ):
-        return torch.tensor(-torch.inf, dtype=torch.float64)
-    # 1. Calculate log(P_n(T)) - log probability of n individuals at time T
+        return _ninf
+
     log_P_n_T = calculate_populations_log_lik(
         birth_rates=birth_rates,
         death_rates=death_rates,
         times=times,
-        ns=ns,
+        ns=ns_arr,
         initial_population=initial_population,
         unbias=unbias,
     )
 
-    # Check if population probability calculation succeeded
-    if not torch.isfinite(log_P_n_T):
-        return torch.tensor(-torch.inf, dtype=torch.float64)
+    if not bool(jnp.isfinite(log_P_n_T)):
+        return _ninf
     if total_pop_size == 0:
         return log_P_n_T
 
-    ages_log_lik = torch.tensor(0.0, dtype=torch.float64)
+    ages_log_lik = jnp.float64(0.0)
 
     if spine_ages is None and not is_ordered and len(ages) > 0:
-        at_final_time = torch.isclose(ages, times[-1])
-        num_terminal_ages = int(torch.sum(at_final_time).item())
+        # Host-side boundary detection (data-dependent, not traced)
+        at_final_time = np.isclose(
+            np.array(ages, dtype=np.float64), float(times[-1])
+        )
+        num_terminal_ages = int(at_final_time.sum())
         if num_terminal_ages > 1:
             msg = (
                 "More than one age equals the final observation time. "
@@ -234,19 +226,15 @@ def log_likelihood(
             )
             raise ValueError(msg)
         if num_terminal_ages == 1:
-            # If an age is observed at T, it must be the spine by model assumption.
-            spine_ages = ages[at_final_time]
-            ages = ages[~at_final_time]
+            spine_ages = ages[jnp.array(at_final_time)]
+            ages = ages[jnp.array(~at_final_time)]
         elif len(ages) == 1:
-            # With one observed individual, that individual is the unique spine.
             spine_ages = ages
             ages = ages[:0]
 
     use_unknown_spine_marginal = (not is_ordered) and (spine_ages is None)
 
     if use_unknown_spine_marginal and len(ages) > 0:
-        # Unknown spine case: exactly one spine among ages, marginalized uniformly.
-        # ell = sum(log f(x_i)) - log n + logsumexp(log g(x_k) - log f(x_k))
         n_ages = len(ages)
         non_spine_log_liks = calculate_non_spine_ages_log_lik(
             birth_rates,
@@ -263,57 +251,52 @@ def log_likelihood(
             return_array=True,
         )
 
-        sum_log_f = torch.sum(non_spine_log_liks)
+        sum_log_f = non_spine_log_liks.sum()
         a = spine_log_liks - non_spine_log_liks
-        log_sum_exp = torch.logsumexp(a, dim=0)
+        log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a.max()))) + a.max()
         ages_log_lik = (
             sum_log_f
-            - torch.log(torch.as_tensor(float(n_ages), dtype=torch.float64))
+            - jnp.log(jnp.float64(n_ages))
             + log_sum_exp
         )
     elif is_ordered or (spine_ages is not None):
         if is_ordered:
-            ages = torch.as_tensor(ages, dtype=torch.float64)
-            spine_ages = torch.tensor([ages[0]], dtype=torch.float64)
+            spine_ages = ages[:1]
             ages = ages[1:]
-        # Calculate log age density
-        if spine_ages is None:
-            msg = "spine_ages must be provided when calculating spine age likelihood."
-            raise RuntimeError(msg)
-        ages_log_lik += calculate_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages=spine_ages,
-            times=times,
-        )
+        if spine_ages is not None:
+            ages_log_lik = ages_log_lik + calculate_spine_ages_log_lik(
+                birth_rates,
+                death_rates,
+                ages=spine_ages,
+                times=times,
+            )
+
     if len(ages) > 0 and not use_unknown_spine_marginal:
-        ages_log_lik += calculate_non_spine_ages_log_lik(
+        ages_log_lik = ages_log_lik + calculate_non_spine_ages_log_lik(
             birth_rates,
             death_rates,
             ages,
             times=times,
         )
 
-    # Check if age density calculation succeeded
-    if not torch.isfinite(torch.as_tensor(ages_log_lik)):
-        return torch.tensor(-torch.inf, dtype=torch.float64)
+    if not bool(jnp.isfinite(ages_log_lik)):
+        return _ninf
 
     total_log_likelihood = log_P_n_T + ages_log_lik
 
-    # Final numerical validation
-    if not torch.isfinite(total_log_likelihood):
-        return torch.tensor(-torch.inf, dtype=torch.float64)
+    if not bool(jnp.isfinite(total_log_likelihood)):
+        return _ninf
 
     return total_log_likelihood
 
 
 def calculate_unknown_spine_mixture_age_density(
-    birth_rates: torch.Tensor | float,
-    death_rates: torch.Tensor | float,
-    age_grid: torch.Tensor | float,
-    times: torch.Tensor | float,
+    birth_rates: object,
+    death_rates: object,
+    age_grid: object,
+    times: object,
     num_manuscripts: int,
-) -> torch.Tensor:
+) -> jnp.ndarray:
     """Compute age density for a random manuscript when the spine is unknown.
 
     Assumes exactly one spine among ``num_manuscripts`` observations and uses
@@ -326,20 +309,20 @@ def calculate_unknown_spine_mixture_age_density(
 
     Parameters
     ----------
-    birth_rates : torch.Tensor | float
+    birth_rates : jax.Array | float
         Birth rate(s) λ.
-    death_rates : torch.Tensor | float
+    death_rates : jax.Array | float
         Death rate(s) μ.
-    age_grid : torch.Tensor | float
+    age_grid : jax.Array | float
         Age grid values where the density is evaluated.
-    times : torch.Tensor | float
+    times : jax.Array | float
         Observation time(s). Scalar for single epoch or 1D epoch end times.
     num_manuscripts : int
         Number of manuscripts ``n`` in the mixture formula. Must be positive.
 
     Returns
     -------
-    torch.Tensor
+    jnp.ndarray
         Density evaluated at each point in ``age_grid`` (shape matches grid).
 
     Raises
@@ -359,47 +342,43 @@ def calculate_unknown_spine_mixture_age_density(
         times,
     )
 
-    mixture_log_density_vals: list[torch.Tensor] = []
-    log_n = torch.log(torch.as_tensor(float(num_manuscripts), dtype=torch.float64))
+    mixture_log_density_vals: list[jnp.ndarray] = []
+    log_n = jnp.log(jnp.float64(num_manuscripts))
     if num_manuscripts > 1:
-        log_n_minus_one = torch.log(
-            torch.as_tensor(float(num_manuscripts - 1), dtype=torch.float64),
-        )
+        log_n_minus_one = jnp.log(jnp.float64(num_manuscripts - 1))
     else:
-        log_n_minus_one = torch.tensor(float("-inf"), dtype=torch.float64)
+        log_n_minus_one = jnp.array(-jnp.inf, dtype=jnp.float64)
 
     for age in age_grid:
-        age_tensor = torch.as_tensor([age], dtype=torch.float64)
+        age_arr = jnp.atleast_1d(jnp.asarray([age], dtype=jnp.float64))
         log_non_spine = calculate_non_spine_ages_log_lik(
             birth_rates=birth_rates,
             death_rates=death_rates,
-            ages=age_tensor,
+            ages=age_arr,
             times=times,
         )
         log_spine = calculate_spine_ages_log_lik(
             birth_rates=birth_rates,
             death_rates=death_rates,
-            ages=age_tensor,
+            ages=age_arr,
             times=times,
         )
 
-        log_mixture_numerator = torch.logsumexp(
-            torch.stack((log_n_minus_one + log_non_spine, log_spine)),
-            dim=0,
-        )
+        ab = jnp.stack([log_n_minus_one + log_non_spine, log_spine])
+        log_mixture_numerator = jnp.log(jnp.sum(jnp.exp(ab - ab.max()))) + ab.max()
         mixture_log_density_vals.append(log_mixture_numerator - log_n)
 
-    mixture_log_density = torch.stack(mixture_log_density_vals)
-    return torch.exp(mixture_log_density)
+    mixture_log_density = jnp.stack(mixture_log_density_vals)
+    return jnp.exp(mixture_log_density)
 
 
 def calculate_unknown_spine_mixture_birth_density(
-    birth_rates: torch.Tensor | float,
-    death_rates: torch.Tensor | float,
-    birth_time_grid: torch.Tensor | float,
-    times: torch.Tensor | float,
+    birth_rates: object,
+    death_rates: object,
+    birth_time_grid: object,
+    times: object,
     num_manuscripts: int,
-) -> torch.Tensor:
+) -> jnp.ndarray:
     """Compute birth-time density for a random manuscript when the spine is unknown.
 
     This transforms the age-density mixture to a density over birth times by the
@@ -416,11 +395,10 @@ def calculate_unknown_spine_mixture_birth_density(
 
     Returns
     -------
-    torch.Tensor
+    jnp.ndarray
         Density evaluated at each point in ``birth_time_grid`` (shape matches grid).
 
     """
-    # Validate positive manuscript count
     if num_manuscripts <= 0:
         msg = "num_manuscripts must be a positive integer."
         raise ValueError(msg)
@@ -432,19 +410,14 @@ def calculate_unknown_spine_mixture_birth_density(
         times,
     )
 
-    # Observation time (last epoch end) in same units as birth_time_grid
     T = times[-1]
 
-    # Validate birth times are in [0, T]
-    if torch.any(birth_time_grid < 0) or torch.any(birth_time_grid > T):
+    if bool(jnp.any(birth_time_grid < 0)) or bool(jnp.any(birth_time_grid > T)):
         msg = f"Birth times must be in the range [0, {T}]. Got: {birth_time_grid}"
         raise ValueError(msg)
 
-    # Map birth times to ages: age = T - birth_time
     age_grid = T - birth_time_grid
 
-    # Delegate to age-density calculator; returned array corresponds to ages in
-    # the same order as age_grid, which matches the requested birth_time_grid.
     return calculate_unknown_spine_mixture_age_density(
         birth_rates=birth_rates,
         death_rates=death_rates,
@@ -455,18 +428,18 @@ def calculate_unknown_spine_mixture_birth_density(
 
 
 def negative_log_likelihood(
-    birth_rates: torch.Tensor | float,
-    death_rates: torch.Tensor | float,
-    ages: torch.Tensor | float,
-    times: torch.Tensor | float,
+    birth_rates: object,
+    death_rates: object,
+    ages: object,
+    times: object,
     *,
-    spine_ages: torch.Tensor | None = None,
-    ns: torch.Tensor | None = None,
+    spine_ages: object | None = None,
+    ns: object | None = None,
     initial_population: int = 1,
     unbias: bool = False,
     is_ordered: bool = False,
     log_scale_params: bool = False,
-) -> torch.Tensor:
+) -> jnp.ndarray:
     """Compute the negative log-likelihood for use with numerical optimizers.
 
     This function is a thin wrapper around log_likelihood that negates its
@@ -476,46 +449,29 @@ def negative_log_likelihood(
 
     Parameters
     ----------
-    birth_rates : torch.Tensor | float
+    birth_rates : float | jax.Array
         Birth rate parameter(s) λ > 0, or log(λ) if log_scale_params is True.
-    death_rates : torch.Tensor | float
+    death_rates : float | jax.Array
         Death rate parameter(s) μ > 0, or log(μ) if log_scale_params is True.
-    ages : torch.Tensor | float
-        Ages of observed manuscripts (or a single age). May be a 1-D tensor
-        of observation ages used by the likelihood computation.
-    times : torch.Tensor | float
+    ages : jax.Array | float
+        Ages of observed manuscripts (or a single age).
+    times : jax.Array | float
         Observation times (> 0) at which the population/ages are observed.
-    spine_ages : torch.Tensor | None, optional
-        Optional spine ages required by some likelihood formulations. If not
-        provided, a default or simplified likelihood is computed (depending on
-        the underlying log_likelihood implementation).
-    ns : torch.Tensor | None, optional
-        Optional counts/weights associated with each age. If omitted, each
-        observation is treated as a single count.
+    spine_ages : jax.Array | None, optional
+        Optional spine ages required by some likelihood formulations.
+    ns : jax.Array | None, optional
+        Optional counts/weights associated with each age.
     initial_population: int
         Initial population size.
     is_ordered : bool, default False
-        If True, interpret `ages` (and `ns` when provided) as ordered-event data
-        and use the ordered-data likelihood branch in the underlying function.
+        If True, interpret ``ages`` as ordered-event data.
     log_scale_params : bool, default False
-        If True, indicates that parameters are provided in log-space and the
-        underlying log_likelihood should convert them back to the original scale
-        before evaluating the likelihood.
+        If True, parameters are provided in log-space.
 
     Returns
     -------
-    torch.Tensor
-        The negative log-likelihood (i.e. -log_likelihood). This is returned
-        as a torch.Tensor scalar suitable for use with optimizers.
-
-    Notes
-    -----
-    - This wrapper does not validate parameter bounds beyond checking for validity;
-      any additional constraints (e.g. non-negativity) should be enforced by the
-      optimizer or by inspecting the returned value.
-    - Returns inf for numerical issues in the underlying log_likelihood computation.
-    - Programming errors in underlying functions will raise exceptions.
-    - Designed to be cheap to call repeatedly by optimization routines.
+    jnp.ndarray
+        The negative log-likelihood (i.e. -log_likelihood).
 
     """
     return -log_likelihood(

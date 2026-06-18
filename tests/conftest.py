@@ -1,6 +1,12 @@
 """Configuration for pytest tests with comprehensive fixtures and utilities."""
 
 import os
+
+# Force JAX to use CPU backend before any package import triggers JAX init.
+# The A40-12Q vGPU does not support CUDA VMM required by XLA.
+# Must be set BEFORE any import that transitively imports jax.
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
+
 import sys
 from pathlib import Path
 from typing import Any
@@ -10,10 +16,6 @@ import pytest
 import torch
 
 from inf_bp_texts.models.birth_death_process import BirthDeathProcess
-
-# Force JAX to use CPU backend before any test module imports JAX.
-# The A40-12Q vGPU does not support CUDA VMM required by XLA.
-os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
 # Add the src directory to the path so we can import inf_bp_texts
 src_path = Path(__file__).parent.parent / "src"

@@ -1,96 +1,98 @@
-"""Population count log-likelihood functions.
+"""Population log-likelihood calculations for birth-death processes.
 
-Imports the extinction base layer from math_extinction.
+Tavaré (2018) formula for P(Z_T = n | Z_0 = n0).
+
+Control-flow notes vs the Phase 2a spike:
+
+- Single-epoch critical/non-critical branch → merged via ``jnp.where`` so the
+  function is ``jit``- and ``grad``-safe.  Both branches are always computed and
+  the result is selected element-wise.
+- Host-side range guards on ``alpha_t`` / ``beta_t`` → replaced by
+  ``jnp.where``-selected ``-inf``.
+- Finiteness guards → ``jnp.where``-selected ``-inf``.
+- The multi-start path (``initial_population > 1``) still uses a Python loop over
+  the fixed static bound ``n0``; this is JAX-compatible because ``n0`` is a
+  compile-time constant.
+
+All inputs are assumed float64 (``jax_enable_x64`` is set in ``__init__.py``).
 """
 
-from typing import cast
-
-import torch
+import jax
+import jax.numpy as jnp
+from jax import scipy as jsp
 
 from inf_bp_texts.models.math_extinction import (
     calculate_extinction_pr,
     pr_extinction_numerator,
 )
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
-from inf_bp_texts.utils import ensure_1d_tensors, require_tensors
+from inf_bp_texts.utils import ensure_1d_tensor
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 
 def _compute_populations_log_lik_multi_start(
-    ns: torch.Tensor,
-    nonzero_mask: torch.Tensor,
+    ns: jax.Array,
+    nonzero_mask: jax.Array,
     n0: int,
-    alpha_t: torch.Tensor,
-    beta_t: torch.Tensor,
-) -> torch.Tensor:
-    r"""Compute log probabilities for populations when initial_population > 1.
+    alpha_t: jax.Array,
+    beta_t: jax.Array,
+) -> jax.Array:
+    r"""Log probabilities for populations when initial_population > 1.
 
-    Helper function that handles the complex combinatorial calculation for
-    the case when the process starts with more than one individual.
+    Replaces the ragged ``torch.arange(j_min, j_max+1)`` per-element loop with
+    a fixed-width ``n0``-length loop masked by validity conditions.
 
     Parameters
     ----------
-    ns : torch.Tensor
-        Population count(s) (shape: (n,), dtype: torch.float64).
-    nonzero_mask : torch.Tensor
-        Boolean mask indicating non-zero population counts.
+    ns : jax.Array
+        Shape (m,) float64 population counts.
+    nonzero_mask : jax.Array
+        Shape (m,) bool, True where ns > 0.
     n0 : int
-        Initial number of individuals (initial_population).
-    alpha_t : torch.Tensor
-        Extinction probability $\Pr(Z_T = 0)$.
-    beta_t : torch.Tensor
-        Geometric parameter for survival distribution.
+        Initial population (static compile-time constant).
+    alpha_t, beta_t : jax.Array
+        Scalar float64 process parameters.
 
     Returns
     -------
-    torch.Tensor
-        Log probabilities for non-zero population counts (shape: (n,)).
+    jax.Array
+        Shape (m,) float64 log probabilities.
 
     """
-    log_pr = torch.zeros_like(ns, dtype=torch.float64)
+    _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
 
-    _dev = alpha_t.device
-    _ninf = torch.tensor(float("-inf"), dtype=torch.float64, device=_dev)
-    log_alpha = torch.log(alpha_t) if alpha_t > 0 else _ninf
-    log_beta = torch.log(beta_t) if beta_t > 0 else _ninf
-    log_one_minus_alpha = torch.log1p(-alpha_t) if alpha_t < 1 else _ninf
-    log_one_minus_beta = torch.log1p(-beta_t) if beta_t < 1 else _ninf
+    log_alpha = jnp.where(alpha_t > 0, jnp.log(alpha_t), _ninf)
+    log_beta = jnp.where(beta_t > 0, jnp.log(beta_t), _ninf)
+    log_one_minus_alpha = jnp.where(alpha_t < 1, jnp.log1p(-alpha_t), _ninf)
+    log_one_minus_beta = jnp.where(beta_t < 1, jnp.log1p(-beta_t), _ninf)
     log_one_minus = log_one_minus_alpha + log_one_minus_beta
 
-    nonzero_indices = torch.where(nonzero_mask)[0]
-    for idx in nonzero_indices:
-        n_val = int(ns[idx].item())
-        if n_val <= 0:
-            log_pr[idx] = _ninf
-            continue
-
-        j_min = max(0, n0 - n_val)
-        j_max = n0 - 1
-        if j_min > j_max:
-            msg = (
-                f"Invalid bounds for summation index j: j_min={j_min}, j_max={j_max}. "
-                f"n0={n0}, n_val={n_val}"
-            )
-            raise ValueError(msg)
-
-        j = torch.arange(j_min, j_max + 1, dtype=torch.int64, device=_dev)
-        j_f = j.to(torch.float64)
-        n_f = torch.tensor(float(n_val), dtype=torch.float64, device=_dev)
-        n0_f = torch.tensor(float(n0), dtype=torch.float64, device=_dev)
+    def _log_pr_one(n_val: int) -> jax.Array:
+        """Log P(Z_T = n_val | Z_0 = n0)."""
+        n_f = jnp.float64(n_val)
+        n0_f = jnp.float64(n0)
+        j_all = jnp.arange(n0, dtype=jnp.float64)
+        j_min = jnp.maximum(0.0, n0_f - n_f)
+        j_max = n0_f - 1.0
+        valid_j = (j_all >= j_min) & (j_all <= j_max)
 
         log_binom_n0 = (
-            torch.lgamma(n0_f + 1)
-            - torch.lgamma(j_f + 1)
-            - torch.lgamma(n0_f - j_f + 1)
+            jsp.special.gammaln(n0_f + 1.0)
+            - jsp.special.gammaln(j_all + 1.0)
+            - jsp.special.gammaln(n0_f - j_all + 1.0)
         )
         log_binom_second = (
-            torch.lgamma(n_f)
-            - torch.lgamma(n0_f - j_f)
-            - torch.lgamma(n_f - n0_f + j_f + 1)
+            jsp.special.gammaln(n_f)
+            - jsp.special.gammaln(n0_f - j_all)
+            - jsp.special.gammaln(n_f - n0_f + j_all + 1.0)
         )
-
-        log_alpha_term = j_f * log_alpha
-        log_beta_term = (n_f - n0_f + j_f) * log_beta
-        log_one_minus_term = (n0_f - j_f) * log_one_minus
+        log_alpha_term = j_all * log_alpha
+        log_beta_term = (n_f - n0_f + j_all) * log_beta
+        log_one_minus_term = (n0_f - j_all) * log_one_minus
 
         log_terms = (
             log_binom_n0
@@ -99,288 +101,159 @@ def _compute_populations_log_lik_multi_start(
             + log_beta_term
             + log_one_minus_term
         )
-        log_pr[idx] = torch.logsumexp(log_terms, dim=0)
+        log_terms = jnp.where(valid_j, log_terms, _ninf)
+        return jsp.special.logsumexp(log_terms)
 
+    log_pr = jnp.zeros_like(ns, dtype=jnp.float64)
+    for i in range(len(ns)):
+        n_int = int(float(ns[i]))
+        val = _log_pr_one(n_int) if bool(nonzero_mask[i]) else jnp.float64(0.0)
+        log_pr = log_pr.at[i].set(val)
     return log_pr
 
 
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
 def population_geometric_parameter(
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
+    birth_rates: jax.Array,
+    death_rates: jax.Array,
+    times: jax.Array,
     *,
     _skip_normalization: bool = False,
-) -> torch.Tensor:
-    """Calculate geometric parameter (1 - β_t) for offspring distribution.
-
-    Private helper function for computing the conditional geometric parameter
-    of the population distribution given survival.
+) -> jax.Array:
+    """Geometric parameter 1 − β_T for the offspring survival distribution.
 
     Parameters
     ----------
-    birth_rates : torch.Tensor
-        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
-    death_rates : torch.Tensor
-        1D tensor of death rates μ per epoch; same shape as ``birth_rates``
-        (dtype: torch.float64).
-    times : torch.Tensor
-        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,),
-        dtype: torch.float64).
+    birth_rates, death_rates, times : jax.Array
+        Shape (n_epochs,) float64.
 
     Returns
     -------
-    torch.Tensor
-        Scalar tensor containing geometric parameter 1 - β_t ∈ (0, 1).
-        Shape: (), dtype: torch.float64.
-
-    Notes
-    -----
-    Handles λ ≈ μ limiting case for numerical stability. Full support for
-    PyTorch's autograd differentiation.
+    jax.Array
+        Scalar float64 in (0, 1).
 
     """
-    # Convert inputs to tensors
     if not _skip_normalization:
         birth_rates, death_rates, times = normalize_and_validate_inputs(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
+            birth_rates, death_rates, times
         )
-    else:
-        require_tensors(birth_rates=birth_rates, death_rates=death_rates, times=times)
 
-    # Compute epoch durations
-    times_padded = torch.cat(
-        [torch.zeros(1, dtype=torch.float64, device=times.device), times]
-    )
-    epoch_durations = torch.diff(times_padded)
-
-    birth_rate_val_array = birth_rates
-    death_rate_val_array = death_rates
-
-    growth_rates = birth_rate_val_array - death_rate_val_array
-    cum_growth = torch.cumsum(growth_rates * epoch_durations, dim=0)
-
-    geom_sum = pr_extinction_numerator(
-        birth_rates,
-        death_rates,
-        times,
-        _skip_normalization=True,
-    )
-    log_cond = -cum_growth[-1] - torch.log1p(geom_sum)
-    return torch.exp(log_cond)
+    epoch_durations = jnp.concatenate([times[:1], jnp.diff(times)])
+    growth_rates = birth_rates - death_rates
+    cum_growth = jnp.cumsum(growth_rates * epoch_durations)
+    geom_sum = pr_extinction_numerator(birth_rates, death_rates, times, _skip_normalization=True)
+    log_cond = -cum_growth[-1] - jnp.log1p(geom_sum)
+    return jnp.exp(log_cond)
 
 
 def calculate_populations_log_lik(
-    birth_rates: torch.Tensor | float,
-    death_rates: torch.Tensor | float,
-    ns: torch.Tensor | int,
-    times: torch.Tensor | float,
+    birth_rates: jax.Array,
+    death_rates: jax.Array,
+    ns: jax.Array,
+    times: jax.Array,
     *,
     initial_population: int = 1,
     unbias: bool = False,
     _skip_normalization: bool = False,
-) -> torch.Tensor:
-    r"""Calculate log-probability of population counts under birth-death process.
+) -> jax.Array:
+    r"""Log P(Z_T = n) summed over provided counts.
 
-    This function computes $\log \Pr(Z_T = n)$ for each count $n$ in `ns` using
-    closed-form expressions for the birth-and-death process probabilities.
-    The computed log-probabilities are summed and returned as a single
-    torch.Tensor. Invalid or numerically unstable inputs return -inf tensor.
+    Tavaré (2018) formula. Supports single- and multi-epoch models.
 
     Parameters
     ----------
-    birth_rates : torch.Tensor | float
-        Birth rate(s) $\lambda$. Scalar for constant rate, 1D tensor for
-        piecewise-constant rates.
-    death_rates : torch.Tensor | float
-        Death rate(s) $\mu$. Scalar for constant rate, 1D tensor for
-        piecewise-constant rates.
-    times : torch.Tensor | float
-        Time(s) $T$. Scalar for single time point, 1D tensor of epoch end
-        times. Must be greater than zero and strictly increasing.
-    ns : torch.Tensor | int
-        Non-negative population count(s) for which to evaluate
-        log-probabilities.
+    birth_rates, death_rates, times : jax.Array
+        Shape (n_epochs,) float64.
+    ns : jax.Array
+        Shape (m,) float64 (or int64-valued float64) population counts.
     initial_population : int
-        The number of initial individuals at time 0. Default is 1.
+        Z_0. Default 1.
     unbias : bool
-        If True, condition on non-extinction for positive counts when the
-        initial population is 1 by using the geometric mass with parameter
-        $1 - \beta_t$ on the positive integers.
+        If True and initial_population == 1, condition on non-extinction for
+        positive counts (geometric on positive integers with parameter 1-β).
 
     Returns
     -------
-    torch.Tensor
-        Scalar tensor (shape ()) containing sum of $\log \Pr(Z_T = n)$ across
-        provided `ns`. dtype: torch.float64.
-
-    Notes
-    -----
-    Under the basic birth-and-death process with constant rates,
-    the probability of observing $n$ individuals at time $T$
-    can be expressed in terms of parameters $\alpha_t$ and $\beta_T$,
-    (Tavaré, 2018).
-
-    $$
-        \alpha_T := \Pr(Z_T = 0)
-        = \frac{\mu(e^{(\mu - \lambda)T} - 1)}
-        {\lambda e^{(\mu - \lambda)T} - \mu}
-    $$ and
-    $$
-        \beta_T := \frac{\lambda}{\mu} \alpha_T
-    $$
-
-    For $\lambda = \mu$, the limiting case is:
-
-    $$\alpha_T = \beta_T = \frac{\lambda T}{1 + \lambda T}.$$
-
-    If the initial number of individuals is $n_0$, then we have
-    $$
-        \Pr(Z_T = n))
-        = \sum_{i = \max(0, n_0 - n)}^{n_0 - 1} \binom{n_0}{i}
-        \binom{n - 1}{n_0 - i - 1}
-        \alpha_T^{i} \beta_T^{n - n_0 + i}
-        [(1 - \alpha_T)(1 - \beta_T)]^{n_0 - i}
-    $$
-
-    References
-    ----------
-    - Tavaré, S. (2018). The linear birth--death process: an inferential
-    retrospective. *Advances in Applied Probability, 50*(A), 253--269.
-    doi:10.1017/apr.2018.84
+    jax.Array
+        Scalar float64.
 
     """
-    # Convert scalar inputs to tensors and ensure 1D arrays
+    _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
+    _zero = jnp.float64(0.0)
+
+    ns = ensure_1d_tensor(ns)
+
     if not _skip_normalization:
         birth_rates, death_rates, times = normalize_and_validate_inputs(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
+            birth_rates, death_rates, times
         )
-    else:
-        require_tensors(birth_rates=birth_rates, death_rates=death_rates, times=times)
-        birth_rates = cast(torch.Tensor, birth_rates)
-        death_rates = cast(torch.Tensor, death_rates)
-        times = cast(torch.Tensor, times)
-    (ns,) = ensure_1d_tensors(ns)
-    if initial_population <= 0:
-        msg = "initial_population must be a positive integer."
-        raise ValueError(msg)
 
-    _dev = birth_rates.device
-    ns = ns.to(device=_dev)  # co-locate with rates for device-coherent ops
-    _ninf = torch.tensor(float("-inf"), dtype=torch.float64, device=_dev)
-    _zero = torch.tensor(0.0, dtype=torch.float64, device=_dev)
+    # Unified JAX-native formulas (grad-safe, works for single and multi-epoch)
+    alpha_t = calculate_extinction_pr(birth_rates, death_rates, times, _skip_normalization=True)
+    beta_t = 1.0 - population_geometric_parameter(
+        birth_rates, death_rates, times, _skip_normalization=True
+    )
 
-    # Input validation
-    if torch.any(ns < 0):
-        msg = f"Population counts ns must be non-negative. Got ns: {ns}"
-        raise ValueError(msg)
+    # Range validation — functional path, returns -inf
+    valid_params = (alpha_t >= 0.0) & (alpha_t <= 1.0) & (beta_t >= 0.0) & (beta_t <= 1.0)
+    beta_zero_invalid = (beta_t <= 0) & jnp.any(ns > 1)
 
-    if len(times) > 1:
-        alpha_t = calculate_extinction_pr(
-            birth_rates,
-            death_rates,
-            times,
-            _skip_normalization=True,
-        )
-        beta_t = 1 - population_geometric_parameter(
-            birth_rates,
-            death_rates,
-            times,
-            _skip_normalization=True,
-        )
-    else:
-        # Single-epoch case
-        birth_rate_val = birth_rates[0]
-        death_rate_val = death_rates[0]
-        time_val = times[0]
-
-        if torch.isclose(birth_rate_val, death_rate_val, rtol=1e-12):
-            # Limiting case: λ ≈ μ
-            avg_rate = (birth_rate_val + death_rate_val) / 2
-            rate_time_product = avg_rate * time_val
-            alpha_t = beta_t = rate_time_product / (1 + rate_time_product)
-        else:
-            # General case: λ ≠ μ
-            growth_rate = birth_rate_val - death_rate_val
-            exponent = growth_rate * time_val
-            exp_term = torch.exp(exponent)
-
-            if not torch.isfinite(exp_term):
-                return _ninf
-
-            denominator = birth_rate_val * exp_term - death_rate_val
-
-            # Guard against division by zero
-            if death_rate_val == 0.0:
-                alpha_t = _zero
-                beta_t = birth_rate_val * (exp_term - 1) / denominator
-            else:
-                alpha_t = death_rate_val * (exp_term - 1) / denominator
-                beta_t = (birth_rate_val / death_rate_val) * alpha_t
-
-    # Validate alpha_t and beta_t are in valid range
-    if not (0 <= alpha_t <= 1):
-        msg = f"Computed alpha_t out of bounds [0, 1]: alpha_t={alpha_t}"
-        raise ValueError(msg)
-    if not (0 <= beta_t <= 1):
-        msg = f"Computed β_t out of bounds [0, 1]: β_t={beta_t}"
-        raise ValueError(msg)
-    if beta_t == 0.0 and torch.any(ns > 1):
-        return _ninf
-
-    # Initialize log probability array
-    log_pr = torch.zeros_like(ns, dtype=torch.float64)
-
-    # Handle n == 0 case
     zero_mask = ns == 0
-    if torch.any(zero_mask):
-        log_pr[zero_mask] = torch.log(alpha_t) * initial_population
+    nonzero_mask = ~zero_mask
 
-    # Handle n > 0 case
-    nonzero_mask = torch.logical_not(zero_mask)
-    if torch.any(nonzero_mask):
-        if unbias and initial_population == 1:
-            log_one_minus_beta = torch.log1p(-beta_t)
-            log_beta = torch.log(beta_t)
-            log_term3 = torch.where(ns == 1, _zero, (ns - 1) * log_beta)
+    log_pr = jnp.zeros_like(ns, dtype=jnp.float64)
 
-            if not (
-                torch.isfinite(log_one_minus_beta)
-                and torch.all(torch.isfinite(log_term3[nonzero_mask]))
-            ):
-                return _ninf
+    # n == 0: log alpha^n0
+    safe_alpha = jnp.where(alpha_t > 0, alpha_t, jnp.ones_like(alpha_t))
+    log_alpha_n0 = jnp.log(safe_alpha) * jnp.float64(initial_population)
+    log_pr = jnp.where(
+        zero_mask,
+        jnp.where(alpha_t > 0, log_alpha_n0, _ninf),
+        log_pr,
+    )
 
-            log_pr[nonzero_mask] = (log_one_minus_beta + log_term3)[nonzero_mask]
-        elif initial_population == 1:
-            log_term1 = torch.log1p(-alpha_t)
-            log_term2 = torch.log1p(-beta_t)
-            log_term3 = torch.where(ns == 1, _zero, (ns - 1) * torch.log(beta_t))
+    if unbias and initial_population == 1:
+        safe_beta_lt1 = jnp.where(beta_t < 1, beta_t, jnp.zeros_like(beta_t))
+        log_one_minus_beta = jnp.log1p(-safe_beta_lt1)
+        log_beta = jnp.where(beta_t > 0, jnp.log(beta_t), _ninf)
+        log_term3 = jnp.where(ns == 1, _zero, (ns - 1.0) * log_beta)
+        nonzero_val = log_one_minus_beta + log_term3
+        finite_nonzero = jnp.isfinite(log_one_minus_beta) & jnp.all(
+            jnp.where(nonzero_mask, jnp.isfinite(log_term3), True)
+        )
+        log_pr = jnp.where(
+            nonzero_mask,
+            jnp.where(finite_nonzero, nonzero_val, _ninf),
+            log_pr,
+        )
 
-            # Check all terms are finite
-            if not (
-                torch.isfinite(log_term1)
-                and torch.isfinite(log_term2)
-                and torch.all(torch.isfinite(log_term3[nonzero_mask]))
-            ):
-                return _ninf
+    elif initial_population == 1:
+        safe_alpha_lt1 = jnp.where(alpha_t < 1, alpha_t, jnp.zeros_like(alpha_t))
+        safe_beta_lt1 = jnp.where(beta_t < 1, beta_t, jnp.zeros_like(beta_t))
+        log_term1 = jnp.log1p(-safe_alpha_lt1)
+        log_term2 = jnp.log1p(-safe_beta_lt1)
+        log_beta = jnp.where(beta_t > 0, jnp.log(beta_t), _ninf)
+        log_term3 = jnp.where(ns == 1, _zero, (ns - 1.0) * log_beta)
+        finite_12 = jnp.isfinite(log_term1) & jnp.isfinite(log_term2)
+        nonzero_val = log_term1 + log_term2 + log_term3
+        log_pr = jnp.where(
+            nonzero_mask,
+            jnp.where(finite_12, nonzero_val, _ninf),
+            log_pr,
+        )
 
-            # Broadcast full expression then mask to preserve original shape
-            log_pr[nonzero_mask] = (log_term1 + log_term2 + log_term3)[nonzero_mask]
-        else:
-            # Multi-start case: initial_population > 1
-            log_pr = _compute_populations_log_lik_multi_start(
-                ns=ns,
-                nonzero_mask=nonzero_mask,
-                n0=int(initial_population),
-                alpha_t=alpha_t,
-                beta_t=beta_t,
-            )
+    else:
+        log_pr = _compute_populations_log_lik_multi_start(
+            ns=ns,
+            nonzero_mask=nonzero_mask,
+            n0=initial_population,
+            alpha_t=alpha_t,
+            beta_t=beta_t,
+        )
 
-    # Final numerical check
-    if not torch.all(torch.isfinite(log_pr)):
-        return _ninf
-
-    return torch.sum(log_pr)
+    all_finite = jnp.all(jnp.isfinite(log_pr))
+    return jnp.where(all_finite & valid_params & ~beta_zero_invalid, log_pr.sum(), _ninf)

@@ -1,225 +1,414 @@
-"""Extinction probability and initial-lifetime likelihood functions.
+"""Extinction probability calculations for birth-death processes.
 
-Foundation layer of the mathematical model — no dependencies on other
-_math_* submodules.
+All functions are pure JAX: no Python branching on tensor values, no in-place
+mutation, no .item() calls.  Control-flow hazards from the original torch
+implementation are resolved as follows:
+
+- Python-level ``if ... .item()`` guards → ``jnp.where`` masks.
+- In-place masked writes → ``jnp.where`` / ``.at[].set()``.
+- Reverse recurrence for tail → ``jax.lax.scan`` (reverse).
+- ``torch.diff(prepend=...)`` → ``jnp.concatenate([jnp.zeros((1,)), arr])``.
+
+All inputs are assumed float64 (``jax_enable_x64`` is set in __init__.py).
+The ``_skip_normalization`` kwarg is accepted for API compatibility but ignored
+— JAX functions always expect pre-normalised float64 arrays.
 """
 
-from typing import cast
+from typing import Any
 
-import torch
+import jax
+import jax.numpy as jnp
+from jax import lax
 
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
-from inf_bp_texts.utils import ensure_1d_tensors, require_tensors
+from inf_bp_texts.utils import ensure_1d_tensor
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+_ATOL_CRITICAL: float = 1e-10
+
+
+def _epoch_starts(times: jax.Array) -> jax.Array:
+    """Return epoch start times given epoch end times."""
+    return jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), times[:-1]])
+
+
+def _safe_div_kernel(g: jax.Array, dur: jax.Array) -> jax.Array:
+    """(1 − e^{−g·Δ}) / g with the critical (g≈0) limit → Δ."""
+    critical = jnp.abs(g) < _ATOL_CRITICAL
+    safe_g = jnp.where(critical, jnp.ones_like(g), g)
+    exp_neg = jnp.where(critical, jnp.ones_like(g), jnp.exp(-g * dur))
+    return jnp.where(critical, dur, (1.0 - exp_neg) / safe_g)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 def pr_extinction_numerator(
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
+    birth_rates: jax.Array,
+    death_rates: jax.Array,
+    times: jax.Array,
     *,
     _skip_normalization: bool = False,
-) -> torch.Tensor:
-    """Calculate numerator of extinction probability integral.
-
-    Private helper function for extinction probability calculation.
+) -> jax.Array:
+    """Numerator of the extinction probability integral.
 
     Parameters
     ----------
-    birth_rates : torch.Tensor
-        1D tensor of birth rates λ per epoch (shape: (n_epochs,), dtype: torch.float64).
-    death_rates : torch.Tensor
-        1D tensor of death rates μ per epoch; same shape as ``birth_rates``
-        (dtype: torch.float64).
-    times : torch.Tensor
-        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,),
-        dtype: torch.float64).
+    birth_rates : jax.Array
+        1-D float64 epoch birth rates λ, shape (n_epochs,).
+    death_rates : jax.Array
+        1-D float64 epoch death rates μ, same shape.
+    times : jax.Array
+        1-D strictly-increasing float64 epoch end times, same length.
 
     Returns
     -------
-    torch.Tensor
-        Scalar tensor containing numerator value for extinction probability.
-        Shape: (), dtype: torch.float64.
-
-    Notes
-    -----
-    Handles λ ≈ μ limiting case for numerical stability. Full support for
-    PyTorch's autograd differentiation.
+    jax.Array
+        Scalar float64.
 
     """
     if not _skip_normalization:
         birth_rates, death_rates, times = normalize_and_validate_inputs(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
+            birth_rates, death_rates, times
         )
-    else:
-        require_tensors(birth_rates=birth_rates, death_rates=death_rates, times=times)
 
-    epoch_durations = torch.diff(times, prepend=times.new_zeros(1))
+    epoch_durations = jnp.concatenate([times[:1], jnp.diff(times)])
     growth_rates = birth_rates - death_rates
     x = growth_rates * epoch_durations
-    critical_mask = torch.isclose(x, torch.zeros_like(x), atol=1e-10)
-    cum_growth = torch.cumsum(x, dim=0)
-    trunc_cum_growth = torch.cat([cum_growth.new_zeros(1), cum_growth[:-1]])
-    kernel = torch.where(
-        condition=critical_mask,
-        input=epoch_durations,
-        other=-torch.expm1(-x) / growth_rates,
-    )
-    pr_extinction_numerator_summand = (
-        death_rates * torch.exp(-trunc_cum_growth) * kernel
-    )
+    critical_mask = jnp.abs(x) < _ATOL_CRITICAL
+    cum_growth = jnp.cumsum(x)
+    trunc_cum_growth = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), cum_growth[:-1]])
 
-    return pr_extinction_numerator_summand.sum()
+    safe_g = jnp.where(critical_mask, jnp.ones_like(growth_rates), growth_rates)
+    exp_neg_x = jnp.where(critical_mask, jnp.ones_like(x), jnp.exp(-x))
+    kernel = jnp.where(critical_mask, epoch_durations, (1.0 - exp_neg_x) / safe_g)
+
+    summands = death_rates * jnp.exp(-trunc_cum_growth) * kernel
+    return summands.sum()
 
 
 def calculate_extinction_pr(
-    birth_rates: torch.Tensor | float,
-    death_rates: torch.Tensor | float,
-    times: torch.Tensor | float,
+    birth_rates: jax.Array,
+    death_rates: jax.Array,
+    times: jax.Array,
     *,
     return_log_prob: bool = False,
     _skip_normalization: bool = False,
-) -> torch.Tensor:
-    r"""Calculate extinction probability for a birth-death process $Z$ at time $T$.
-
-        Pr(Z_T = 0).
+) -> jax.Array:
+    r"""Extinction probability P(Z_T = 0), or its log.
 
     Parameters
     ----------
-    birth_rates : torch.Tensor or float
-        Birth rate(s) $\lambda$. Scalar or 1D tensor for piecewise-constant rates.
-    death_rates : torch.Tensor or float
-        Death rate(s) $\mu$. Scalar or 1D tensor for piecewise-constant rates.
-    times : torch.Tensor or float
-        Observation time(s) $T$. Scalar for single time, 1D tensor for epoch end times.
-        For arrays, must be monotonically increasing.
-    return_log_prob : bool, optional
-        If True, return $\log(\Pr(Z_T = 0))$ instead of $\Pr(Z_T = 0)$. Default False.
+    birth_rates, death_rates, times
+        As for ``pr_extinction_numerator``.
+    return_log_prob : bool
+        If True return log P(Z_T = 0). Default False.
 
     Returns
     -------
-    torch.Tensor
-        Scalar tensor (shape ()) containing extinction probability $\Pr(Z_T = 0)$
-        (or $\log(\Pr(Z_T = 0))$ if return_log_prob=True). dtype: torch.float64.
+    jax.Array
+        Scalar float64.
 
     """
     if not _skip_normalization:
         birth_rates, death_rates, times = normalize_and_validate_inputs(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
+            birth_rates, death_rates, times
         )
-    else:
-        require_tensors(birth_rates=birth_rates, death_rates=death_rates, times=times)
-        birth_rates = cast(torch.Tensor, birth_rates)
-        death_rates = cast(torch.Tensor, death_rates)
-        times = cast(torch.Tensor, times)
 
-    extinction_num = pr_extinction_numerator(
-        birth_rates=birth_rates,
-        death_rates=death_rates,
-        times=times,
-        _skip_normalization=True,
-    )
+    ext_num = pr_extinction_numerator(birth_rates, death_rates, times, _skip_normalization=True)
     if return_log_prob:
-        return torch.log(extinction_num) - torch.log1p(
-            extinction_num,
-        )
-
-    return 1 - 1 / (1 + extinction_num)
+        return jnp.log(ext_num) - jnp.log1p(ext_num)
+    return 1.0 - 1.0 / (1.0 + ext_num)
 
 
 def calculate_log_lik_lifetimes(
-    lifetimes: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
+    lifetimes: jax.Array,
+    death_rates: jax.Array,
+    times: jax.Array,
     *,
     as_array: bool = False,
     _skip_normalization: bool = False,
-) -> torch.Tensor:
-    r"""Calculate log-likelihood of manuscript lifetime(s).
+) -> jax.Array:
+    r"""Log P(lifetime) = log μ_k − ∫_0^s μ(t) dt, vectorised over lifetimes.
 
-    Pr(lifetime)
+    Uses ``jnp.searchsorted``-based vectorisation instead of a Python loop.
 
     Parameters
     ----------
-    lifetimes : torch.Tensor
-        1D tensor of lifetimes (shape: (n,), dtype: torch.float64).
-        Each lifetime ≤ times[-1].
-    death_rates : torch.Tensor
-        1D tensor of death rates $\mu$ per epoch
-        (shape: (n_epochs,), dtype: torch.float64).
-    times : torch.Tensor
-        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,),
-        dtype: torch.float64).
-    as_array : bool, optional
-        If True, return the per-lifetime contributions aligned with
-        ``lifetimes`` instead of summing them. Default False.
+    lifetimes : jax.Array
+        1-D float64, shape (n,). Each value ≤ times[-1].
+    death_rates : jax.Array
+        1-D float64 epoch death rates, shape (n_epochs,).
+    times : jax.Array
+        1-D strictly-increasing float64 epoch end times.
+    as_array : bool
+        Return per-lifetime contributions instead of summing.
 
     Returns
     -------
-    torch.Tensor
-        Scalar tensor containing sum of log-likelihood values when
-        ``as_array`` is False. If ``as_array`` is True, returns the per-lifetime
-        contributions aligned with ``lifetimes``. Shape: (), or (n,).
-        dtype: torch.float64.
+    jax.Array
+        Scalar or (n,) float64.
 
     """
-    # Convert inputs to tensors
+    lifetimes = ensure_1d_tensor(lifetimes)
     if not _skip_normalization:
-        lifetimes, death_rates, times = ensure_1d_tensors(lifetimes, death_rates, times)
-    else:
-        require_tensors(lifetimes=lifetimes, death_rates=death_rates, times=times)
+        death_rates, times = normalize_and_validate_inputs(
+            death_rates=death_rates, times=times
+        )
 
-    death_rate_val_array = death_rates
-
-    # Compute epoch starts and durations
-    times_padded = torch.cat(
-        [torch.zeros(1, dtype=torch.float64, device=times.device), times]
-    )
-    epoch_starts = times_padded[:-1]
+    epoch_starts = _epoch_starts(times)
     epoch_durations = times - epoch_starts
+    cum_mu_dur = jnp.cumsum(death_rates * epoch_durations)
 
-    # Compute cumulative growth at each epoch
-    cum_growth_at_epochs = torch.cumsum(death_rate_val_array * epoch_durations, dim=0)
+    epoch_of = jnp.searchsorted(times, lifetimes, side="left")
+    epoch_of = jnp.clip(epoch_of, 0, len(times) - 1)
 
-    log_liks = torch.zeros_like(lifetimes, dtype=torch.float64)
+    cum_before = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), cum_mu_dur[:-1]])
+    cum_integral = (
+        cum_before[epoch_of] + (lifetimes - epoch_starts[epoch_of]) * death_rates[epoch_of]
+    )
 
-    for i, lifetime in enumerate(lifetimes):
-        if torch.isclose(lifetime, times[-1]):
-            # Boundary case
-            log_liks[i] = -cum_growth_at_epochs[-1]
-            continue
+    mu_k = death_rates[epoch_of]
 
-        # Find valid epoch indices where epoch_starts < lifetime
-        valid_mask = epoch_starts < lifetime
-        valid_indices = torch.where(valid_mask)[0]
+    at_boundary = lifetimes >= times[-1]
+    log_liks = jnp.where(
+        at_boundary,
+        -cum_mu_dur[-1],
+        jnp.log(jnp.where(mu_k > 0, mu_k, jnp.ones_like(mu_k))) - cum_integral,
+    )
 
-        if len(valid_indices) == 0:
-            continue
-
-        # The current epoch index is the last valid index
-        current_epoch_idx = valid_indices[-1]
-        current_mu = death_rate_val_array[current_epoch_idx]
-
-        # Compute cumulative growth up to current lifetime
-        cum_growth = (
-            cum_growth_at_epochs[current_epoch_idx - 1]
-            if current_epoch_idx > 0
-            else torch.zeros(1, dtype=torch.float64, device=times.device).squeeze()
-        ) + (lifetime - epoch_starts[current_epoch_idx]) * current_mu
-
-        log_liks[i] = torch.log(current_mu) - cum_growth
-
-    return log_liks if as_array else torch.sum(log_liks)
+    return log_liks if as_array else log_liks.sum()
 
 
-def _integrand_surv_from_weighted_birth_time(  # pyright: ignore[reportUnusedFunction]
+def _analytic_log_pr_extinction_per_lifetime(
+    lifetimes: jax.Array,
+    birth_rates: jax.Array,
+    death_rates: jax.Array,
+    times: jax.Array,
+) -> jax.Array:
+    r"""Closed-form log P(offspring extinct | ancestor lifetime s), vectorised.
+
+    The backward recurrence for ``tail`` is expressed as a ``lax.scan``
+    (reverse pass) instead of a Python for-loop.
+
+    Parameters
+    ----------
+    lifetimes : jax.Array
+        Shape (n,) float64.
+    birth_rates, death_rates, times : jax.Array
+        Shape (n_epochs,) float64.
+
+    Returns
+    -------
+    jax.Array
+        Shape (n,) float64, per-lifetime log probabilities.
+
+    """
+    n_epochs = len(birth_rates)
+    zero = jnp.float64(0.0)
+
+    epoch_starts = _epoch_starts(times)
+    dur = times - epoch_starts
+    g = birth_rates - death_rates
+
+    critical = jnp.abs(g) < _ATOL_CRITICAL
+    safe_g = jnp.where(critical, jnp.ones_like(g), g)
+    exp_neg_g_dur = jnp.where(critical, jnp.ones_like(g), jnp.exp(-g * dur))
+    kernel = jnp.where(critical, dur, (1.0 - exp_neg_g_dur) / safe_g)
+
+    # Backward recurrence: tail[k] = mu[k]*kernel[k] + exp(-g[k]*dur[k])*tail[k+1]
+    # tail[K-1] = 0.  Scan reversed arrays from k=K-2 down to k=0.
+    mu_rev = jnp.flip(death_rates)
+    kernel_rev = jnp.flip(kernel)
+    exp_rev = jnp.flip(exp_neg_g_dur)
+
+    def _backward_step(
+        carry: jax.Array,
+        xs: tuple[jax.Array, jax.Array, jax.Array],
+    ) -> tuple[jax.Array, jax.Array]:
+        mu_k, ker_k, exp_k = xs
+        tail_k = mu_k * ker_k + exp_k * carry
+        return tail_k, tail_k
+
+    _, tail_rev = lax.scan(
+        _backward_step,
+        zero,
+        (mu_rev[:-1], kernel_rev[:-1], exp_rev[:-1]),
+    )
+    tail = jnp.concatenate([jnp.flip(tail_rev), jnp.zeros(1, dtype=jnp.float64)])
+
+    ext_from = death_rates * kernel + exp_neg_g_dur * tail
+
+    per_epoch = jnp.log1p(tail) - jnp.log1p(ext_from) - g * dur
+    prefix = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), jnp.cumsum(per_epoch)])
+
+    epoch_of = jnp.searchsorted(times, lifetimes, side="left")
+    epoch_of = jnp.clip(epoch_of, 0, n_epochs - 1)
+
+    remaining = times[epoch_of] - lifetimes
+    g_lt = g[epoch_of]
+    mu_lt = death_rates[epoch_of]
+    tail_lt = tail[epoch_of]
+    ext_from_lt = ext_from[epoch_of]
+    critical_lt = critical[epoch_of]
+
+    safe_g_lt = jnp.where(critical_lt, jnp.ones_like(g_lt), g_lt)
+    exp_rem = jnp.where(critical_lt, jnp.ones_like(g_lt), jnp.exp(-g_lt * remaining))
+    kernel_rem = jnp.where(critical_lt, remaining, (1.0 - exp_rem) / safe_g_lt)
+    ext_num_at_si = mu_lt * kernel_rem + exp_rem * tail_lt
+
+    dur_partial = lifetimes - epoch_starts[epoch_of]
+    partial = jnp.log1p(ext_num_at_si) - jnp.log1p(ext_from_lt) - g_lt * dur_partial
+
+    return prefix[epoch_of] + partial
+
+
+def calculate_log_pr_extinction_given_initial_lifetimes(
+    lifetimes: jax.Array,
+    birth_rates: jax.Array,
+    death_rates: jax.Array,
+    times: jax.Array,
+    *,
+    as_array: bool = False,
+    _skip_normalization: bool = False,
+) -> jax.Array:
+    """Log P(offspring extinct | ancestor lifetimes), summed or per-element.
+
+    Parameters
+    ----------
+    lifetimes : jax.Array
+        Shape (n,) float64, each ≤ times[-1].
+    birth_rates, death_rates, times : jax.Array
+        Shape (n_epochs,) float64.
+    as_array : bool
+        If True return per-lifetime values; otherwise sum.
+
+    Returns
+    -------
+    jax.Array
+        Scalar or (n,) float64.
+
+    """
+    lifetimes = ensure_1d_tensor(lifetimes)
+    if not _skip_normalization:
+        birth_rates, death_rates, times = normalize_and_validate_inputs(
+            birth_rates, death_rates, times
+        )
+
+    log_probs = _analytic_log_pr_extinction_per_lifetime(
+        lifetimes, birth_rates, death_rates, times
+    )
+    return log_probs if as_array else log_probs.sum()
+
+
+def calculate_log_lik_initial_lifetimes_given_extinction(
+    lifetimes: jax.Array,
+    birth_rates: jax.Array,
+    death_rates: jax.Array,
+    times: jax.Array,
+    *,
+    as_array: bool = False,
+    _skip_normalization: bool = False,
+) -> jax.Array:
+    """Log P(lifetime | extinction), summed or per-element.
+
+    Parameters
+    ----------
+    lifetimes : jax.Array
+        Shape (n,) float64.
+    birth_rates, death_rates, times : jax.Array
+        Shape (n_epochs,) float64.
+    as_array : bool
+        Per-element if True, summed if False.
+
+    Returns
+    -------
+    jax.Array
+        Scalar or (n,) float64.
+
+    """
+    lifetimes = ensure_1d_tensor(lifetimes)
+    if not _skip_normalization:
+        birth_rates, death_rates, times = normalize_and_validate_inputs(
+            birth_rates, death_rates, times
+        )
+
+    log_pr_ext_given_lt = calculate_log_pr_extinction_given_initial_lifetimes(
+        lifetimes, birth_rates, death_rates, times, as_array=True, _skip_normalization=True
+    )
+    log_lik_lt = calculate_log_lik_lifetimes(
+        lifetimes, death_rates, times, as_array=True, _skip_normalization=True
+    )
+    log_ext_pr = calculate_extinction_pr(
+        birth_rates, death_rates, times, return_log_prob=True, _skip_normalization=True
+    )
+
+    per_element = log_pr_ext_given_lt + log_lik_lt - log_ext_pr
+    return per_element if as_array else per_element.sum()
+
+
+def calculate_log_lik_initial_lifetimes_given_non_extinction(
+    lifetimes: jax.Array,
+    birth_rates: jax.Array,
+    death_rates: jax.Array,
+    times: jax.Array,
+    *,
+    as_array: bool = False,
+    _skip_normalization: bool = False,
+) -> jax.Array:
+    r"""Log P(lifetime | non-extinction), summed or per-element.
+
+    Uses ``log(-expm1(log_p_ext))`` = log(1 - P_ext) for numerical stability.
+
+    Parameters
+    ----------
+    lifetimes : jax.Array
+        Shape (n,) float64.
+    birth_rates, death_rates, times : jax.Array
+        Shape (n_epochs,) float64.
+    as_array : bool
+        Per-element if True, summed if False.
+
+    Returns
+    -------
+    jax.Array
+        Scalar or (n,) float64.
+
+    """
+    lifetimes = ensure_1d_tensor(lifetimes)
+    if not _skip_normalization:
+        birth_rates, death_rates, times = normalize_and_validate_inputs(
+            birth_rates, death_rates, times
+        )
+
+    log_pr_ext_given_lt = calculate_log_pr_extinction_given_initial_lifetimes(
+        lifetimes, birth_rates, death_rates, times, as_array=True, _skip_normalization=True
+    )
+    log_lik_lt = calculate_log_lik_lifetimes(
+        lifetimes, death_rates, times, as_array=True, _skip_normalization=True
+    )
+    log_ext_pr = calculate_extinction_pr(
+        birth_rates, death_rates, times, return_log_prob=True, _skip_normalization=True
+    )
+
+    log_pr_non_ext_given_lt = jnp.log(-jnp.expm1(log_pr_ext_given_lt))
+    log_pr_non_ext = jnp.log(-jnp.expm1(log_ext_pr))
+
+    per_element = log_pr_non_ext_given_lt + log_lik_lt - log_pr_non_ext
+    return per_element if as_array else per_element.sum()
+
+
+def _integrand_surv_from_weighted_birth_time(
     birth_time: float,
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
+    birth_rates: jax.Array,
+    death_rates: jax.Array,
+    times: jax.Array,
 ) -> float:
     """Integrand λ(t)·P_ext(t, T) at a single birth time t.
 
@@ -227,11 +416,11 @@ def _integrand_surv_from_weighted_birth_time(  # pyright: ignore[reportUnusedFun
     ----------
     birth_time : float
         Time at which birth occurred (scalar).
-    birth_rates : torch.Tensor
+    birth_rates : jax.Array
         Birth rates λ for each epoch.
-    death_rates : torch.Tensor
+    death_rates : jax.Array
         Death rates μ for each epoch.
-    times : torch.Tensor
+    times : jax.Array
         Epoch end times.
 
     Returns
@@ -240,10 +429,13 @@ def _integrand_surv_from_weighted_birth_time(  # pyright: ignore[reportUnusedFun
         Integrand value for this birth time.
 
     """
+    birth_rates = ensure_1d_tensor(birth_rates)
+    death_rates = ensure_1d_tensor(death_rates)
+    times = ensure_1d_tensor(times)
     shifted_times = times - birth_time
     valid_mask = shifted_times > 0
-    valid_indices = torch.where(valid_mask)[0]
-    if valid_indices.numel() == 0:
+    valid_indices = jnp.where(valid_mask)[0]
+    if len(valid_indices) == 0:
         return 0.0
     trunc_times = shifted_times[valid_indices]
     trunc_birth_rates = birth_rates[valid_indices]
@@ -255,383 +447,3 @@ def _integrand_surv_from_weighted_birth_time(  # pyright: ignore[reportUnusedFun
         _skip_normalization=True,
     )
     return float(ext_prob * trunc_birth_rates[0])
-
-
-def _analytic_log_pr_extinction_per_lifetime(
-    lifetimes: torch.Tensor,
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
-) -> torch.Tensor:
-    r"""Closed-form log P(offspring extinct by T | ancestor lifetime s) per lifetime.
-
-    Replaces scipy adaptive quadrature with a pure-PyTorch analytic expression,
-    enabling autograd and GPU computation.
-
-    For birth time t in epoch k with Δ = τ_k − t remaining in that epoch, the
-    extinction numerator is:
-
-        ext_num(Δ) = μ_k * (1 − e^{−g_k Δ}) / g_k  +  e^{−g_k Δ} * tail_k
-
-    where tail_k = extinction numerator from epoch k+1 onward.  Integrating
-    λ_k * P_ext(t, T) = λ_k * ext_num / (1 + ext_num) over an epoch interval
-    [a, b] yields the analytic formula:
-
-        μ_k*(b−a) − ln[(1 + ext_num(τ_k−b)) / (1 + ext_num(τ_k−a))]
-
-    Subtracting the birth-rate integral λ_k*(b−a) gives the contribution to
-    log P per epoch: ln(1 + ext_upper) − ln(1 + ext_lower) − g_k*(b−a).
-
-    Parameters
-    ----------
-    lifetimes : torch.Tensor
-        1D tensor of ancestor lifetimes (shape (n,), dtype float64), each ≤ times[-1].
-    birth_rates : torch.Tensor
-        1D tensor of epoch birth rates (shape (n_epochs,), dtype float64).
-    death_rates : torch.Tensor
-        1D tensor of epoch death rates, same shape as birth_rates.
-    times : torch.Tensor
-        1D strictly-increasing epoch end times, same length as birth_rates.
-
-    Returns
-    -------
-    torch.Tensor
-        Per-lifetime log probabilities aligned with ``lifetimes`` (shape (n,)).
-
-    """
-    n_epochs = len(birth_rates)
-    zero = birth_rates.new_zeros(())
-
-    epoch_starts = torch.cat([zero.unsqueeze(0), times[:-1]])
-    dur = times - epoch_starts  # epoch durations
-    g = birth_rates - death_rates  # growth rates per epoch
-
-    # Protect against g=0 division: use safe_g=1 in the denominator (masked out below)
-    _atol = 1e-10
-    critical = g.abs() < _atol
-    safe_g = torch.where(critical, torch.ones_like(g), g)
-
-    exp_neg_g_dur = torch.where(critical, torch.ones_like(g), torch.exp(-g * dur))
-    kernel = torch.where(critical, dur, (1.0 - exp_neg_g_dur) / safe_g)
-
-    # Build tail[k] = extinction numerator from epoch k+1 onward via backward pass.
-    # tail[K-1] = 0; tail[k] = mu[k+1]*kernel[k+1] + exp(-g[k+1]*dur[k+1])*tail[k+1]
-    tail_vals: list[torch.Tensor] = [zero]
-    for k in range(n_epochs - 1, 0, -1):
-        tail_vals.append(death_rates[k] * kernel[k] + exp_neg_g_dur[k] * tail_vals[-1])
-    tail = torch.stack(list(reversed(tail_vals)))  # shape [n_epochs]
-
-    # ext_from[k] = extinction numerator starting fresh at epoch k
-    ext_from = death_rates * kernel + exp_neg_g_dur * tail
-
-    # Per-epoch log-prob contribution for a FULL epoch k:
-    # ln(1+tail[k]) - ln(1+ext_from[k]) - g[k]*dur[k]
-    per_epoch = torch.log1p(tail) - torch.log1p(ext_from) - g * dur  # [n_epochs]
-
-    # Prefix sums: prefix[k] = sum of contributions from full epochs 0..k-1
-    prefix = torch.cat(
-        [zero.unsqueeze(0), torch.cumsum(per_epoch, dim=0)]
-    )  # [n_epochs+1]
-
-    # Epoch index for each lifetime: first k with times[k] >= s_i
-    epoch_of = torch.searchsorted(times.contiguous(), lifetimes.contiguous())
-    epoch_of = epoch_of.clamp(max=n_epochs - 1)
-
-    # Per-lifetime quantities
-    remaining = times[epoch_of] - lifetimes  # Δ = τ_m - s_i
-    g_lt = g[epoch_of]
-    mu_lt = death_rates[epoch_of]
-    tail_lt = tail[epoch_of]
-    ext_from_lt = ext_from[epoch_of]
-    critical_lt = critical[epoch_of]
-
-    safe_g_lt = torch.where(critical_lt, torch.ones_like(g_lt), g_lt)
-    exp_rem = torch.where(
-        critical_lt, torch.ones_like(g_lt), torch.exp(-g_lt * remaining)
-    )
-    kernel_rem = torch.where(critical_lt, remaining, (1.0 - exp_rem) / safe_g_lt)
-    ext_num_at_si = mu_lt * kernel_rem + exp_rem * tail_lt
-
-    # Partial epoch: ln(1+ext_num_at_si) - ln(1+ext_from[m]) - g_m*(s_i-τ_{m-1})
-    dur_partial = lifetimes - epoch_starts[epoch_of]
-    partial = torch.log1p(ext_num_at_si) - torch.log1p(ext_from_lt) - g_lt * dur_partial
-
-    return prefix[epoch_of] + partial
-
-
-def calculate_log_pr_extinction_given_initial_lifetimes(
-    lifetimes: torch.Tensor | float,
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
-    *,
-    as_array: bool = False,
-    _skip_normalization: bool = False,
-) -> torch.Tensor:
-    r"""Calculate log probability of extinction given initial lifetime(s).
-
-    Parameters
-    ----------
-    lifetimes : torch.Tensor
-        1D tensor of manuscript lifetimes (shape: (n,), dtype: torch.float64).
-        Each lifetime must be ≤ times[-1].
-    birth_rates : torch.Tensor
-        1D tensor of birth rates $\lambda$ per epoch
-        (shape: (n_epochs,), dtype: torch.float64).
-    death_rates : torch.Tensor
-        1D tensor of death rates $\mu$ per epoch. Same shape as ``birth_rates``
-        (dtype: torch.float64).
-    times : torch.Tensor
-        1D, strictly increasing tensor of epoch end times (shape: (n_epochs,),
-        dtype: torch.float64). Must have same length as ``birth_rates``.
-    as_array : bool, optional
-        If True, return log probabilities per lifetime (aligned to the original
-        ordering); if False, return their sum. Default False.
-
-    Returns
-    -------
-    torch.Tensor
-        If ``as_array`` is False, scalar tensor (shape ()) containing summed
-        log extinction probability. If ``as_array`` is True, 1D tensor of log
-        extinction probabilities aligned with ``lifetimes``. dtype: torch.float64.
-
-
-    Notes
-    -----
-    Uses a closed-form analytic expression derived from the generating functional
-    of a Poisson process. For each ancestor lifetime s, the probability that all
-    offspring born in (0, s) eventually go extinct by T equals
-    exp(∫₀ˢ λ(t) P_ext(t, T) dt − ∫₀ˢ λ(t) dt).  Both integrals over each
-    piecewise-constant epoch have closed forms expressible in terms of the epoch
-    extinction numerators, so no numerical quadrature is needed.  The
-    implementation is fully vectorised over lifetimes, autograd-compatible, and
-    device-agnostic (CPU/GPU).
-
-    """
-    if not _skip_normalization:
-        birth_rates, death_rates, times, lifetimes = normalize_and_validate_inputs(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            ages=lifetimes,
-        )
-    else:
-        require_tensors(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            lifetimes=lifetimes,
-        )
-        lifetimes = cast(torch.Tensor, lifetimes)
-
-    if lifetimes.max() > times[-1]:
-        msg = (
-            "All lifetimes must be less than or equal to the final time point."
-            f" Got max lifetime: {lifetimes.max()}, final time: {times[-1]}"
-        )
-        raise ValueError(msg)
-
-    log_probs = _analytic_log_pr_extinction_per_lifetime(
-        lifetimes=lifetimes,
-        birth_rates=birth_rates,
-        death_rates=death_rates,
-        times=times,
-    )
-
-    if as_array:
-        return log_probs
-
-    return log_probs.sum()
-
-
-def calculate_log_lik_initial_lifetimes_given_extinction(
-    lifetimes: torch.Tensor,
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
-    *,
-    as_array: bool = False,
-    _skip_normalization: bool = False,
-) -> torch.Tensor:
-    """Calculate log-likelihood of initial lifetime(s) given extinction.
-
-    Uses only PyTorch operations to maintain autograd support.
-
-    Parameters
-    ----------
-    lifetimes : torch.Tensor
-        1D tensor of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
-    birth_rates : torch.Tensor
-        1D tensor of birth rates λ per epoch (shape: (n_epochs,)).
-    death_rates : torch.Tensor
-        1D tensor of death rates μ per epoch; same length as ``birth_rates``.
-    times : torch.Tensor
-        1D, strictly increasing tensor of epoch end times matching rate arrays.
-    as_array : bool, optional
-        If True, return the per-lifetime contributions aligned with
-        ``lifetimes`` instead of summing them. Default False.
-
-    Returns
-    -------
-    torch.Tensor
-        Scalar tensor (shape ()) containing summed log-likelihood values when
-        ``as_array`` is False. If ``as_array`` is True, returns per-lifetime
-        contributions aligned with ``lifetimes``. dtype: torch.float64.
-
-    """
-    if not _skip_normalization:
-        birth_rates, death_rates, times, lifetimes = normalize_and_validate_inputs(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            ages=lifetimes,
-        )
-    else:
-        require_tensors(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            lifetimes=lifetimes,
-        )
-
-    n = len(lifetimes)
-
-    # as_array=True is always passed here so that the array path in this
-    # function receives per-lifetime values rather than a scalar sum.
-    # For the scalar path (as_array=False) torch.sum() of the per-element
-    # array gives the same result as calling with as_array=False would.
-    log_prs_extinction_given_lifetimes = (
-        calculate_log_pr_extinction_given_initial_lifetimes(
-            lifetimes=lifetimes,
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            as_array=True,
-            _skip_normalization=True,
-        )
-    )
-    log_liks_lifetimes = calculate_log_lik_lifetimes(
-        lifetimes=lifetimes,
-        death_rates=death_rates,
-        times=times,
-        as_array=as_array,
-        _skip_normalization=True,
-    )
-    log_extinction_prob = calculate_extinction_pr(
-        birth_rates=birth_rates,
-        death_rates=death_rates,
-        times=times,
-        return_log_prob=True,
-        _skip_normalization=True,
-    )
-
-    # Compute conditional log likelihood
-    if as_array:
-        return (
-            log_prs_extinction_given_lifetimes
-            + log_liks_lifetimes
-            - log_extinction_prob
-        )
-
-    return (
-        torch.sum(log_prs_extinction_given_lifetimes)
-        + log_liks_lifetimes
-        - n * log_extinction_prob
-    )
-
-
-def calculate_log_lik_initial_lifetimes_given_non_extinction(
-    lifetimes: torch.Tensor,
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    times: torch.Tensor,
-    *,
-    as_array: bool = False,
-    _skip_normalization: bool = False,
-) -> torch.Tensor:
-    r"""Calculate log-likelihood of initial lifetime(s) given non-extinction.
-
-    This implementation uses only PyTorch operations to preserve
-    autograd support end-to-end.
-
-    Parameters
-    ----------
-    lifetimes : torch.Tensor
-        1D tensor of manuscript lifetimes (shape: (n,)), each ≤ times[-1].
-    birth_rates : torch.Tensor
-        1D tensor of birth rates $\lambda$ per epoch (shape: (n_epochs,)).
-    death_rates : torch.Tensor
-        1D tensor of death rates $\mu$ per epoch; same length as ``birth_rates``.
-    times : torch.Tensor
-        1D, strictly increasing tensor of epoch end times matching rate arrays.
-    as_array : bool, optional
-        If True, return the per-lifetime contributions aligned with
-        ``lifetimes`` instead of summing them. Default False.
-
-    Returns
-    -------
-    torch.Tensor
-        Scalar tensor (shape ()) containing summed log-likelihood values when
-        ``as_array`` is False. If ``as_array`` is True, returns per-lifetime
-        contributions aligned with ``lifetimes``. dtype: torch.float64.
-
-    """
-    if not _skip_normalization:
-        birth_rates, death_rates, times, lifetimes = normalize_and_validate_inputs(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            ages=lifetimes,
-        )
-    else:
-        require_tensors(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            lifetimes=lifetimes,
-        )
-
-    n = len(lifetimes)
-
-    log_prs_extinction_given_lifetimes = (
-        calculate_log_pr_extinction_given_initial_lifetimes(
-            lifetimes=lifetimes,
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            as_array=True,
-            _skip_normalization=True,
-        )
-    )
-    log_liks_lifetimes = calculate_log_lik_lifetimes(
-        lifetimes=lifetimes,
-        death_rates=death_rates,
-        times=times,
-        as_array=as_array,
-        _skip_normalization=True,
-    )
-    log_extinction_prob = calculate_extinction_pr(
-        birth_rates=birth_rates,
-        death_rates=death_rates,
-        times=times,
-        return_log_prob=True,
-        _skip_normalization=True,
-    )
-
-    log_prs_non_extinction_given_lifetimes = torch.log(
-        -torch.expm1(log_prs_extinction_given_lifetimes),
-    )
-
-    # Compute conditional log likelihood
-    if as_array:
-        return (
-            log_prs_non_extinction_given_lifetimes
-            + log_liks_lifetimes
-            - torch.log(-torch.expm1(log_extinction_prob))
-        )
-
-    return (
-        torch.sum(log_prs_non_extinction_given_lifetimes)
-        + log_liks_lifetimes
-        - n * torch.log(-torch.expm1(log_extinction_prob))
-    )

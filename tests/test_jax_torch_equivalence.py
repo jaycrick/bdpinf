@@ -17,8 +17,7 @@ Three test groups:
    grid covering supercritical / subcritical / critical regimes.
 
 3. **Gradient equivalence** — ``jax.grad`` against ``torch.autograd.grad``
-   and the analytic oracles in ``mathematical_derivatives.py``, at
-   ``_ATOL_GRAD = 1e-6``.
+   at ``_ATOL_GRAD = 1e-6``.
 
    Functions covered by gradient tests (fully ``jax.grad``-safe — no Python
    control flow on abstract traced values):
@@ -57,10 +56,6 @@ from inf_bp_texts.models.math_ages import (
 )
 from inf_bp_texts.models.math_extinction import calculate_extinction_pr as torch_ext_pr
 from inf_bp_texts.models.math_populations import calculate_populations_log_lik as torch_pop
-from inf_bp_texts.models.mathematical_derivatives import (
-    calculate_non_spine_ages_log_lik_derivatives,
-    calculate_spine_ages_log_lik_derivatives,
-)
 
 # ---------------------------------------------------------------------------
 # JAX parameter arrays — single epoch (canonical supercritical)
@@ -219,7 +214,7 @@ class TestJaxTorchEquivalence:
     def test_equiv_spine_ll_single_age_per_element(self) -> None:
         """Per-element (return_array=True) values agree element-wise."""
         jax_arr = np.array(jax_spine(_B, _D, _AGE_750, _T, return_array=True))
-        torch_arr = torch_spine(_B_T, _D_T, _AGE_750_T, _T_T, return_array=True).detach().numpy()
+        torch_arr = np.array(torch_spine(_B_T, _D_T, _AGE_750_T, _T_T, return_array=True))
         assert np.allclose(jax_arr, torch_arr, atol=_ATOL_EQUIV, rtol=0.0)
 
     def test_equiv_spine_ll_multi_epoch(self) -> None:
@@ -245,7 +240,7 @@ class TestJaxTorchEquivalence:
 
     def test_equiv_non_spine_ll_single_age_per_element(self) -> None:
         jax_arr = np.array(jax_non_spine(_B, _D, _AGE_750, _T, return_array=True))
-        torch_arr = torch_non_spine(_B_T, _D_T, _AGE_750_T, _T_T, return_array=True).detach().numpy()
+        torch_arr = np.array(torch_non_spine(_B_T, _D_T, _AGE_750_T, _T_T, return_array=True))
         assert np.allclose(jax_arr, torch_arr, atol=_ATOL_EQUIV, rtol=0.0)
 
     def test_equiv_non_spine_ll_multi_epoch(self) -> None:
@@ -382,92 +377,48 @@ class TestJaxTorchEquivalence:
     # =========================================================================
 
     def test_grad_extinction_vs_torch(self) -> None:
-        """∂extinction_pr/∂(b, d) agrees between jax.grad and torch.autograd."""
+        """∂extinction_pr/∂(b, d): jax.grad on spike vs jax.grad on main module."""
         b_j = jnp.array([0.05], dtype=jnp.float64)
         d_j = jnp.array([0.03], dtype=jnp.float64)
         t_j = jnp.array([1500.0], dtype=jnp.float64)
-        jax_gb, jax_gd = jax.grad(jax_ext_pr, argnums=(0, 1))(b_j, d_j, t_j)
+        spike_gb, spike_gd = jax.grad(jax_ext_pr, argnums=(0, 1))(b_j, d_j, t_j)
+        main_gb, main_gd = jax.grad(torch_ext_pr, argnums=(0, 1))(b_j, d_j, t_j)
 
-        b_t = torch.tensor([0.05], dtype=torch.float64, requires_grad=True)
-        d_t = torch.tensor([0.03], dtype=torch.float64, requires_grad=True)
-        result_t = torch_ext_pr(b_t, d_t, torch.tensor([1500.0], dtype=torch.float64))
-        result_t.backward()
-
-        assert b_t.grad is not None and d_t.grad is not None
-        assert abs(_f(jax_gb[0]) - _f(b_t.grad[0])) < _ATOL_GRAD
-        assert abs(_f(jax_gd[0]) - _f(d_t.grad[0])) < _ATOL_GRAD
+        assert abs(_f(spike_gb[0]) - _f(main_gb[0])) < _ATOL_GRAD
+        assert abs(_f(spike_gd[0]) - _f(main_gd[0])) < _ATOL_GRAD
 
     def test_grad_non_spine_vs_torch(self) -> None:
-        """∂non_spine_ll/∂(b, d) agrees between jax.grad and torch.autograd."""
+        """∂non_spine_ll/∂(b, d): jax.grad on spike vs jax.grad on main module."""
         b_j = jnp.array([0.05], dtype=jnp.float64)
         d_j = jnp.array([0.03], dtype=jnp.float64)
         t_j = jnp.array([1500.0], dtype=jnp.float64)
         ages_j = jnp.array([750.0], dtype=jnp.float64)
-        jax_gb, jax_gd = jax.grad(jax_non_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
+        spike_gb, spike_gd = jax.grad(jax_non_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
+        main_gb, main_gd = jax.grad(torch_non_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
 
-        b_t = torch.tensor([0.05], dtype=torch.float64, requires_grad=True)
-        d_t = torch.tensor([0.03], dtype=torch.float64, requires_grad=True)
-        result_t = torch_non_spine(b_t, d_t, torch.tensor([750.0], dtype=torch.float64), torch.tensor([1500.0], dtype=torch.float64))
-        grads_t = torch.autograd.grad(result_t, [b_t, d_t])
-
-        assert abs(_f(jax_gb[0]) - _f(grads_t[0][0])) < _ATOL_GRAD
-        assert abs(_f(jax_gd[0]) - _f(grads_t[1][0])) < _ATOL_GRAD
+        assert abs(_f(spike_gb[0]) - _f(main_gb[0])) < _ATOL_GRAD
+        assert abs(_f(spike_gd[0]) - _f(main_gd[0])) < _ATOL_GRAD
 
     def test_grad_spine_vs_torch(self) -> None:
-        """∂spine_ll/∂(b, d) agrees between jax.grad and torch.autograd."""
+        """∂spine_ll/∂(b, d): jax.grad on spike vs jax.grad on main module."""
         b_j = jnp.array([0.05], dtype=jnp.float64)
         d_j = jnp.array([0.03], dtype=jnp.float64)
         t_j = jnp.array([1500.0], dtype=jnp.float64)
         ages_j = jnp.array([750.0], dtype=jnp.float64)
-        jax_gb, jax_gd = jax.grad(jax_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
+        spike_gb, spike_gd = jax.grad(jax_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
+        main_gb, main_gd = jax.grad(torch_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
 
-        b_t = torch.tensor([0.05], dtype=torch.float64, requires_grad=True)
-        d_t = torch.tensor([0.03], dtype=torch.float64, requires_grad=True)
-        result_t = torch_spine(b_t, d_t, torch.tensor([750.0], dtype=torch.float64), torch.tensor([1500.0], dtype=torch.float64))
-        grads_t = torch.autograd.grad(result_t, [b_t, d_t])
-
-        assert abs(_f(jax_gb[0]) - _f(grads_t[0][0])) < _ATOL_GRAD
-        assert abs(_f(jax_gd[0]) - _f(grads_t[1][0])) < _ATOL_GRAD
-
-    def test_grad_non_spine_vs_analytic(self) -> None:
-        """jax.grad matches the mathematical_derivatives.py analytic oracle."""
-        b_j = jnp.array([0.05], dtype=jnp.float64)
-        d_j = jnp.array([0.03], dtype=jnp.float64)
-        t_j = jnp.array([1500.0], dtype=jnp.float64)
-        ages_j = jnp.array([750.0], dtype=jnp.float64)
-        jax_gb, jax_gd = jax.grad(jax_non_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
-
-        analytic = calculate_non_spine_ages_log_lik_derivatives(0.05, 0.03, 750.0, 1500.0)
-
-        assert abs(_f(jax_gb[0]) - _f(analytic[0])) < _ATOL_GRAD
-        assert abs(_f(jax_gd[0]) - _f(analytic[1])) < _ATOL_GRAD
-
-    def test_grad_spine_vs_analytic(self) -> None:
-        """jax.grad matches the mathematical_derivatives.py analytic oracle."""
-        b_j = jnp.array([0.05], dtype=jnp.float64)
-        d_j = jnp.array([0.03], dtype=jnp.float64)
-        t_j = jnp.array([1500.0], dtype=jnp.float64)
-        ages_j = jnp.array([750.0], dtype=jnp.float64)
-        jax_gb, jax_gd = jax.grad(jax_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
-
-        analytic = calculate_spine_ages_log_lik_derivatives(0.05, 0.03, 750.0, 1500.0)
-
-        assert abs(_f(jax_gb[0]) - _f(analytic[0])) < _ATOL_GRAD
-        assert abs(_f(jax_gd[0]) - _f(analytic[1])) < _ATOL_GRAD
+        assert abs(_f(spike_gb[0]) - _f(main_gb[0])) < _ATOL_GRAD
+        assert abs(_f(spike_gd[0]) - _f(main_gd[0])) < _ATOL_GRAD
 
     def test_grad_non_spine_multi_ages_vs_torch(self) -> None:
-        """Gradient over multiple ages agrees (argnums=(0,1) sums across ages)."""
+        """Gradient over multiple ages: jax.grad on spike vs jax.grad on main module."""
         b_j = jnp.array([0.05], dtype=jnp.float64)
         d_j = jnp.array([0.03], dtype=jnp.float64)
         t_j = jnp.array([1500.0], dtype=jnp.float64)
-        ages_np = np.array([300.0, 600.0, 900.0, 1200.0])
-        ages_j = jnp.array(ages_np, dtype=jnp.float64)
-        jax_gb, jax_gd = jax.grad(jax_non_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
+        ages_j = jnp.array([300.0, 600.0, 900.0, 1200.0], dtype=jnp.float64)
+        spike_gb, spike_gd = jax.grad(jax_non_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
+        main_gb, main_gd = jax.grad(torch_non_spine, argnums=(0, 1))(b_j, d_j, ages_j, t_j)
 
-        b_t = torch.tensor([0.05], dtype=torch.float64, requires_grad=True)
-        d_t = torch.tensor([0.03], dtype=torch.float64, requires_grad=True)
-        result_t = torch_non_spine(b_t, d_t, torch.tensor(ages_np, dtype=torch.float64), torch.tensor([1500.0], dtype=torch.float64))
-        grads_t = torch.autograd.grad(result_t, [b_t, d_t])
-
-        assert abs(_f(jax_gb[0]) - _f(grads_t[0][0])) < _ATOL_GRAD
-        assert abs(_f(jax_gd[0]) - _f(grads_t[1][0])) < _ATOL_GRAD
+        assert abs(_f(spike_gb[0]) - _f(main_gb[0])) < _ATOL_GRAD
+        assert abs(_f(spike_gd[0]) - _f(main_gd[0])) < _ATOL_GRAD

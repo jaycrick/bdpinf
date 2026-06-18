@@ -14,6 +14,10 @@ Import the components you need directly from their respective modules.
 
 import logging
 
+import jax
+
+jax.config.update("jax_enable_x64", True)
+
 from ._paths import get_project_root
 from .models.birth_death_process import BirthDeathProcess
 

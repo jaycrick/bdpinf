@@ -2,7 +2,8 @@
 
 from typing import NamedTuple
 
-import torch
+import jax
+import jax.numpy as jnp
 
 from inf_bp_texts.utils import (
     ensure_1d_tensors,
@@ -11,49 +12,47 @@ from inf_bp_texts.utils import (
 )
 
 
-def _validate_times_positive(times: torch.Tensor, *, error_message: str) -> None:
+def _validate_times_positive(times: jax.Array, *, error_message: str) -> None:
     """Validate that times are strictly positive."""
-    if torch.any(times <= 0):
+    if jnp.any(times <= 0):
         raise ValueError(error_message)
 
 
 def _validate_times_strictly_increasing(
-    times: torch.Tensor,
+    times: jax.Array,
     *,
     all_positive: bool = False,
 ) -> None:
     """Validate that times are strictly increasing."""
     error_message = f"times must be strictly increasing. Got times: {times}"
     if all_positive:
-        diffs = torch.diff(
-            torch.cat([torch.zeros(1, dtype=torch.float64, device=times.device), times])
-        )
+        diffs = jnp.diff(jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), times]))
     else:
-        diffs = torch.diff(times)
-    if torch.any(diffs <= 0):
+        diffs = jnp.diff(times)
+    if jnp.any(diffs <= 0):
         raise ValueError(error_message)
 
 
 def _validate_ages_in_range(
-    ages: torch.Tensor,
-    end_time: torch.Tensor,
+    ages: jax.Array,
+    end_time: jax.Array,
     *,
     error_message: str,
 ) -> None:
     """Validate that ages are within [0, end_time]."""
-    if torch.any(ages < 0) or torch.any(ages > end_time):
+    if jnp.any(ages < 0) or jnp.any(ages > end_time):
         raise ValueError(error_message)
 
 
 def _validate_rates_non_negative(
-    birth_rates: torch.Tensor | None,
-    death_rates: torch.Tensor | None,
+    birth_rates: jax.Array | None,
+    death_rates: jax.Array | None,
 ) -> None:
     """Validate that birth and death rates are non-negative."""
-    if birth_rates is not None and torch.any(birth_rates < 0):
+    if birth_rates is not None and jnp.any(birth_rates < 0):
         msg = f"birth_rates must be non-negative. Got birth_rates: {birth_rates}"
         raise ValueError(msg)
-    if death_rates is not None and torch.any(death_rates < 0):
+    if death_rates is not None and jnp.any(death_rates < 0):
         msg = f"death_rates must be non-negative. Got death_rates: {death_rates}"
         raise ValueError(msg)
 
@@ -70,7 +69,7 @@ class ValidationConfig(NamedTuple):
 
 
 def _validate_rate_time_consistency(
-    tensor_map: dict[str, torch.Tensor],
+    tensor_map: dict[str, jax.Array],
     *,
     validate_lengths: bool = True,
     validate_shapes: bool = True,
@@ -96,7 +95,7 @@ def _validate_rate_time_consistency(
 
 
 def _validate_times_properties(
-    times: torch.Tensor,
+    times: jax.Array,
     *,
     require_positive: bool = True,
     require_increasing: bool = True,
@@ -115,29 +114,28 @@ def _validate_times_properties(
 
 
 def normalize_and_validate_inputs(
-    birth_rates: torch.Tensor | float | None = None,
-    death_rates: torch.Tensor | float | None = None,
-    times: torch.Tensor | float | None = None,
-    ages: torch.Tensor | float | None = None,
+    birth_rates: jax.Array | float | None = None,
+    death_rates: jax.Array | float | None = None,
+    times: jax.Array | float | None = None,
+    ages: jax.Array | float | None = None,
     *,
     config: ValidationConfig | None = None,
-) -> tuple[torch.Tensor, ...]:
+) -> tuple[jax.Array, ...]:
     """Normalize and validate input tensors.
 
     Parameters
     ----------
-    birth_rates, death_rates, times, ages : torch.Tensor | float | None
+    birth_rates, death_rates, times, ages : jax.Array | float | None
         Input values to normalize and validate.
     config : ValidationConfig, optional
         Validation configuration. If None, defaults are used.
 
     Returns
     -------
-    tuple[torch.Tensor, ...]
-        Normalized tensors in the order they were passed.
+    tuple[jax.Array, ...]
+        Normalized arrays in the order they were passed.
 
     """
-    # Build input list and labels
     inputs = []
     labels = []
     if birth_rates is not None:
@@ -153,29 +151,24 @@ def normalize_and_validate_inputs(
         inputs.append(ages)
         labels.append("ages")
 
-    # Normalize to tensors
     normalized = ensure_1d_tensors(*inputs) if inputs else ()
     tensor_map = dict(zip(labels, normalized, strict=True))
 
-    # Use default config if not provided
     if config is None:
         config = ValidationConfig()
 
-    # Validate rates are non-negative
     if config.require_rates_non_negative:
         _validate_rates_non_negative(
             tensor_map.get("birth_rates"),
             tensor_map.get("death_rates"),
         )
 
-    # Validate rate/time consistency
     _validate_rate_time_consistency(
         tensor_map,
         validate_lengths=config.validate_lengths,
         validate_shapes=config.validate_shapes,
     )
 
-    # Validate times
     if times is not None:
         _validate_times_properties(
             tensor_map["times"],
@@ -183,7 +176,6 @@ def normalize_and_validate_inputs(
             require_increasing=config.require_times_increasing,
         )
 
-    # Validate ages
     if config.require_ages_in_range and ages is not None:
         if times is None:
             msg = "times is required for age range validation."
