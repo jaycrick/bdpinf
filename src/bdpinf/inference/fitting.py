@@ -11,8 +11,10 @@ import pandas as pd
 import torch
 from numpy.typing import NDArray
 
-from inf_bp_texts.models.validation import normalize_and_validate_inputs
-from inf_bp_texts.utils import ensure_1d_tensor
+from inf_bp_texts.models.validation import (
+    normalize_and_validate_inputs as _jax_normalize,
+)
+from inf_bp_texts.utils import ensure_1d_torch_tensor as ensure_1d_tensor
 
 from ._fit_types import (
     DEFAULT_ITERATIONS,
@@ -28,6 +30,12 @@ from ._optimizer_runners import (
 )
 from .likelihood import negative_log_likelihood
 from .uncertainty import estimate_mle_covariance
+
+
+def normalize_and_validate_inputs(**kwargs: object) -> tuple[torch.Tensor, ...]:
+    """Thin wrapper: validate via the JAX layer and return torch tensors."""
+    return tuple(ensure_1d_tensor(arr) for arr in _jax_normalize(**kwargs))
+
 
 logger = logging.getLogger(__name__)
 

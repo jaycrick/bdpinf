@@ -14,7 +14,6 @@ The ``_skip_normalization`` kwarg is accepted for API compatibility but ignored
 — JAX functions always expect pre-normalised float64 arrays.
 """
 
-
 import jax
 import jax.numpy as jnp
 from jax import lax

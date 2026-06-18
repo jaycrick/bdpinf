@@ -25,7 +25,6 @@ from inf_bp_texts.models._jax.math_extinction import (
     calculate_log_lik_initial_lifetimes_given_non_extinction,
 )
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -135,7 +134,9 @@ def calculate_non_spine_ages_log_lik(
     # Signs must agree for a valid log; if not, -inf
     sign_ok = jnp.sign(numerator) == jnp.sign(denominator)
     safe_num = jnp.where(sign_ok, jnp.abs(numerator), jnp.ones_like(numerator))
-    safe_den = jnp.where(jnp.abs(denominator) > 0, jnp.abs(denominator), jnp.ones_like(denominator))
+    safe_den = jnp.where(
+        jnp.abs(denominator) > 0, jnp.abs(denominator), jnp.ones_like(denominator)
+    )
     log_num_nc = jnp.log(safe_num)
     log_den_nc = jnp.log(safe_den)
     log_density_nc = jnp.where(sign_ok, log_num_nc - log_den_nc, _ninf)
@@ -147,7 +148,9 @@ def calculate_non_spine_ages_log_lik(
 
     # -inf if any non-finite result
     all_finite = jnp.all(jnp.isfinite(log_density))
-    log_density = jnp.where(all_finite, log_density, jnp.full_like(log_density, -jnp.inf))
+    log_density = jnp.where(
+        all_finite, log_density, jnp.full_like(log_density, -jnp.inf)
+    )
 
     return log_density if return_array else log_density.sum()
 
@@ -201,7 +204,6 @@ def calculate_spine_ages_log_lik(
     valid = (birth_rate >= 0.0) & (death_rate >= 0.0)
 
     at_boundary = ages >= end_time
-    not_at_boundary = ~at_boundary
 
     is_critical = jnp.abs(birth_rate - death_rate) < 1e-12 * jnp.maximum(
         jnp.abs(birth_rate), jnp.ones_like(birth_rate)
@@ -225,7 +227,9 @@ def calculate_spine_ages_log_lik(
     sign_ok_bdy = jnp.sign(num_bdy) == sign_denom
     log_num_bdy = jnp.where(
         sign_ok_bdy,
-        jnp.log(jnp.abs(jnp.where(jnp.abs(num_bdy) > 0, num_bdy, jnp.ones_like(num_bdy)))),
+        jnp.log(
+            jnp.abs(jnp.where(jnp.abs(num_bdy) > 0, num_bdy, jnp.ones_like(num_bdy)))
+        ),
         _ninf,
     )
 
@@ -237,7 +241,11 @@ def calculate_spine_ages_log_lik(
         (
             jnp.log(birth_rate)
             + jnp.log(death_rate)
-            + jnp.log(jnp.abs(jnp.where(jnp.abs(num_int) > 0, num_int, jnp.ones_like(num_int))))
+            + jnp.log(
+                jnp.abs(
+                    jnp.where(jnp.abs(num_int) > 0, num_int, jnp.ones_like(num_int))
+                )
+            )
         ),
         _ninf,
     )
@@ -249,6 +257,8 @@ def calculate_spine_ages_log_lik(
     log_density = jnp.where(valid, log_density, _ninf)
 
     all_finite = jnp.all(jnp.isfinite(log_density))
-    log_density = jnp.where(all_finite, log_density, jnp.full_like(log_density, -jnp.inf))
+    log_density = jnp.where(
+        all_finite, log_density, jnp.full_like(log_density, -jnp.inf)
+    )
 
     return log_density if return_array else log_density.sum()

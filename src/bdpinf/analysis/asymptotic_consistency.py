@@ -78,7 +78,7 @@ def sample_age_vector(
             random_seed=int(rep_seed),
             ensure_non_extinct=True,
         )
-        survivors = simulated_process.surviving_manuscripts
+        survivors = getattr(simulated_process, "surviving_manuscripts", None)
         if survivors is None and hasattr(simulated_process, "columns"):
             survivors = simulated_process[simulated_process["survived"]]
         if survivors is not None and len(survivors) > 0:

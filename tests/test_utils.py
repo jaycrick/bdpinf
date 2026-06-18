@@ -1,7 +1,8 @@
 """Test suite for BirthDeathProcess utility functions and helper methods."""
 
+import jax
+import jax.numpy as jnp
 import numpy as np
-import torch
 
 from inf_bp_texts.inference.likelihood import log_likelihood
 from inf_bp_texts.models import BirthDeathProcess
@@ -110,126 +111,115 @@ class TestEnsure1dTensor:
     def test_float_scalar(self) -> None:
         """Test conversion of float scalar."""
         result = ensure_1d_tensor(5.0)
-        assert isinstance(result, torch.Tensor)
+        assert isinstance(result, jax.Array)
         assert result.shape == (1,)
-        assert result.dtype == torch.float64
-        assert result.item() == 5.0
+        assert result.dtype == jnp.float64
+        assert float(result[0]) == 5.0
 
     def test_int_scalar(self) -> None:
         """Test conversion of int scalar."""
         result = ensure_1d_tensor(42)
-        assert isinstance(result, torch.Tensor)
+        assert isinstance(result, jax.Array)
         assert result.shape == (1,)
-        assert result.dtype == torch.float64
-        assert result.item() == 42.0
+        assert result.dtype == jnp.float64
+        assert float(result[0]) == 42.0
 
     def test_zero_scalar(self) -> None:
         """Test conversion of zero scalar."""
         result = ensure_1d_tensor(0)
-        assert isinstance(result, torch.Tensor)
+        assert isinstance(result, jax.Array)
         assert result.shape == (1,)
-        assert result.item() == 0.0
+        assert float(result[0]) == 0.0
 
     def test_negative_scalar(self) -> None:
         """Test conversion of negative scalar."""
         result = ensure_1d_tensor(-3.14)
-        assert isinstance(result, torch.Tensor)
+        assert isinstance(result, jax.Array)
         assert result.shape == (1,)
-        assert result.item() == -3.14
+        assert abs(float(result[0]) - (-3.14)) < 1e-14
 
-    def test_1d_tensor(self) -> None:
-        """Test that 1D tensor is preserved."""
-        input_tensor = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
-        result = ensure_1d_tensor(input_tensor)
-        assert isinstance(result, torch.Tensor)
+    def test_1d_jax_array(self) -> None:
+        """Test that 1D JAX array is preserved."""
+        input_arr = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float64)
+        result = ensure_1d_tensor(input_arr)
+        assert isinstance(result, jax.Array)
         assert result.shape == (3,)
-        assert result.dtype == torch.float64
-        assert torch.allclose(result, input_tensor)
+        assert result.dtype == jnp.float64
+        assert np.allclose(np.array(result), np.array([1.0, 2.0, 3.0]))
 
-    def test_1d_tensor_wrong_dtype(self) -> None:
-        """Test that 1D tensor with wrong dtype is converted."""
-        input_tensor = torch.tensor([1, 2, 3], dtype=torch.int32)
-        result = ensure_1d_tensor(input_tensor)
-        assert result.dtype == torch.float64
+    def test_1d_numpy_wrong_dtype(self) -> None:
+        """Test that integer array is cast to float64."""
+        input_arr = np.array([1, 2, 3], dtype=np.int32)
+        result = ensure_1d_tensor(input_arr)
+        assert result.dtype == jnp.float64
         assert result.shape == (3,)
-        assert torch.allclose(
-            result,
-            torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64),
-        )
+        assert np.allclose(np.array(result), np.array([1.0, 2.0, 3.0]))
 
-    def test_2d_tensor_flattened(self) -> None:
-        """Test that 2D tensor is flattened."""
-        input_tensor = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float64)
-        result = ensure_1d_tensor(input_tensor)
+    def test_2d_array_flattened(self) -> None:
+        """Test that 2D array is flattened."""
+        input_arr = np.array([[1.0, 2.0], [3.0, 4.0]])
+        result = ensure_1d_tensor(input_arr)
         assert result.shape == (4,)
-        assert result.dtype == torch.float64
-        expected = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float64)
-        assert torch.allclose(result, expected)
+        assert result.dtype == jnp.float64
+        assert np.allclose(np.array(result), np.array([1.0, 2.0, 3.0, 4.0]))
 
-    def test_3d_tensor_flattened(self) -> None:
-        """Test that 3D tensor is flattened."""
-        input_tensor = torch.tensor([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
-        result = ensure_1d_tensor(input_tensor)
+    def test_3d_array_flattened(self) -> None:
+        """Test that 3D array is flattened."""
+        input_arr = np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
+        result = ensure_1d_tensor(input_arr)
         assert result.shape == (8,)
-        assert result.dtype == torch.float64
-        expected = torch.tensor(
-            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-            dtype=torch.float64,
+        assert result.dtype == jnp.float64
+        assert np.allclose(
+            np.array(result),
+            np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]),
         )
-        assert torch.allclose(result, expected)
 
-    def test_0d_tensor_scalar(self) -> None:
-        """Test conversion of 0D (scalar) tensor."""
-        input_tensor = torch.tensor(7.5, dtype=torch.float32)
-        result = ensure_1d_tensor(input_tensor)
+    def test_0d_array_scalar(self) -> None:
+        """Test conversion of 0D (scalar) array."""
+        input_arr = np.float32(7.5)
+        result = ensure_1d_tensor(input_arr)
         assert result.shape == (1,)
-        assert result.dtype == torch.float64
-        assert result.item() == 7.5
+        assert result.dtype == jnp.float64
+        assert float(result[0]) == 7.5
 
-    def test_empty_tensor(self) -> None:
-        """Test conversion of empty tensor."""
-        input_tensor = torch.tensor([], dtype=torch.float64)
-        result = ensure_1d_tensor(input_tensor)
+    def test_empty_array(self) -> None:
+        """Test conversion of empty array."""
+        input_arr = np.array([], dtype=np.float64)
+        result = ensure_1d_tensor(input_arr)
         assert result.shape == (0,)
-        assert result.dtype == torch.float64
+        assert result.dtype == jnp.float64
 
     def test_numpy_array(self) -> None:
         """Test conversion from numpy array."""
         input_array = np.array([1.0, 2.0, 3.0])
         result = ensure_1d_tensor(input_array)
-        assert isinstance(result, torch.Tensor)
+        assert isinstance(result, jax.Array)
         assert result.shape == (3,)
-        assert result.dtype == torch.float64
-        assert torch.allclose(
-            result,
-            torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64),
-        )
+        assert result.dtype == jnp.float64
+        assert np.allclose(np.array(result), np.array([1.0, 2.0, 3.0]))
 
     def test_numpy_2d_array_flattened(self) -> None:
         """Test conversion from 2D numpy array."""
         input_array = np.array([[1.0, 2.0], [3.0, 4.0]])
         result = ensure_1d_tensor(input_array)
         assert result.shape == (4,)
-        assert result.dtype == torch.float64
-        expected = torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float64)
-        assert torch.allclose(result, expected)
+        assert result.dtype == jnp.float64
+        assert np.allclose(np.array(result), np.array([1.0, 2.0, 3.0, 4.0]))
 
     def test_list_conversion(self) -> None:
         """Test conversion from Python list."""
         input_list = [1.0, 2.0, 3.0]
         result = ensure_1d_tensor(input_list)
-        assert isinstance(result, torch.Tensor)
+        assert isinstance(result, jax.Array)
         assert result.shape == (3,)
-        assert result.dtype == torch.float64
-        expected = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
-        assert torch.allclose(result, expected)
+        assert result.dtype == jnp.float64
+        assert np.allclose(np.array(result), np.array([1.0, 2.0, 3.0]))
 
-    def test_preserves_gradient(self) -> None:
-        """Test that gradient tracking is preserved for tensors with requires_grad."""
-        input_tensor = torch.tensor([1.0, 2.0, 3.0], requires_grad=True)
-        result = ensure_1d_tensor(input_tensor)
-        assert result.requires_grad
-        # Test backward pass
-        loss = result.sum()
-        loss.backward()
-        assert input_tensor.grad is not None
+    def test_jax_differentiable(self) -> None:
+        """Test that the result supports JAX differentiation."""
+        import jax
+
+        result = ensure_1d_tensor(np.array([1.0, 2.0, 3.0]))
+        grad_fn = jax.grad(lambda x: x.sum())
+        grads = grad_fn(result)
+        assert np.allclose(np.array(grads), np.ones(3))

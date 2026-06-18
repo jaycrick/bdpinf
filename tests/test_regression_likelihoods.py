@@ -97,33 +97,45 @@ class TestRegressionLikelihoods:
 
     def test_extinction_pr_golden_supercritical(self) -> None:
         result = calculate_extinction_pr(_BIRTH, _DEATH, _TIMES)
-        np.testing.assert_allclose(float(result), _GOLDEN_EXTINCTION_SUPERCRITICAL, atol=_ATOL, rtol=0.0)
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_EXTINCTION_SUPERCRITICAL, atol=_ATOL, rtol=0.0
+        )
 
     def test_extinction_pr_golden_subcritical(self) -> None:
         lam = torch.tensor([0.03], dtype=torch.float64)
         mu = torch.tensor([0.05], dtype=torch.float64)
         result = calculate_extinction_pr(lam, mu, _TIMES)
-        np.testing.assert_allclose(float(result), _GOLDEN_EXTINCTION_SUBCRITICAL, atol=_ATOL, rtol=0.0)
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_EXTINCTION_SUBCRITICAL, atol=_ATOL, rtol=0.0
+        )
 
     def test_extinction_pr_golden_critical(self) -> None:
         lam = torch.tensor([0.05], dtype=torch.float64)
         mu = torch.tensor([0.05], dtype=torch.float64)
         result = calculate_extinction_pr(lam, mu, _TIMES)
-        np.testing.assert_allclose(float(result), _GOLDEN_EXTINCTION_CRITICAL, atol=_ATOL, rtol=0.0)
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_EXTINCTION_CRITICAL, atol=_ATOL, rtol=0.0
+        )
 
     def test_spine_ages_log_lik_golden_single_age(self) -> None:
         result = calculate_spine_ages_log_lik(_BIRTH, _DEATH, _AGE_750, _TIMES)
-        np.testing.assert_allclose(float(result), _GOLDEN_SPINE_LL_750, atol=_ATOL, rtol=0.0)
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_SPINE_LL_750, atol=_ATOL, rtol=0.0
+        )
 
     def test_non_spine_ages_log_lik_golden_single_age(self) -> None:
         result = calculate_non_spine_ages_log_lik(_BIRTH, _DEATH, _AGE_750, _TIMES)
-        np.testing.assert_allclose(float(result), _GOLDEN_NON_SPINE_LL_750, atol=_ATOL, rtol=0.0)
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_NON_SPINE_LL_750, atol=_ATOL, rtol=0.0
+        )
 
     def test_populations_log_lik_golden_n_equals_5(self) -> None:
         result = calculate_populations_log_lik(
             _BIRTH, _DEATH, _NS_5, _TIMES, initial_population=1, unbias=False
         )
-        np.testing.assert_allclose(float(result), _GOLDEN_POPULATIONS_LL_N5, atol=_ATOL, rtol=0.0)
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_POPULATIONS_LL_N5, atol=_ATOL, rtol=0.0
+        )
 
     def test_combined_log_likelihood_golden_ten_ages(self) -> None:
         result = log_likelihood(
@@ -142,19 +154,25 @@ class TestRegressionLikelihoods:
 
     def test_spine_ages_log_lik_golden_single_age_multi_epoch(self) -> None:
         result = calculate_spine_ages_log_lik(_BIRTH_2, _DEATH_2, _AGE_300, _TIMES_2)
-        np.testing.assert_allclose(float(result), _GOLDEN_SPINE_LL_300_MULTI, atol=_ATOL, rtol=0.0)
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_SPINE_LL_300_MULTI, atol=_ATOL, rtol=0.0
+        )
 
     def test_non_spine_ages_log_lik_golden_single_age_multi_epoch(self) -> None:
         result = calculate_non_spine_ages_log_lik(
             _BIRTH_2, _DEATH_2, _AGE_300, _TIMES_2
         )
-        np.testing.assert_allclose(float(result), _GOLDEN_NON_SPINE_LL_300_MULTI, atol=_ATOL, rtol=0.0)
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_NON_SPINE_LL_300_MULTI, atol=_ATOL, rtol=0.0
+        )
 
     def test_populations_log_lik_golden_ns_2_multi_epoch(self) -> None:
         result = calculate_populations_log_lik(
             _BIRTH_2, _DEATH_2, _NS_2, _TIMES_2, initial_population=1, unbias=False
         )
-        np.testing.assert_allclose(float(result), _GOLDEN_POPULATIONS_LL_NS_2_MULTI, atol=_ATOL, rtol=0.0)
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_POPULATIONS_LL_NS_2_MULTI, atol=_ATOL, rtol=0.0
+        )
 
     def test_combined_log_likelihood_golden_ten_ages_multi_epoch(self) -> None:
         result = log_likelihood(

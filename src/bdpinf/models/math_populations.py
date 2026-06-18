@@ -228,8 +228,11 @@ def calculate_populations_log_lik(
         log_beta = jnp.where(beta_t > 0, jnp.log(beta_t), _ninf)
         log_term3 = jnp.where(ns == 1, _zero, (ns - 1.0) * log_beta)
         nonzero_val = log_one_minus_beta + log_term3
-        finite_nonzero = jnp.isfinite(log_one_minus_beta) & jnp.all(
-            jnp.where(nonzero_mask, jnp.isfinite(log_term3), True)
+        # beta_t < 1 required: safe_beta_lt1 zeroes out log1p(-beta) when beta=1
+        finite_nonzero = (
+            (beta_t < 1)
+            & jnp.isfinite(log_one_minus_beta)
+            & jnp.all(jnp.where(nonzero_mask, jnp.isfinite(log_term3), True))
         )
         log_pr = jnp.where(
             nonzero_mask,
@@ -244,7 +247,15 @@ def calculate_populations_log_lik(
         log_term2 = jnp.log1p(-safe_beta_lt1)
         log_beta = jnp.where(beta_t > 0, jnp.log(beta_t), _ninf)
         log_term3 = jnp.where(ns == 1, _zero, (ns - 1.0) * log_beta)
-        finite_12 = jnp.isfinite(log_term1) & jnp.isfinite(log_term2)
+        # alpha_t < 1 and beta_t < 1 required: the safe_*_lt1 trick zeroes out
+        # the argument when the rate hits its boundary, making log1p return 0
+        # instead of -inf; the explicit bounds guard enforces the correct -inf.
+        finite_12 = (
+            (alpha_t < 1)
+            & (beta_t < 1)
+            & jnp.isfinite(log_term1)
+            & jnp.isfinite(log_term2)
+        )
         nonzero_val = log_term1 + log_term2 + log_term3
         log_pr = jnp.where(
             nonzero_mask,

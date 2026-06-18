@@ -29,7 +29,6 @@ from inf_bp_texts.models._jax.math_extinction import (
     pr_extinction_numerator,
 )
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -238,7 +237,10 @@ def calculate_populations_log_lik(
         log_beta = jnp.where(beta_t > 0, jnp.log(beta_t), _ninf)
         log_term3 = jnp.where(ns == 1, _zero, (ns - 1.0) * log_beta)
         nonzero_val = log_one_minus_beta + log_term3
-        if not (jnp.isfinite(log_one_minus_beta) and jnp.all(jnp.isfinite(log_term3[nonzero_mask]))):
+        if not (
+            jnp.isfinite(log_one_minus_beta)
+            and jnp.all(jnp.isfinite(log_term3[nonzero_mask]))
+        ):
             return _ninf
         log_pr = jnp.where(nonzero_mask, nonzero_val, log_pr)
 

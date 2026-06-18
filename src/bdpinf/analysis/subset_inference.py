@@ -277,9 +277,9 @@ def fit_manuscript_subset(
     except Exception as exc:
         return _fail(f"BirthDeathProcess construction failed: {exc}")
 
-    ages_tensor: torch.Tensor = bdp.manuscript_ages
-    times: torch.Tensor = bdp.adjusted_epoch_end_times
-    ages_np: NDArray[np.float64] = ages_tensor.detach().cpu().numpy().astype(np.float64)
+    ages_tensor = bdp.manuscript_ages
+    times = bdp.adjusted_epoch_end_times
+    ages_np: NDArray[np.float64] = np.asarray(ages_tensor, dtype=np.float64)
 
     # Per-epoch manuscript counts.  The last epoch uses an inclusive upper bound
     # so manuscripts dated exactly at the final year are not silently excluded.

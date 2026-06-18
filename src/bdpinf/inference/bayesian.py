@@ -39,7 +39,7 @@ from pyro.infer.mcmc.util import summary  # no type stubs
 
 from inf_bp_texts.inference.fitting import ParameterConstraints
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
-from inf_bp_texts.utils import ensure_1d_tensor
+from inf_bp_texts.utils import ensure_1d_torch_tensor as ensure_1d_tensor
 
 from .likelihood import log_likelihood
 
@@ -450,6 +450,9 @@ class BayesianLikelihoodModel:
         except (ValueError, RuntimeError):
             total_log_lik = torch.tensor(float("-inf"), dtype=torch.float64)
 
+        # log_likelihood now returns a JAX scalar; convert to torch for Pyro
+        total_log_lik = torch.as_tensor(float(total_log_lik), dtype=torch.float64)
+
         safe_log_lik = torch.where(
             torch.isfinite(total_log_lik),
             total_log_lik,
@@ -794,8 +797,8 @@ def fit_birth_death_processes_bayesian(
         msg = "initial_population must be a positive integer"
         raise ValueError(msg)
 
-    (times_tensor,) = normalize_and_validate_inputs(times=times)
-    times_tensor = times_tensor.to(device)
+    (times_jax,) = normalize_and_validate_inputs(times=times)
+    times_tensor = ensure_1d_tensor(times_jax).to(device)
 
     n_epochs = len(times_tensor)
     n_total = 2 * n_epochs

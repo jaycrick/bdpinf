@@ -20,6 +20,11 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
+from inf_bp_texts.models._jax.likelihood import log_likelihood
+from inf_bp_texts.models._jax.math_ages import (
+    calculate_non_spine_ages_log_lik,
+    calculate_spine_ages_log_lik,
+)
 from inf_bp_texts.models._jax.math_extinction import (
     calculate_extinction_pr,
     calculate_log_lik_initial_lifetimes_given_extinction,
@@ -27,15 +32,10 @@ from inf_bp_texts.models._jax.math_extinction import (
     calculate_log_pr_extinction_given_initial_lifetimes,
     pr_extinction_numerator,
 )
-from inf_bp_texts.models._jax.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
-)
 from inf_bp_texts.models._jax.math_populations import (
     calculate_populations_log_lik,
     population_geometric_parameter,
 )
-from inf_bp_texts.models._jax.likelihood import log_likelihood
 
 __all__ = [
     "calculate_extinction_pr",

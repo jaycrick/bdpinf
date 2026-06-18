@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-import torch
 from numpy.typing import NDArray
 from scipy.stats import gaussian_kde
 
@@ -278,7 +277,7 @@ def safe_var(values: Any) -> float:
 
 
 def theoretical_age_density(
-    log_lik_fn: Callable[[torch.Tensor], torch.Tensor],
+    log_lik_fn: Callable[[float], Any],
     support_upper: float,
     n_grid: int = 300,
     include_endpoint: bool = True,
@@ -288,8 +287,8 @@ def theoretical_age_density(
 
     Parameters
     ----------
-    log_lik_fn : Callable[[torch.Tensor], torch.Tensor]
-        Function mapping a scalar age tensor to its log-likelihood.
+    log_lik_fn : Callable[[float], Any]
+        Function mapping a scalar age to its log-likelihood (float or JAX/numpy scalar).
     support_upper : float
         Upper end of the evaluation grid (the epoch time span).
     n_grid : int
@@ -309,13 +308,13 @@ def theoretical_age_density(
         Density values at each grid point.
 
     """
+    import math
+
     x_grid = np.linspace(0.0, support_upper, n_grid, endpoint=include_endpoint)
     y_vals = []
     for x_val in x_grid:
-        log_density = log_lik_fn(torch.tensor(float(x_val), dtype=torch.float64))
-        y_vals.append(
-            float(torch.exp(log_density).item()) if torch.isfinite(log_density) else 0.0
-        )
+        log_density = float(log_lik_fn(float(x_val)))
+        y_vals.append(math.exp(log_density) if math.isfinite(log_density) else 0.0)
     y_vals_arr = np.asarray(y_vals, dtype=np.float64)
     if proportion_not_at_upper is not None:
         p = float(proportion_not_at_upper)

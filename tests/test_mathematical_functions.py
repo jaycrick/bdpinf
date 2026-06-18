@@ -4,7 +4,6 @@ import math
 
 import jax.numpy as jnp
 import numpy as np
-
 import pytest
 import scipy
 import torch
@@ -172,7 +171,9 @@ class TestMultiEpochNumericalAccuracy:
 
         assert np.isfinite(float(single_result))
         assert np.isfinite(float(two_epoch_result))
-        np.testing.assert_allclose(np.array(single_result), np.array(two_epoch_result), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(single_result), np.array(two_epoch_result), rtol=1.3e-6
+        )
 
     def test_multi_epoch_extinction_pr_bounds(self) -> None:
         """Test that multi-epoch extinction probability is in [0, 1]."""
@@ -307,7 +308,9 @@ class TestMultiEpochConsistency:
             for age in ages
         )
 
-        np.testing.assert_allclose(np.array(result_array), np.array(result_sum), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(result_array), np.array(result_sum), rtol=1.3e-6
+        )
 
 
 # ============================================================================
@@ -586,7 +589,9 @@ class TestMultiEpochEqualsSingleEpoch:
         summed = calculate_spine_ages_log_lik(birth_rates, death_rates, ages, times)
 
         assert per_age.shape == ages.shape
-        np.testing.assert_allclose(np.array(per_age.sum()), np.array(summed), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(per_age.sum()), np.array(summed), rtol=1.3e-6
+        )
 
     def test_ages_log_lik_multi_equals_single_non_spine(self) -> None:
         ages = torch.tensor([10.0, 55.0, 90.0], dtype=torch.float64)
@@ -645,7 +650,9 @@ class TestMultiEpochEqualsSingleEpoch:
         )
 
         assert per_age.shape == ages.shape
-        np.testing.assert_allclose(np.array(per_age.sum()), np.array(summed), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(per_age.sum()), np.array(summed), rtol=1.3e-6
+        )
 
     def test_ages_log_lik_multi_equals_single_spine(self) -> None:
         # Interior ages only — at-boundary (age=T) is excluded because the
@@ -771,7 +778,9 @@ class TestNumericalAccuracy:
             ns=torch.tensor([0], dtype=torch.int64),
         )
 
-        np.testing.assert_allclose(np.array(result), np.array(expected_log_prob), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(result), np.array(expected_log_prob), rtol=1.3e-6
+        )
 
     def test_populations_log_lik_critical_case_n0(self) -> None:
         """Test log P(n=0) when λ = μ."""
@@ -998,7 +1007,9 @@ class TestNumericalAccuracy:
             for age in ages
         )
 
-        np.testing.assert_allclose(np.array(result_array), np.array(result_sum), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(result_array), np.array(result_sum), rtol=1.3e-6
+        )
 
     def test_non_spine_age_density_known_values(self) -> None:
         """Test non-spine age density against manually computed values.
@@ -1101,7 +1112,9 @@ class TestNumericalAccuracy:
             ns=n,
         )
 
-        np.testing.assert_allclose(np.array(result_scalar), np.array(result_array), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(result_scalar), np.array(result_array), rtol=1.3e-6
+        )
 
 
 # ============================================================================
@@ -1691,8 +1704,9 @@ class TestMathematicalProperties:
                 ns=n,
             )
             # Log probabilities should be ≤ 0
-            assert result <= 0 or np.isclose(float(
-                result), float(torch.tensor(0.0, dtype=torch.float64)),
+            assert result <= 0 or np.isclose(
+                float(result),
+                float(torch.tensor(0.0, dtype=torch.float64)),
             )
 
     def test_extinction_pr_increases_with_mu(self) -> None:
@@ -1731,7 +1745,9 @@ class TestMathematicalProperties:
         )
 
         # Results should be very close
-        np.testing.assert_allclose(np.array(scalar_result), np.array(array_result), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(scalar_result), np.array(array_result), rtol=1.3e-6
+        )
 
     def test_sum_property_array_ns(
         self,
@@ -1759,7 +1775,9 @@ class TestMathematicalProperties:
             for n in ns_array
         )
 
-        np.testing.assert_allclose(np.array(result_together), np.array(result_separate), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(result_together), np.array(result_separate), rtol=1.3e-6
+        )
 
 
 # ============================================================================
@@ -2398,8 +2416,12 @@ class TestTimeReversalInvolution:
 
         # Should recover original (up to numerical precision)
         np.testing.assert_allclose(np.array(inv_times_2), np.array(times), rtol=1.3e-6)
-        np.testing.assert_allclose(np.array(refl_birth_2), np.array(birth_rates), rtol=1.3e-6)
-        np.testing.assert_allclose(np.array(refl_death_2), np.array(death_rates), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(refl_birth_2), np.array(birth_rates), rtol=1.3e-6
+        )
+        np.testing.assert_allclose(
+            np.array(refl_death_2), np.array(death_rates), rtol=1.3e-6
+        )
 
     def test_double_reversal_three_epochs(self) -> None:
         """Test double reversal for three-epoch case."""
@@ -2420,9 +2442,15 @@ class TestTimeReversalInvolution:
         )
 
         # Should recover original
-        np.testing.assert_allclose(np.array(inv_times_2), np.array(times), rtol=1e-14, atol=1e-14)
-        np.testing.assert_allclose(np.array(refl_birth_2), np.array(birth_rates), rtol=1e-14, atol=1e-14)
-        np.testing.assert_allclose(np.array(refl_death_2), np.array(death_rates), rtol=1e-14, atol=1e-14)
+        np.testing.assert_allclose(
+            np.array(inv_times_2), np.array(times), rtol=1e-14, atol=1e-14
+        )
+        np.testing.assert_allclose(
+            np.array(refl_birth_2), np.array(birth_rates), rtol=1e-14, atol=1e-14
+        )
+        np.testing.assert_allclose(
+            np.array(refl_death_2), np.array(death_rates), rtol=1e-14, atol=1e-14
+        )
 
     def test_double_reversal_many_epochs(self) -> None:
         """Test double reversal with many epochs."""
@@ -2451,8 +2479,12 @@ class TestTimeReversalInvolution:
 
         # Verify involution property
         np.testing.assert_allclose(np.array(inv_times_2), np.array(times), rtol=1.3e-6)
-        np.testing.assert_allclose(np.array(refl_birth_2), np.array(birth_rates), rtol=1.3e-6)
-        np.testing.assert_allclose(np.array(refl_death_2), np.array(death_rates), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(refl_birth_2), np.array(birth_rates), rtol=1.3e-6
+        )
+        np.testing.assert_allclose(
+            np.array(refl_death_2), np.array(death_rates), rtol=1.3e-6
+        )
 
     def test_single_reversal_swaps_rates(self) -> None:
         """Test that single reversal correctly swaps birth and death rates."""
@@ -2470,8 +2502,12 @@ class TestTimeReversalInvolution:
         expected_birth = torch.flip(death_rates, dims=[0])
         expected_death = torch.flip(birth_rates, dims=[0])
 
-        np.testing.assert_allclose(np.array(refl_birth), np.array(expected_birth), rtol=1.3e-6)
-        np.testing.assert_allclose(np.array(refl_death), np.array(expected_death), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(refl_birth), np.array(expected_birth), rtol=1.3e-6
+        )
+        np.testing.assert_allclose(
+            np.array(refl_death), np.array(expected_death), rtol=1.3e-6
+        )
 
     def test_reversed_times_are_monotonic(self) -> None:
         """Test that reversed times remain monotonically increasing."""
@@ -2494,4 +2530,6 @@ class TestTimeReversalInvolution:
         inv_times, _, _ = _reverse_time(birth_rates, death_rates, times)
 
         # Final time should be the same
-        np.testing.assert_allclose(np.array(inv_times[-1]), np.array(times[-1]), rtol=1.3e-6)
+        np.testing.assert_allclose(
+            np.array(inv_times[-1]), np.array(times[-1]), rtol=1.3e-6
+        )

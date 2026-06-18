@@ -147,7 +147,10 @@ def log_likelihood(
         ns_arr = jnp.array([num_ages], dtype=jnp.float64)
         total_pop_size = num_ages
 
-    if not (bool(jnp.all(jnp.isfinite(birth_rates))) and bool(jnp.all(jnp.isfinite(death_rates)))):
+    if not (
+        bool(jnp.all(jnp.isfinite(birth_rates)))
+        and bool(jnp.all(jnp.isfinite(death_rates)))
+    ):
         return _ninf
 
     # ------------ population log-likelihood ---------------
@@ -198,11 +201,7 @@ def log_likelihood(
         sum_log_f = non_spine_lls.sum()
         a = spine_lls - non_spine_lls
         log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a.max()))) + a.max()  # stable
-        ages_log_lik = (
-            sum_log_f
-            - jnp.log(jnp.float64(n_ages))
-            + log_sum_exp
-        )
+        ages_log_lik = sum_log_f - jnp.log(jnp.float64(n_ages)) + log_sum_exp
     elif is_ordered or (spine_ages_arr is not None):
         if is_ordered:
             spine_ages_arr = ages[:1]

@@ -38,7 +38,7 @@ class TestFittingHelpers:
 
     def test__validate_times_properties_rejects_non_positive(self) -> None:
         with pytest.raises(ValueError, match="must be positive"):
-            _validate_times_properties(torch.tensor([1.0, 0.0]))
+            _validate_times_properties(np.array([1.0, 0.0]))
 
     def test_prepare_population_sizes_length_mismatch(self) -> None:
         ages_list = [torch.tensor([1.0]), torch.tensor([2.0])]

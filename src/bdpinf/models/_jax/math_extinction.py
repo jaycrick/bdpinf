@@ -21,7 +21,6 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -83,7 +82,9 @@ def pr_extinction_numerator(
     x = growth_rates * epoch_durations
     critical_mask = jnp.abs(x) < _ATOL_CRITICAL
     cum_growth = jnp.cumsum(x)
-    trunc_cum_growth = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), cum_growth[:-1]])
+    trunc_cum_growth = jnp.concatenate(
+        [jnp.zeros(1, dtype=jnp.float64), cum_growth[:-1]]
+    )
 
     # kernel = (1 - e^{-x}) / g,  or dur when critical
     safe_g = jnp.where(critical_mask, jnp.ones_like(growth_rates), growth_rates)
@@ -164,7 +165,10 @@ def calculate_log_lik_lifetimes(
 
     # Cumulative integral up to the start of that epoch
     cum_before = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), cum_mu_dur[:-1]])
-    cum_integral = cum_before[epoch_of] + (lifetimes - epoch_starts[epoch_of]) * death_rates[epoch_of]
+    cum_integral = (
+        cum_before[epoch_of]
+        + (lifetimes - epoch_starts[epoch_of]) * death_rates[epoch_of]
+    )
 
     mu_k = death_rates[epoch_of]
 
@@ -216,8 +220,8 @@ def _analytic_log_pr_extinction_per_lifetime(
     exp_neg_g_dur = jnp.where(critical, jnp.ones_like(g), jnp.exp(-g * dur))
     kernel = jnp.where(critical, dur, (1.0 - exp_neg_g_dur) / safe_g)
 
-    # Backward recurrence: tail[k] = mu[k+1]*kernel[k+1] + exp(-g[k+1]*dur[k+1])*tail[k+1]
-    # tail[K-1] = 0  (no epochs after the last)
+    # Backward recurrence (from last epoch to first):
+    # tail[k] = mu[k+1]*kernel[k+1] + exp(-g[k+1]*dur[k+1])*tail[k+1], tail[K-1]=0
     # We scan from k=K-2 down to k=0, accumulating into tail.
     # lax.scan processes in forward order; we flip arrays, scan, then flip back.
     # Carry: tail_{k+1} (scalar); output: tail_k.
@@ -231,11 +235,13 @@ def _analytic_log_pr_extinction_per_lifetime(
 
     # Build tail via explicit reversed scan — lax.scan variant
     # xs = paired (mu[k], kernel[k], exp_neg_g_dur[k]) for k = n_epochs-1 .. 1
-    mu_rev = jnp.flip(death_rates)       # reversed
+    mu_rev = jnp.flip(death_rates)  # reversed
     kernel_rev = jnp.flip(kernel)
     exp_rev = jnp.flip(exp_neg_g_dur)
 
-    def _backward_step(carry: jax.Array, xs: tuple[jax.Array, jax.Array, jax.Array]) -> tuple[jax.Array, jax.Array]:
+    def _backward_step(
+        carry: jax.Array, xs: tuple[jax.Array, jax.Array, jax.Array]
+    ) -> tuple[jax.Array, jax.Array]:
         mu_k, ker_k, exp_k = xs
         tail_k = mu_k * ker_k + exp_k * carry  # tail[k] from tail[k+1]=carry
         return tail_k, tail_k
@@ -338,8 +344,6 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
         Scalar or (n,) float64.
 
     """
-    n = len(lifetimes)
-
     log_pr_ext_given_lt = calculate_log_pr_extinction_given_initial_lifetimes(
         lifetimes, birth_rates, death_rates, times, as_array=True
     )

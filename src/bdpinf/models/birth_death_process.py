@@ -10,22 +10,24 @@ from __future__ import annotations
 from collections.abc import Hashable
 from typing import TYPE_CHECKING, Any, Literal
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
-import torch
 from numpy.typing import NDArray
 
 from inf_bp_texts.models.validation import (
     ValidationConfig,
     normalize_and_validate_inputs,
 )
+from inf_bp_texts.utils import ensure_1d_tensor
 
 if TYPE_CHECKING:
     import altair as alt
 
     from inf_bp_texts.visualization.genealogy import GenealogyPlotConfig
 
-NumericInput = float | list[float] | NDArray[np.float64] | torch.Tensor
+NumericInput = float | list[float] | NDArray[np.float64] | jax.Array
 RateLabel = Literal["birth", "death"]
 
 
@@ -40,15 +42,15 @@ class BirthDeathProcess:
 
     Key attributes and accessors
     - `creation_times` (list[float]): times when manuscripts were created.
-    - `epoch_end_times` (torch.Tensor): strictly increasing epoch end times.
-    - `manuscript_ages` (torch.Tensor): ages computed as latest epoch end time
+    - `epoch_end_times` (jax.Array): strictly increasing epoch end times.
+    - `manuscript_ages` (jax.Array): ages computed as latest epoch end time
         minus creation times.
     - `manuscript_records` (pd.DataFrame | None): full event table when
         available; may include `death_time`, `age`, `lifespan`, `is_spine`, and
         `survived`. When present, survivors' `death_time` values may be NaN.
-    - `spine_ages`, `non_spine_ages` (torch.Tensor | None): sampled age
+    - `spine_ages`, `non_spine_ages` (jax.Array | None): sampled age
         vectors produced by the age-sampling simulator.
-    - `death_times` (torch.Tensor | None): vector of death times extracted
+    - `death_times` (jax.Array | None): vector of death times extracted
         from `manuscript_records` when present.
     - `surviving_manuscripts`, `extinct_manuscripts` (pd.DataFrame | None):
         convenience views into the record table.
@@ -73,7 +75,7 @@ class BirthDeathProcess:
         lifetimes and the genealogy (requires `manuscript_records`).
     - `log_likelihood` / `negative_log_likelihood`: compute the likelihood
         given per-epoch `birth_rates` and `death_rates` (stored internally as
-        `torch.Tensor`).
+        `jax.Array`).
     - `update_parameters`: update the model parameters after fitting.
 
     Examples
@@ -85,7 +87,7 @@ class BirthDeathProcess:
                     ...     epoch_end_times=50
                     ... )
                     >>> proc.spine_ages
-                    tensor([10.,  5.])
+                    Array([10.,  5.], dtype=float64)
                     >>> proc['spine']  # legacy indexing
                     [10.0, 5.0]
 
@@ -125,7 +127,7 @@ class BirthDeathProcess:
 
         """
         self.creation_times: list[float] = creation_times.copy()
-        self._epoch_end_times: torch.Tensor = self._normalize_epoch_end_times(
+        self._epoch_end_times: jax.Array = self._normalize_epoch_end_times(
             epoch_end_times,
         )
         self.start_time: float = self._normalize_start_time(start_time)
@@ -135,12 +137,12 @@ class BirthDeathProcess:
         self._validate_start_time_window()
 
         # Parameters can be provided at initialization or fitted later
-        self._birth_rates: torch.Tensor | None = (
+        self._birth_rates: jax.Array | None = (
             self._normalize_rate_vector(birth_rates, label="birth")
             if birth_rates is not None
             else None
         )
-        self._death_rates: torch.Tensor | None = (
+        self._death_rates: jax.Array | None = (
             self._normalize_rate_vector(death_rates, label="death")
             if death_rates is not None
             else None
@@ -149,18 +151,18 @@ class BirthDeathProcess:
         self._validate_rate_lengths()
 
         self._validate_creation_times()
-        self._manuscript_ages: torch.Tensor = self._compute_manuscript_ages()
+        self._manuscript_ages: jax.Array = self._compute_manuscript_ages()
         self._manuscript_records: pd.DataFrame | None = (
             self._normalize_manuscript_records(
                 manuscript_records,
             )
         )
-        self._spine_ages: torch.Tensor | None = (
+        self._spine_ages: jax.Array | None = (
             self._normalize_optional_age_vector(spine_ages)
             if spine_ages is not None
             else None
         )
-        self._non_spine_ages: torch.Tensor | None = (
+        self._non_spine_ages: jax.Array | None = (
             self._normalize_optional_age_vector(non_spine_ages)
             if non_spine_ages is not None
             else None
@@ -225,8 +227,8 @@ class BirthDeathProcess:
         death_rates: NumericInput | None = None,
     ) -> BirthDeathProcess:
         """Build a process from sampled spine and non-spine manuscript ages."""
-        epoch_end_times_tensor = cls._to_static_float64_tensor(epoch_end_times)
-        max_time = float(epoch_end_times_tensor.reshape(-1)[-1].item())
+        epoch_end_times_arr = ensure_1d_tensor(epoch_end_times)
+        max_time = float(epoch_end_times_arr[-1])
         creation_times = [
             max_time - float(age) for age in [*spine_ages, *non_spine_ages]
         ]
@@ -243,12 +245,12 @@ class BirthDeathProcess:
         return process
 
     @property
-    def epoch_end_times(self) -> torch.Tensor:
+    def epoch_end_times(self) -> jax.Array:
         """Get epoch end times as a vector."""
-        return self._epoch_end_times.clone()
+        return self._epoch_end_times
 
     @property
-    def adjusted_epoch_end_times(self) -> torch.Tensor:
+    def adjusted_epoch_end_times(self) -> jax.Array:
         """Get epoch end times shifted by start_time."""
         return self._epoch_end_times - self.start_time
 
@@ -258,11 +260,9 @@ class BirthDeathProcess:
         return len(self._epoch_end_times)
 
     @property
-    def birth_rates(self) -> torch.Tensor | None:
+    def birth_rates(self) -> jax.Array | None:
         """Get birth-rate vector (one value per epoch)."""
-        if self._birth_rates is None:
-            return None
-        return self._birth_rates.clone()
+        return self._birth_rates
 
     @birth_rates.setter
     def birth_rates(self, value: NumericInput | None) -> None:
@@ -274,11 +274,9 @@ class BirthDeathProcess:
         self._validate_rate_lengths()
 
     @property
-    def death_rates(self) -> torch.Tensor | None:
+    def death_rates(self) -> jax.Array | None:
         """Get death-rate vector (one value per epoch)."""
-        if self._death_rates is None:
-            return None
-        return self._death_rates.clone()
+        return self._death_rates
 
     @death_rates.setter
     def death_rates(self, value: NumericInput | None) -> None:
@@ -292,15 +290,15 @@ class BirthDeathProcess:
     def _normalize_epoch_end_times(
         self,
         times: NumericInput,
-    ) -> torch.Tensor:
+    ) -> jax.Array:
         """Normalize epoch end times into a strictly increasing vector."""
         config = ValidationConfig(require_times_positive=False)
-        times_input = self._to_float64_tensor(times)
-        (times_tensor,) = normalize_and_validate_inputs(
+        times_input = ensure_1d_tensor(times)
+        (times_arr,) = normalize_and_validate_inputs(
             times=times_input,
             config=config,
         )
-        return times_tensor.to(dtype=torch.float64)
+        return times_arr
 
     def _normalize_start_time(self, start_time: float) -> float:
         """Normalize and validate start time."""
@@ -325,38 +323,18 @@ class BirthDeathProcess:
 
         return initial_population
 
-    def _to_float64_tensor(self, values: NumericInput) -> torch.Tensor:
-        """Convert numeric input to a float64 tensor."""
-        if isinstance(values, torch.Tensor):
-            return values.to(dtype=torch.float64)
-        if isinstance(values, np.ndarray):
-            return torch.as_tensor(values, dtype=torch.float64)
-        if isinstance(values, list):
-            return torch.tensor(values, dtype=torch.float64)
-        return torch.tensor([values], dtype=torch.float64)
-
-    @staticmethod
-    def _to_static_float64_tensor(values: NumericInput) -> torch.Tensor:
-        if isinstance(values, torch.Tensor):
-            return values.to(dtype=torch.float64)
-        if isinstance(values, np.ndarray):
-            return torch.as_tensor(values, dtype=torch.float64)
-        if isinstance(values, list):
-            return torch.tensor(values, dtype=torch.float64)
-        return torch.tensor([values], dtype=torch.float64)
-
     def _normalize_optional_age_vector(
         self,
         ages: NumericInput,
-    ) -> torch.Tensor:
-        age_tensor = self._to_float64_tensor(ages)
-        if not torch.all(torch.isfinite(age_tensor)):
+    ) -> jax.Array:
+        age_arr = ensure_1d_tensor(ages)
+        if not bool(jnp.all(jnp.isfinite(age_arr))):
             msg = "age values must be finite"
             raise ValueError(msg)
-        if torch.any(age_tensor < 0):
+        if bool(jnp.any(age_arr < 0)):
             msg = "age values must be non-negative"
             raise ValueError(msg)
-        return age_tensor
+        return age_arr
 
     def _normalize_manuscript_records(
         self,
@@ -382,23 +360,23 @@ class BirthDeathProcess:
         rates: NumericInput,
         *,
         label: RateLabel,
-    ) -> torch.Tensor:
+    ) -> jax.Array:
         """Normalize a scalar/vector rate input into a vector."""
-        rate_input = self._to_float64_tensor(rates)
+        rate_input = ensure_1d_tensor(rates)
 
         if label == "birth":
-            (rates_tensor,) = normalize_and_validate_inputs(birth_rates=rate_input)
+            (rates_arr,) = normalize_and_validate_inputs(birth_rates=rate_input)
         else:
-            (rates_tensor,) = normalize_and_validate_inputs(death_rates=rate_input)
-        return rates_tensor.to(dtype=torch.float64)
+            (rates_arr,) = normalize_and_validate_inputs(death_rates=rate_input)
+        return rates_arr
 
-    def _latest_epoch_end_time(self) -> torch.Tensor:
-        """Get the latest epoch end time as a tensor scalar."""
+    def _latest_epoch_end_time(self) -> jax.Array:
+        """Get the latest epoch end time as an array scalar."""
         return self._epoch_end_times[-1]
 
     def _validate_start_time_window(self) -> None:
         """Validate start-time relative to epoch end times."""
-        latest_epoch_end_time = float(self._latest_epoch_end_time().item())
+        latest_epoch_end_time = float(self._latest_epoch_end_time())
         if self.start_time > latest_epoch_end_time:
             msg = "start_time must be less than or equal to latest epoch_end_time"
             raise ValueError(msg)
@@ -414,16 +392,16 @@ class BirthDeathProcess:
 
     def _validate_and_expand_rate(
         self,
-        rate: torch.Tensor | None,
+        rate: jax.Array | None,
         *,
         name: str,
-    ) -> torch.Tensor | None:
+    ) -> jax.Array | None:
         """Validate a rate vector against epoch count, expanding scalar rates."""
         if rate is None:
             return None
 
-        if rate.numel() == 1 and self.n_epochs > 1:
-            return rate.repeat(self.n_epochs)
+        if rate.size == 1 and self.n_epochs > 1:
+            return jnp.tile(rate, self.n_epochs)
 
         if len(rate) != self.n_epochs:
             msg = f"{name} length must match number of epoch end times"
@@ -447,8 +425,8 @@ class BirthDeathProcess:
         if not self.creation_times:
             return
 
-        creation_times_tensor = self._to_float64_tensor(self.creation_times)
-        if not torch.all(torch.isfinite(creation_times_tensor)):
+        creation_times_arr = ensure_1d_tensor(self.creation_times)
+        if not bool(jnp.all(jnp.isfinite(creation_times_arr))):
             msg = "creation_times must be finite"
             raise ValueError(msg)
 
@@ -459,7 +437,7 @@ class BirthDeathProcess:
             msg = "creation_times must be greater than or equal to start_time"
             raise ValueError(msg)
 
-        latest_epoch_end_time = float(self._latest_epoch_end_time().item())
+        latest_epoch_end_time = float(self._latest_epoch_end_time())
         invalid_after_epoch = [
             ct for ct in self.creation_times if ct > latest_epoch_end_time
         ]
@@ -467,25 +445,25 @@ class BirthDeathProcess:
             msg = "creation_times must be less than or equal to latest epoch_end_time"
             raise ValueError(msg)
 
-    def _compute_manuscript_ages(self) -> torch.Tensor:
+    def _compute_manuscript_ages(self) -> jax.Array:
         """Compute manuscript ages from creation times and latest epoch end time."""
         latest_epoch_end_time = self._latest_epoch_end_time()
         if self.creation_times:
-            return latest_epoch_end_time - torch.tensor(
+            return latest_epoch_end_time - jnp.array(
                 self.creation_times,
-                dtype=torch.float64,
+                dtype=jnp.float64,
             )
-        return torch.tensor([], dtype=torch.float64)
+        return jnp.array([], dtype=jnp.float64)
 
     def _recompute_manuscript_ages(self) -> None:
         """Recompute and cache manuscript ages."""
         self._manuscript_ages = self._compute_manuscript_ages()
 
     @property
-    def manuscript_ages(self) -> torch.Tensor:
+    def manuscript_ages(self) -> jax.Array:
         """Get cached manuscript ages from creation times and latest epoch end time."""
         self._recompute_manuscript_ages()
-        return self._manuscript_ages.clone()
+        return self._manuscript_ages
 
     @property
     def manuscript_records(self) -> pd.DataFrame | None:
@@ -495,40 +473,36 @@ class BirthDeathProcess:
         return self._manuscript_records.copy()
 
     @property
-    def spine_ages(self) -> torch.Tensor | None:
+    def spine_ages(self) -> jax.Array | None:
         """Get sampled spine ages when the instance originates from that simulator."""
-        if self._spine_ages is None:
-            return None
-        return self._spine_ages.clone()
+        return self._spine_ages
 
     @property
-    def non_spine_ages(self) -> torch.Tensor | None:
+    def non_spine_ages(self) -> jax.Array | None:
         """Get sampled non-spine ages when instance originates from the simulator."""
-        if self._non_spine_ages is None:
-            return None
-        return self._non_spine_ages.clone()
+        return self._non_spine_ages
 
     @property
-    def death_times(self) -> torch.Tensor | None:
+    def death_times(self) -> jax.Array | None:
         """Get manuscript death times when available."""
         if (
             self._manuscript_records is None
             or "death_time" not in self._manuscript_records
         ):
             return None
-        return torch.tensor(
+        return jnp.array(
             self._manuscript_records["death_time"].to_numpy(dtype=np.float64),
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )
 
     @property
-    def all_manuscript_ages(self) -> torch.Tensor | None:
+    def all_manuscript_ages(self) -> jax.Array | None:
         """Get manuscript ages for all records when a record table exists."""
         if self._manuscript_records is None or "age" not in self._manuscript_records:
             return None
-        return torch.tensor(
+        return jnp.array(
             self._manuscript_records["age"].to_numpy(dtype=np.float64),
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )
 
     @property
@@ -561,7 +535,7 @@ class BirthDeathProcess:
         return _genealogy_dfs_order(
             self._manuscript_records,
             start_time=self.start_time,
-            simulation_end_time=float(self._latest_epoch_end_time().item()),
+            simulation_end_time=float(self._latest_epoch_end_time()),
         )
 
     def plot_genealogy_tree(
@@ -584,7 +558,7 @@ class BirthDeathProcess:
         return _plot_genealogy_tree(
             self._manuscript_records,
             start_time=self.start_time,
-            simulation_end_time=float(self._latest_epoch_end_time().item()),
+            simulation_end_time=float(self._latest_epoch_end_time()),
             config=config,
         )
 
@@ -682,7 +656,7 @@ class BirthDeathProcess:
         root_rows = ordered_records[ordered_records["parent_id"].isna()]
         root_id = int(root_rows.iloc[0]["manuscript_id"])
         root_birth_time = float(root_rows.iloc[0]["creation_time"])
-        simulation_end_time = float(self._latest_epoch_end_time().item())
+        simulation_end_time = float(self._latest_epoch_end_time())
 
         root_fragment = self._to_newick_fragment(
             root_id,
@@ -704,11 +678,19 @@ class BirthDeathProcess:
             and other._manuscript_records is not None
         ):
             return self._manuscript_records.equals(other._manuscript_records)
+
+        def _arrays_equal(a: jax.Array | None, b: jax.Array | None) -> bool:
+            if a is None and b is None:
+                return True
+            if a is None or b is None:
+                return False
+            return bool(jnp.array_equal(a, b))
+
         return (
             self.creation_times == other.creation_times
-            and torch.equal(self.epoch_end_times, other.epoch_end_times)
-            and self.birth_rates == other.birth_rates
-            and self.death_rates == other.death_rates
+            and _arrays_equal(self._epoch_end_times, other._epoch_end_times)
+            and _arrays_equal(self._birth_rates, other._birth_rates)
+            and _arrays_equal(self._death_rates, other._death_rates)
         )
 
     def __eq__(self, other: object) -> bool:
@@ -739,7 +721,7 @@ class BirthDeathProcess:
             msg = "creation_time must be greater than or equal to start_time"
             raise ValueError(msg)
 
-        latest_epoch_end_time = float(self._latest_epoch_end_time().item())
+        latest_epoch_end_time = float(self._latest_epoch_end_time())
         if creation_time > latest_epoch_end_time:
             msg = "creation_time must be less than or equal to latest epoch_end_time"
             raise ValueError(msg)
@@ -762,7 +744,7 @@ class BirthDeathProcess:
 
         try:
             self._epoch_end_times = new_epoch_end_times
-            latest_epoch_end_time = float(self._epoch_end_times[-1].item())
+            latest_epoch_end_time = float(self._epoch_end_times[-1])
             self._validate_start_time_against_epoch_end_time(latest_epoch_end_time)
             self._validate_rate_lengths()
             self._validate_creation_times()
@@ -771,7 +753,7 @@ class BirthDeathProcess:
             self._epoch_end_times = previous_epoch_end_times
             raise
 
-    def log_likelihood(self, unbias: bool = True) -> torch.Tensor:
+    def log_likelihood(self, unbias: bool = True) -> jax.Array:
         """Compute log-likelihood directly from the current model state.
 
         Raises
@@ -794,7 +776,7 @@ class BirthDeathProcess:
             unbias=unbias,
         )
 
-    def negative_log_likelihood(self, unbias: bool = True) -> torch.Tensor:
+    def negative_log_likelihood(self, unbias: bool = True) -> jax.Array:
         """Compute negative log-likelihood directly from the current model state."""
         if self._birth_rates is None or self._death_rates is None:
             msg = "birth_rates and death_rates must be set before likelihood calls"

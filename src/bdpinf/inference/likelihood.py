@@ -215,9 +215,7 @@ def log_likelihood(
 
     if spine_ages is None and not is_ordered and len(ages) > 0:
         # Host-side boundary detection (data-dependent, not traced)
-        at_final_time = np.isclose(
-            np.array(ages, dtype=np.float64), float(times[-1])
-        )
+        at_final_time = np.isclose(np.array(ages, dtype=np.float64), float(times[-1]))
         num_terminal_ages = int(at_final_time.sum())
         if num_terminal_ages > 1:
             msg = (
@@ -254,11 +252,7 @@ def log_likelihood(
         sum_log_f = non_spine_log_liks.sum()
         a = spine_log_liks - non_spine_log_liks
         log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a.max()))) + a.max()
-        ages_log_lik = (
-            sum_log_f
-            - jnp.log(jnp.float64(n_ages))
-            + log_sum_exp
-        )
+        ages_log_lik = sum_log_f - jnp.log(jnp.float64(n_ages)) + log_sum_exp
     elif is_ordered or (spine_ages is not None):
         if is_ordered:
             spine_ages = ages[:1]

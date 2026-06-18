@@ -1,10 +1,11 @@
 """Test suite for BirthDeathProcess class initialization and basic functionality."""
 
 import altair as alt
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 import pytest
-import torch
 from numpy.testing import assert_array_equal
 
 from inf_bp_texts.models import BirthDeathProcess
@@ -156,7 +157,7 @@ class TestBirthDeathProcessInit:
         assert min(process.manuscript_ages) == 500.0  # 1000 - 500
         assert max(process.manuscript_ages) == 900.0  # 1000 - 100
         assert (
-            torch.mean(process.manuscript_ages).item() == 725.0
+            float(jnp.mean(process.manuscript_ages)) == 725.0
         )  # Mean of [900, 800, 700, 500] = 2900/4 = 725
 
     def test_initial_population_validation(self) -> None:
@@ -201,10 +202,10 @@ class TestBirthDeathProcessInit:
             death_rates=0.005,
         )
 
-        assert isinstance(process.birth_rates, torch.Tensor)
-        assert isinstance(process.death_rates, torch.Tensor)
-        assert process.birth_rates.dtype == torch.float64
-        assert process.death_rates.dtype == torch.float64
+        assert isinstance(process.birth_rates, jax.Array)
+        assert isinstance(process.death_rates, jax.Array)
+        assert process.birth_rates.dtype == jnp.float64
+        assert process.death_rates.dtype == jnp.float64
         assert process.birth_rates is not None
         assert process.death_rates is not None
         assert process.n_epochs == 1
@@ -212,8 +213,8 @@ class TestBirthDeathProcessInit:
 
         # Test that manuscript_ages returns correct type
         ages = process.manuscript_ages
-        assert isinstance(ages, torch.Tensor)
-        assert ages.dtype == torch.float64
+        assert isinstance(ages, jax.Array)
+        assert ages.dtype == jnp.float64
 
     def test_manuscript_validation_on_epoch_end_time_update(self) -> None:
         """Test that invalid manuscripts trigger validation on epoch updates."""

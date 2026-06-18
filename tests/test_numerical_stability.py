@@ -1,7 +1,9 @@
 """Numerical stability tests for mathematical functions under edge-case inputs."""
 
+import math
+
+import numpy as np
 import pytest
-import torch
 
 from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
@@ -16,52 +18,52 @@ class TestNumericalStability:
 
     def test_extinction_pr_near_critical_is_finite(self) -> None:
         """λ ≈ μ (within 1e-10) should produce a finite extinction probability."""
-        lam = torch.tensor([0.05], dtype=torch.float64)
-        mu = torch.tensor([0.05 + 1e-10], dtype=torch.float64)
-        t = torch.tensor([500.0], dtype=torch.float64)
+        lam = np.array([0.05])
+        mu = np.array([0.05 + 1e-10])
+        t = np.array([500.0])
         pr = calculate_extinction_pr(lam, mu, t)
-        assert torch.isfinite(pr), f"Expected finite value, got {pr}"
+        assert math.isfinite(float(pr)), f"Expected finite value, got {pr}"
         assert 0 <= float(pr) <= 1, f"Probability out of [0,1]: {pr}"
 
     def test_spine_log_lik_near_boundary_age_is_finite(self) -> None:
         """Age at the boundary of the epoch (age ≈ T) should yield finite log-lik."""
         T = 1000.0
-        lam = torch.tensor([0.01], dtype=torch.float64)
-        mu = torch.tensor([0.003], dtype=torch.float64)
-        t = torch.tensor([T], dtype=torch.float64)
+        lam = np.array([0.01])
+        mu = np.array([0.003])
+        t = np.array([T])
         # Age very close to T (created near time 0)
-        spine_ages = torch.tensor([T - 1e-6], dtype=torch.float64)
+        spine_ages = np.array([T - 1e-6])
         ll = calculate_spine_ages_log_lik(lam, mu, spine_ages, t)
-        assert torch.isfinite(ll), f"Expected finite log-lik, got {ll}"
+        assert math.isfinite(float(ll)), f"Expected finite log-lik, got {ll}"
 
     def test_populations_log_lik_large_n_is_finite(self) -> None:
         """Large observed population count should not produce NaN."""
-        lam = torch.tensor([0.05], dtype=torch.float64)
-        mu = torch.tensor([0.01], dtype=torch.float64)
-        t = torch.tensor([200.0], dtype=torch.float64)
-        ns = torch.tensor([50], dtype=torch.float64)
+        lam = np.array([0.05])
+        mu = np.array([0.01])
+        t = np.array([200.0])
+        ns = np.array([50.0])
         ll = calculate_populations_log_lik(lam, mu, ns, t)
-        assert torch.isfinite(ll) or float(ll) == float("-inf"), (
+        assert math.isfinite(float(ll)) or float(ll) == float("-inf"), (
             f"Expected finite or -inf, got {ll}"
         )
 
     def test_non_spine_log_lik_empty_ages_is_zero(self) -> None:
         """Empty non-spine age tensor should yield log-likelihood of 0.0."""
-        lam = torch.tensor([0.01], dtype=torch.float64)
-        mu = torch.tensor([0.003], dtype=torch.float64)
-        t = torch.tensor([500.0], dtype=torch.float64)
-        empty_ages = torch.tensor([], dtype=torch.float64)
+        lam = np.array([0.01])
+        mu = np.array([0.003])
+        t = np.array([500.0])
+        empty_ages = np.array([])
         ll = calculate_non_spine_ages_log_lik(lam, mu, empty_ages, t)
         assert float(ll) == pytest.approx(0.0), f"Expected 0.0, got {ll}"
 
     def test_log_lik_very_small_rates_is_finite(self) -> None:
         """Rates near zero (but positive) should not cause numerical overflow."""
-        lam = torch.tensor([1e-6], dtype=torch.float64)
-        mu = torch.tensor([1e-7], dtype=torch.float64)
-        t = torch.tensor([100.0], dtype=torch.float64)
-        spine_ages = torch.tensor([50.0], dtype=torch.float64)
+        lam = np.array([1e-6])
+        mu = np.array([1e-7])
+        t = np.array([100.0])
+        spine_ages = np.array([50.0])
         ll = calculate_spine_ages_log_lik(lam, mu, spine_ages, t)
-        assert torch.isfinite(ll) or float(ll) == float("-inf"), (
+        assert math.isfinite(float(ll)) or float(ll) == float("-inf"), (
             f"Expected finite or -inf, got {ll}"
         )
 
@@ -78,8 +80,6 @@ class TestScoreFunction:
         true_birth = 0.01
         true_death = 0.003
         T = 800.0
-        rng = torch.Generator()
-        rng.manual_seed(77)
 
         n_pass = 0
         for seed in range(10):
@@ -92,8 +92,6 @@ class TestScoreFunction:
             surviving = df[df["survived"]]
             if len(surviving) < 20:
                 continue
-            import numpy as np
-
             ages = surviving["age"].to_numpy(dtype=np.float64)
             result = fit_birth_death_processes(
                 [ages], times=T, estimate_uncertainty=False, random_seed=seed + 500

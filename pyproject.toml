@@ -106,6 +106,9 @@ convention = "numpy"
 # jaxtyping dimension strings (e.g. Float[Array, " epochs"]) are not Python
 # expressions, so ruff's forward-annotation checker (F722) fires on them.
 "src/inf_bp_texts/models/math_*.py" = ["F722"]
+# __init__.py files call jax.config.update before package imports — this is
+# intentional (float64 must be enabled before any jax array is created).
+"src/**/__init__.py" = ["E402"]
 "tests/*" = [
     "S101", # asserts are the mechanism of the tests
     "D101", # test classes are self-documenting via their names
