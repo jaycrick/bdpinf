@@ -34,14 +34,6 @@ def _epoch_starts(times: jax.Array) -> jax.Array:
     return jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), times[:-1]])
 
 
-def _safe_div_kernel(g: jax.Array, dur: jax.Array) -> jax.Array:
-    """(1 − e^{−g·Δ}) / g with the critical (g≈0) limit → Δ."""
-    critical = jnp.abs(g) < _ATOL_CRITICAL
-    safe_g = jnp.where(critical, jnp.ones_like(g), g)
-    exp_neg = jnp.where(critical, jnp.ones_like(g), jnp.exp(-g * dur))
-    return jnp.where(critical, dur, (1.0 - exp_neg) / safe_g)
-
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -417,7 +409,7 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
     return per_element if as_array else per_element.sum()
 
 
-def _integrand_surv_from_weighted_birth_time(
+def _integrand_surv_from_weighted_birth_time(  # pyright: ignore[reportUnusedFunction]
     birth_time: float,
     birth_rates: jax.Array,
     death_rates: jax.Array,

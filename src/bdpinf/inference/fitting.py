@@ -880,7 +880,7 @@ def _build_optimizer_strategies(
         ),
         "lbfgs": OptimizerStrategy(
             name="LBFGS",
-            solver_factory=lambda **_: None,
+            solver_factory=lambda **_: None,  # pyright: ignore[reportUnknownLambdaType]
             max_iters=DEFAULT_ITERATIONS // 20,
             solver_kwargs={
                 "tolerance_grad": convergence_config.gradient_threshold,

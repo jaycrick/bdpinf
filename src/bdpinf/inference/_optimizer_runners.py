@@ -143,7 +143,7 @@ def run_lbfgs_optimizer(
         ftol = strategy.solver_kwargs.get(
             "tolerance_change", convergence_config.absolute_tolerance
         )
-        opt_result = scipy.optimize.minimize(
+        opt_result = scipy.optimize.minimize(  # pyright: ignore[reportCallIssue]
             scipy_obj,
             x0,
             method="L-BFGS-B",
@@ -161,9 +161,6 @@ def run_lbfgs_optimizer(
         _, grads_final = val_and_grad(x_final)
         gn_final = _grad_norm(grads_final)
         nll_final = float(val_and_grad(x_final)[0])
-
-        if best_log_params is None:
-            best_log_params = x_final
 
         if nll_final < first_nll - convergence_config.absolute_tolerance:
             improved_once = True
@@ -291,7 +288,7 @@ def run_first_order_optimizer(
                 else iterations_without_improvement + 1
             )
             best_nll = nll_val
-            best_params = params
+            best_params = jnp.asarray(params, dtype=jnp.float64)
 
         if improved_once and _check_convergence_criteria(
             optimizer_name=strategy.name,
