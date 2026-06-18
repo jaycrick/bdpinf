@@ -22,10 +22,10 @@ __compile_start = time.perf_counter()
 Two algorithms produce a single-epoch birth–death process conditioned on survival to
 a terminal time $T$, operating in the strictly subcritical regime ($\lambda < \mu$):
 
-| Method | Per-run output | Conditioning mechanism |
-|---|---|---|
-| **Contour process** | one conditioned tree per call | exact: spine excursion is constructed to reach $T$ |
-| **Multilevel splitting** | survival probability estimate; conditioned trees from surviving particles | fixed-factor (R-fold) enrichment at level boundaries |
+  | Method                   | Per-run output                                                            | Conditioning mechanism                               |
+  | ------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------- |
+  | **Contour process**      | one conditioned tree per call                                             | exact: spine excursion is constructed to reach $T$   |
+  | **Multilevel splitting** | survival probability estimate; conditioned trees from surviving particles | fixed-factor (R-fold) enrichment at level boundaries |
 
 This notebook benchmarks both methods across three parameter regimes with a shared
 birth rate $\lambda = 1$ and death rates $\mu \in \{1.1, 2, 10\}$ at terminal time

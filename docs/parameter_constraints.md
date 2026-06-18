@@ -91,6 +91,7 @@ Index 5: death_rates[2]
 ## Use Cases
 
 ### Scenario 1: Time-Invariant Rates
+
 If you believe birth and death rates are constant across time periods:
 
 ```python
@@ -106,6 +107,7 @@ constraints = ParameterConstraints(
 This effectively reduces a 4-epoch problem to 2 parameters (one birth, one death).
 
 ### Scenario 2: Partial Pooling
+
 Group similar time periods but allow differences:
 
 ```python
@@ -121,6 +123,7 @@ constraints = ParameterConstraints(
 ```
 
 ### Scenario 3: Expert Prior Information
+
 Incorporate domain knowledge by fixing rates based on external information:
 
 ```python

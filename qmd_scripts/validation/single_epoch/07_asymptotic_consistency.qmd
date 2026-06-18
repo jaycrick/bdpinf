@@ -8,8 +8,8 @@ date: last-modified
 **TODOs:**
 
 - [ ] Create a way of investigating why there is a massive spike in some of the fits.
-Output all the information necessary to reproduce the spike in a single fit,
-and then investigate that fit in isolation.
+  Output all the information necessary to reproduce the spike in a single fit,
+  and then investigate that fit in isolation.
 
 ```{python}
 # ruff: noqa: E402

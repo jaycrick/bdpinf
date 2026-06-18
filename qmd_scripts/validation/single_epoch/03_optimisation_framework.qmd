@@ -18,7 +18,6 @@ This document implements a lightweight optimisation benchmarking workflow for si
 - [ ] Provide experiment runner API to iterate optimisers, starts, and store summaries.
 - [ ] Document configuration options and reproducibility steps (seeds, dtypes).
 
-
 ```{python}
 # ruff: noqa: E402
 # | label: compile-time-start

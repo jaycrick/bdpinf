@@ -1,0 +1,20 @@
+# Markdown/Quarto linter+formatter config. See https://panache.bz/guide/configuration.html
+[format]
+# Prose in this project is not hard-wrapped; preserve existing line breaks
+# instead of reflowing every paragraph to line-width.
+wrap = "preserve"
+
+[extensions]
+# Keep literal em-dashes ("—") as written instead of normalizing to "---".
+smart = false
+
+[lint.rules]
+# False-positive prone on this project's bracket notation: Keep-a-Changelog
+# "[Unreleased]" headers, array indexing ("x[0]"), interval notation ("[a, b]").
+# NB: the CLI's own diagnostic note misnames this key as
+# "undefined-reference-label" — the real config key is "undefined-references".
+undefined-references = false
+# 261 existing chunks across qmd_scripts/ predate this convention; enforcing
+# it now would be an unrelated mass edit. Revisit once new notebooks default
+# to labelled chunks.
+missing-chunk-labels = false

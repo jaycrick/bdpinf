@@ -5,10 +5,10 @@ Reproduce: `uv run python docs/design/altair_spike/phase0_spike.py` (writes 4 PD
 
 ## What was tested
 
-| | Plotly (current) | Altair (candidate) |
-|---|---|---|
-| Easy: empirical-mean line | `easy_plotly.pdf` | `easy_altair.pdf` |
-| Risky: genealogy tree | `tree_plotly.pdf` | `tree_altair.pdf` |
+  |                           | Plotly (current)  | Altair (candidate) |
+  | ------------------------- | ----------------- | ------------------ |
+  | Easy: empirical-mean line | `easy_plotly.pdf` | `easy_altair.pdf`  |
+  | Risky: genealogy tree     | `tree_plotly.pdf` | `tree_altair.pdf`  |
 
 Deps added to a **dev-only** group `altair-migration` in `pyproject.toml`:
 `altair==6.2.1`, `vl-convert-python==1.9.0`. Plotly/kaleido untouched.
@@ -16,6 +16,7 @@ Deps added to a **dev-only** group `altair-migration` in `pyproject.toml`:
 ## Findings
 
 ### Gate 1 — vl-convert PDF quality ≥ kaleido → **PASS**
+
 Altair PDF export via vl-convert is crisp vector output, on par with kaleido. No Chromium dependency.
 
 - ⚠️ **Font fallback:** the serif title rendered in the Libertinus serif stack, but axis **tick labels
@@ -24,6 +25,7 @@ Altair PDF export via vl-convert is crisp vector output, on par with kaleido. No
   vl-convert can resolve, or (b) accept a sans tick face, or (c) embed the font. Tracked, not a blocker.
 
 ### Gate 2 — genealogy tree expressible in Altair → **PASS (no fallback needed)**
+
 The shapes-based Plotly drawing reproduces declaratively in Altair from the **existing tidy
 `genealogy_dfs_order` frame**:
 - lifetime segments → `mark_rule` (`x`=birth_time, `x2`=plot_death_time) coloured by survivor/extinct/spine

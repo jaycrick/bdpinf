@@ -777,6 +777,7 @@ dev = [
     { name = "jupyter-cache" },
     { name = "lintquarto" },
     { name = "lxml-stubs" },
+    { name = "panache-cli" },
     { name = "pandas-stubs" },
     { name = "plotly-stubs" },
     { name = "pre-commit" },
@@ -822,6 +823,7 @@ dev = [
     { name = "jupyter-cache", specifier = ">=1.0.1" },
     { name = "lintquarto", specifier = ">=0.13.1" },
     { name = "lxml-stubs", specifier = ">=0.5.1" },
+    { name = "panache-cli", specifier = ">=2.56.0" },
     { name = "pandas-stubs", specifier = ">=3.0.0.260204" },
     { name = "plotly-stubs", specifier = ">=0.1.2" },
     { name = "pre-commit", specifier = ">=4.5.1" },
@@ -1918,6 +1920,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d7/f1/e7a6dd94a8d4a5626c03e4e99c87f241ba9e350cd9e6d75123f992427270/packaging-26.2.tar.gz", hash = "sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661", size = 228134, upload-time = "2026-04-24T20:15:23.917Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl", hash = "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e", size = 100195, upload-time = "2026-04-24T20:15:22.081Z" },
+]
+
+[[package]]
+name = "panache-cli"
+version = "2.56.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/e5/dfda42f5c6b250a2a0bcedd1917c7f81af38281ff166405664dc472b40d8/panache_cli-2.56.0.tar.gz", hash = "sha256:91bb823c498d83e4ad9ec5ba27993b4f5fea34545f0896c3d95f6b4ef7a7000b", size = 1039276, upload-time = "2026-06-17T11:42:45.067Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/76/7d55cdd63cfdd566953c5dc21ac93a900567780177dd453abea4cef0e551/panache_cli-2.56.0-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:48cdb075d3b561baae90b4052bc8f8d28a1f46d08af39c544079160ab6f296b5", size = 4512782, upload-time = "2026-06-17T11:42:32.611Z" },
+    { url = "https://files.pythonhosted.org/packages/77/2f/644622d69f9ea1028db4359984ace83651a47c9efb3031ffb2793d0b2c67/panache_cli-2.56.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:0b4c5ba9ea1c421c6906d8f1b24c46990dd109c26c43c740d38a45094b3587b8", size = 4302499, upload-time = "2026-06-17T11:42:34.562Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/30/5bfa117b3b2b18922bc73cd349833bb1852dcb3e89b40d0f5b1b8f4d829c/panache_cli-2.56.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:81d75787e8f7fd42538a2a987c238ccfdf94d5ae61a884e1a1427e7a13ec7201", size = 4372823, upload-time = "2026-06-17T11:42:35.937Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/33/cb4c32d5a2bb258a514cb7274936972b4092eb7a94f41199f6c3c3b71b0e/panache_cli-2.56.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7830ddb9c1a8677616fd78c98f5badf6f54eaa2d0f5e8fed434a1a35381989ee", size = 4703594, upload-time = "2026-06-17T11:42:37.614Z" },
+    { url = "https://files.pythonhosted.org/packages/32/3d/e60fb1d3f31edbafc931da8d76d1ffcd04549d6b6ac173ea5f3c51ea6e00/panache_cli-2.56.0-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:bdc6888b15ad13c8cbd1233bcf2cfb4b197baf1f3159ca17cd8de801a8c75531", size = 4315131, upload-time = "2026-06-17T11:42:39.043Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/14/c5160f01e57488d9fb28a20fb5539d66709261995098b9319aab257ab6a8/panache_cli-2.56.0-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:77815aeb508e99610a12592fb46ffe90333824e9f0ff16c227ab8e9cea9a0ee8", size = 4793131, upload-time = "2026-06-17T11:42:40.447Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/cf/e55ea4efc538e295b407a6f901b7732618ad90cf8dd2dd9007f05444c0ee/panache_cli-2.56.0-py3-none-win_amd64.whl", hash = "sha256:467b45f29639a62ef5acbbde4c5cc93ce4d1e72e0b314f7b0b31bd7c3f8e1fda", size = 4568242, upload-time = "2026-06-17T11:42:42.057Z" },
+    { url = "https://files.pythonhosted.org/packages/21/a5/c7d60efb62a7660ae2fe1e9bc20f65b708a0f604ab05ae62cfbe0ec34b63/panache_cli-2.56.0-py3-none-win_arm64.whl", hash = "sha256:1abd88a53e744b5efe0280c69fb3bfc69412b077b8ed58dd241f5c53c125625a", size = 4286506, upload-time = "2026-06-17T11:42:43.628Z" },
 ]
 
 [[package]]

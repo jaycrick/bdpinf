@@ -15,8 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   series, `"highlight"` dims the unselected ones; both HTML-only, PDFs keep the static
   default), and an `x_domain` that pins the bin extent and x scale so the axis does not
   rescale when a series is filtered out. Replaces inline per-notebook `go.Figure` copies.
+
 - `visualization.altair_theme` — the theme now draws faint horizontal (y-axis) gridlines
   (`config.axisY`, `#E8E8E8`) in a Tufte style; the x-axis stays gridless.
+
 - Data-exploration notebooks migrated to Altair with HTML interactivity:
   `manuscript_data_exploration.qmd` (books/by-century stacked histograms with legend
   filtering and Lectionaries stacked on top; section-correlation **heatmap** via
@@ -41,6 +43,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `plot_*` functions now return `alt.Chart`; the `save_*` functions render via Altair and
   export through `save_chart`. Call signatures are unchanged, so notebooks and the
   splitting test are unaffected.
+
 - `visualization.parameter_plots` (`create_kde_density_plot`,
   `create_parameter_box_plot`) and `visualization.age_fit_plot`
   (`plot_creation_year_fit`) — migrated to Altair (Phase 3, moderate figures), now
@@ -52,12 +55,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `plot_creation_year_fit` and `save_multi_epoch_birth_time_figure` (removing duplicated
   density-scaling code). The two NTVMR inference notebooks switch the age-fit figure to
   `display(...)` + `save_chart(...)`.
+
 - `visualization.genealogy.plot_genealogy_tree` and
   `models.BirthDeathProcess.plot_genealogy_tree` — migrated to Altair (Phase 4), now
   returning `alt.LayerChart` instead of a Plotly figure. Lifetimes are horizontal
   `mark_rule` segments colour/size-coded by lineage (extinct / surviving / spine) on a
   per-row ordinal axis labelled by `manuscript_id`; parent→child connectors are dashed
   vertical `mark_rule` segments. `BirthDeathProcess` no longer imports Plotly.
+
 - `visualization.plotting.plot_parameter_consistency` — migrated to Altair (Phase 4),
   now returning an `alt.FacetChart` faceted by regime (rows) × statistic (columns) with
   `mark_area` bootstrap CI bands, log-scaled `T`, and dashed true-value rules. The
@@ -99,10 +104,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   resampling) and `fit_manuscript_subset` (builds a BirthDeathProcess, fits via MLE,
   and returns a `SubsetFitResult` dataclass with per-epoch rates, SEs, and 95% CIs).
   `ManuscriptSubset` and `SubsetFitResult` also re-exported from `inf_bp_texts.analysis`.
+
 - `visualization.age_fit_plot.plot_creation_year_fit` — shared helper that renders
   observed creation-year histograms with the theoretical birth-time density overlay
   (replaces duplicated inline code across inference notebooks); re-exported from
   `inf_bp_texts.visualization`.
+
 - NTVMR `ntvmr_single_epoch_inference.qmd` and `ntvmr_birth_death_inference.qmd` now
   run the analysis on **six dataset subsets**: non-lectionaries combined (groups 1–3,
   the new default), lectionaries (group 4), and four per-section non-lectionary analyses
@@ -114,6 +121,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `analysis.date_density.resample_dates_from_ranges` — convenience wrapper over
   `quantile_resample_dates` that accepts lists/arrays and defaults `n_samples` to
   `len(early)`; re-exported from `inf_bp_texts.analysis`.
+
 - `manuscript_data_exploration.qmd` — NTVMR subset analysis: filters `docID > 50000`
   (versional/named items), adds a `group` column (`docID // 10000`), stacks the
   Biblical Books histogram and the Manuscripts by Century chart by group
@@ -127,23 +135,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (weighted boundary-corrected KDE in calendar-year space), and
   `quantile_resample_dates` (Hazen-position deterministic resampling).  All three
   are re-exported from `inf_bp_texts.analysis`.
+
 - `data_cleaning.add_resampled_year_column` — populates a resampled-year column in
   manuscript DataFrames; now accepts keyword arguments `early_col`, `late_col`,
   `mid_col`, and `out_col` (all default to NTVMR names for backward compatibility)
   so it can be applied to any dataset with arbitrary column names.
+
 - Kashouh families **jB** and **K** now use weighted date-range KDE `resampledYear`
   creation dates for inference (single-epoch, multi-epoch, and Bayesian notebooks);
   midpoint `parsed_year` is retained for plots and axes.  New KDE overlay figures
   (`kashouh_family_k_date_range_kde`, `kashouh_family_jb_date_range_kde`) added to
   the Kashouh data-exploration notebook.
+
 - Kashouh multi-epoch Case 1-3 fits (`kashouh_multi_epoch_inference.qmd`) now pass
   `resampledYear` (KDE-resampled) rather than `parsed_year` (midyear) as
   `creation_times` via `prepare_multi_epoch_fit`, matching all other Kashouh and
   NTVMR inference notebooks.  The helper also clamps `start_time` to the century
   floor of the earliest resampled year to prevent creation-before-epoch-start errors.
+
 - `boundary_corrected_kde_on_support` and `boundary_corrected_kde_at_zero` now accept
   an optional `weights` parameter (`analysis.validation_helpers`); unweighted behaviour
   is unchanged.
+
 - Standard `pyright` added as a dev dependency for type-checking `.qmd` notebook
   cells via `lintquarto -l ruff pyright`; `pyrightconfig.json` suppresses torch-stub
   false positives (mirroring `[tool.basedpyright]`); `basedpyright` invocations
@@ -158,35 +171,50 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with `.surviving_manuscripts` / `.extinct_manuscripts` properties
   (`validation/multi_epoch/02_single_fit_debug`, `06_sensitivity_benchmark`,
   `bayesian_multi_epoch/01–04`)
+
 - `seed` undefined in `validation/single_epoch/03_optimisation_framework.qmd`;
   replaced with `NOTEBOOK_SEED`
+
 - Possibly-unbound `birth_ses_*` / `death_ses_*` / `birth_cis_*` / `death_cis_*`
   variables in `core_analysis/03_multi_epoch/kashouh_multi_epoch_inference.qmd`
   when the fit fails; `None`-initialise in the `else` branch
+
 - Possibly-unbound `*_constrained` posterior variables in
   `core_analysis/04_bayesian/kashouh_family_k_bayesian_inference.qmd`; initialise in
   the `else` branch and add `assert` guards in subsequent `if success:` blocks
+
 - `dict[str, object]` type annotation on `section_analysis_dict` in
   `manuscript_data_exploration.qmd` caused a cascade of false type errors; removed
   the annotation so `dict[str, Any]` is inferred from the function return type
+
 - `bins` passed as `ndarray[int_]` to `pd.cut()` in `kashouh_multi_epoch_inference.qmd`
   (pandas-stubs expect `list[float]`); converted via `[float(b) for b in bins]`
+
 - `creation_times` passed as `list[Scalar]` to `BirthDeathProcess()` in
   `kashouh_multi_epoch_inference.qmd`; converted with `.astype(float).tolist()`
+
 - Unused imports (`typing.Callable`, `typing.Any`, `torch`, `re`, `robust_y_max`,
   `get_selected_attempt`, duplicate `pathlib.Path`) removed across multiple notebooks
+
 - Unused loop variables renamed to `_var` convention (`regime_index`, `time_index`,
   `strategy_idx`, `section_col`, `n_mss`, `start`, `end`) across multiple notebooks
 
 - All 23 `qmd_scripts/` notebooks renamed: validation files drop their `methods_validation_[multi_epoch_][bayesian_]` prefix and gain a `<nn>_` ordering prefix; four `03_multi_epoch/` files made consistent with the `<dataset>_multi_epoch_inference.qmd` convention
+
 - `schemas` module with Pydantic v2 models for validated input types
+
 - `_paths.get_project_root()` helper (exported from the public API) for
   robust path resolution in Quarto notebooks using `QUARTO_PROJECT_DIR`
+
 - `require_tensors` decorator for uniform tensor-type validation
+
 - Logging via `logging.getLogger(__name__)` throughout the inference layer;
   silent `except` blocks in the optimizer loop now emit `logger.warning`
+
 - Compile-time tracking cells added to remaining validation notebooks (G3)
+
 - CI lint job (ruff + mypy) added to the GitHub Actions workflow
+
 - `CITATION.cff`, `CHANGELOG.md`, `CONTRIBUTING.md` provenance files
 
 ### Removed

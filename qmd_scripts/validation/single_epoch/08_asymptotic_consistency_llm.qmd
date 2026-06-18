@@ -72,7 +72,7 @@ A practical proof template is therefore: first normalize the complete log-likeli
 
 If helpful, I can turn this into a theorem-proving checklist for your exact model, with assumptions stated in a form suitable for a paper or thesis.
 
----
+--------------------------------------------------------------------------------
 
 ## How to prove consistency of the estimators (concise proof outline)
 
@@ -110,7 +110,7 @@ Below is a concise, structured outline you can follow to convert the LLM answer 
 
 This outline converts the LLM narrative into a compact, checkable proof plan. For a formal write-up, replace each bullet with a lemma: (i) normalization lemma, (ii) conditional LLN lemma, (iii) uniform equicontinuity lemma, (iv) identifiability lemma, (v) argmax consistency theorem application. Each lemma should state precise assumptions and then be proved using standard tools (conditional LLN, dominated convergence, Glivenko–Cantelli theorems, or martingale limit theorems as appropriate).
 
----
+--------------------------------------------------------------------------------
 
 ## References
 
@@ -131,19 +131,25 @@ This outline converts the LLM narrative into a compact, checkable proof plan. Fo
 ### Additional standard references mentioned
 
 - **General asymptotic statistics:** van der Vaart, A. W. (1998). _Asymptotic Statistics_. Cambridge University Press.
+
 - **Statistical Estimation:** Ibragimov, I. A., & Has’minskii, R. Z. (1981). _Statistical Estimation: Asymptotic Theory_. Springer.
+
 - **Asymptotics in Statistics:** Le Cam, L., & Yang, G. L. (2000). _Asymptotics in Statistics_. Springer.
 
 - **Empirical processes and M-estimation:** van der Vaart, A. W., & Wellner, J. A. (1996). _Weak Convergence and Empirical Processes_. Springer.
+
 - **Large sample estimation:** Newey, W., & McFadden, D. (1994). _Large Sample Estimation and Hypothesis Testing_ (chapter in Handbook of Econometrics / lecture notes).
 
 - **Branching processes:** Athreya, K. B., & Ney, P. E. (1972). _Branching Processes_. Springer.
+
 - **The theory of branching processes:** Harris, T. E. (1963). _The Theory of Branching Processes_. Springer.
+
 - **Branching processes with biological applications:** Jagers, P. (1975). _Branching Processes with Biological Applications_. John Wiley & Sons.
 
 - **Martingale asymptotics:** Hall, P., & Heyde, C. C. (1980). _Martingale Limit Theory and Its Application_. Academic Press.
 
 - **Counting-process and stochastic-process likelihoods:** Andersen, P. K., Borgan, Ø., Gill, R. D., & Keiding, N. (1993). _Statistical Models Based on Counting Processes_. Springer.
+
 - **Statistical inference for ergodic diffusion processes:** Kutoyants, Y. A. (2004). _Statistical Inference for Ergodic Diffusion Processes_. Springer.
 
 - **Mixture models:** Lindsay, B. G. (1995). _Mixture Models: Theory, Geometry and Applications_. IMS.

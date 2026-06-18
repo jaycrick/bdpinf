@@ -4,33 +4,33 @@
 
 ## Progress summary
 
-| Phase | Status | Completed |
-|-------|--------|-----------|
-| 0 — Spike & gate | ✅ Done | 2026-06-12 |
-| 1 — Theme + export chokepoint | ✅ Done | 2026-06-12 |
-| 2 — Easy helpers + review gate | ✅ Done | 2026-06-12 |
-| 3 — Moderate helpers | ✅ Done | 2026-06-13 |
-| 4 — Hard helpers + tests | ✅ Done | 2026-06-13 |
-| 5 — Notebooks (18 of 19) | 🔄 In progress | see below |
-| 6 — Remove Plotly | ⏳ Pending | — |
+  | Phase                          | Status         | Completed  |
+  | ------------------------------ | -------------- | ---------- |
+  | 0 — Spike & gate               | ✅ Done        | 2026-06-12 |
+  | 1 — Theme + export chokepoint  | ✅ Done        | 2026-06-12 |
+  | 2 — Easy helpers + review gate | ✅ Done        | 2026-06-12 |
+  | 3 — Moderate helpers           | ✅ Done        | 2026-06-13 |
+  | 4 — Hard helpers + tests       | ✅ Done        | 2026-06-13 |
+  | 5 — Notebooks (18 of 19)       | 🔄 In progress | see below  |
+  | 6 — Remove Plotly              | ⏳ Pending     | —          |
 
 ### Phase 5 notebook status
 
-| Notebook group | Status |
-|---|---|
-| `01_data_exploration/manuscript_data_exploration.qmd` | ✅ Done |
-| `01_data_exploration/kashouh_data_exploration.qmd` | ✅ Done |
-| `02_single_epoch/kashouh_single_epoch_inference.qmd` | ✅ Done |
-| `02_single_epoch/ntvmr_single_epoch_inference.qmd` | ✅ Done |
-| `03_multi_epoch/kashouh_multi_epoch_inference.qmd` | ✅ Done |
-| `03_multi_epoch/ntvmr_birth_death_inference.qmd` | ✅ Done |
-| `03_multi_epoch/ntvmr_initial_population_inference.qmd` | ✅ Done |
-| `03_multi_epoch/optimizer_comparison.qmd` | ✅ Done |
-| `03_multi_epoch/single_vs_multi_epoch_comparison.qmd` | ✅ Done |
-| `validation/single_epoch/` (all 5 notebooks) | ✅ Done |
-| `validation/multi_epoch/` (all 5 notebooks) | ✅ Done |
-| `validation/bayesian_multi_epoch/` (3 notebooks) | ✅ Done (no figures; were already clean) |
-| `04_bayesian/kashouh_family_k_bayesian_inference.qmd` | ❌ Remaining |
+  | Notebook group                                          | Status                                   |
+  | ------------------------------------------------------- | ---------------------------------------- |
+  | `01_data_exploration/manuscript_data_exploration.qmd`   | ✅ Done                                  |
+  | `01_data_exploration/kashouh_data_exploration.qmd`      | ✅ Done                                  |
+  | `02_single_epoch/kashouh_single_epoch_inference.qmd`    | ✅ Done                                  |
+  | `02_single_epoch/ntvmr_single_epoch_inference.qmd`      | ✅ Done                                  |
+  | `03_multi_epoch/kashouh_multi_epoch_inference.qmd`      | ✅ Done                                  |
+  | `03_multi_epoch/ntvmr_birth_death_inference.qmd`        | ✅ Done                                  |
+  | `03_multi_epoch/ntvmr_initial_population_inference.qmd` | ✅ Done                                  |
+  | `03_multi_epoch/optimizer_comparison.qmd`               | ✅ Done                                  |
+  | `03_multi_epoch/single_vs_multi_epoch_comparison.qmd`   | ✅ Done                                  |
+  | `validation/single_epoch/` (all 5 notebooks)            | ✅ Done                                  |
+  | `validation/multi_epoch/` (all 5 notebooks)             | ✅ Done                                  |
+  | `validation/bayesian_multi_epoch/` (3 notebooks)        | ✅ Done (no figures; were already clean) |
+  | `04_bayesian/kashouh_family_k_bayesian_inference.qmd`   | ❌ Remaining                             |
 
 ### What remains
 
@@ -41,7 +41,7 @@
 2. **Phase 6** — Remove `plotly`, `kaleido`, `plotly-stubs` from `pyproject.toml` once the Bayesian
    notebook is done and `grep -rn "plotly" src tests qmd_scripts pyproject.toml` is empty.
 
----
+--------------------------------------------------------------------------------
 
 This is the actionable companion to [`PLOTLY_TO_ALTAIR_EVALUATION.md`](./PLOTLY_TO_ALTAIR_EVALUATION.md).
 The evaluation answered *whether* to migrate (verdict: yes, phased, Altair-based). This document
@@ -51,7 +51,7 @@ so that the migration also fixes existing clarity / best-practice debt rather th
 The migration is sequenced **easiest-first with an explicit user review gate after the first batch**,
 then iterates through progressively harder figures, exactly as requested.
 
----
+--------------------------------------------------------------------------------
 
 ## Part A — Review of current visualization practices
 
@@ -150,7 +150,7 @@ is the difference between "port 61 inline figures" and "port ~20 helpers + thin 
 density curve rather than crash a render) but should narrow to the expected failure and keep the
 warning. Carry the behaviour forward, narrowed.
 
----
+--------------------------------------------------------------------------------
 
 ## Part B — Migration principles
 
@@ -176,7 +176,7 @@ appropriate. **If** the thesis later needs LaTeX-typeset math (`$\lambda_i$`) ba
 matplotlib+PGF would be the target instead. Proceeding on the assumption that **Unicode is
 acceptable** (status quo). Flag now if not — it changes the target library, not just the plan.
 
----
+--------------------------------------------------------------------------------
 
 ## Part C — Phased implementation
 
@@ -214,17 +214,18 @@ No figures migrated yet; Plotly helpers untouched.
 
 The "replace the easiest plots initially" batch. All are single-series line/scatter/bar.
 
-| Helper | Module | Altair |
-|---|---|---|
-| `plot_empirical_population_mean` | `splitting_plots.py` | `mark_line(point=True)` |
-| `plot_level_survival_probabilities` | `splitting_plots.py` | `mark_line(point=True)`, y∈[0,1] |
-| `plot_conditioned_trajectories` | `splitting_plots.py` | `mark_line`, `color="particle_id"` (watch 5000-row cap) |
-| `save_multi_epoch_convergence_figure` | `plotting.py` | `mark_line(point=True)`, `axis=Axis(format="d")` |
-| `save_multi_epoch_fit_figure` | `plotting.py` | `mark_bar` + `mark_text`, `.hconcat()` two panels |
+  | Helper                                | Module               | Altair                                                  |
+  | ------------------------------------- | -------------------- | ------------------------------------------------------- |
+  | `plot_empirical_population_mean`      | `splitting_plots.py` | `mark_line(point=True)`                                 |
+  | `plot_level_survival_probabilities`   | `splitting_plots.py` | `mark_line(point=True)`, y∈[0,1]                        |
+  | `plot_conditioned_trajectories`       | `splitting_plots.py` | `mark_line`, `color="particle_id"` (watch 5000-row cap) |
+  | `save_multi_epoch_convergence_figure` | `plotting.py`        | `mark_line(point=True)`, `axis=Axis(format="d")`        |
+  | `save_multi_epoch_fit_figure`         | `plotting.py`        | `mark_bar` + `mark_text`, `.hconcat()` two panels       |
 
 Render each to PDF **and** inline in its host notebook.
 
 > ### ⛔ REVIEW GATE 1 — user reviews these five figures
+>
 > Place new Altair PDFs side-by-side with the Plotly PDFs in `figures/`. **Stop here.** Do not start
 > Phase 3 until the user has reviewed axes, colours (`ptolqual`), fonts, and overall feel, and
 > confirmed the theme is right. Theme adjustments are cheapest to make now, before 50 more figures
@@ -291,25 +292,25 @@ Only once **zero** Plotly references remain in `src/`, `tests/`, `qmd_scripts/`.
   `uv run quarto render`.
 - `grep -rn "plotly\|kaleido" src tests qmd_scripts pyproject.toml` → must be empty.
 
----
+--------------------------------------------------------------------------------
 
 ## Part D — Per-figure difficulty inventory
 
-| # | Figure / helper | Location | Difficulty | Phase |
-|---|---|---|---|---|
-| 1 | `plot_empirical_population_mean` | `splitting_plots.py` | Easy | 2 |
-| 2 | `plot_level_survival_probabilities` | `splitting_plots.py` | Easy | 2 |
-| 3 | `plot_conditioned_trajectories` | `splitting_plots.py` | Easy (row cap) | 2 |
-| 4 | `save_multi_epoch_convergence_figure` | `plotting.py` | Easy | 2 |
-| 5 | `save_multi_epoch_fit_figure` | `plotting.py` | Easy–Mod | 2 |
-| 6 | birth-time histogram + density (×2, **merge**) | `plotting.py`, `age_fit_plot.py` | Moderate | 3 |
-| 7 | `create_kde_density_plot` (arrow workaround) | `parameter_plots.py` | Moderate | 3 |
-| 8 | `create_parameter_box_plot` (mean-tick) | `parameter_plots.py` | Moderate | 3 |
-| 9 | `plot_parameter_consistency` (facet + CI + log) | `plotting.py` | Hard | 4 |
-| 10 | `plot_genealogy_tree` (shapes → `mark_rule`) | `genealogy.py` | Hard | 4 |
-| 11 | 61 inline notebook figures | 19 `.qmd` | Easy×volume | 5 |
+  | #   | Figure / helper                                 | Location                         | Difficulty     | Phase |
+  | --- | ----------------------------------------------- | -------------------------------- | -------------- | ----- |
+  | 1   | `plot_empirical_population_mean`                | `splitting_plots.py`             | Easy           | 2     |
+  | 2   | `plot_level_survival_probabilities`             | `splitting_plots.py`             | Easy           | 2     |
+  | 3   | `plot_conditioned_trajectories`                 | `splitting_plots.py`             | Easy (row cap) | 2     |
+  | 4   | `save_multi_epoch_convergence_figure`           | `plotting.py`                    | Easy           | 2     |
+  | 5   | `save_multi_epoch_fit_figure`                   | `plotting.py`                    | Easy–Mod       | 2     |
+  | 6   | birth-time histogram + density (×2, **merge**)  | `plotting.py`, `age_fit_plot.py` | Moderate       | 3     |
+  | 7   | `create_kde_density_plot` (arrow workaround)    | `parameter_plots.py`             | Moderate       | 3     |
+  | 8   | `create_parameter_box_plot` (mean-tick)         | `parameter_plots.py`             | Moderate       | 3     |
+  | 9   | `plot_parameter_consistency` (facet + CI + log) | `plotting.py`                    | Hard           | 4     |
+  | 10  | `plot_genealogy_tree` (shapes → `mark_rule`)    | `genealogy.py`                   | Hard           | 4     |
+  | 11  | 61 inline notebook figures                      | 19 `.qmd`                        | Easy×volume    | 5     |
 
----
+--------------------------------------------------------------------------------
 
 ## Part E — Risks, testing, rollback
 

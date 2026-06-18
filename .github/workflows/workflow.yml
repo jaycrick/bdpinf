@@ -75,3 +75,9 @@ jobs:
 
       - name: basedpyright check
         run: uv run basedpyright src/
+
+      - name: panache lint
+        run: uv run panache lint --check .
+
+      - name: panache format check
+        run: uv run panache format --check .
