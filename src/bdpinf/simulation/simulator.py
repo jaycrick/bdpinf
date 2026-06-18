@@ -51,9 +51,9 @@ Examples
 from collections.abc import Callable
 from typing import Any, NamedTuple
 
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
-import torch
 from numpy.typing import NDArray
 
 from inf_bp_texts.models.birth_death_process import BirthDeathProcess
@@ -69,22 +69,19 @@ MIN_CONTOUR_PROCESS_LENGTH = 3
 
 
 class _NonSpineSamplingContext(NamedTuple):
-    birth_rate_tensor: torch.Tensor
-    death_rate_tensor: torch.Tensor
-    max_time_tensor: torch.Tensor
     birth_rate: float
+    death_rate: float
+    max_time: float
     denom_lambda: float
     envelope_constant: float
 
 
-def _as_scalar_float(value: torch.Tensor | float, *, name: str) -> float:
-    if torch.is_tensor(value):
-        if value.numel() != 1:
-            msg = f"{name} must be a scalar tensor"
-            raise ValueError(msg)
-        scalar_value = float(value.item())
-    else:
-        scalar_value = float(value)
+def _as_scalar_float(value: object, *, name: str) -> float:
+    try:
+        scalar_value = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        msg = f"{name} must be convertible to a scalar float"
+        raise ValueError(msg) from exc
     return scalar_value
 
 
@@ -122,9 +119,9 @@ def _draw_from_density_by_rejection(
 
 
 def _sample_spine_ages(
-    birth_rate_tensor: torch.Tensor,
-    death_rate_tensor: torch.Tensor,
-    max_time_tensor: torch.Tensor,
+    birth_rate: float,
+    death_rate: float,
+    max_time: float,
     rng: np.random.Generator,
     *,
     n_samples: int,
@@ -134,10 +131,6 @@ def _sample_spine_ages(
         raise ValueError(msg)
     if n_samples == 0:
         return []
-
-    birth_rate = float(birth_rate_tensor.item())
-    death_rate = float(death_rate_tensor.item())
-    max_time = float(max_time_tensor.item())
 
     # P(spine_age = T): discrete boundary mass at observation time.
     is_critical = np.isclose(birth_rate, death_rate, rtol=1e-12)
@@ -154,16 +147,20 @@ def _sample_spine_ages(
 
     continuous_mass = max(1.0 - boundary_mass, np.finfo(float).tiny)
 
+    _b = jnp.array([birth_rate], dtype=jnp.float64)
+    _d = jnp.array([death_rate], dtype=jnp.float64)
+    _t = jnp.array([max_time], dtype=jnp.float64)
+
     def normalized_continuous_density(age: float) -> float:
         log_lik = calculate_spine_ages_log_lik(
-            birth_rates=birth_rate_tensor,
-            death_rates=death_rate_tensor,
-            ages=torch.tensor(age, dtype=torch.float64),
-            times=max_time_tensor,
+            birth_rates=_b,
+            death_rates=_d,
+            ages=jnp.array([age], dtype=jnp.float64),
+            times=_t,
         )
-        if not torch.isfinite(log_lik):
+        if not bool(jnp.isfinite(log_lik)):
             return 0.0
-        density = float(torch.exp(log_lik).item())
+        density = float(jnp.exp(log_lik))
         if density < 0.0 or not np.isfinite(density):
             return 0.0
         return float(density / continuous_mass)
@@ -185,13 +182,10 @@ def _sample_spine_ages(
 
 
 def _build_non_spine_sampling_context(
-    birth_rate_tensor: torch.Tensor,
-    death_rate_tensor: torch.Tensor,
-    max_time_tensor: torch.Tensor,
+    birth_rate: float,
+    death_rate: float,
+    max_time: float,
 ) -> _NonSpineSamplingContext:
-    birth_rate = float(birth_rate_tensor.item())
-    death_rate = float(death_rate_tensor.item())
-    max_time = float(max_time_tensor.item())
 
     exp_lambda_t = np.exp(-birth_rate * max_time)
     denom_lambda = 1.0 - exp_lambda_t
@@ -218,10 +212,9 @@ def _build_non_spine_sampling_context(
         raise RuntimeError(msg)
 
     return _NonSpineSamplingContext(
-        birth_rate_tensor=birth_rate_tensor,
-        death_rate_tensor=death_rate_tensor,
-        max_time_tensor=max_time_tensor,
         birth_rate=birth_rate,
+        death_rate=death_rate,
+        max_time=max_time,
         denom_lambda=denom_lambda,
         envelope_constant=envelope_constant,
     )
@@ -242,14 +235,14 @@ def _sample_single_non_spine_age(
         )
         proposal_density /= context.denom_lambda
         log_lik = calculate_non_spine_ages_log_lik(
-            birth_rates=context.birth_rate_tensor,
-            death_rates=context.death_rate_tensor,
-            ages=torch.tensor(float(candidate_age), dtype=torch.float64),
-            times=context.max_time_tensor,
+            birth_rates=jnp.array([context.birth_rate], dtype=jnp.float64),
+            death_rates=jnp.array([context.death_rate], dtype=jnp.float64),
+            ages=jnp.array([float(candidate_age)], dtype=jnp.float64),
+            times=jnp.array([context.max_time], dtype=jnp.float64),
         )
-        if not torch.isfinite(log_lik):
+        if not bool(jnp.isfinite(log_lik)):
             continue
-        target_density = float(torch.exp(log_lik).item())
+        target_density = float(jnp.exp(log_lik))
         if target_density <= 0.0 or proposal_density <= 0.0:
             continue
 
@@ -264,9 +257,9 @@ def _sample_single_non_spine_age(
 
 
 def _sample_non_spine_ages(
-    birth_rate_tensor: torch.Tensor,
-    death_rate_tensor: torch.Tensor,
-    max_time_tensor: torch.Tensor,
+    birth_rate: float,
+    death_rate: float,
+    max_time: float,
     rng: np.random.Generator,
     *,
     n_samples: int,
@@ -278,9 +271,9 @@ def _sample_non_spine_ages(
         return []
 
     context = _build_non_spine_sampling_context(
-        birth_rate_tensor=birth_rate_tensor,
-        death_rate_tensor=death_rate_tensor,
-        max_time_tensor=max_time_tensor,
+        birth_rate=birth_rate,
+        death_rate=death_rate,
+        max_time=max_time,
     )
 
     return [
@@ -828,9 +821,9 @@ def simulate_birth_death_process(
 
 
 def simulate_bdp_ages_from_distributions(
-    birth_rate: torch.Tensor,
-    death_rate: torch.Tensor,
-    max_time: torch.Tensor,
+    birth_rate: object,
+    death_rate: object,
+    max_time: object,
     rng: np.random.Generator,
     ensure_non_extinct: bool = False,
 ) -> BirthDeathProcess:
@@ -858,69 +851,51 @@ def simulate_bdp_ages_from_distributions(
         RuntimeError: If rejection sampling cannot find an accepted draw.
 
     """
-    birth_rate_val = _as_scalar_float(birth_rate, name="birth_rate")
-    death_rate_val = _as_scalar_float(death_rate, name="death_rate")
-    max_time_val = _as_scalar_float(max_time, name="max_time")
+    br = _as_scalar_float(birth_rate, name="birth_rate")
+    dr = _as_scalar_float(death_rate, name="death_rate")
+    mt = _as_scalar_float(max_time, name="max_time")
 
-    if birth_rate_val <= 0.0 or death_rate_val <= 0.0:
+    if br <= 0.0 or dr <= 0.0:
         msg = "birth_rate and death_rate must be positive"
         raise ValueError(msg)
-    if max_time_val <= 0.0:
+    if mt <= 0.0:
         msg = "max_time must be positive"
         raise ValueError(msg)
 
-    birth_rate_tensor = torch.tensor(birth_rate_val, dtype=torch.float64)
-    death_rate_tensor = torch.tensor(death_rate_val, dtype=torch.float64)
-    max_time_tensor = torch.tensor(max_time_val, dtype=torch.float64)
+    _b = jnp.array([br], dtype=jnp.float64)
+    _d = jnp.array([dr], dtype=jnp.float64)
+    _t = jnp.array([mt], dtype=jnp.float64)
 
     pop_size: int
     if ensure_non_extinct:
-        pop_size = rng.geometric(
-            population_geometric_parameter(birth_rate, death_rate, max_time).item(),
-        )
-    elif rng.uniform() < calculate_extinction_pr(birth_rate, death_rate, max_time):
+        pop_size = rng.geometric(float(population_geometric_parameter(_b, _d, _t)))
+    elif rng.uniform() < float(calculate_extinction_pr(_b, _d, _t)):
         pop_size = 0
     else:
-        pop_size = rng.geometric(
-            population_geometric_parameter(
-                birth_rate,
-                death_rate,
-                max_time,
-            ).item(),
-        )
+        pop_size = rng.geometric(float(population_geometric_parameter(_b, _d, _t)))
 
     ages: dict[str, list[float]] = {"spine": [], "non_spine": []}
     if pop_size > 0:
-        ages["spine"] = _sample_spine_ages(
-            birth_rate_tensor=birth_rate_tensor,
-            death_rate_tensor=death_rate_tensor,
-            max_time_tensor=max_time_tensor,
-            rng=rng,
-            n_samples=1,
-        )
+        ages["spine"] = _sample_spine_ages(br, dr, mt, rng=rng, n_samples=1)
         ages["non_spine"] = _sample_non_spine_ages(
-            birth_rate_tensor=birth_rate_tensor,
-            death_rate_tensor=death_rate_tensor,
-            max_time_tensor=max_time_tensor,
-            rng=rng,
-            n_samples=pop_size - 1,
+            br, dr, mt, rng=rng, n_samples=pop_size - 1
         )
 
     return BirthDeathProcess.from_age_samples(
         spine_ages=ages["spine"],
         non_spine_ages=ages["non_spine"],
-        epoch_end_times=max_time,
-        birth_rates=birth_rate,
-        death_rates=death_rate,
+        epoch_end_times=mt,
+        birth_rates=br,
+        death_rates=dr,
     )
 
 
 if __name__ == "__main__":
     for _ in range(10):
         sampled_ages = simulate_bdp_ages_from_distributions(
-            birth_rate=torch.tensor(0.5),
-            death_rate=torch.tensor(0.3),
-            max_time=torch.tensor(5.0),
+            birth_rate=0.5,
+            death_rate=0.3,
+            max_time=5.0,
             rng=np.random.default_rng(),
         )
         print(sampled_ages)
