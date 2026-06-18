@@ -14,15 +14,14 @@ The ``_skip_normalization`` kwarg is accepted for API compatibility but ignored
 — JAX functions always expect pre-normalised float64 arrays.
 """
 
-from typing import Any
 
 import jax
 import jax.numpy as jnp
 from jax import lax
+from jaxtyping import Array, Float
 
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
 from inf_bp_texts.utils import ensure_1d_tensor
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -50,12 +49,12 @@ def _safe_div_kernel(g: jax.Array, dur: jax.Array) -> jax.Array:
 
 
 def pr_extinction_numerator(
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    times: jax.Array,
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    times: Float[Array, " epochs"],
     *,
     _skip_normalization: bool = False,
-) -> jax.Array:
+) -> Float[Array, ""]:
     """Numerator of the extinction probability integral.
 
     Parameters
@@ -83,7 +82,9 @@ def pr_extinction_numerator(
     x = growth_rates * epoch_durations
     critical_mask = jnp.abs(x) < _ATOL_CRITICAL
     cum_growth = jnp.cumsum(x)
-    trunc_cum_growth = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), cum_growth[:-1]])
+    trunc_cum_growth = jnp.concatenate(
+        [jnp.zeros(1, dtype=jnp.float64), cum_growth[:-1]]
+    )
 
     safe_g = jnp.where(critical_mask, jnp.ones_like(growth_rates), growth_rates)
     exp_neg_x = jnp.where(critical_mask, jnp.ones_like(x), jnp.exp(-x))
@@ -94,13 +95,13 @@ def pr_extinction_numerator(
 
 
 def calculate_extinction_pr(
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    times: jax.Array,
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    times: Float[Array, " epochs"],
     *,
     return_log_prob: bool = False,
     _skip_normalization: bool = False,
-) -> jax.Array:
+) -> Float[Array, ""]:
     r"""Extinction probability P(Z_T = 0), or its log.
 
     Parameters
@@ -121,16 +122,18 @@ def calculate_extinction_pr(
             birth_rates, death_rates, times
         )
 
-    ext_num = pr_extinction_numerator(birth_rates, death_rates, times, _skip_normalization=True)
+    ext_num = pr_extinction_numerator(
+        birth_rates, death_rates, times, _skip_normalization=True
+    )
     if return_log_prob:
         return jnp.log(ext_num) - jnp.log1p(ext_num)
     return 1.0 - 1.0 / (1.0 + ext_num)
 
 
 def calculate_log_lik_lifetimes(
-    lifetimes: jax.Array,
-    death_rates: jax.Array,
-    times: jax.Array,
+    lifetimes: Float[Array, " n"],
+    death_rates: Float[Array, " epochs"],
+    times: Float[Array, " epochs"],
     *,
     as_array: bool = False,
     _skip_normalization: bool = False,
@@ -171,7 +174,8 @@ def calculate_log_lik_lifetimes(
 
     cum_before = jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), cum_mu_dur[:-1]])
     cum_integral = (
-        cum_before[epoch_of] + (lifetimes - epoch_starts[epoch_of]) * death_rates[epoch_of]
+        cum_before[epoch_of]
+        + (lifetimes - epoch_starts[epoch_of]) * death_rates[epoch_of]
     )
 
     mu_k = death_rates[epoch_of]
@@ -270,10 +274,10 @@ def _analytic_log_pr_extinction_per_lifetime(
 
 
 def calculate_log_pr_extinction_given_initial_lifetimes(
-    lifetimes: jax.Array,
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    times: jax.Array,
+    lifetimes: Float[Array, " n"],
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    times: Float[Array, " epochs"],
     *,
     as_array: bool = False,
     _skip_normalization: bool = False,
@@ -308,10 +312,10 @@ def calculate_log_pr_extinction_given_initial_lifetimes(
 
 
 def calculate_log_lik_initial_lifetimes_given_extinction(
-    lifetimes: jax.Array,
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    times: jax.Array,
+    lifetimes: Float[Array, " n"],
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    times: Float[Array, " epochs"],
     *,
     as_array: bool = False,
     _skip_normalization: bool = False,
@@ -340,7 +344,12 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
         )
 
     log_pr_ext_given_lt = calculate_log_pr_extinction_given_initial_lifetimes(
-        lifetimes, birth_rates, death_rates, times, as_array=True, _skip_normalization=True
+        lifetimes,
+        birth_rates,
+        death_rates,
+        times,
+        as_array=True,
+        _skip_normalization=True,
     )
     log_lik_lt = calculate_log_lik_lifetimes(
         lifetimes, death_rates, times, as_array=True, _skip_normalization=True
@@ -354,10 +363,10 @@ def calculate_log_lik_initial_lifetimes_given_extinction(
 
 
 def calculate_log_lik_initial_lifetimes_given_non_extinction(
-    lifetimes: jax.Array,
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    times: jax.Array,
+    lifetimes: Float[Array, " n"],
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    times: Float[Array, " epochs"],
     *,
     as_array: bool = False,
     _skip_normalization: bool = False,
@@ -388,7 +397,12 @@ def calculate_log_lik_initial_lifetimes_given_non_extinction(
         )
 
     log_pr_ext_given_lt = calculate_log_pr_extinction_given_initial_lifetimes(
-        lifetimes, birth_rates, death_rates, times, as_array=True, _skip_normalization=True
+        lifetimes,
+        birth_rates,
+        death_rates,
+        times,
+        as_array=True,
+        _skip_normalization=True,
     )
     log_lik_lt = calculate_log_lik_lifetimes(
         lifetimes, death_rates, times, as_array=True, _skip_normalization=True

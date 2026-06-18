@@ -13,6 +13,7 @@ All inputs are assumed float64 (``jax_enable_x64`` is set in __init__.py).
 
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array, Float
 
 from inf_bp_texts.models.math_extinction import (
     calculate_log_lik_initial_lifetimes_given_extinction,
@@ -20,7 +21,6 @@ from inf_bp_texts.models.math_extinction import (
 )
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
 from inf_bp_texts.utils import ensure_1d_tensor
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -64,10 +64,10 @@ def _reverse_time(
 
 
 def calculate_non_spine_ages_log_lik(
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    ages: jax.Array,
-    times: jax.Array,
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    ages: Float[Array, " n"],
+    times: Float[Array, " epochs"],
     *,
     return_array: bool = False,
     _skip_normalization: bool = False,
@@ -105,7 +105,12 @@ def calculate_non_spine_ages_log_lik(
     if n_epochs > 1:
         inv_times, refl_br, refl_dr = _reverse_time(birth_rates, death_rates, times)
         return calculate_log_lik_initial_lifetimes_given_extinction(
-            ages, refl_br, refl_dr, inv_times, as_array=return_array, _skip_normalization=True
+            ages,
+            refl_br,
+            refl_dr,
+            inv_times,
+            as_array=return_array,
+            _skip_normalization=True,
         )
 
     # Single-epoch case
@@ -144,16 +149,18 @@ def calculate_non_spine_ages_log_lik(
     log_density = jnp.where(valid, log_density, _ninf)
 
     all_finite = jnp.all(jnp.isfinite(log_density))
-    log_density = jnp.where(all_finite, log_density, jnp.full_like(log_density, -jnp.inf))
+    log_density = jnp.where(
+        all_finite, log_density, jnp.full_like(log_density, -jnp.inf)
+    )
 
     return log_density if return_array else log_density.sum()
 
 
 def calculate_spine_ages_log_lik(
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    ages: jax.Array,
-    times: jax.Array,
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    ages: Float[Array, " n"],
+    times: Float[Array, " epochs"],
     *,
     return_array: bool = False,
     _skip_normalization: bool = False,
@@ -191,7 +198,12 @@ def calculate_spine_ages_log_lik(
     if n_epochs > 1:
         inv_times, refl_br, refl_dr = _reverse_time(birth_rates, death_rates, times)
         return calculate_log_lik_initial_lifetimes_given_non_extinction(
-            ages, refl_br, refl_dr, inv_times, as_array=return_array, _skip_normalization=True
+            ages,
+            refl_br,
+            refl_dr,
+            inv_times,
+            as_array=return_array,
+            _skip_normalization=True,
         )
 
     # Single-epoch case
@@ -236,7 +248,9 @@ def calculate_spine_ages_log_lik(
             jnp.log(birth_rate)
             + jnp.log(death_rate)
             + jnp.log(
-                jnp.abs(jnp.where(jnp.abs(num_int) > 0, num_int, jnp.ones_like(num_int)))
+                jnp.abs(
+                    jnp.where(jnp.abs(num_int) > 0, num_int, jnp.ones_like(num_int))
+                )
             )
         ),
         _ninf,
@@ -249,7 +263,9 @@ def calculate_spine_ages_log_lik(
     log_density = jnp.where(valid, log_density, _ninf)
 
     all_finite = jnp.all(jnp.isfinite(log_density))
-    log_density = jnp.where(all_finite, log_density, jnp.full_like(log_density, -jnp.inf))
+    log_density = jnp.where(
+        all_finite, log_density, jnp.full_like(log_density, -jnp.inf)
+    )
 
     return log_density if return_array else log_density.sum()
 

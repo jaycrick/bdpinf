@@ -20,6 +20,7 @@ All inputs are assumed float64 (``jax_enable_x64`` is set in ``__init__.py``).
 import jax
 import jax.numpy as jnp
 from jax import scipy as jsp
+from jaxtyping import Array, Float
 
 from inf_bp_texts.models.math_extinction import (
     calculate_extinction_pr,
@@ -27,7 +28,6 @@ from inf_bp_texts.models.math_extinction import (
 )
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
 from inf_bp_texts.utils import ensure_1d_tensor
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -118,12 +118,12 @@ def _compute_populations_log_lik_multi_start(
 
 
 def population_geometric_parameter(
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    times: jax.Array,
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    times: Float[Array, " epochs"],
     *,
     _skip_normalization: bool = False,
-) -> jax.Array:
+) -> Float[Array, ""]:
     """Geometric parameter 1 − β_T for the offspring survival distribution.
 
     Parameters
@@ -145,21 +145,23 @@ def population_geometric_parameter(
     epoch_durations = jnp.concatenate([times[:1], jnp.diff(times)])
     growth_rates = birth_rates - death_rates
     cum_growth = jnp.cumsum(growth_rates * epoch_durations)
-    geom_sum = pr_extinction_numerator(birth_rates, death_rates, times, _skip_normalization=True)
+    geom_sum = pr_extinction_numerator(
+        birth_rates, death_rates, times, _skip_normalization=True
+    )
     log_cond = -cum_growth[-1] - jnp.log1p(geom_sum)
     return jnp.exp(log_cond)
 
 
 def calculate_populations_log_lik(
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    ns: jax.Array,
-    times: jax.Array,
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    ns: Float[Array, " n"],
+    times: Float[Array, " epochs"],
     *,
     initial_population: int = 1,
     unbias: bool = False,
     _skip_normalization: bool = False,
-) -> jax.Array:
+) -> Float[Array, ""]:
     r"""Log P(Z_T = n) summed over provided counts.
 
     Tavaré (2018) formula. Supports single- and multi-epoch models.
@@ -193,13 +195,17 @@ def calculate_populations_log_lik(
         )
 
     # Unified JAX-native formulas (grad-safe, works for single and multi-epoch)
-    alpha_t = calculate_extinction_pr(birth_rates, death_rates, times, _skip_normalization=True)
+    alpha_t = calculate_extinction_pr(
+        birth_rates, death_rates, times, _skip_normalization=True
+    )
     beta_t = 1.0 - population_geometric_parameter(
         birth_rates, death_rates, times, _skip_normalization=True
     )
 
     # Range validation — functional path, returns -inf
-    valid_params = (alpha_t >= 0.0) & (alpha_t <= 1.0) & (beta_t >= 0.0) & (beta_t <= 1.0)
+    valid_params = (
+        (alpha_t >= 0.0) & (alpha_t <= 1.0) & (beta_t >= 0.0) & (beta_t <= 1.0)
+    )
     beta_zero_invalid = (beta_t <= 0) & jnp.any(ns > 1)
 
     zero_mask = ns == 0
@@ -256,4 +262,6 @@ def calculate_populations_log_lik(
         )
 
     all_finite = jnp.all(jnp.isfinite(log_pr))
-    return jnp.where(all_finite & valid_params & ~beta_zero_invalid, log_pr.sum(), _ninf)
+    return jnp.where(
+        all_finite & valid_params & ~beta_zero_invalid, log_pr.sum(), _ninf
+    )

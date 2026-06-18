@@ -103,6 +103,9 @@ select = ["E", "F", "I", "UP", "B", "W", "D"]
 convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
+# jaxtyping dimension strings (e.g. Float[Array, " epochs"]) are not Python
+# expressions, so ruff's forward-annotation checker (F722) fires on them.
+"src/inf_bp_texts/models/math_*.py" = ["F722"]
 "tests/*" = [
     "S101", # asserts are the mechanism of the tests
     "D101", # test classes are self-documenting via their names
