@@ -20,10 +20,11 @@ __compile_start = time.perf_counter()
 ## Setup
 
 ```{python}
+from collections import Counter
+
 import altair as alt
 import numpy as np
 import pandas as pd
-from collections import Counter
 from IPython.display import display
 from joblib import Parallel, delayed
 
@@ -54,6 +55,7 @@ time_span = 15.0
 seed = 42
 
 import torch
+
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 
 
@@ -75,8 +77,6 @@ def sample_age_vector(
 
 
 fit_times = np.array([time_span / 2.0, time_span], dtype=float)
-
-
 
 
 raw_list_of_ages = Parallel(n_jobs=-1)(
@@ -213,6 +213,7 @@ if plotting_row_count > 0:
             + f"median: {np.median(values):.6f} (true={true_value:.6f})"
         )
 
+
 def _param_hist_panel(
     values: np.ndarray, true_value: float, color: str, panel_title: str
 ) -> alt.LayerChart:
@@ -221,14 +222,21 @@ def _param_hist_panel(
         alt.Chart(_df)
         .mark_bar(opacity=0.8, color=color)
         .encode(
-            x=alt.X("rate:Q", bin=alt.Bin(maxbins=30), title="Fitted rate", scale=alt.Scale(zero=True)),
+            x=alt.X(
+                "rate:Q",
+                bin=alt.Bin(maxbins=30),
+                title="Fitted rate",
+                scale=alt.Scale(zero=True),
+            ),
             y=alt.Y("count():Q", title="Count"),
         )
         .properties(title=panel_title, width=260, height=200)
     )
-    _vline = alt.Chart(pd.DataFrame({"x": [true_value]})).mark_rule(
-        strokeDash=[4, 2], color=color, strokeWidth=2
-    ).encode(x=alt.X("x:Q"))
+    _vline = (
+        alt.Chart(pd.DataFrame({"x": [true_value]}))
+        .mark_rule(strokeDash=[4, 2], color=color, strokeWidth=2)
+        .encode(x=alt.X("x:Q"))
+    )
     return _hist + _vline
 
 
@@ -242,7 +250,10 @@ if plotting_row_count > 0:
         alt.hconcat(_panels[2], _panels[3]),
     ).properties(title="Epoch-Specific Parameter Histograms")
     display(fig_hist)
-    save_chart(fig_hist, "methods_validation_multi_epoch_bulk_inference_single_rate_parameter_histograms")
+    save_chart(
+        fig_hist,
+        "methods_validation_multi_epoch_bulk_inference_single_rate_parameter_histograms",
+    )
     print("Saved parameter histogram figure")
 
 
@@ -264,7 +275,10 @@ if plotting_row_count > 0 and len(scatter_data) == len(parameter_specs):
         .repeat(row=_col_names, column=_col_names)
     )
     display(fig_pairs)
-    save_chart(fig_pairs, "methods_validation_multi_epoch_bulk_inference_single_rate_parameter_pairs_scatter_matrix")
+    save_chart(
+        fig_pairs,
+        "methods_validation_multi_epoch_bulk_inference_single_rate_parameter_pairs_scatter_matrix",
+    )
     print("Saved pairs scatter matrix figure")
 ```
 
@@ -275,8 +289,8 @@ if plotting_row_count > 0 and len(scatter_data) == len(parameter_specs):
 # | include: false
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_multi_epoch_bulk_inference_single_rate.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

@@ -12,7 +12,11 @@ Fix the death rate at epoch 0 to 0.1 while optimizing all other parameters:
 
 ```python
 import torch
-from inf_bp_texts.inference.fitting import fit_birth_death_processes, ParameterConstraints
+
+from inf_bp_texts.inference.fitting import (
+    ParameterConstraints,
+    fit_birth_death_processes,
+)
 
 # Create constraints: fix death rate at index 2 (if n_epochs=2, indices 0-1 are birth, 2-3 are death)
 constraints = ParameterConstraints(
@@ -23,9 +27,7 @@ ages = torch.tensor([10.0, 20.0, 30.0])
 times = torch.tensor([100.0])
 
 result = fit_birth_death_processes(
-    list_of_ages=[ages],
-    times=times,
-    param_constraints=constraints
+    list_of_ages=[ages], times=times, param_constraints=constraints
 )
 ```
 
@@ -39,9 +41,7 @@ constraints = ParameterConstraints(
 )
 
 result = fit_birth_death_processes(
-    list_of_ages=[ages],
-    times=times,
-    param_constraints=constraints
+    list_of_ages=[ages], times=times, param_constraints=constraints
 )
 ```
 
@@ -59,15 +59,13 @@ constraints = ParameterConstraints(
         5: 0.05,  # death_rates[2] = 0.05
     },
     equality_groups=[
-        [0, 1],      # birth_rates[0] == birth_rates[1]
-        [3, 4],      # death_rates[0] == death_rates[1]
-    ]
+        [0, 1],  # birth_rates[0] == birth_rates[1]
+        [3, 4],  # death_rates[0] == death_rates[1]
+    ],
 )
 
 result = fit_birth_death_processes(
-    list_of_ages=[epochs_data],
-    times=times,
-    param_constraints=constraints
+    list_of_ages=[epochs_data], times=times, param_constraints=constraints
 )
 ```
 
@@ -98,8 +96,8 @@ If you believe birth and death rates are constant across time periods:
 n_epochs = 4
 constraints = ParameterConstraints(
     equality_groups=[
-        list(range(n_epochs)),           # all birth rates equal
-        list(range(n_epochs, 2*n_epochs))  # all death rates equal
+        list(range(n_epochs)),  # all birth rates equal
+        list(range(n_epochs, 2 * n_epochs)),  # all death rates equal
     ]
 )
 ```
@@ -114,10 +112,10 @@ Group similar time periods but allow differences:
 # Period 1-2 have same rates, Period 3-4 have same rates
 constraints = ParameterConstraints(
     equality_groups=[
-        [0, 1],      # epochs 0-1 birth rates
-        [2, 3],      # epochs 2-3 birth rates
-        [4, 5],      # epochs 0-1 death rates
-        [6, 7],      # epochs 2-3 death rates
+        [0, 1],  # epochs 0-1 birth rates
+        [2, 3],  # epochs 2-3 birth rates
+        [4, 5],  # epochs 0-1 death rates
+        [6, 7],  # epochs 2-3 death rates
     ]
 )
 ```
@@ -164,7 +162,7 @@ result = fit_birth_death_processes(
     initial_death_rates=initial_dr,
     optimizers=["LBFGS", "Adam"],
     param_constraints=constraints,
-    random_seed=42
+    random_seed=42,
 )
 ```
 

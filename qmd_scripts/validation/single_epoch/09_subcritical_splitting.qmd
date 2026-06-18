@@ -78,7 +78,9 @@ print(
     f"Estimated survival probability P(tau > T): {splitting_result.survival_probability_estimate:.6e}"
 )
 print(f"Final survivor bank size: {splitting_result.final_survivor_count}")
-print(f"Returned conditioned trajectories: {len(splitting_result.conditioned_trajectories)}")
+print(
+    f"Returned conditioned trajectories: {len(splitting_result.conditioned_trajectories)}"
+)
 print(
     "Product check: ",
     f"{np.prod(splitting_result.level_survival_probabilities):.6e}",
@@ -166,8 +168,8 @@ print(
 # | include: false
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_subcritical_splitting.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

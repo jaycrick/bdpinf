@@ -53,7 +53,7 @@ then iterates through progressively harder figures, exactly as requested.
 
 --------------------------------------------------------------------------------
 
-## Part A — Review of current visualization practices
+## Part A --- Review of current visualization practices
 
 Findings from reading all five helper modules (`plotting.py`, `parameter_plots.py`,
 `splitting_plots.py`, `age_fit_plot.py`, `genealogy.py`) plus the 19 notebooks that build figures.
@@ -84,11 +84,11 @@ removing every `Any` and the `type: ignore`.
 ### A3. `save_figure` swallows all errors silently (fix during migration)
 
 `save_figure` (`plotting.py:504`) wraps the entire body in `try/except Exception`, logs a warning,
-and returns `None`. A figure that fails to export produces **no error and no file** — easy to miss in
+and returns `None`. A figure that fails to export produces **no error and no file** --- easy to miss in
 a 50-figure render. It also **mutates the passed figure in place** (size, margins, transparent bg) as a
 side effect, so the same `fig` object renders differently inline vs on disk.
 
-→ The Altair `save_figure` (`chart.save(..., engine="vl-convert")`) should (a) not catch-all-swallow —
+→ The Altair `save_figure` (`chart.save(..., engine="vl-convert")`) should (a) not catch-all-swallow ---
 let export errors surface, or fail loudly with the filename, and (b) be pure: take a chart, write a
 file, return the path, without mutating display state.
 
@@ -109,7 +109,7 @@ the scaling done once. Keep two thin adapters if the call sites genuinely need d
 
 ### A5. `plot_parameter_consistency` mixes statistics with rendering (refactor during migration)
 
-`plot_parameter_consistency` (`plotting.py:150–417`) is a ~270-line function that **computes bootstrap
+`plot_parameter_consistency` (`plotting.py:150--417`) is a ~270-line function that **computes bootstrap
 CIs inline** (mean/median/variance percentile intervals) *and* builds a 3-column × N-row subplot grid
 by appending ~12 traces per row by hand. Colour assignment uses fragile modular indexing
 (`ptolqual[(row_index + 2) % len]`).
@@ -129,12 +129,12 @@ independently unit-testable (golden-value, per the project's testing strategy).
 **without** `apply_professional_styling` / `apply_tufte_axes`, unlike every other helper. So the KDE and
 box plots are visually off-theme relative to the rest of the site.
 
-→ Under a registered Altair theme this inconsistency disappears by construction — the theme applies
+→ Under a registered Altair theme this inconsistency disappears by construction --- the theme applies
 globally, so there is no per-figure styling call to forget.
 
 ### A7. Plotting logic lives in notebooks, against the repo convention (opportunistic fix)
 
-CLAUDE.md states *"Keep logic in `src/` … heavy computation belongs in the package, not inline."* Yet
+CLAUDE.md states *"Keep logic in `src/` ... heavy computation belongs in the package, not inline."* Yet
 there are **61 inline `go.Figure`/`make_subplots` constructions across 19 notebooks**, many with
 bespoke `update_layout` blocks. The migration touches every one of these cells.
 
@@ -152,7 +152,7 @@ warning. Carry the behaviour forward, narrowed.
 
 --------------------------------------------------------------------------------
 
-## Part B — Migration principles
+## Part B --- Migration principles
 
 1. **Additive, never big-bang.** Add Altair *alongside* Plotly. Plotly stays installed and working
    until the final phase. Every phase leaves `uv run pytest` and `uv run quarto render` green.
@@ -168,21 +168,21 @@ warning. Carry the behaviour forward, narrowed.
 6. **Review gates.** After the first easy batch is rendered to PDF + inline, **stop for user review**
    before continuing. Re-confirm visual parity at each subsequent phase boundary.
 
-### Decision to confirm before Phase 1 — math typography
+### Decision to confirm before Phase 1 --- math typography
 
 The evaluation flagged one genuine fork: Vega-Lite renders axis/label math as **plain Unicode**
 (`λ`, `μ`), not LaTeX. The figures currently rely on Unicode under Plotly and look fine, so Altair is
 appropriate. **If** the thesis later needs LaTeX-typeset math (`$\lambda_i$`) baked into vector PDFs,
 matplotlib+PGF would be the target instead. Proceeding on the assumption that **Unicode is
-acceptable** (status quo). Flag now if not — it changes the target library, not just the plan.
+acceptable** (status quo). Flag now if not --- it changes the target library, not just the plan.
 
 --------------------------------------------------------------------------------
 
-## Part C — Phased implementation
+## Part C --- Phased implementation
 
 Difficulty and ordering follow the evaluation's feature table, refined against the actual code.
 
-### Phase 0 — Spike & gate (½ day)
+### Phase 0 --- Spike & gate (½ day)
 
 **Goal:** prove publication-quality export and de-risk the hardest figure before committing.
 
@@ -195,7 +195,7 @@ Difficulty and ordering follow the evaluation's feature table, refined against t
 Altair `mark_rule` (if not, decide now: raw Vega spec, or leave the tree on Plotly permanently). Do
 not proceed until the tree path is chosen.
 
-### Phase 1 — Theme + export chokepoint (1 day)
+### Phase 1 --- Theme + export chokepoint (1 day)
 
 Foundation reused by every later phase.
 
@@ -210,7 +210,7 @@ Foundation reused by every later phase.
 
 No figures migrated yet; Plotly helpers untouched.
 
-### Phase 2 — Easy helpers + **REVIEW GATE 1** (1–2 days)
+### Phase 2 --- Easy helpers + **REVIEW GATE 1** (1--2 days)
 
 The "replace the easiest plots initially" batch. All are single-series line/scatter/bar.
 
@@ -224,14 +224,14 @@ The "replace the easiest plots initially" batch. All are single-series line/scat
 
 Render each to PDF **and** inline in its host notebook.
 
-> ### ⛔ REVIEW GATE 1 — user reviews these five figures
+> ### ⛔ REVIEW GATE 1 --- user reviews these five figures
 >
 > Place new Altair PDFs side-by-side with the Plotly PDFs in `figures/`. **Stop here.** Do not start
 > Phase 3 until the user has reviewed axes, colours (`ptolqual`), fonts, and overall feel, and
 > confirmed the theme is right. Theme adjustments are cheapest to make now, before 50 more figures
 > inherit them.
 
-### Phase 3 — Moderate helpers (2–3 days)
+### Phase 3 --- Moderate helpers (2--3 days)
 
 Begin only after Gate 1 sign-off.
 
@@ -246,7 +246,7 @@ Begin only after Gate 1 sign-off.
 **Review checkpoint** (lighter than Gate 1): user eyeballs the KDE arrow workaround and box-plot mean
 tick specifically, since those are the two fidelity compromises.
 
-### Phase 4 — Hard helpers (3–4 days)
+### Phase 4 --- Hard helpers (3--4 days)
 
 - **`plot_parameter_consistency`**: execute the A5 refactor. First land
   `compute_consistency_bands(...) -> pd.DataFrame` (tidy long form) with a golden-value test, then the
@@ -261,7 +261,7 @@ tick specifically, since those are the two fidelity compromises.
   `test_birth_death_process.py`) to assert on `chart.to_dict()` specs instead of `go.*` /
   `monkeypatch` of `write_image`. `test_plotting.py` has the most assertions (~16).
 
-### Phase 5 — Notebooks, file by file (the long pole, 1–2 weeks)
+### Phase 5 --- Notebooks, file by file (the long pole, 1--2 weeks)
 
 19 notebooks, 61 inline figures. Convert in dependency order so reusable helpers land before their
 consumers:
@@ -277,11 +277,11 @@ consumers:
 5. `04_bayesian/kashouh_family_k_bayesian_inference.qmd` (4) — excluded from default render (slow);
    do last.
 
-**Per notebook:** apply A7 — if a figure duplicates an existing helper, call the helper; only write
+**Per notebook:** apply A7 --- if a figure duplicates an existing helper, call the helper; only write
 inline Altair for genuinely one-off charts. After each file: `uv run quarto render` that file, diff
 the inline output, run `lintquarto` on it. Replace every `fig.show()` with returning/`display(chart)`.
 
-### Phase 6 — Remove Plotly (½ day)
+### Phase 6 --- Remove Plotly (½ day)
 
 Only once **zero** Plotly references remain in `src/`, `tests/`, `qmd_scripts/`.
 
@@ -294,7 +294,7 @@ Only once **zero** Plotly references remain in `src/`, `tests/`, `qmd_scripts/`.
 
 --------------------------------------------------------------------------------
 
-## Part D — Per-figure difficulty inventory
+## Part D --- Per-figure difficulty inventory
 
   | #   | Figure / helper                                 | Location                         | Difficulty     | Phase |
   | --- | ----------------------------------------------- | -------------------------------- | -------------- | ----- |
@@ -312,15 +312,15 @@ Only once **zero** Plotly references remain in `src/`, `tests/`, `qmd_scripts/`.
 
 --------------------------------------------------------------------------------
 
-## Part E — Risks, testing, rollback
+## Part E --- Risks, testing, rollback
 
 **Risks (from evaluation, still live):**
-- *5000-row cap* — `plot_conditioned_trajectories` and large histograms can trip `MaxRowsError`.
+- *5000-row cap* --- `plot_conditioned_trajectories` and large histograms can trip `MaxRowsError`.
   Mitigate with `alt.data_transformers.enable("vegafusion")` or `disable_max_rows()`; decide policy
   in Phase 1 theme module.
-- *Arrow annotation* (KDE) and *box-plot mean line* — documented fidelity compromises (Phase 3).
-- *Genealogy tree* — gated in Phase 0 with a fallback decision.
-- *Jupyter cache* — migrated cells invalidate `.jupyter_cache`; expect full re-render cycles.
+- *Arrow annotation* (KDE) and *box-plot mean line* --- documented fidelity compromises (Phase 3).
+- *Genealogy tree* --- gated in Phase 0 with a fallback decision.
+- *Jupyter cache* --- migrated cells invalidate `.jupyter_cache`; expect full re-render cycles.
 
 **Verification per phase:**
 - Export each new chart to PDF; place beside the Plotly PDF in `figures/` and confirm axes, bands,
@@ -328,7 +328,7 @@ Only once **zero** Plotly references remain in `src/`, `tests/`, `qmd_scripts/`.
 - Helper layer: `uv run pytest tests/test_plotting.py tests/test_genealogy.py
   tests/test_birth_death_process.py` after reworking assertions to `chart.to_dict()`.
 - `uv run basedpyright --project pyproject.toml src/` (0 errors) and the `lintquarto` command.
-- Site: `uv run quarto render` — every migrated notebook renders inline, `_output/` intact.
+- Site: `uv run quarto render` --- every migrated notebook renders inline, `_output/` intact.
 
 **Rollback:** because the migration is additive and Plotly is not removed until Phase 6, any phase can
 be reverted by `git revert` of that phase's commits without touching the rest. The point of no easy

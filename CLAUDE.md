@@ -20,7 +20,7 @@ Example: `:zap: Add users endpoint, fixes #27`
 
 **Commit granularity:** Prefer bundled commits that group related code, tests, and docs into a single commit. Choose the prefix that reflects the commit's primary concern. Do not split a feature into separate per-prefix commits (e.g. one `:zap:` for the code, one `:cop:` for its tests, one `:abc:` for its docs) unless those pieces genuinely belong in separate commits for other reasons.
 
-**CHANGELOG.md**: Update `CHANGELOG.md` at the repo root whenever a commit adds a new feature, changes public API, or fixes a user-visible bug. Add a bullet under `## [Unreleased]` — one line describing the change and which module it affects. No need to touch `CHANGELOG.md` for pure tooling/CI changes (`:tv:`) or test-only commits (`:cop:`).
+**CHANGELOG.md**: Update `CHANGELOG.md` at the repo root whenever a commit adds a new feature, changes public API, or fixes a user-visible bug. Add a bullet under `## [Unreleased]` --- one line describing the change and which module it affects. No need to touch `CHANGELOG.md` for pure tooling/CI changes (`:tv:`) or test-only commits (`:cop:`).
 
 ## Commands
 
@@ -112,67 +112,67 @@ class TestSubject:
 ### Mathematical layer: `models/`
 
 Three submodules contain pure functions (no class state):
-- `math_extinction.py` — `calculate_extinction_pr()`: probability population dies by time T
-- `math_ages.py` — `calculate_spine_ages_log_lik()`, `calculate_non_spine_ages_log_lik()`, `_reverse_time()`
-- `math_populations.py` — `calculate_populations_log_lik()`: probability of observed population counts
+- `math_extinction.py` --- `calculate_extinction_pr()`: probability population dies by time T
+- `math_ages.py` --- `calculate_spine_ages_log_lik()`, `calculate_non_spine_ages_log_lik()`, `_reverse_time()`
+- `math_populations.py` --- `calculate_populations_log_lik()`: probability of observed population counts
 
-`_reverse_time()` — **time-reversal trick**: transforms multi-epoch non-spine ages into an extinction-conditioned backward-time problem, avoiding exponential complexity in the number of epochs.
+`_reverse_time()` --- **time-reversal trick**: transforms multi-epoch non-spine ages into an extinction-conditioned backward-time problem, avoiding exponential complexity in the number of epochs.
 
-`mathematical_derivatives.py` — numerical derivatives used during optimization.
+`mathematical_derivatives.py` --- numerical derivatives used during optimization.
 
-`validation.py` — `normalize_and_validate_inputs()` converts scalars/arrays to float64 tensors and enforces shape, range, and monotonicity constraints. `ValidationConfig` (Pydantic) controls which checks run.
+`validation.py` --- `normalize_and_validate_inputs()` converts scalars/arrays to float64 tensors and enforces shape, range, and monotonicity constraints. `ValidationConfig` (Pydantic) controls which checks run.
 
 ### Inference layer: `inference/`
 
 `fitting.py` is the main entry point:
-- `fit_birth_death_processes()` — MLE via PyTorch optimizers (LBFGS, Adam); supports initial perturbation for robustness and convergence detection with multi-restart
-- `ParameterConstraints` dataclass — fixed parameters (index → value) and equality groups (lists of indices forced equal); validated before optimization to reduce parameter space
-- `estimate_mle_covariance()` — covariance via numerical Hessian inversion
+- `fit_birth_death_processes()` --- MLE via PyTorch optimizers (LBFGS, Adam); supports initial perturbation for robustness and convergence detection with multi-restart
+- `ParameterConstraints` dataclass --- fixed parameters (index → value) and equality groups (lists of indices forced equal); validated before optimization to reduce parameter space
+- `estimate_mle_covariance()` --- covariance via numerical Hessian inversion
 - Optimizer internals are split across `_fit_types.py` (shared dataclasses: `ConvergenceConfig`, `OptimizerStrategy`, etc.) and `_optimizer_runners.py` (`_run_lbfgs_optimizer`, `_run_first_order_optimizer`). `ConvergenceConfig` is exported from `inference/__init__.py`.
 
-`likelihood.py` — `log_likelihood()` / `negative_log_likelihood()` wrappers that handle log-scale vs. positive-scale parameters and marginalize over unknown spine positions.
+`likelihood.py` --- `log_likelihood()` / `negative_log_likelihood()` wrappers that handle log-scale vs. positive-scale parameters and marginalize over unknown spine positions.
 
-`bayesian.py` — Pyro-based posterior inference for uncertainty quantification.
+`bayesian.py` --- Pyro-based posterior inference for uncertainty quantification.
 
 ### Simulation layer: `simulation/`
 
-`simulator.py` — `simulate_birth_death_process()` runs a Gillespie algorithm with time-varying rates; `predict_manuscript_counts()` predicts future population given current observations via rejection sampling.
+`simulator.py` --- `simulate_birth_death_process()` runs a Gillespie algorithm with time-varying rates; `predict_manuscript_counts()` predicts future population given current observations via rejection sampling.
 
-`splitting.py` — Multilevel splitting for rare-event simulation (estimating small extinction probabilities). Plotting functions for splitting results live in `visualization/splitting_plots.py`.
+`splitting.py` --- Multilevel splitting for rare-event simulation (estimating small extinction probabilities). Plotting functions for splitting results live in `visualization/splitting_plots.py`.
 
 ### Visualization layer: `visualization/`
 
-`plotting.py` — core Plotly helpers: `save_figure`, `save_multi_epoch_*_figure`, `apply_professional_styling`, `apply_tufte_axes`, `plot_parameter_consistency`.
+`plotting.py` --- core Plotly helpers: `save_figure`, `save_multi_epoch_*_figure`, `apply_professional_styling`, `apply_tufte_axes`, `plot_parameter_consistency`.
 
-`splitting_plots.py` — `plot_conditioned_trajectories`, `plot_empirical_population_mean`, `plot_level_survival_probabilities` (re-exported from `simulation`).
+`splitting_plots.py` --- `plot_conditioned_trajectories`, `plot_empirical_population_mean`, `plot_level_survival_probabilities` (re-exported from `simulation`).
 
-`parameter_plots.py` — `KdePlotConfig`, `BoxPlotStyle`, `create_kde_density_plot`, `compute_boxplot_summary`, `create_parameter_box_plot` (re-exported from `analysis`).
+`parameter_plots.py` --- `KdePlotConfig`, `BoxPlotStyle`, `create_kde_density_plot`, `compute_boxplot_summary`, `create_parameter_box_plot` (re-exported from `analysis`).
 
 ### Data pipeline: `data/`
 
 All NTVMR ETL modules live in the `inf_bp_texts/data/` subpackage. Key public API (also re-exported from `inf_bp_texts.data`):
 
-`ntvmr.py` — downloads from NTVMR API with resume support; `format_xml_files()` pretty-prints XML and strips Unicode line separators (U+2028/U+2029) for clean git diffs.
+`ntvmr.py` --- downloads from NTVMR API with resume support; `format_xml_files()` pretty-prints XML and strips Unicode line separators (U+2028/U+2029) for clean git diffs.
 
-`data_cleaning.py` — `examine_manuscript_xml()`, `clean_manuscript_dates()`, `generate_data_quality_report()`.
+`data_cleaning.py` --- `examine_manuscript_xml()`, `clean_manuscript_dates()`, `generate_data_quality_report()`.
 
-`xml_processing.py` — `analyze_all_manuscripts()` batch-parses a folder for book/section content.
+`xml_processing.py` --- `analyze_all_manuscripts()` batch-parses a folder for book/section content.
 
-`content_extraction.py` — `parse_biblical_books()`, `parse_content_overview()`.
+`content_extraction.py` --- `parse_biblical_books()`, `parse_content_overview()`.
 
-`pattern_analysis.py` — `analyze_section_combinations()`.
+`pattern_analysis.py` --- `analyze_section_combinations()`.
 
-`reports.py` — `generate_mismatch_report()`, `analyze_section_mismatches()`.
+`reports.py` --- `generate_mismatch_report()`, `analyze_section_mismatches()`.
 
-`manuscript_analysis.py` — Typer CLI entry point wrapping `analyze_all_manuscripts`.
+`manuscript_analysis.py` --- Typer CLI entry point wrapping `analyze_all_manuscripts`.
 
 ### Types, constants, and utilities
 
-`constants.py` — canonical book ordering, German abbreviations, and section patterns used throughout the XML layer.
+`constants.py` --- canonical book ordering, German abbreviations, and section patterns used throughout the XML layer.
 
-`schemas.py` — `ValidationConfig` Pydantic model (also available from `models.validation`) controlling which validation checks are enforced.
+`schemas.py` --- `ValidationConfig` Pydantic model (also available from `models.validation`) controlling which validation checks are enforced.
 
-`_paths.py` — `get_project_root()` (exported from `inf_bp_texts` top-level): returns the Quarto project root via `$QUARTO_PROJECT_DIR` env var, or walks up from `cwd` to find `_quarto.yml`. Use this in notebooks and scripts instead of hardcoded relative paths.
+`_paths.py` --- `get_project_root()` (exported from `inf_bp_texts` top-level): returns the Quarto project root via `$QUARTO_PROJECT_DIR` env var, or walks up from `cwd` to find `_quarto.yml`. Use this in notebooks and scripts instead of hardcoded relative paths.
 
 **CLI**: The package installs an `inf-bp-texts` command (entry point: `inf_bp_texts.cli:main`) via `[project.scripts]` in `pyproject.toml`.
 
@@ -198,9 +198,9 @@ All NTVMR ETL modules live in the `inf_bp_texts/data/` subpackage. Key public AP
 
 ## Quarto notebooks (`qmd_scripts/`)
 
-`_quarto.yml` is the single source of truth for the research-notebook website: render globs, navbar menus, and HTML format (output to `_output/`). Cell output is cached globally (`execute: cache: true`). **Always use `uv run quarto …`** — plain `quarto` uses system Python (no venv) and fails immediately.
+`_quarto.yml` is the single source of truth for the research-notebook website: render globs, navbar menus, and HTML format (output to `_output/`). Cell output is cached globally (`execute: cache: true`). **Always use `uv run quarto ...`** --- plain `quarto` uses system Python (no venv) and fails immediately.
 
-The **API reference** is a separate site, generated by **great-docs** from `great-docs.yml` (not part of `_quarto.yml` — great-docs owns its own Quarto project under `great-docs/`, which cannot host the executable research notebooks because it has no `execute.cache`/`bibliography` equivalent). See `docs/design/DOCS_TOOLING_EVALUATION.md` for why this is two sites rather than one.
+The **API reference** is a separate site, generated by **great-docs** from `great-docs.yml` (not part of `_quarto.yml` --- great-docs owns its own Quarto project under `great-docs/`, which cannot host the executable research notebooks because it has no `execute.cache`/`bibliography` equivalent). See `docs/design/DOCS_TOOLING_EVALUATION.md` for why this is two sites rather than one.
 
 ### Directory taxonomy
 

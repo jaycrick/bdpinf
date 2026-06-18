@@ -25,6 +25,12 @@ dynamic: true
 #   - InternalClass
 #   - helper_function
 
+# `pypi: false` is documented but currently crashes the build with this
+# project's config (UnboundLocalError in great_docs.core: a "Citing this
+# package" margin link unconditionally reads a variable that's only assigned
+# when pypi is not False). Left at its default (auto-detect + link) until
+# fixed upstream. See docs/design/DOCS_TOOLING_EVALUATION.md.
+
 # Logo & Favicon
 # ---------------
 # Point to a single logo file (replaces the text title in the navbar):

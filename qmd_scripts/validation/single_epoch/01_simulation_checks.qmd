@@ -25,14 +25,22 @@ including population counts and age distributions against theoretical curves.
 ## Setup
 
 ```{python}
+from typing import Any
+
 import altair as alt
 import numpy as np
 import pandas as pd
 import torch
-from typing import Any
 from IPython.display import display
+from joblib import Parallel, delayed
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
+from inf_bp_texts.analysis import (
+    boundary_corrected_kde_on_support,
+    proportion_not_at_upper,
+    robust_y_max,
+    theoretical_age_density,
+)
 from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
@@ -43,15 +51,8 @@ from inf_bp_texts.simulation import (
     simulate_bdp_ages_from_distributions,
     simulate_birth_death_process,
 )
-from inf_bp_texts.analysis import (
-    boundary_corrected_kde_on_support,
-    proportion_not_at_upper,
-    robust_y_max,
-    theoretical_age_density,
-)
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
-from joblib import Parallel, delayed
 ```
 
 ## Simulate Age Vectors
@@ -61,7 +62,9 @@ num_sims = 5_000
 birth_rate = 0.005
 death_rate = birth_rate - 0.004
 time_span = 1500.0
-NOTEBOOK_SEED = 42  # fixed seed for reproducibility; used as base for per-simulation seeds
+NOTEBOOK_SEED = (
+    42  # fixed seed for reproducibility; used as base for per-simulation seeds
+)
 population_bin_width = 100
 
 
@@ -223,14 +226,20 @@ for bc, cnt_d, cnt_p in zip(
     population_empirical_counts_process,
 ):
     _pop_records += [
-        {"bin": float(bc), "count": int(cnt_d), "method": "Observed (from distribution)"},
+        {
+            "bin": float(bc),
+            "count": int(cnt_d),
+            "method": "Observed (from distribution)",
+        },
         {"bin": float(bc), "count": int(cnt_p), "method": "Observed (full process)"},
     ]
 _pop_df = pd.DataFrame(_pop_records)
-_theory_df = pd.DataFrame({
-    "bin": population_bin_centers.tolist(),
-    "count": population_theoretical_counts.tolist(),
-})
+_theory_df = pd.DataFrame(
+    {
+        "bin": population_bin_centers.tolist(),
+        "count": population_theoretical_counts.tolist(),
+    }
+)
 
 _pop_color = alt.Scale(
     domain=["Observed (from distribution)", "Observed (full process)"],
@@ -243,7 +252,9 @@ _pop_bars = (
         x=alt.X("bin:Q", title="Population size", scale=alt.Scale(domain=[0, 2000])),
         y=alt.Y("count:Q", title="Count"),
         xOffset="method:N",
-        color=alt.Color("method:N", scale=_pop_color, legend=alt.Legend(title=None, orient="top")),
+        color=alt.Color(
+            "method:N", scale=_pop_color, legend=alt.Legend(title=None, orient="top")
+        ),
     )
 )
 _theory_line = (
@@ -262,15 +273,15 @@ fig_population = (_pop_bars + _theory_line).properties(
     height=350,
 )
 display(fig_population)
-save_chart(fig_population, "methods_validation_population_distribution", width=600, height=350)
+save_chart(
+    fig_population, "methods_validation_population_distribution", width=600, height=350
+)
 print("Saved population figure")
 ```
 
 ## Spine and Non-Spine Age Checks
 
 ```{python}
-
-
 spine_age_samples_direct = np.asarray(
     [
         arr[0]
@@ -374,7 +385,9 @@ def _kde_panel(
         kde_df = pd.DataFrame({"Age": kde_x.tolist(), "Density": kde_y.tolist()})
         layers.append(
             alt.Chart(kde_df)
-            .mark_area(opacity=0.4, color=color, line={"color": color, "strokeWidth": 2})
+            .mark_area(
+                opacity=0.4, color=color, line={"color": color, "strokeWidth": 2}
+            )
             .encode(
                 x=alt.X("Age:Q", title=x_label, scale=alt.Scale(domain=x_dom)),
                 y=alt.Y("Density:Q", title=y_label, scale=alt.Scale(domain=y_domain)),
@@ -396,12 +409,52 @@ ns_dom = [0.0, non_spine_y_max]
 sp_dom = [0.0, spine_y_max]
 fig_summary = alt.vconcat(
     alt.hconcat(
-        _kde_panel(non_spine_grid_process, non_spine_kde_process, non_spine_theory_x, non_spine_theory_y, PTOLQUAL[2], "Full process", "Age (full process)", "Density (non-spine)", ns_dom),
-        _kde_panel(non_spine_grid_direct, non_spine_kde_direct, non_spine_theory_x, non_spine_theory_y, PTOLQUAL[0], "From distribution", "Age (from distribution)", "", ns_dom),
+        _kde_panel(
+            non_spine_grid_process,
+            non_spine_kde_process,
+            non_spine_theory_x,
+            non_spine_theory_y,
+            PTOLQUAL[2],
+            "Full process",
+            "Age (full process)",
+            "Density (non-spine)",
+            ns_dom,
+        ),
+        _kde_panel(
+            non_spine_grid_direct,
+            non_spine_kde_direct,
+            non_spine_theory_x,
+            non_spine_theory_y,
+            PTOLQUAL[0],
+            "From distribution",
+            "Age (from distribution)",
+            "",
+            ns_dom,
+        ),
     ),
     alt.hconcat(
-        _kde_panel(spine_grid_process, spine_kde_process, spine_theory_x, spine_theory_y, PTOLQUAL[2], "Full process", "Age (full process)", "Density (spine)", sp_dom),
-        _kde_panel(spine_grid_direct, spine_kde_direct, spine_theory_x, spine_theory_y, PTOLQUAL[0], "From distribution", "Age (from distribution)", "", sp_dom),
+        _kde_panel(
+            spine_grid_process,
+            spine_kde_process,
+            spine_theory_x,
+            spine_theory_y,
+            PTOLQUAL[2],
+            "Full process",
+            "Age (full process)",
+            "Density (spine)",
+            sp_dom,
+        ),
+        _kde_panel(
+            spine_grid_direct,
+            spine_kde_direct,
+            spine_theory_x,
+            spine_theory_y,
+            PTOLQUAL[0],
+            "From distribution",
+            "Age (from distribution)",
+            "",
+            sp_dom,
+        ),
     ),
 ).properties(title="Age Densities by Generator (Full Process vs From Distribution)")
 display(fig_summary)
@@ -512,8 +565,8 @@ while lower p-values suggest significant differences between the direct sampling
 
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_simulation_checks.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

@@ -72,8 +72,8 @@ print(sim_df.to_string(index=False))
 
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_multi_epoch_bayesian_simulation_checks.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

@@ -247,4 +247,4 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `BirthDeathProcess.equals()` returns a tensor — callers now use `bool()`
 - Simulator could produce ages > T; integration tests now filter them
 
-## [0.1.0] — initial release
+## [0.1.0] --- initial release

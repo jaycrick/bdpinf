@@ -97,8 +97,8 @@ print(single_fit_result)
 ```{python}
 # Profile the fit using cProfile/pstats (replaces the %%prun cell magic)
 import cProfile
-import pstats
 import io
+import pstats
 
 profiler = cProfile.Profile()
 profiler.enable()
@@ -150,10 +150,12 @@ nll_history = (
 )
 
 if nll_history:
-    _nll_df = pd.DataFrame({
-        "Step": list(range(1, len(nll_history) + 1)),
-        "NLL": nll_history,
-    })
+    _nll_df = pd.DataFrame(
+        {
+            "Step": list(range(1, len(nll_history) + 1)),
+            "NLL": nll_history,
+        }
+    )
     fig_nll = (
         alt.Chart(_nll_df)
         .mark_line(
@@ -163,9 +165,13 @@ if nll_history:
         )
         .encode(
             x=alt.X("Step:Q", title="Step", axis=alt.Axis(format="d")),
-            y=alt.Y("NLL:Q", title="Negative Log-Likelihood", scale=alt.Scale(zero=False)),
+            y=alt.Y(
+                "NLL:Q", title="Negative Log-Likelihood", scale=alt.Scale(zero=False)
+            ),
         )
-        .properties(title="Negative Log-Likelihood vs Optimization Step", width=700, height=350)
+        .properties(
+            title="Negative Log-Likelihood vs Optimization Step", width=700, height=350
+        )
     )
     display(fig_nll)
 else:
@@ -179,8 +185,8 @@ else:
 
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_single_fit_debug.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

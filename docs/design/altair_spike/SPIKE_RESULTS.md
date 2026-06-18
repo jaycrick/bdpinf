@@ -1,4 +1,4 @@
-# Phase 0 Spike — Results & Gate Decision
+# Phase 0 Spike --- Results & Gate Decision
 
 Spike for the Plotly→Altair migration (see `../PLOTLY_TO_ALTAIR_IMPLEMENTATION_PLAN.md`, Phase 0).
 Reproduce: `uv run python docs/design/altair_spike/phase0_spike.py` (writes 4 PDFs here).
@@ -15,7 +15,7 @@ Deps added to a **dev-only** group `altair-migration` in `pyproject.toml`:
 
 ## Findings
 
-### Gate 1 — vl-convert PDF quality ≥ kaleido → **PASS**
+### Gate 1 --- vl-convert PDF quality ≥ kaleido → **PASS**
 
 Altair PDF export via vl-convert is crisp vector output, on par with kaleido. No Chromium dependency.
 
@@ -24,7 +24,7 @@ Altair PDF export via vl-convert is crisp vector output, on par with kaleido. No
   kaleido does. **Action for Phase 1:** the registered theme must either (a) point at a font file
   vl-convert can resolve, or (b) accept a sans tick face, or (c) embed the font. Tracked, not a blocker.
 
-### Gate 2 — genealogy tree expressible in Altair → **PASS (no fallback needed)**
+### Gate 2 --- genealogy tree expressible in Altair → **PASS (no fallback needed)**
 
 The shapes-based Plotly drawing reproduces declaratively in Altair from the **existing tidy
 `genealogy_dfs_order` frame**:

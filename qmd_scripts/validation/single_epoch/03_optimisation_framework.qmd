@@ -33,23 +33,22 @@ __compile_start = time.perf_counter()
 ## Setup
 
 ```{python}
-import altair as alt
 import json
-import numpy as np
 import os
-import pandas as pd
-import torch
-
-from IPython.display import display
 from pathlib import Path
 from typing import Any, cast
 
+import altair as alt
+import numpy as np
+import pandas as pd
+import torch
+from IPython.display import display
 from itables import show as show_table
-from inf_bp_texts.utils import format_table_dataframe
 
-from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference.fitting import fit_birth_death_processes
+from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
+from inf_bp_texts.utils import format_table_dataframe
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 
 torch.set_default_dtype(torch.float64)
@@ -229,16 +228,24 @@ for r in results:
         param_history = att.get("param_history") or []
 
         if nll_history:
-            _nll_df = pd.DataFrame({
-                "Iteration": list(range(1, len(nll_history) + 1)),
-                "NLL": nll_history,
-            })
+            _nll_df = pd.DataFrame(
+                {
+                    "Iteration": list(range(1, len(nll_history) + 1)),
+                    "NLL": nll_history,
+                }
+            )
             fig_nll = (
                 alt.Chart(_nll_df)
                 .mark_line(color=PTOLQUAL[1], strokeWidth=2)
                 .encode(
-                    x=alt.X("Iteration:Q", title="Iteration", axis=alt.Axis(format="d")),
-                    y=alt.Y("NLL:Q", title="Negative Log-Likelihood", scale=alt.Scale(zero=False)),
+                    x=alt.X(
+                        "Iteration:Q", title="Iteration", axis=alt.Axis(format="d")
+                    ),
+                    y=alt.Y(
+                        "NLL:Q",
+                        title="Negative Log-Likelihood",
+                        scale=alt.Scale(zero=False),
+                    ),
                 )
                 .properties(
                     title=f"NLL vs Iteration ({r['label']}:{att.get('optimizer')})",
@@ -255,10 +262,12 @@ for r in results:
                 pass
 
         if grad_norms:
-            _grad_df = pd.DataFrame({
-                "Iteration": list(range(1, len(grad_norms) + 1)),
-                "GradNorm": grad_norms,
-            })
+            _grad_df = pd.DataFrame(
+                {
+                    "Iteration": list(range(1, len(grad_norms) + 1)),
+                    "GradNorm": grad_norms,
+                }
+            )
             fig_g = (
                 alt.Chart(_grad_df)
                 .mark_line(
@@ -267,8 +276,12 @@ for r in results:
                     strokeWidth=2,
                 )
                 .encode(
-                    x=alt.X("Iteration:Q", title="Iteration", axis=alt.Axis(format="d")),
-                    y=alt.Y("GradNorm:Q", title="Gradient Norm", scale=alt.Scale(zero=False)),
+                    x=alt.X(
+                        "Iteration:Q", title="Iteration", axis=alt.Axis(format="d")
+                    ),
+                    y=alt.Y(
+                        "GradNorm:Q", title="Gradient Norm", scale=alt.Scale(zero=False)
+                    ),
                 )
                 .properties(
                     title=f"Gradient Norm vs Iteration ({r['label']}:{att.get('optimizer')})",
@@ -276,7 +289,9 @@ for r in results:
                     height=300,
                 )
             )
-            out_html = Path("_output") / f"grad_norm_history_{r['label']}_{att_idx}.html"
+            out_html = (
+                Path("_output") / f"grad_norm_history_{r['label']}_{att_idx}.html"
+            )
             out_html.parent.mkdir(parents=True, exist_ok=True)
             fig_g.save(str(out_html))
             try:
@@ -291,10 +306,12 @@ for r in results:
                 params_nat = np.exp(ph)
                 n_params = params_nat.shape[1]
                 for p in range(n_params):
-                    _param_df = pd.DataFrame({
-                        "Iteration": list(range(1, params_nat.shape[0] + 1)),
-                        "Value": params_nat[:, p].tolist(),
-                    })
+                    _param_df = pd.DataFrame(
+                        {
+                            "Iteration": list(range(1, params_nat.shape[0] + 1)),
+                            "Value": params_nat[:, p].tolist(),
+                        }
+                    )
                     fig_p = (
                         alt.Chart(_param_df)
                         .mark_line(
@@ -302,8 +319,16 @@ for r in results:
                             strokeWidth=2,
                         )
                         .encode(
-                            x=alt.X("Iteration:Q", title="Iteration", axis=alt.Axis(format="d")),
-                            y=alt.Y("Value:Q", title="Parameter (natural scale)", scale=alt.Scale(zero=False)),
+                            x=alt.X(
+                                "Iteration:Q",
+                                title="Iteration",
+                                axis=alt.Axis(format="d"),
+                            ),
+                            y=alt.Y(
+                                "Value:Q",
+                                title="Parameter (natural scale)",
+                                scale=alt.Scale(zero=False),
+                            ),
                         )
                         .properties(
                             title=f"Parameter {p} trajectory ({r['label']}:{att.get('optimizer')})",

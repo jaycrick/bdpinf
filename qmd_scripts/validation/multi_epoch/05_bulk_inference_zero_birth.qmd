@@ -22,8 +22,8 @@ __compile_start = time.perf_counter()
 # Simulation: generate datasets with zero second-epoch births by simulating first epoch and advancing survivors
 from typing import Any
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 from joblib import Parallel, delayed
 
 num_sims = 1000
@@ -88,8 +88,12 @@ print(f"Simulations: {len(list_of_ages)}")
 ```{python}
 # | label: fit-constrained-model
 # Fitting: apply parameter constraints (zero second-epoch birth approximated) and fit
-import torch
 from collections import Counter
+
+import altair as alt
+import torch
+from IPython.display import display
+
 from inf_bp_texts.analysis.single_epoch import summarize_fit_success
 from inf_bp_texts.analysis.validation_helpers import (
     FitModelConfig,
@@ -101,8 +105,6 @@ from inf_bp_texts.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
 )
-import altair as alt
-from IPython.display import display
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 
@@ -132,7 +134,11 @@ def fit_constrained_model(
         return None
 
     try:
-        _times = torch.as_tensor(config.times, dtype=torch.float64) if isinstance(config.times, np.ndarray) else config.times
+        _times = (
+            torch.as_tensor(config.times, dtype=torch.float64)
+            if isinstance(config.times, np.ndarray)
+            else config.times
+        )
         result = fit_birth_death_processes(
             list_of_ages=[torch.as_tensor(ages, dtype=torch.float64)],
             times=_times,
@@ -273,14 +279,32 @@ if (
     or len(boundary_plotting_data["population"]) > 0
 ):
     _pop_rows: list[dict[str, Any]] = []
-    for x, lam, mu in zip(non_boundary_plotting_data["population"], non_boundary_plotting_data["birth_rate"], non_boundary_plotting_data["death_rate"]):
+    for x, lam, mu in zip(
+        non_boundary_plotting_data["population"],
+        non_boundary_plotting_data["birth_rate"],
+        non_boundary_plotting_data["death_rate"],
+    ):
         _pop_rows += [
-            {"x": float(x), "y": float(lam), "rate": "lambda_1", "boundary": "non-boundary"},
+            {
+                "x": float(x),
+                "y": float(lam),
+                "rate": "lambda_1",
+                "boundary": "non-boundary",
+            },
             {"x": float(x), "y": float(mu), "rate": "mu", "boundary": "non-boundary"},
         ]
-    for x, lam, mu in zip(boundary_plotting_data["population"], boundary_plotting_data["birth_rate"], boundary_plotting_data["death_rate"]):
+    for x, lam, mu in zip(
+        boundary_plotting_data["population"],
+        boundary_plotting_data["birth_rate"],
+        boundary_plotting_data["death_rate"],
+    ):
         _pop_rows += [
-            {"x": float(x), "y": float(lam), "rate": "lambda_1", "boundary": "boundary"},
+            {
+                "x": float(x),
+                "y": float(lam),
+                "rate": "lambda_1",
+                "boundary": "boundary",
+            },
             {"x": float(x), "y": float(mu), "rate": "mu", "boundary": "boundary"},
         ]
     _pop_df = pd.DataFrame(_pop_rows)
@@ -290,22 +314,39 @@ if (
         .encode(
             x=alt.X("x:Q", title="Population size", scale=alt.Scale(zero=True)),
             y=alt.Y("y:Q", title="Fitted rate", scale=alt.Scale(zero=True)),
-            color=alt.Color("rate:N", scale=_rate_color, legend=alt.Legend(title=None, orient="top")),
-            shape=alt.Shape("boundary:N", scale=_shape_scale, legend=alt.Legend(title=None, orient="top")),
-            size=alt.condition(alt.datum["boundary"] == "boundary", alt.value(80), alt.value(40)),
+            color=alt.Color(
+                "rate:N", scale=_rate_color, legend=alt.Legend(title=None, orient="top")
+            ),
+            shape=alt.Shape(
+                "boundary:N",
+                scale=_shape_scale,
+                legend=alt.Legend(title=None, orient="top"),
+            ),
+            size=alt.condition(
+                alt.datum["boundary"] == "boundary", alt.value(80), alt.value(40)
+            ),
         )
     )
-    _b1_rule = alt.Chart(pd.DataFrame({"y": [birth_rate_epoch_1_true]})).mark_rule(
-        strokeDash=[4, 2], color=PTOLQUAL[0], opacity=0.8
-    ).encode(y="y:Q")
-    _mu_rule = alt.Chart(pd.DataFrame({"y": [death_rate_true]})).mark_rule(
-        strokeDash=[4, 2], color=PTOLQUAL[1], opacity=0.8
-    ).encode(y="y:Q")
+    _b1_rule = (
+        alt.Chart(pd.DataFrame({"y": [birth_rate_epoch_1_true]}))
+        .mark_rule(strokeDash=[4, 2], color=PTOLQUAL[0], opacity=0.8)
+        .encode(y="y:Q")
+    )
+    _mu_rule = (
+        alt.Chart(pd.DataFrame({"y": [death_rate_true]}))
+        .mark_rule(strokeDash=[4, 2], color=PTOLQUAL[1], opacity=0.8)
+        .encode(y="y:Q")
+    )
     fig_rates_vs_pop = (_pop_pts + _b1_rule + _mu_rule).properties(
         title="Fitted Rates vs Population Size", width=500, height=350
     )
     display(fig_rates_vs_pop)
-    save_chart(fig_rates_vs_pop, "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_population_size", width=500, height=350)
+    save_chart(
+        fig_rates_vs_pop,
+        "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_population_size",
+        width=500,
+        height=350,
+    )
     print("Saved rates-vs-population figure")
 ```
 
@@ -317,14 +358,32 @@ if (
     or len(boundary_plotting_data["mean_age"]) > 0
 ):
     _age_rows: list[dict[str, Any]] = []
-    for x, lam, mu in zip(non_boundary_plotting_data["mean_age"], non_boundary_plotting_data["birth_rate"], non_boundary_plotting_data["death_rate"]):
+    for x, lam, mu in zip(
+        non_boundary_plotting_data["mean_age"],
+        non_boundary_plotting_data["birth_rate"],
+        non_boundary_plotting_data["death_rate"],
+    ):
         _age_rows += [
-            {"x": float(x), "y": float(lam), "rate": "lambda_1", "boundary": "non-boundary"},
+            {
+                "x": float(x),
+                "y": float(lam),
+                "rate": "lambda_1",
+                "boundary": "non-boundary",
+            },
             {"x": float(x), "y": float(mu), "rate": "mu", "boundary": "non-boundary"},
         ]
-    for x, lam, mu in zip(boundary_plotting_data["mean_age"], boundary_plotting_data["birth_rate"], boundary_plotting_data["death_rate"]):
+    for x, lam, mu in zip(
+        boundary_plotting_data["mean_age"],
+        boundary_plotting_data["birth_rate"],
+        boundary_plotting_data["death_rate"],
+    ):
         _age_rows += [
-            {"x": float(x), "y": float(lam), "rate": "lambda_1", "boundary": "boundary"},
+            {
+                "x": float(x),
+                "y": float(lam),
+                "rate": "lambda_1",
+                "boundary": "boundary",
+            },
             {"x": float(x), "y": float(mu), "rate": "mu", "boundary": "boundary"},
         ]
     _age_df = pd.DataFrame(_age_rows)
@@ -334,22 +393,39 @@ if (
         .encode(
             x=alt.X("x:Q", title="Mean population age", scale=alt.Scale(zero=True)),
             y=alt.Y("y:Q", title="Fitted rate", scale=alt.Scale(zero=True)),
-            color=alt.Color("rate:N", scale=_rate_color, legend=alt.Legend(title=None, orient="top")),
-            shape=alt.Shape("boundary:N", scale=_shape_scale, legend=alt.Legend(title=None, orient="top")),
-            size=alt.condition(alt.datum["boundary"] == "boundary", alt.value(80), alt.value(40)),
+            color=alt.Color(
+                "rate:N", scale=_rate_color, legend=alt.Legend(title=None, orient="top")
+            ),
+            shape=alt.Shape(
+                "boundary:N",
+                scale=_shape_scale,
+                legend=alt.Legend(title=None, orient="top"),
+            ),
+            size=alt.condition(
+                alt.datum["boundary"] == "boundary", alt.value(80), alt.value(40)
+            ),
         )
     )
-    _b1_rule2 = alt.Chart(pd.DataFrame({"y": [birth_rate_epoch_1_true]})).mark_rule(
-        strokeDash=[4, 2], color=PTOLQUAL[0], opacity=0.8
-    ).encode(y="y:Q")
-    _mu_rule2 = alt.Chart(pd.DataFrame({"y": [death_rate_true]})).mark_rule(
-        strokeDash=[4, 2], color=PTOLQUAL[1], opacity=0.8
-    ).encode(y="y:Q")
+    _b1_rule2 = (
+        alt.Chart(pd.DataFrame({"y": [birth_rate_epoch_1_true]}))
+        .mark_rule(strokeDash=[4, 2], color=PTOLQUAL[0], opacity=0.8)
+        .encode(y="y:Q")
+    )
+    _mu_rule2 = (
+        alt.Chart(pd.DataFrame({"y": [death_rate_true]}))
+        .mark_rule(strokeDash=[4, 2], color=PTOLQUAL[1], opacity=0.8)
+        .encode(y="y:Q")
+    )
     fig_rates_vs_mean_age = (_age_pts + _b1_rule2 + _mu_rule2).properties(
         title="Fitted Rates vs Mean Population Age", width=500, height=350
     )
     display(fig_rates_vs_mean_age)
-    save_chart(fig_rates_vs_mean_age, "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_mean_population_age", width=500, height=350)
+    save_chart(
+        fig_rates_vs_mean_age,
+        "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_mean_population_age",
+        width=500,
+        height=350,
+    )
     print("Saved rates-vs-mean-age figure")
 ```
 
@@ -357,58 +433,106 @@ if (
 
 ```{python}
 birth_bins = build_hist_bins(
-    non_boundary_plotting_data["birth_rate"], boundary_plotting_data["birth_rate"]  # type: ignore[arg-type]
+    non_boundary_plotting_data["birth_rate"],
+    boundary_plotting_data["birth_rate"],  # type: ignore[arg-type]
 )
 _birth_step = float(birth_bins.get("size", 0.01))
-_hist_color = alt.Scale(domain=["non-boundary", "boundary"], range=[PTOLQUAL[0], PTOLQUAL[1]])
-_bh_df = pd.concat([
-    pd.DataFrame({"rate": [float(v) for v in non_boundary_plotting_data["birth_rate"]], "group": "non-boundary"}),
-    pd.DataFrame({"rate": [float(v) for v in boundary_plotting_data["birth_rate"]], "group": "boundary"}),
-], ignore_index=True)
+_hist_color = alt.Scale(
+    domain=["non-boundary", "boundary"], range=[PTOLQUAL[0], PTOLQUAL[1]]
+)
+_bh_df = pd.concat(
+    [
+        pd.DataFrame(
+            {
+                "rate": [float(v) for v in non_boundary_plotting_data["birth_rate"]],
+                "group": "non-boundary",
+            }
+        ),
+        pd.DataFrame(
+            {
+                "rate": [float(v) for v in boundary_plotting_data["birth_rate"]],
+                "group": "boundary",
+            }
+        ),
+    ],
+    ignore_index=True,
+)
 _b_bars = (
     alt.Chart(_bh_df)
     .mark_bar(opacity=0.75)
     .encode(
         x=alt.X("rate:Q", bin=alt.Bin(step=_birth_step), title="Rate"),
         y=alt.Y("count():Q", stack=True, title="Count"),
-        color=alt.Color("group:N", scale=_hist_color, legend=alt.Legend(title=None, orient="top")),
+        color=alt.Color(
+            "group:N", scale=_hist_color, legend=alt.Legend(title=None, orient="top")
+        ),
     )
 )
-_bh_vline = alt.Chart(pd.DataFrame({"x": [birth_rate_epoch_1_true]})).mark_rule(
-    strokeDash=[4, 2], color="black"
-).encode(x=alt.X("x:Q"))
+_bh_vline = (
+    alt.Chart(pd.DataFrame({"x": [birth_rate_epoch_1_true]}))
+    .mark_rule(strokeDash=[4, 2], color="black")
+    .encode(x=alt.X("x:Q"))
+)
 fig_birth_hist = (_b_bars + _bh_vline).properties(
     title="Epoch 1 Birth Rate Histograms", width=400, height=300
 )
 display(fig_birth_hist)
-save_chart(fig_birth_hist, "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_birth_rate_histograms", width=400, height=300)
+save_chart(
+    fig_birth_hist,
+    "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_birth_rate_histograms",
+    width=400,
+    height=300,
+)
 print("Saved birth-rate histogram figure")
 
 death_bins = build_hist_bins(
-    non_boundary_plotting_data["death_rate"], boundary_plotting_data["death_rate"]  # type: ignore[arg-type]
+    non_boundary_plotting_data["death_rate"],
+    boundary_plotting_data["death_rate"],  # type: ignore[arg-type]
 )
 _death_step = float(death_bins.get("size", 0.005))
-_dh_df = pd.concat([
-    pd.DataFrame({"rate": [float(v) for v in non_boundary_plotting_data["death_rate"]], "group": "non-boundary"}),
-    pd.DataFrame({"rate": [float(v) for v in boundary_plotting_data["death_rate"]], "group": "boundary"}),
-], ignore_index=True)
+_dh_df = pd.concat(
+    [
+        pd.DataFrame(
+            {
+                "rate": [float(v) for v in non_boundary_plotting_data["death_rate"]],
+                "group": "non-boundary",
+            }
+        ),
+        pd.DataFrame(
+            {
+                "rate": [float(v) for v in boundary_plotting_data["death_rate"]],
+                "group": "boundary",
+            }
+        ),
+    ],
+    ignore_index=True,
+)
 _d_bars = (
     alt.Chart(_dh_df)
     .mark_bar(opacity=0.75)
     .encode(
         x=alt.X("rate:Q", bin=alt.Bin(step=_death_step), title="Rate"),
         y=alt.Y("count():Q", stack=True, title="Count"),
-        color=alt.Color("group:N", scale=_hist_color, legend=alt.Legend(title=None, orient="top")),
+        color=alt.Color(
+            "group:N", scale=_hist_color, legend=alt.Legend(title=None, orient="top")
+        ),
     )
 )
-_dh_vline = alt.Chart(pd.DataFrame({"x": [death_rate_true]})).mark_rule(
-    strokeDash=[4, 2], color="black"
-).encode(x=alt.X("x:Q"))
+_dh_vline = (
+    alt.Chart(pd.DataFrame({"x": [death_rate_true]}))
+    .mark_rule(strokeDash=[4, 2], color="black")
+    .encode(x=alt.X("x:Q"))
+)
 fig_death_hist = (_d_bars + _dh_vline).properties(
     title="Shared Death Rate Histograms", width=400, height=300
 )
 display(fig_death_hist)
-save_chart(fig_death_hist, "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_death_rate_histograms", width=400, height=300)
+save_chart(
+    fig_death_hist,
+    "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_death_rate_histograms",
+    width=400,
+    height=300,
+)
 print("Saved death-rate histogram figure")
 ```
 
@@ -463,8 +587,8 @@ print_rate_summary(
 
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

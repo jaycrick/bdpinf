@@ -5,8 +5,13 @@
 wrap = "preserve"
 
 [extensions]
-# Keep literal em-dashes ("—") as written instead of normalizing to "---".
-smart = false
+# Normalize curly quotes/apostrophes only — unlike `smart`, this does not also
+# normalize dashes or ellipsis, so em-dashes ("—") still get rewritten to
+# "---" by the formatter's default dash handling (accepted).
+smart-quotes = true
+
+[formatters]
+python = ["isort", "ruff"]
 
 [lint.rules]
 # False-positive prone on this project's bracket notation: Keep-a-Changelog

@@ -163,6 +163,7 @@ rates are identical.
 
 ```python
 import torch
+
 from inf_bp_texts.models import calculate_non_spine_ages_log_lik
 
 ages = torch.tensor([15.0, 60.0, 95.0], dtype=torch.float64)
