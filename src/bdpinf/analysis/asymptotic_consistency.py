@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-import torch
 
 from inf_bp_texts.analysis.spike_detection import bootstrap_seed, replicate_seed
 from inf_bp_texts.inference import ConvergenceConfig, fit_birth_death_processes
@@ -54,9 +53,9 @@ def sample_age_vector(
 
     if regime_config["sampling"] == "distribution":
         sampled = simulate_bdp_ages_from_distributions(
-            birth_rate=torch.tensor(birth_rate, dtype=torch.float64),
-            death_rate=torch.tensor(death_rate, dtype=torch.float64),
-            max_time=torch.tensor(observation_time, dtype=torch.float64),
+            birth_rate=birth_rate,
+            death_rate=death_rate,
+            max_time=observation_time,
             rng=rng,
             ensure_non_extinct=True,
         )
@@ -121,18 +120,18 @@ def fit_replicate(
         }
 
     fit_result = fit_birth_death_processes(
-        list_of_ages=[torch.tensor(ages, dtype=torch.float64)],
-        times=torch.tensor(float(observation_time), dtype=torch.float64),
+        list_of_ages=[np.asarray(ages, dtype=np.float64)],
+        times=np.asarray([float(observation_time)], dtype=np.float64),
         is_ordered=True,
         perturb_initial_params_std=0.0,
         random_seed=int(rep_seed),
-        initial_birth_rates=torch.tensor(
+        initial_birth_rates=np.asarray(
             [float(regime_config["birth_rate"])],
-            dtype=torch.float64,
+            dtype=np.float64,
         ),
-        initial_death_rates=torch.tensor(
+        initial_death_rates=np.asarray(
             [float(regime_config["death_rate"])],
-            dtype=torch.float64,
+            dtype=np.float64,
         ),
         optimizers=fit_config.fit_optimizers,
         optimizer_kwargs=fit_config.fit_optimizer_kwargs,
@@ -223,18 +222,18 @@ def reproduce_replicate(
     )
 
     fit_result = fit_birth_death_processes(
-        list_of_ages=[torch.tensor(ages, dtype=torch.float64)],
-        times=torch.tensor(observation_time, dtype=torch.float64),
+        list_of_ages=[np.asarray(ages, dtype=np.float64)],
+        times=np.asarray([float(observation_time)], dtype=np.float64),
         is_ordered=True,
         perturb_initial_params_std=0.0,
         random_seed=int(rep_seed),
-        initial_birth_rates=torch.tensor(
+        initial_birth_rates=np.asarray(
             [float(regime_config["birth_rate"])],
-            dtype=torch.float64,
+            dtype=np.float64,
         ),
-        initial_death_rates=torch.tensor(
+        initial_death_rates=np.asarray(
             [float(regime_config["death_rate"])],
-            dtype=torch.float64,
+            dtype=np.float64,
         ),
         optimizers=fit_config.fit_optimizers,
         optimizer_kwargs=fit_config.fit_optimizer_kwargs,

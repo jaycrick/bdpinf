@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from numbers import Integral, Real
 from pathlib import Path
-from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -52,33 +51,6 @@ def ensure_1d_tensor(x: object) -> jax.Array:
     if hasattr(x, "detach"):
         x = x.detach().cpu().numpy()  # type: ignore[union-attr]
     return jnp.atleast_1d(jnp.asarray(x, dtype=jnp.float64)).reshape(-1)
-
-
-def ensure_1d_torch_tensor(x: object) -> Any:
-    """Convert scalar or array-like input to a 1D float64 torch.Tensor.
-
-    Bridge helper for modules that still use PyTorch (e.g. inference/bayesian.py)
-    during the JAX migration transition. Accepts the same input types as
-    ``ensure_1d_tensor`` and returns a CPU float64 torch.Tensor.
-
-    Parameters
-    ----------
-    x : array-like
-        Input value. torch.Tensor, numpy array, JAX array, list, or scalar.
-
-    Returns
-    -------
-    torch.Tensor
-        1D float64 CPU tensor.
-
-    """
-    import torch  # lazy import: torch only needed by legacy Pyro/torch callers
-
-    if hasattr(x, "detach"):
-        # Already a torch tensor
-        return x.detach().cpu().to(dtype=torch.float64).reshape(-1)  # type: ignore[union-attr]
-    arr = np.asarray(x, dtype=np.float64).reshape(-1)
-    return torch.as_tensor(arr, dtype=torch.float64)
 
 
 def ensure_1d_tensors(*values: object) -> tuple[jax.Array, ...]:

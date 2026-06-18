@@ -21,14 +21,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
-
-if TYPE_CHECKING:
-    import torch
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +65,7 @@ class SubsetFitResult:
         Whether the optimiser converged.
     n_manuscripts : int
         Total manuscripts in the subset (may be 0).
-    times : torch.Tensor
+    times : NDArray[np.float64]
         Adjusted epoch end times from
         ``BirthDeathProcess.adjusted_epoch_end_times``.
     ages : NDArray[np.float64]
@@ -89,7 +86,7 @@ class SubsetFitResult:
     label: str
     success: bool
     n_manuscripts: int
-    times: torch.Tensor
+    times: NDArray[np.float64]
     ages: NDArray[np.float64]
     nll_history: list[float]
     log_likelihood: float
@@ -225,8 +222,6 @@ def fit_manuscript_subset(
         empty.  The result never raises — all exceptions are caught and
         logged as warnings.
     """
-    import torch  # noqa: PLC0415
-
     from inf_bp_texts.inference import (  # noqa: PLC0415
         confidence_intervals_from_log_covariance,
         fit_birth_death_processes,
@@ -237,14 +232,14 @@ def fit_manuscript_subset(
     n_total = len(frame)
     n_epochs = len(epochs)
 
-    # Placeholder tensors for early returns
-    _zero_times = torch.zeros(n_epochs, dtype=torch.float64)
+    # Placeholder arrays for early returns
+    _zero_times: NDArray[np.float64] = np.zeros(n_epochs, dtype=np.float64)
     _empty_ages: NDArray[np.float64] = np.empty(0, dtype=np.float64)
 
     def _fail(
         msg: str,
         *,
-        times: torch.Tensor | None = None,
+        times: NDArray[np.float64] | None = None,
         ages: NDArray[np.float64] | None = None,
         nll: list[float] | None = None,
     ) -> SubsetFitResult:
@@ -278,7 +273,9 @@ def fit_manuscript_subset(
         return _fail(f"BirthDeathProcess construction failed: {exc}")
 
     ages_tensor = bdp.manuscript_ages
-    times = bdp.adjusted_epoch_end_times
+    times: NDArray[np.float64] = np.asarray(
+        bdp.adjusted_epoch_end_times, dtype=np.float64
+    )
     ages_np: NDArray[np.float64] = np.asarray(ages_tensor, dtype=np.float64)
 
     # Per-epoch manuscript counts.  The last epoch uses an inclusive upper bound
@@ -300,7 +297,7 @@ def fit_manuscript_subset(
     # Run the fit
     try:
         result: dict[str, Any] = fit_birth_death_processes(
-            list_of_ages=[ages_tensor.clone()],
+            list_of_ages=[ages_np],
             times=times,
             is_ordered=False,
             random_seed=random_seed,
@@ -357,13 +354,14 @@ def fit_manuscript_subset(
             rate_jac = np.diag(np.concatenate([birth_rates_arr, death_rates_arr]))
             covariance_rates = rate_jac @ covariance_log @ rate_jac.T
             rate_ses = np.sqrt(np.clip(np.diag(covariance_rates), 0.0, None))
-            rate_cis = (
+            import jax.numpy as jnp  # noqa: PLC0415
+
+            rate_cis = np.asarray(
                 confidence_intervals_from_log_covariance(
-                    torch.as_tensor(log_rates, dtype=torch.float64),
-                    torch.as_tensor(covariance_log, dtype=torch.float64),
-                )
-                .cpu()
-                .numpy()
+                    jnp.array(log_rates, dtype=jnp.float64),
+                    jnp.array(covariance_log, dtype=jnp.float64),
+                ),
+                dtype=np.float64,
             )
             birth_ses = rate_ses[:n_epochs]
             death_ses = rate_ses[n_epochs:]

@@ -13,7 +13,7 @@ from typing import Any
 import altair as alt
 import numpy as np
 import pandas as pd
-import torch
+from numpy.typing import NDArray
 
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL, save_chart
 
@@ -515,7 +515,7 @@ def save_multi_epoch_birth_time_figure(
     result: dict[str, Any],
     epochs: list[Any],
     manuscripts_df: pd.DataFrame,
-    times: torch.Tensor,
+    times: NDArray[np.float64],
     output_slug: str,
     figures_dir: Path | None = None,
 ) -> None:
@@ -531,8 +531,8 @@ def save_multi_epoch_birth_time_figure(
         List of ``(start, end, label)`` epoch tuples.
     manuscripts_df : pd.DataFrame
         DataFrame with a ``"parsed_year"`` column of manuscript creation years.
-    times : torch.Tensor
-        Epoch boundary times as a 1-D float64 tensor.
+    times : NDArray[np.float64]
+        Epoch boundary times as a 1-D float64 array.
     output_slug : str
         Filename stem passed to ``save_figure``.
     figures_dir : Path | None
@@ -562,17 +562,15 @@ def save_multi_epoch_birth_time_figure(
 
     density_values: np.ndarray | None = None
     try:
-        density_values = (
+        density_values = np.asarray(
             calculate_unknown_spine_mixture_birth_density(
-                birth_rates=torch.as_tensor(birth_rates, dtype=torch.float64),
-                death_rates=torch.as_tensor(death_rates, dtype=torch.float64),
-                birth_time_grid=torch.as_tensor(birth_time_grid, dtype=torch.float64),
+                birth_rates=np.asarray(birth_rates, dtype=np.float64),
+                death_rates=np.asarray(death_rates, dtype=np.float64),
+                birth_time_grid=np.asarray(birth_time_grid, dtype=np.float64),
                 times=times,
                 num_manuscripts=len(observed_birth_years),
-            )
-            .detach()
-            .cpu()
-            .numpy()
+            ),
+            dtype=np.float64,
         )
     except Exception as exc:  # noqa: BLE001 - overlay is optional; skip on failure
         logger.warning(

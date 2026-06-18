@@ -11,7 +11,6 @@ density-scaling logic lives in exactly one place.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 import altair as alt
 import numpy as np
@@ -19,9 +18,6 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
-
-if TYPE_CHECKING:
-    import torch
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +120,7 @@ def creation_year_fit_chart(
 
 def plot_creation_year_fit(
     ages: NDArray[np.float64],
-    times: torch.Tensor,
+    times: NDArray[np.float64],
     start_time: float,
     birth_rate: float,
     death_rate: float,
@@ -143,7 +139,7 @@ def plot_creation_year_fit(
     ----------
     ages : NDArray[np.float64]
         Manuscript ages in years (``age = last_epoch_end - creation_year``).
-    times : torch.Tensor
+    times : NDArray[np.float64]
         Adjusted epoch end times from
         ``BirthDeathProcess.adjusted_epoch_end_times``.
     start_time : float
@@ -155,8 +151,6 @@ def plot_creation_year_fit(
     nbins : int
         Number of histogram bins (default 30).
     """
-    import torch  # noqa: PLC0415
-
     from inf_bp_texts.inference import (  # noqa: PLC0415
         calculate_unknown_spine_mixture_birth_density,
     )
@@ -172,18 +166,15 @@ def plot_creation_year_fit(
             age_grid = np.linspace(0.0, float(ages.max()), 400)
             birth_grid_rel = float(times[-1]) - age_grid
             density_years = start_time + birth_grid_rel
-            birth_grid_tensor = torch.as_tensor(birth_grid_rel, dtype=torch.float64)
-            density_values = (
+            density_values = np.asarray(
                 calculate_unknown_spine_mixture_birth_density(
                     birth_rates=birth_rate,
                     death_rates=death_rate,
-                    birth_time_grid=birth_grid_tensor,
+                    birth_time_grid=birth_grid_rel,
                     times=times,
                     num_manuscripts=n,
-                )
-                .detach()
-                .cpu()
-                .numpy()
+                ),
+                dtype=np.float64,
             )
         except Exception as exc:  # noqa: BLE001 - overlay is optional; skip on failure
             logger.warning("Could not compute theoretical overlay: %s", exc)
