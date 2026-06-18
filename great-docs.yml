@@ -1,0 +1,166 @@
+# Great Docs Configuration
+# See https://posit-dev.github.io/great-docs/user-guide/configuration.html
+
+# Module Name (optional)
+# ----------------------
+# Set this if your importable module name differs from the project name.
+# Example: project 'py-yaml12' with module name 'yaml12'
+# module: yaml12
+
+# Docstring Parser
+# ----------------
+# The docstring format used in your package (numpy, google, or sphinx)
+parser: numpy
+
+# Dynamic Introspection
+# ---------------------
+# Use runtime introspection for more accurate documentation (default: true)
+# Set to false if your package has cyclic alias issues (e.g., PyO3/Rust bindings)
+dynamic: true
+
+# API Discovery Settings
+# ----------------------
+# Exclude items from auto-documentation
+# exclude:
+#   - InternalClass
+#   - helper_function
+
+# Logo & Favicon
+# ---------------
+# Point to a single logo file (replaces the text title in the navbar):
+# logo: assets/logo.svg
+#
+# For light/dark variants:
+# logo:
+#   light: assets/logo-light.svg
+#   dark: assets/logo-dark.svg
+#
+# To show the text title alongside the logo, add: show_title: true
+
+# Funding / Copyright Holder
+# --------------------------
+# Credit the organization that funds or holds copyright for this package.
+# Displays in sidebar and footer. Homepage and ROR provide links.
+# funding:
+#   name: "Posit Software, PBC"
+#   roles:
+#     - Copyright holder
+#     - funder
+#   homepage: https://posit.co
+#   ror: https://ror.org/03wc8by49
+
+# API Reference Structure
+# -----------------------
+# Customize the sections below to organize your API documentation.
+# - Reorder items within a section to change their display order
+# - Move items between sections or create new sections
+# - Use 'members: false' to exclude methods from documentation
+# - Add 'desc:' to sections for descriptions
+
+reference:
+  - title: Core model
+    desc: >
+      BirthDeathProcess — the central data structure passed between all
+      modules. Holds creation times, epoch boundaries, per-epoch birth/death
+      rates, and optional manuscript genealogy.
+    contents:
+      - name: BirthDeathProcess
+
+  - title: Mathematical functions
+    desc: >
+      Pure likelihood and probability functions. No class state; all inputs
+      and outputs are float64 tensors.
+    contents:
+      - models.math_extinction
+      - models.math_ages
+      - models.math_populations
+      - models.mathematical_derivatives
+
+  - title: Input validation
+    desc: >
+      Normalisation and runtime validation for tensors, shapes, ranges, and
+      epoch monotonicity.
+    contents:
+      - models.validation
+
+  - title: Inference
+    desc: Maximum likelihood estimation and covariance.
+    contents:
+      - inference.fitting.fit_birth_death_processes
+      - inference.fitting.fit_from_data_frame
+      - name: inference.fitting.ParameterConstraints
+      - inference.likelihood.log_likelihood
+      - inference.likelihood.negative_log_likelihood
+      - inference.uncertainty
+
+  - title: Simulation
+    desc: Gillespie simulation and multilevel splitting for rare-event estimation.
+    contents:
+      - simulation.simulator.simulate_birth_death_process
+      - simulation.simulator.simulate_bdp_ages_from_distributions
+      - simulation.splitting.simulate_subcritical_survival_splitting
+      - name: simulation.splitting.SplittingConfig
+      - simulation.splitting.select_level_times_for_band
+
+  - title: Visualization
+    desc: Plotly rendering utilities for model results and diagnostics.
+    contents:
+      - visualization.plotting.save_figure
+      - visualization.splitting_plots
+      - visualization.parameter_plots
+
+  - title: Analysis
+    desc: Higher-level helpers for summarising and comparing fit results.
+    contents:
+      - analysis.single_epoch
+
+  - title: Data pipeline
+    desc: >
+      NTVMR manuscript data download, XML processing, cleaning, and pattern
+      analysis.
+    contents:
+      - data.ntvmr
+      - data.xml_processing
+      - data.data_cleaning
+      - data.content_extraction
+      - data.pattern_analysis
+      - data.reports
+
+  - title: Utilities
+    desc: Project-path resolution helper used by notebooks and scripts.
+    contents:
+      - get_project_root
+
+# Site URL
+# --------
+# Canonical address of the deployed documentation site.
+# Required for subdirectory deployments, skills page install commands,
+# .well-known/ discovery, and sitemaps.
+# site_url: "https://your-org.github.io/your-package/"
+
+# Site Settings
+# -------------
+# site:
+#   theme: flatly              # Quarto theme (default: flatly)
+#   toc: true                  # Show table of contents (default: true)
+#   toc-depth: 2               # TOC heading depth (default: 2)
+#   toc-title: On this page    # TOC title (default: "On this page")
+
+# Jupyter Kernel
+# --------------
+# Jupyter kernel to use for executing code cells in .qmd files.
+# This is set at the project level so it applies to all pages, including
+# auto-generated API reference pages. Can be overridden in individual .qmd
+# file frontmatter if needed for special cases.
+jupyter: python3
+
+# CLI Documentation
+# -----------------
+# great-docs's CLI doc generator targets raw click.Command objects, not
+# typer.Typer instances directly. inf_bp_texts.cli:click_app is a small shim
+# (typer.main.get_command(app)) that exposes the Typer app as a Click command
+# for this purpose. See docs/design/DOCS_TOOLING_EVALUATION.md.
+cli:
+  enabled: true
+  module: inf_bp_texts.cli
+  name: click_app
