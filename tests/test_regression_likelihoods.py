@@ -16,9 +16,9 @@ To update a golden value after a deliberate change:
 2. Update the constant below and add a comment explaining the change.
 """
 
+import jax.numpy as jnp
 import numpy as np
 import pytest
-import torch
 
 from inf_bp_texts.inference.likelihood import log_likelihood
 from inf_bp_texts.models.math_ages import (
@@ -31,11 +31,11 @@ from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 # ---------------------------------------------------------------------------
 # Canonical parameter set (single epoch, supercritical)
 # ---------------------------------------------------------------------------
-_BIRTH = torch.tensor([0.05], dtype=torch.float64)
-_DEATH = torch.tensor([0.03], dtype=torch.float64)
-_TIMES = torch.tensor([1500.0], dtype=torch.float64)
-_AGE_750 = torch.tensor([750.0], dtype=torch.float64)
-_NS_5 = torch.tensor([5], dtype=torch.int64)
+_BIRTH = jnp.array([0.05], dtype=jnp.float64)
+_DEATH = jnp.array([0.03], dtype=jnp.float64)
+_TIMES = jnp.array([1500.0], dtype=jnp.float64)
+_AGE_750 = jnp.array([750.0], dtype=jnp.float64)
+_NS_5 = jnp.array([5], dtype=jnp.int32)
 _AGES_10 = np.array(
     [100.0, 200.0, 300.0, 450.0, 600.0, 750.0, 900.0, 1050.0, 1200.0, 1350.0]
 )
@@ -65,11 +65,11 @@ _ATOL = 1e-4
 # Epoch 1: birth 0.05, death 0.03, T=750  (supercritical)
 # Epoch 2: birth 0.01, death 0.02, T=1500 (subcritical)
 # ---------------------------------------------------------------------------
-_BIRTH_2 = torch.tensor([0.05, 0.01], dtype=torch.float64)
-_DEATH_2 = torch.tensor([0.03, 0.02], dtype=torch.float64)
-_TIMES_2 = torch.tensor([750.0, 1500.0], dtype=torch.float64)
-_AGE_300 = torch.tensor([300.0], dtype=torch.float64)
-_NS_2 = torch.tensor([3, 5], dtype=torch.int64)
+_BIRTH_2 = jnp.array([0.05, 0.01], dtype=jnp.float64)
+_DEATH_2 = jnp.array([0.03, 0.02], dtype=jnp.float64)
+_TIMES_2 = jnp.array([750.0, 1500.0], dtype=jnp.float64)
+_AGE_300 = jnp.array([300.0], dtype=jnp.float64)
+_NS_2 = jnp.array([3, 5], dtype=jnp.int32)
 _AGES_10_MULTI = np.array(
     [80.0, 200.0, 350.0, 500.0, 650.0, 720.0, 900.0, 1050.0, 1200.0, 1400.0]
 )
@@ -102,16 +102,16 @@ class TestRegressionLikelihoods:
         )
 
     def test_extinction_pr_golden_subcritical(self) -> None:
-        lam = torch.tensor([0.03], dtype=torch.float64)
-        mu = torch.tensor([0.05], dtype=torch.float64)
+        lam = jnp.array([0.03], dtype=jnp.float64)
+        mu = jnp.array([0.05], dtype=jnp.float64)
         result = calculate_extinction_pr(lam, mu, _TIMES)
         np.testing.assert_allclose(
             float(result), _GOLDEN_EXTINCTION_SUBCRITICAL, atol=_ATOL, rtol=0.0
         )
 
     def test_extinction_pr_golden_critical(self) -> None:
-        lam = torch.tensor([0.05], dtype=torch.float64)
-        mu = torch.tensor([0.05], dtype=torch.float64)
+        lam = jnp.array([0.05], dtype=jnp.float64)
+        mu = jnp.array([0.05], dtype=jnp.float64)
         result = calculate_extinction_pr(lam, mu, _TIMES)
         np.testing.assert_allclose(
             float(result), _GOLDEN_EXTINCTION_CRITICAL, atol=_ATOL, rtol=0.0

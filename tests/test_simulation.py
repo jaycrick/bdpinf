@@ -1,9 +1,10 @@
 """Test suite for BirthDeathProcess simulation functionality."""
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 import pytest
-import torch
 
 import inf_bp_texts.simulation.simulator as simulator_module
 from inf_bp_texts.models import BirthDeathProcess
@@ -212,7 +213,7 @@ class TestSimulation:
         # Check that the process state is still valid
         assert process.epoch_end_times[-1].item() == 1.0
         assert isinstance(process.creation_times, list)
-        assert isinstance(process.manuscript_ages, torch.Tensor)
+        assert isinstance(process.manuscript_ages, jax.Array)
 
     def test_simulation_resets_process(self) -> None:
         """Test that creating new process with simulation results gives proper state."""
@@ -224,7 +225,7 @@ class TestSimulation:
             birth_rates=0.1,
             death_rates=0.02,
         )
-        initial_ages = process.manuscript_ages.clone()
+        initial_ages = jnp.array(process.manuscript_ages)
 
         # Run simulation using modular function - should give new results
         df = simulate_birth_death_process(
@@ -275,9 +276,9 @@ class TestSimulation:
         )
 
         sampled = simulate_bdp_ages_from_distributions(
-            birth_rate=torch.tensor(0.5, dtype=torch.float64),
-            death_rate=torch.tensor(0.3, dtype=torch.float64),
-            max_time=torch.tensor(5.0, dtype=torch.float64),
+            birth_rate=0.5,
+            death_rate=0.3,
+            max_time=5.0,
             rng=DummyRng(),
         )
 
@@ -300,7 +301,7 @@ class TestSimulation:
         monkeypatch.setattr(
             simulator_module,
             "population_geometric_parameter",
-            lambda *args, **kwargs: torch.tensor(0.5, dtype=torch.float64),
+            lambda *args, **kwargs: 0.5,
         )
         monkeypatch.setattr(
             simulator_module,
@@ -314,9 +315,9 @@ class TestSimulation:
         )
 
         sampled = simulate_bdp_ages_from_distributions(
-            birth_rate=torch.tensor(0.5, dtype=torch.float64),
-            death_rate=torch.tensor(0.3, dtype=torch.float64),
-            max_time=torch.tensor(5.0, dtype=torch.float64),
+            birth_rate=0.5,
+            death_rate=0.3,
+            max_time=5.0,
             rng=DummyRng(),
             ensure_non_extinct=True,
         )
@@ -696,9 +697,9 @@ class TestBdpAgeDistributionSampling:
 
     def test_population_and_age_accounting(self) -> None:
         """Sampled ages should match one spine plus n-1 non-spine ages."""
-        birth_rate = torch.tensor(0.25)
-        death_rate = torch.tensor(0.1)
-        max_time = torch.tensor(12.0)
+        birth_rate = 0.25
+        death_rate = 0.1
+        max_time = 12.0
         rng = np.random.default_rng(2026)
 
         for _ in range(200):
@@ -720,16 +721,16 @@ class TestBdpAgeDistributionSampling:
                 assert len(spine) == 1
                 assert len(non_spine) == pop_size - 1
 
-                spine_age = spine[0].item()
-                assert 0.0 <= spine_age <= float(max_time)
+                spine_age = float(spine[0])
+                assert 0.0 <= spine_age <= max_time
                 for age in non_spine:
-                    assert 0.0 <= float(age) <= float(max_time)
+                    assert 0.0 <= float(age) <= max_time
 
     def test_sampling_is_reproducible_with_seed(self) -> None:
         """Sampling should be deterministic with identical seeds."""
-        birth_rate = torch.tensor(0.5)
-        death_rate = torch.tensor(0.3)
-        max_time = torch.tensor(5.0)
+        birth_rate = 0.5
+        death_rate = 0.3
+        max_time = 5.0
 
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
@@ -757,9 +758,9 @@ class TestBdpAgeDistributionSampling:
 
     def test_sampled_ages_have_better_mean_log_likelihood_than_uniform(self) -> None:
         """Sampled ages should score better than a uniform baseline under matching models."""
-        birth_rate = torch.tensor(0.5)
-        death_rate = torch.tensor(0.2)
-        max_time = torch.tensor(6.0)
+        birth_rate = 0.5
+        death_rate = 0.2
+        max_time = 6.0
         rng = np.random.default_rng(7)
 
         sampled_spine: list[float] = []
@@ -782,44 +783,44 @@ class TestBdpAgeDistributionSampling:
         assert len(sampled_spine) > 200
         assert len(sampled_non_spine) > 200
 
-        sampled_spine_tensor = torch.tensor(sampled_spine, dtype=torch.float64)
-        sampled_non_spine_tensor = torch.tensor(sampled_non_spine, dtype=torch.float64)
+        sampled_spine_arr = jnp.array(sampled_spine, dtype=jnp.float64)
+        sampled_non_spine_arr = jnp.array(sampled_non_spine, dtype=jnp.float64)
 
-        baseline_spine_tensor = torch.tensor(
-            rng.uniform(0.0, float(max_time), size=len(sampled_spine)),
-            dtype=torch.float64,
+        baseline_spine_arr = jnp.array(
+            rng.uniform(0.0, max_time, size=len(sampled_spine)),
+            dtype=jnp.float64,
         )
-        baseline_non_spine_tensor = torch.tensor(
-            rng.uniform(0.0, float(max_time), size=len(sampled_non_spine)),
-            dtype=torch.float64,
+        baseline_non_spine_arr = jnp.array(
+            rng.uniform(0.0, max_time, size=len(sampled_non_spine)),
+            dtype=jnp.float64,
         )
 
         sampled_spine_mean_ll = calculate_spine_ages_log_lik(
             birth_rates=birth_rate,
             death_rates=death_rate,
-            ages=sampled_spine_tensor,
+            ages=sampled_spine_arr,
             times=max_time,
         ) / len(sampled_spine)
         baseline_spine_mean_ll = calculate_spine_ages_log_lik(
             birth_rates=birth_rate,
             death_rates=death_rate,
-            ages=baseline_spine_tensor,
+            ages=baseline_spine_arr,
             times=max_time,
         ) / len(sampled_spine)
         sampled_non_spine_mean_ll = calculate_non_spine_ages_log_lik(
             birth_rates=birth_rate,
             death_rates=death_rate,
-            ages=sampled_non_spine_tensor,
+            ages=sampled_non_spine_arr,
             times=max_time,
         ) / len(sampled_non_spine)
         baseline_non_spine_mean_ll = calculate_non_spine_ages_log_lik(
             birth_rates=birth_rate,
             death_rates=death_rate,
-            ages=baseline_non_spine_tensor,
+            ages=baseline_non_spine_arr,
             times=max_time,
         ) / len(sampled_non_spine)
 
-        assert torch.isfinite(sampled_spine_mean_ll)
-        assert torch.isfinite(sampled_non_spine_mean_ll)
+        assert jnp.isfinite(sampled_spine_mean_ll)
+        assert jnp.isfinite(sampled_non_spine_mean_ll)
         assert sampled_spine_mean_ll > baseline_spine_mean_ll
         assert sampled_non_spine_mean_ll > baseline_non_spine_mean_ll

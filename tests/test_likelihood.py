@@ -1,7 +1,8 @@
 """Unit tests for the likelihood fns in the inf_bp_texts.inference.likelihood module."""
 
+import jax
+import jax.numpy as jnp
 import pytest
-import torch
 
 from inf_bp_texts.inference import (
     calculate_unknown_spine_mixture_age_density,
@@ -15,11 +16,11 @@ from inf_bp_texts.models.math_ages import (
 
 
 def _expected_unknown_spine_age_log_lik(
-    birth_rates: torch.Tensor,
-    death_rates: torch.Tensor,
-    ages: torch.Tensor,
-    times: torch.Tensor,
-) -> torch.Tensor:
+    birth_rates: jax.Array,
+    death_rates: jax.Array,
+    ages: jax.Array,
+    times: jax.Array,
+) -> jax.Array:
     """Compute the unknown-spine age log-likelihood via stable log-sum-exp."""
     sum_log_f = calculate_non_spine_ages_log_lik(
         birth_rates,
@@ -29,7 +30,7 @@ def _expected_unknown_spine_age_log_lik(
     )
     a_terms = []
     for age in ages:
-        age_tensor = torch.tensor([age], dtype=torch.float64)
+        age_tensor = jnp.array([float(age)], dtype=jnp.float64)
         log_g = calculate_spine_ages_log_lik(
             birth_rates,
             death_rates,
@@ -46,8 +47,8 @@ def _expected_unknown_spine_age_log_lik(
 
     return (
         sum_log_f
-        - torch.log(torch.tensor(float(len(ages)), dtype=torch.float64))
-        + torch.logsumexp(torch.stack(a_terms), dim=0)
+        - jnp.log(jnp.float64(len(ages)))
+        + jax.scipy.special.logsumexp(jnp.stack(a_terms))
     )
 
 
@@ -56,10 +57,10 @@ class TestLikelihood:
 
     def test_log_likelihood_simple(self) -> None:
         """Test log_likelihood with simple valid input and real function outputs."""
-        birth_rates = torch.tensor([0.5])
-        death_rates = torch.tensor([0.2])
-        ages = torch.tensor([1.0])
-        times = torch.tensor([2.0])
+        birth_rates = jnp.array([0.5], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
+        ages = jnp.array([1.0], dtype=jnp.float64)
+        times = jnp.array([2.0], dtype=jnp.float64)
 
         result = likelihood.log_likelihood(
             birth_rates=birth_rates,
@@ -72,7 +73,7 @@ class TestLikelihood:
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
             initial_population=1,
         ) + _expected_unknown_spine_age_log_lik(
             birth_rates=birth_rates,
@@ -81,36 +82,34 @@ class TestLikelihood:
             times=times,
         )
 
-        assert torch.isclose(result, expected)
+        assert bool(jnp.isclose(result, expected))
 
     def test_log_likelihood_negative_branch(self) -> None:
         """Test log_likelihood returns -inf when population log-likelihood is non-finite."""
         result = likelihood.log_likelihood(
-            birth_rates=torch.tensor([1000.0]),
-            death_rates=torch.tensor([0.1]),
-            ages=torch.tensor([1.0]),
-            times=torch.tensor([2.0]),
+            birth_rates=jnp.array([1000.0], dtype=jnp.float64),
+            death_rates=jnp.array([0.1], dtype=jnp.float64),
+            ages=jnp.array([1.0], dtype=jnp.float64),
+            times=jnp.array([2.0], dtype=jnp.float64),
         )
-        assert torch.isneginf(result)
+        assert bool(jnp.isneginf(result))
 
     def test_log_likelihood_invalid_params(self) -> None:
         """Test log_likelihood returns -inf for invalid parameters (e.g., neg rates)."""
         result = likelihood.log_likelihood(
-            birth_rates=torch.tensor([-0.5]),
-            death_rates=torch.tensor([0.2]),
-            ages=torch.tensor([1.0]),
-            times=torch.tensor([2.0]),
+            birth_rates=jnp.array([-0.5], dtype=jnp.float64),
+            death_rates=jnp.array([0.2], dtype=jnp.float64),
+            ages=jnp.array([1.0], dtype=jnp.float64),
+            times=jnp.array([2.0], dtype=jnp.float64),
         )
-        assert result == float("-inf") or torch.isclose(
-            result, torch.tensor(float("-inf"))
-        )
+        assert float(result) == float("-inf")
 
     def test_log_likelihood_log_scale(self) -> None:
         """Test log_likelihood with log_scale_params=True."""
-        log_birth_rates = torch.tensor([0.0])
-        log_death_rates = torch.tensor([0.0])
-        ages = torch.tensor([1.0])
-        times = torch.tensor([2.0])
+        log_birth_rates = jnp.array([0.0], dtype=jnp.float64)
+        log_death_rates = jnp.array([0.0], dtype=jnp.float64)
+        ages = jnp.array([1.0], dtype=jnp.float64)
+        times = jnp.array([2.0], dtype=jnp.float64)
 
         result = likelihood.log_likelihood(
             birth_rates=log_birth_rates,
@@ -120,13 +119,13 @@ class TestLikelihood:
             log_scale_params=True,
         )
 
-        birth_rates = torch.exp(log_birth_rates)
-        death_rates = torch.exp(log_death_rates)
+        birth_rates = jnp.exp(log_birth_rates)
+        death_rates = jnp.exp(log_death_rates)
         expected = likelihood.calculate_populations_log_lik(
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
             initial_population=1,
         ) + _expected_unknown_spine_age_log_lik(
             birth_rates=birth_rates,
@@ -135,15 +134,15 @@ class TestLikelihood:
             times=times,
         )
 
-        assert torch.isclose(result, expected)
+        assert bool(jnp.isclose(result, expected))
 
     def test_log_likelihood_spine_ages(self) -> None:
         """Test log_likelihood with spine_ages provided."""
-        birth_rates = torch.tensor([0.5])
-        death_rates = torch.tensor([0.2])
-        ages = torch.tensor([1.0])
-        times = torch.tensor([2.0])
-        spine_ages = torch.tensor([0.5])
+        birth_rates = jnp.array([0.5], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
+        ages = jnp.array([1.0], dtype=jnp.float64)
+        times = jnp.array([2.0], dtype=jnp.float64)
+        spine_ages = jnp.array([0.5], dtype=jnp.float64)
 
         result = likelihood.log_likelihood(
             birth_rates=birth_rates,
@@ -158,7 +157,7 @@ class TestLikelihood:
                 birth_rates=birth_rates,
                 death_rates=death_rates,
                 times=times,
-                ns=torch.tensor([2], dtype=torch.int64),
+                ns=jnp.array([2], dtype=jnp.int32),
                 initial_population=1,
             )
             + calculate_spine_ages_log_lik(
@@ -175,14 +174,14 @@ class TestLikelihood:
             )
         )
 
-        assert torch.isclose(result, expected)
+        assert bool(jnp.isclose(result, expected))
 
     def test_log_likelihood_is_ordered(self) -> None:
         """Test log_likelihood with is_ordered=True."""
-        birth_rates = torch.tensor([0.5])
-        death_rates = torch.tensor([0.2])
-        ages = torch.tensor([1.0, 0.5])
-        times = torch.tensor([2.0])
+        birth_rates = jnp.array([0.5], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
+        ages = jnp.array([1.0, 0.5], dtype=jnp.float64)
+        times = jnp.array([2.0], dtype=jnp.float64)
 
         result = likelihood.log_likelihood(
             birth_rates=birth_rates,
@@ -197,71 +196,71 @@ class TestLikelihood:
                 birth_rates=birth_rates,
                 death_rates=death_rates,
                 times=times,
-                ns=torch.tensor([2], dtype=torch.int64),
+                ns=jnp.array([2], dtype=jnp.int32),
                 initial_population=1,
             )
             + calculate_spine_ages_log_lik(
                 birth_rates,
                 death_rates,
-                ages=torch.tensor([1.0]),
+                ages=jnp.array([1.0], dtype=jnp.float64),
                 times=times,
             )
             + calculate_non_spine_ages_log_lik(
                 birth_rates,
                 death_rates,
-                ages=torch.tensor([0.5]),
+                jnp.array([0.5], dtype=jnp.float64),
                 times=times,
             )
         )
 
-        assert torch.isclose(result, expected)
+        assert bool(jnp.isclose(result, expected))
 
     def test_log_likelihood_value_errors(self) -> None:
         """Test log_likelihood raises ValueError for invalid argument combinations."""
         # Both is_ordered and spine_ages
         with pytest.raises(ValueError):
             likelihood.log_likelihood(
-                birth_rates=torch.tensor([0.5]),
-                death_rates=torch.tensor([0.2]),
-                ages=torch.tensor([1.0]),
-                times=torch.tensor([2.0]),
+                birth_rates=jnp.array([0.5], dtype=jnp.float64),
+                death_rates=jnp.array([0.2], dtype=jnp.float64),
+                ages=jnp.array([1.0], dtype=jnp.float64),
+                times=jnp.array([2.0], dtype=jnp.float64),
                 is_ordered=True,
-                spine_ages=torch.tensor([0.5]),
+                spine_ages=jnp.array([0.5], dtype=jnp.float64),
             )
         with pytest.raises(ValueError):
             likelihood.log_likelihood(
-                birth_rates=torch.tensor([0.5]),
-                death_rates=torch.tensor([0.2]),
-                ages=torch.tensor([1.0]),
-                times=torch.tensor([0.0]),
+                birth_rates=jnp.array([0.5], dtype=jnp.float64),
+                death_rates=jnp.array([0.2], dtype=jnp.float64),
+                ages=jnp.array([1.0], dtype=jnp.float64),
+                times=jnp.array([0.0], dtype=jnp.float64),
             )
         # ages out of range
         with pytest.raises(ValueError):
             likelihood.log_likelihood(
-                birth_rates=torch.tensor([0.5]),
-                death_rates=torch.tensor([0.2]),
-                ages=torch.tensor([-1.0]),
-                times=torch.tensor([2.0]),
+                birth_rates=jnp.array([0.5], dtype=jnp.float64),
+                death_rates=jnp.array([0.2], dtype=jnp.float64),
+                ages=jnp.array([-1.0], dtype=jnp.float64),
+                times=jnp.array([2.0], dtype=jnp.float64),
             )
 
     def test_negative_log_likelihood(self) -> None:
         """Test negative_log_likelihood returns negated log_likelihood value."""
         kwargs = {
-            "birth_rates": torch.tensor([0.5]),
-            "death_rates": torch.tensor([0.2]),
-            "ages": torch.tensor([1.0]),
-            "times": torch.tensor([2.0]),
+            "birth_rates": jnp.array([0.5], dtype=jnp.float64),
+            "death_rates": jnp.array([0.2], dtype=jnp.float64),
+            "ages": jnp.array([1.0], dtype=jnp.float64),
+            "times": jnp.array([2.0], dtype=jnp.float64),
         }
         result = likelihood.negative_log_likelihood(**kwargs)
         expected = -likelihood.log_likelihood(**kwargs)
-        assert torch.isclose(result, expected)
+        assert bool(jnp.isclose(result, expected))
 
     def test_unknown_spine_mixture_age_density_matches_manual_formula(self) -> None:
         """Test the exported mixture-density helper matches the manual formula."""
-        birth_rates = torch.tensor([0.5], dtype=torch.float64)
-        death_rates = torch.tensor([0.2], dtype=torch.float64)
-        age_grid = torch.tensor([0.0, 0.5, 1.5, 2.5], dtype=torch.float64)
-        times = torch.tensor([3.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.5], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
+        age_grid = jnp.array([0.0, 0.5, 1.5, 2.5], dtype=jnp.float64)
+        times = jnp.array([3.0], dtype=jnp.float64)
         num_manuscripts = 4
 
         result = calculate_unknown_spine_mixture_age_density(
@@ -274,8 +273,8 @@ class TestLikelihood:
 
         expected_values = []
         for age in age_grid:
-            age_tensor = torch.tensor([age], dtype=torch.float64)
-            non_spine_density = torch.exp(
+            age_tensor = jnp.array([float(age)], dtype=jnp.float64)
+            non_spine_density = jnp.exp(
                 calculate_non_spine_ages_log_lik(
                     birth_rates,
                     death_rates,
@@ -283,7 +282,7 @@ class TestLikelihood:
                     times=times,
                 ),
             )
-            spine_density = torch.exp(
+            spine_density = jnp.exp(
                 calculate_spine_ages_log_lik(
                     birth_rates,
                     death_rates,
@@ -296,27 +295,27 @@ class TestLikelihood:
                 / num_manuscripts,
             )
 
-        expected = torch.stack(expected_values)
+        expected = jnp.stack(expected_values)
 
-        assert torch.allclose(result, expected)
+        assert bool(jnp.allclose(result, expected))
 
     def test_unknown_spine_mixture_age_density_rejects_nonpositive_n(self) -> None:
         """Test the helper rejects invalid manuscript counts."""
         with pytest.raises(ValueError):
             calculate_unknown_spine_mixture_age_density(
-                birth_rates=torch.tensor([0.5], dtype=torch.float64),
-                death_rates=torch.tensor([0.2], dtype=torch.float64),
-                age_grid=torch.tensor([0.5], dtype=torch.float64),
-                times=torch.tensor([3.0], dtype=torch.float64),
+                birth_rates=jnp.array([0.5], dtype=jnp.float64),
+                death_rates=jnp.array([0.2], dtype=jnp.float64),
+                age_grid=jnp.array([0.5], dtype=jnp.float64),
+                times=jnp.array([3.0], dtype=jnp.float64),
                 num_manuscripts=0,
             )
 
     def test_log_likelihood_unknown_spine_formula_equivalence(self) -> None:
         """Default branch should match unknown-spine log-sum-exp formula."""
-        birth_rates = torch.tensor([0.7])
-        death_rates = torch.tensor([0.2])
-        ages = torch.tensor([0.2, 0.4, 0.9])
-        times = torch.tensor([1.5])
+        birth_rates = jnp.array([0.7], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
+        ages = jnp.array([0.2, 0.4, 0.9], dtype=jnp.float64)
+        times = jnp.array([1.5], dtype=jnp.float64)
 
         observed = likelihood.log_likelihood(
             birth_rates=birth_rates,
@@ -329,7 +328,7 @@ class TestLikelihood:
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
-            ns=torch.tensor([3], dtype=torch.int64),
+            ns=jnp.array([3], dtype=jnp.int32),
             initial_population=1,
         ) + _expected_unknown_spine_age_log_lik(
             birth_rates=birth_rates,
@@ -338,14 +337,14 @@ class TestLikelihood:
             times=times,
         )
 
-        assert torch.isclose(observed, expected)
+        assert bool(jnp.isclose(observed, expected))
 
     def test_log_likelihood_unknown_spine_single_age_reduces_to_spine(self) -> None:
         """With one age, unknown-spine branch should equal explicit spine likelihood."""
-        birth_rates = torch.tensor([0.5])
-        death_rates = torch.tensor([0.2])
-        ages = torch.tensor([0.5])
-        times = torch.tensor([2.0])
+        birth_rates = jnp.array([0.5], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
+        ages = jnp.array([0.5], dtype=jnp.float64)
+        times = jnp.array([2.0], dtype=jnp.float64)
 
         unknown_spine_result = likelihood.log_likelihood(
             birth_rates=birth_rates,
@@ -357,19 +356,19 @@ class TestLikelihood:
         explicit_spine_result = likelihood.log_likelihood(
             birth_rates=birth_rates,
             death_rates=death_rates,
-            ages=torch.tensor([]),
+            ages=jnp.array([], dtype=jnp.float64),
             times=times,
             spine_ages=ages,
         )
 
-        assert torch.isclose(unknown_spine_result, explicit_spine_result)
+        assert bool(jnp.isclose(unknown_spine_result, explicit_spine_result))
 
     def test_log_likelihood_unknown_spine_differs_from_all_non_spine(self) -> None:
         """Unknown-spine branch should not collapse to all-non-spine in general."""
-        birth_rates = torch.tensor([0.6])
-        death_rates = torch.tensor([0.1])
-        ages = torch.tensor([0.1, 0.3, 0.8])
-        times = torch.tensor([1.0])
+        birth_rates = jnp.array([0.6], dtype=jnp.float64)
+        death_rates = jnp.array([0.1], dtype=jnp.float64)
+        ages = jnp.array([0.1, 0.3, 0.8], dtype=jnp.float64)
+        times = jnp.array([1.0], dtype=jnp.float64)
 
         observed = likelihood.log_likelihood(
             birth_rates=birth_rates,
@@ -382,7 +381,7 @@ class TestLikelihood:
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
-            ns=torch.tensor([3], dtype=torch.int64),
+            ns=jnp.array([3], dtype=jnp.int32),
             initial_population=1,
         ) + calculate_non_spine_ages_log_lik(
             birth_rates,
@@ -391,14 +390,14 @@ class TestLikelihood:
             times=times,
         )
 
-        assert not torch.isclose(observed, all_non_spine)
+        assert not bool(jnp.isclose(observed, all_non_spine))
 
     def test_log_likelihood_terminal_age_auto_assigned_as_spine(self) -> None:
         """An age at final time should be treated as spine when spine_ages is omitted."""
-        birth_rates = torch.tensor([0.5])
-        death_rates = torch.tensor([0.2])
-        times = torch.tensor([2.0])
-        ages = torch.tensor([0.7, 2.0])
+        birth_rates = jnp.array([0.5], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
+        times = jnp.array([2.0], dtype=jnp.float64)
+        ages = jnp.array([0.7, 2.0], dtype=jnp.float64)
 
         observed = likelihood.log_likelihood(
             birth_rates=birth_rates,
@@ -410,21 +409,21 @@ class TestLikelihood:
         expected = likelihood.log_likelihood(
             birth_rates=birth_rates,
             death_rates=death_rates,
-            ages=torch.tensor([0.7]),
-            spine_ages=torch.tensor([2.0]),
+            ages=jnp.array([0.7], dtype=jnp.float64),
+            spine_ages=jnp.array([2.0], dtype=jnp.float64),
             times=times,
         )
 
-        assert torch.isclose(observed, expected)
+        assert bool(jnp.isclose(observed, expected))
 
     def test_log_likelihood_multiple_terminal_ages_raise_value_error(self) -> None:
         """Multiple ages at final time are invalid under unique-spine assumption."""
         with pytest.raises(ValueError, match="More than one age equals"):
             likelihood.log_likelihood(
-                birth_rates=torch.tensor([0.5]),
-                death_rates=torch.tensor([0.2]),
-                ages=torch.tensor([2.0, 2.0, 0.5]),
-                times=torch.tensor([2.0]),
+                birth_rates=jnp.array([0.5], dtype=jnp.float64),
+                death_rates=jnp.array([0.2], dtype=jnp.float64),
+                ages=jnp.array([2.0, 2.0, 0.5], dtype=jnp.float64),
+                times=jnp.array([2.0], dtype=jnp.float64),
             )
 
     # =====================================================================
@@ -433,18 +432,14 @@ class TestLikelihood:
 
     def test_birth_density_reverses_age_density(self) -> None:
         """Test that birth_density(b) equals age_density(T - b) with Jacobian = 1."""
-        birth_rates = torch.tensor([0.5], dtype=torch.float64)
-        death_rates = torch.tensor([0.2], dtype=torch.float64)
-        times = torch.tensor([3.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.5], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
+        times = jnp.array([3.0], dtype=jnp.float64)
         num_manuscripts = 5
 
-        # Create symmetric test grids
         T = float(times[-1])
-        birth_time_grid = torch.tensor(
-            [0.1, 0.5, 1.0, 1.5, 2.0, 2.5], dtype=torch.float64
-        )
+        birth_time_grid = jnp.array([0.1, 0.5, 1.0, 1.5, 2.0, 2.5], dtype=jnp.float64)
 
-        # Get birth-time density
         birth_density = calculate_unknown_spine_mixture_birth_density(
             birth_rates=birth_rates,
             death_rates=death_rates,
@@ -453,7 +448,6 @@ class TestLikelihood:
             num_manuscripts=num_manuscripts,
         )
 
-        # Get corresponding age-time density
         age_grid = T - birth_time_grid
         age_density = calculate_unknown_spine_mixture_age_density(
             birth_rates=birth_rates,
@@ -463,25 +457,21 @@ class TestLikelihood:
             num_manuscripts=num_manuscripts,
         )
 
-        # Reverse age_density to match birth_time order (since b=T-a, high a -> low b)
-        age_density_reversed = torch.flip(age_density, dims=[0])
-
-        # Birth-density should match reversed age-density
-        assert torch.allclose(birth_density, age_density_reversed, rtol=1e-6)
+        # age_grid[i] = T - birth_time_grid[i], so age_density[i] == birth_density[i]
+        assert bool(jnp.allclose(birth_density, age_density, rtol=1e-6))
 
     def test_birth_density_single_point_matches_age_density(self) -> None:
         """Test a single point: birth_density(b) == age_density(T - b)."""
-        birth_rates = torch.tensor([0.6], dtype=torch.float64)
-        death_rates = torch.tensor([0.15], dtype=torch.float64)
-        times = torch.tensor([2.5], dtype=torch.float64)
+        birth_rates = jnp.array([0.6], dtype=jnp.float64)
+        death_rates = jnp.array([0.15], dtype=jnp.float64)
+        times = jnp.array([2.5], dtype=jnp.float64)
         num_manuscripts = 3
         T = float(times[-1])
 
-        # Test at a single birth time
         b = 1.0
-        birth_time_grid = torch.tensor([b], dtype=torch.float64)
+        birth_time_grid = jnp.array([b], dtype=jnp.float64)
         age = T - b
-        age_grid = torch.tensor([age], dtype=torch.float64)
+        age_grid = jnp.array([age], dtype=jnp.float64)
 
         birth_dens = calculate_unknown_spine_mixture_birth_density(
             birth_rates=birth_rates,
@@ -499,16 +489,16 @@ class TestLikelihood:
             num_manuscripts=num_manuscripts,
         )
 
-        assert torch.isclose(birth_dens[0], age_dens[0], rtol=1e-6)
+        assert bool(jnp.isclose(birth_dens[0], age_dens[0], rtol=1e-6))
 
     def test_birth_density_rejects_negative_birth_times(self) -> None:
         """Test that birth density rejects birth times < 0."""
         with pytest.raises(ValueError, match="Birth times must be in the range"):
             calculate_unknown_spine_mixture_birth_density(
-                birth_rates=torch.tensor([0.5], dtype=torch.float64),
-                death_rates=torch.tensor([0.2], dtype=torch.float64),
-                birth_time_grid=torch.tensor([-0.5], dtype=torch.float64),
-                times=torch.tensor([3.0], dtype=torch.float64),
+                birth_rates=jnp.array([0.5], dtype=jnp.float64),
+                death_rates=jnp.array([0.2], dtype=jnp.float64),
+                birth_time_grid=jnp.array([-0.5], dtype=jnp.float64),
+                times=jnp.array([3.0], dtype=jnp.float64),
                 num_manuscripts=5,
             )
 
@@ -517,10 +507,10 @@ class TestLikelihood:
         T = 2.0
         with pytest.raises(ValueError, match="Birth times must be in the range"):
             calculate_unknown_spine_mixture_birth_density(
-                birth_rates=torch.tensor([0.5], dtype=torch.float64),
-                death_rates=torch.tensor([0.2], dtype=torch.float64),
-                birth_time_grid=torch.tensor([T + 0.5], dtype=torch.float64),
-                times=torch.tensor([T], dtype=torch.float64),
+                birth_rates=jnp.array([0.5], dtype=jnp.float64),
+                death_rates=jnp.array([0.2], dtype=jnp.float64),
+                birth_time_grid=jnp.array([T + 0.5], dtype=jnp.float64),
+                times=jnp.array([T], dtype=jnp.float64),
                 num_manuscripts=5,
             )
 
@@ -530,10 +520,10 @@ class TestLikelihood:
             ValueError, match="num_manuscripts must be a positive integer"
         ):
             calculate_unknown_spine_mixture_birth_density(
-                birth_rates=torch.tensor([0.5], dtype=torch.float64),
-                death_rates=torch.tensor([0.2], dtype=torch.float64),
-                birth_time_grid=torch.tensor([1.0], dtype=torch.float64),
-                times=torch.tensor([3.0], dtype=torch.float64),
+                birth_rates=jnp.array([0.5], dtype=jnp.float64),
+                death_rates=jnp.array([0.2], dtype=jnp.float64),
+                birth_time_grid=jnp.array([1.0], dtype=jnp.float64),
+                times=jnp.array([3.0], dtype=jnp.float64),
                 num_manuscripts=0,
             )
 
@@ -541,22 +531,21 @@ class TestLikelihood:
             ValueError, match="num_manuscripts must be a positive integer"
         ):
             calculate_unknown_spine_mixture_birth_density(
-                birth_rates=torch.tensor([0.5], dtype=torch.float64),
-                death_rates=torch.tensor([0.2], dtype=torch.float64),
-                birth_time_grid=torch.tensor([1.0], dtype=torch.float64),
-                times=torch.tensor([3.0], dtype=torch.float64),
+                birth_rates=jnp.array([0.5], dtype=jnp.float64),
+                death_rates=jnp.array([0.2], dtype=jnp.float64),
+                birth_time_grid=jnp.array([1.0], dtype=jnp.float64),
+                times=jnp.array([3.0], dtype=jnp.float64),
                 num_manuscripts=-3,
             )
 
     def test_birth_density_non_negative(self) -> None:
         """Test that birth density is always non-negative."""
-        birth_rates = torch.tensor([0.4], dtype=torch.float64)
-        death_rates = torch.tensor([0.25], dtype=torch.float64)
-        times = torch.tensor([4.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.4], dtype=jnp.float64)
+        death_rates = jnp.array([0.25], dtype=jnp.float64)
+        times = jnp.array([4.0], dtype=jnp.float64)
         num_manuscripts = 8
 
-        # Test across the full domain [0, T]
-        birth_time_grid = torch.linspace(0, float(times[-1]), 20, dtype=torch.float64)
+        birth_time_grid = jnp.linspace(0, float(times[-1]), 20, dtype=jnp.float64)
 
         birth_density = calculate_unknown_spine_mixture_birth_density(
             birth_rates=birth_rates,
@@ -566,22 +555,21 @@ class TestLikelihood:
             num_manuscripts=num_manuscripts,
         )
 
-        assert torch.all(birth_density >= 0), "Birth density should be non-negative"
+        assert bool(jnp.all(birth_density >= 0)), "Birth density should be non-negative"
 
     def test_birth_density_shape_matches_grid(self) -> None:
         """Test that output shape matches input grid shape."""
-        birth_rates = torch.tensor([0.5], dtype=torch.float64)
-        death_rates = torch.tensor([0.2], dtype=torch.float64)
-        times = torch.tensor([3.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.5], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
+        times = jnp.array([3.0], dtype=jnp.float64)
         num_manuscripts = 5
 
-        # Test with various grid sizes
         for grid_size in [1, 5, 10, 50]:
-            birth_time_grid = torch.linspace(
+            birth_time_grid = jnp.linspace(
                 0,
                 float(times[-1]),
                 grid_size,
-                dtype=torch.float64,
+                dtype=jnp.float64,
             )
 
             birth_density = calculate_unknown_spine_mixture_birth_density(
@@ -598,10 +586,10 @@ class TestLikelihood:
 
     def test_birth_density_deterministic(self) -> None:
         """Test that calling with the same inputs produces identical results."""
-        birth_rates = torch.tensor([0.55], dtype=torch.float64)
-        death_rates = torch.tensor([0.18], dtype=torch.float64)
-        birth_time_grid = torch.tensor([0.5, 1.0, 1.5], dtype=torch.float64)
-        times = torch.tensor([2.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.55], dtype=jnp.float64)
+        death_rates = jnp.array([0.18], dtype=jnp.float64)
+        birth_time_grid = jnp.array([0.5, 1.0, 1.5], dtype=jnp.float64)
+        times = jnp.array([2.0], dtype=jnp.float64)
         num_manuscripts = 4
 
         result1 = calculate_unknown_spine_mixture_birth_density(
@@ -620,16 +608,15 @@ class TestLikelihood:
             num_manuscripts=num_manuscripts,
         )
 
-        assert torch.allclose(result1, result2)
+        assert bool(jnp.allclose(result1, result2))
 
     def test_birth_density_with_single_manuscript(self) -> None:
         """Test birth density with num_manuscripts=1 (degenerate case)."""
-        birth_rates = torch.tensor([0.5], dtype=torch.float64)
-        death_rates = torch.tensor([0.2], dtype=torch.float64)
-        birth_time_grid = torch.tensor([0.5, 1.0, 1.5], dtype=torch.float64)
-        times = torch.tensor([2.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.5], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
+        birth_time_grid = jnp.array([0.5, 1.0, 1.5], dtype=jnp.float64)
+        times = jnp.array([2.0], dtype=jnp.float64)
 
-        # Should not raise an error even with a single manuscript
         birth_density = calculate_unknown_spine_mixture_birth_density(
             birth_rates=birth_rates,
             death_rates=death_rates,
@@ -639,22 +626,19 @@ class TestLikelihood:
         )
 
         assert birth_density.shape == birth_time_grid.shape
-        assert torch.all(birth_density >= 0)
+        assert bool(jnp.all(birth_density >= 0))
 
     def test_birth_density_consistency_across_different_ranges(self) -> None:
-        """Test that birth density is consistent when evaluated at same points over different time ranges."""
-        birth_rates = torch.tensor([0.6], dtype=torch.float64)
-        death_rates = torch.tensor([0.3], dtype=torch.float64)
+        """Test birth density consistency when evaluated at same points over different time ranges."""
+        birth_rates = jnp.array([0.6], dtype=jnp.float64)
+        death_rates = jnp.array([0.3], dtype=jnp.float64)
         num_manuscripts = 5
 
-        # Case 1: [0, 4]
-        times1 = torch.tensor([4.0], dtype=torch.float64)
-        birth_time_grid1 = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64)
+        times1 = jnp.array([4.0], dtype=jnp.float64)
+        birth_time_grid1 = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float64)
 
-        # Case 2: [0, 2] (shifted time scale) - but birth times in relative units
-        # This test verifies the function handles the transformation correctly
-        times2 = torch.tensor([2.0], dtype=torch.float64)
-        birth_time_grid2 = torch.tensor([0.5, 1.0, 1.5], dtype=torch.float64)
+        times2 = jnp.array([2.0], dtype=jnp.float64)
+        birth_time_grid2 = jnp.array([0.5, 1.0, 1.5], dtype=jnp.float64)
 
         result1 = calculate_unknown_spine_mixture_birth_density(
             birth_rates=birth_rates,
@@ -672,22 +656,20 @@ class TestLikelihood:
             num_manuscripts=num_manuscripts,
         )
 
-        # Both should be non-negative and have the correct shape
-        assert torch.all(result1 >= 0)
-        assert torch.all(result2 >= 0)
+        assert bool(jnp.all(result1 >= 0))
+        assert bool(jnp.all(result2 >= 0))
         assert result1.shape == birth_time_grid1.shape
         assert result2.shape == birth_time_grid2.shape
 
     def test_birth_density_boundary_values(self) -> None:
         """Test birth density at boundary points b=0 and b=T."""
-        birth_rates = torch.tensor([0.5], dtype=torch.float64)
-        death_rates = torch.tensor([0.2], dtype=torch.float64)
+        birth_rates = jnp.array([0.5], dtype=jnp.float64)
+        death_rates = jnp.array([0.2], dtype=jnp.float64)
         T = 3.0
-        times = torch.tensor([T], dtype=torch.float64)
+        times = jnp.array([T], dtype=jnp.float64)
         num_manuscripts = 6
 
-        # Test at boundaries
-        birth_time_grid = torch.tensor([0.0, T], dtype=torch.float64)
+        birth_time_grid = jnp.array([0.0, T], dtype=jnp.float64)
 
         birth_density = calculate_unknown_spine_mixture_birth_density(
             birth_rates=birth_rates,
@@ -697,20 +679,15 @@ class TestLikelihood:
             num_manuscripts=num_manuscripts,
         )
 
-        # Both boundary values should be non-negative and finite
-        assert torch.all(torch.isfinite(birth_density))
-        assert torch.all(birth_density >= 0)
-        # At b=0 (age=T), density should be related to manuscripts created at start
-        # At b=T (age=0), density should be related to manuscripts created at end
-        # Both should be finite and well-defined
+        assert bool(jnp.all(jnp.isfinite(birth_density)))
+        assert bool(jnp.all(birth_density >= 0))
 
     def test_birth_density_scalar_vs_tensor_rates(self) -> None:
         """Test that birth density works with both scalar and tensor rate inputs."""
-        birth_time_grid = torch.tensor([0.5, 1.0, 1.5], dtype=torch.float64)
-        times = torch.tensor([2.0], dtype=torch.float64)
+        birth_time_grid = jnp.array([0.5, 1.0, 1.5], dtype=jnp.float64)
+        times = jnp.array([2.0], dtype=jnp.float64)
         num_manuscripts = 4
 
-        # With scalars
         result_scalar = calculate_unknown_spine_mixture_birth_density(
             birth_rates=0.5,
             death_rates=0.2,
@@ -719,28 +696,27 @@ class TestLikelihood:
             num_manuscripts=num_manuscripts,
         )
 
-        # With tensors
         result_tensor = calculate_unknown_spine_mixture_birth_density(
-            birth_rates=torch.tensor([0.5], dtype=torch.float64),
-            death_rates=torch.tensor([0.2], dtype=torch.float64),
+            birth_rates=jnp.array([0.5], dtype=jnp.float64),
+            death_rates=jnp.array([0.2], dtype=jnp.float64),
             birth_time_grid=birth_time_grid,
             times=times,
             num_manuscripts=num_manuscripts,
         )
 
-        assert torch.allclose(result_scalar, result_tensor)
+        assert bool(jnp.allclose(result_scalar, result_tensor))
 
 
 class TestMixtureDensityNormalization:
     """Verify that mixture age densities integrate to approximately 1."""
 
     def test_unknown_spine_mixture_age_density_integrates_to_one(self) -> None:
-        birth_rates = torch.tensor([0.1], dtype=torch.float64)
-        death_rates = torch.tensor([0.05], dtype=torch.float64)
+        birth_rates = jnp.array([0.1], dtype=jnp.float64)
+        death_rates = jnp.array([0.05], dtype=jnp.float64)
         T = 100.0
-        times = torch.tensor([T], dtype=torch.float64)
+        times = jnp.array([T], dtype=jnp.float64)
         n_grid = 500
-        age_grid = torch.linspace(0.0, T, n_grid, dtype=torch.float64)
+        age_grid = jnp.linspace(0.0, T, n_grid, dtype=jnp.float64)
 
         density = calculate_unknown_spine_mixture_age_density(
             birth_rates=birth_rates,
@@ -751,17 +727,17 @@ class TestMixtureDensityNormalization:
         )
 
         assert density.shape == (n_grid,)
-        assert torch.all(density >= 0.0)
-        integral = float(torch.trapezoid(density, age_grid).item())
+        assert bool(jnp.all(density >= 0.0))
+        integral = float(jnp.trapezoid(density, age_grid))
         assert 0.7 < integral < 1.3
 
     def test_unknown_spine_mixture_birth_density_change_of_variables(self) -> None:
-        birth_rates = torch.tensor([0.1], dtype=torch.float64)
-        death_rates = torch.tensor([0.05], dtype=torch.float64)
+        birth_rates = jnp.array([0.1], dtype=jnp.float64)
+        death_rates = jnp.array([0.05], dtype=jnp.float64)
         T = 100.0
-        times = torch.tensor([T], dtype=torch.float64)
+        times = jnp.array([T], dtype=jnp.float64)
         n_grid = 200
-        age_grid = torch.linspace(1.0, T - 1.0, n_grid, dtype=torch.float64)
+        age_grid = jnp.linspace(1.0, T - 1.0, n_grid, dtype=jnp.float64)
         birth_time_grid = T - age_grid
 
         density_age = calculate_unknown_spine_mixture_age_density(
@@ -778,4 +754,4 @@ class TestMixtureDensityNormalization:
             times=times,
             num_manuscripts=3,
         )
-        assert torch.allclose(density_age, density_birth, atol=1e-8)
+        assert bool(jnp.allclose(density_age, density_birth, atol=1e-8))

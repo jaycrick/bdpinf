@@ -3,7 +3,6 @@
 import time
 
 import numpy as np
-import torch
 
 from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference.fitting import fit_birth_death_processes
@@ -22,9 +21,9 @@ class TestLbfgsExceptionInconsistency:
 
         rng = np.random.default_rng(seed)
         sampled = simulate_bdp_ages_from_distributions(
-            birth_rate=torch.tensor(birth_rate, dtype=torch.float64),
-            death_rate=torch.tensor(death_rate, dtype=torch.float64),
-            max_time=torch.tensor(time_span, dtype=torch.float64),
+            birth_rate=birth_rate,
+            death_rate=death_rate,
+            max_time=time_span,
             rng=rng,
         )
         assert sampled.spine_ages is not None and sampled.non_spine_ages is not None
@@ -35,7 +34,7 @@ class TestLbfgsExceptionInconsistency:
 
         start = time.perf_counter()
         res = fit_birth_death_processes(
-            list_of_ages=[torch.as_tensor(ages, dtype=torch.float64)],
+            list_of_ages=[ages],
             times=float(time_span),
             is_ordered=True,
             optimizers=["lbfgs"],

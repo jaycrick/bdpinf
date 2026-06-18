@@ -2,11 +2,11 @@
 
 import math
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 import scipy
-import torch
 
 from inf_bp_texts.models.math_ages import (
     _reverse_time,
@@ -54,45 +54,45 @@ Test Strategy:
 
 
 @pytest.fixture
-def standard_scalar_params() -> dict[str, torch.Tensor]:
+def standard_scalar_params() -> dict[str, jax.Array]:
     """Set standard scalar parameters for testing."""
     return {
-        "birth_rate": torch.tensor([0.1], dtype=torch.float64),
-        "death_rate": torch.tensor([0.05], dtype=torch.float64),
-        "time": torch.tensor([100.0], dtype=torch.float64),
+        "birth_rate": jnp.array([0.1], dtype=jnp.float64),
+        "death_rate": jnp.array([0.05], dtype=jnp.float64),
+        "time": jnp.array([100.0], dtype=jnp.float64),
     }
 
 
 @pytest.fixture
-def standard_array_params() -> dict[str, torch.Tensor]:
+def standard_array_params() -> dict[str, jax.Array]:
     """Set standard array parameters for piecewise-constant rates."""
     return {
-        "birth_rates": torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64),
-        "death_rates": torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64),
-        "times": torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64),
+        "birth_rates": jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64),
+        "death_rates": jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64),
+        "times": jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64),
     }
 
 
 @pytest.fixture
-def nearly_equal_params() -> dict[str, torch.Tensor]:
+def nearly_equal_params() -> dict[str, jax.Array]:
     """Parameters where λ ≈ μ (numerical stability test)."""
     return {
-        "birth_rate": torch.tensor([0.1], dtype=torch.float64),
-        "death_rate": torch.tensor(
+        "birth_rate": jnp.array([0.1], dtype=jnp.float64),
+        "death_rate": jnp.array(
             [0.1 + 1e-13],
-            dtype=torch.float64,
+            dtype=jnp.float64,
         ),  # Within tolerance of 1e-12
-        "time": torch.tensor([100.0], dtype=torch.float64),
+        "time": jnp.array([100.0], dtype=jnp.float64),
     }
 
 
 @pytest.fixture
-def log_scale_params() -> dict[str, torch.Tensor]:
+def log_scale_params() -> dict[str, jax.Array]:
     """Parameters in log scale."""
     return {
-        "log_birth_rate": torch.log(torch.tensor(0.1, dtype=torch.float64)),
-        "log_death_rate": torch.log(torch.tensor(0.05, dtype=torch.float64)),
-        "time": torch.tensor(100.0, dtype=torch.float64),
+        "log_birth_rate": jnp.log(jnp.array(0.1, dtype=jnp.float64)),
+        "log_death_rate": jnp.log(jnp.array(0.05, dtype=jnp.float64)),
+        "time": jnp.array(100.0, dtype=jnp.float64),
     }
 
 
@@ -103,34 +103,34 @@ def sample_ages_scalar() -> float:
 
 
 @pytest.fixture
-def sample_ages_array() -> torch.Tensor:
+def sample_ages_array() -> jax.Array:
     """Array of ages for vectorized testing."""
-    return torch.tensor([10.0, 30.0, 50.0, 70.0, 90.0], dtype=torch.float64)
+    return jnp.array([10.0, 30.0, 50.0, 70.0, 90.0], dtype=jnp.float64)
 
 
 @pytest.fixture
-def sample_population_counts() -> torch.Tensor:
+def sample_population_counts() -> jax.Array:
     """Sample population counts (n values)."""
-    return torch.tensor([0, 1, 5, 10, 20], dtype=torch.int64)
+    return jnp.array([0, 1, 5, 10, 20], dtype=jnp.int32)
 
 
 @pytest.fixture
-def two_epoch_params() -> dict[str, torch.Tensor]:
+def two_epoch_params() -> dict[str, jax.Array]:
     """Parameters for two-epoch testing."""
     return {
-        "birth_rates": torch.tensor([0.01, 0.001], dtype=torch.float64),
-        "death_rates": torch.tensor([0.001, 0.001], dtype=torch.float64),
-        "times": torch.tensor([750.0, 1500.0], dtype=torch.float64),
+        "birth_rates": jnp.array([0.01, 0.001], dtype=jnp.float64),
+        "death_rates": jnp.array([0.001, 0.001], dtype=jnp.float64),
+        "times": jnp.array([750.0, 1500.0], dtype=jnp.float64),
     }
 
 
 @pytest.fixture
-def three_epoch_params() -> dict[str, torch.Tensor]:
+def three_epoch_params() -> dict[str, jax.Array]:
     """Parameters for three-epoch testing."""
     return {
-        "birth_rates": torch.tensor([0.1, 0.05, 0.08], dtype=torch.float64),
-        "death_rates": torch.tensor([0.03, 0.02, 0.04], dtype=torch.float64),
-        "times": torch.tensor([100.0, 250.0, 400.0], dtype=torch.float64),
+        "birth_rates": jnp.array([0.1, 0.05, 0.08], dtype=jnp.float64),
+        "death_rates": jnp.array([0.03, 0.02, 0.04], dtype=jnp.float64),
+        "times": jnp.array([100.0, 250.0, 400.0], dtype=jnp.float64),
     }
 
 
@@ -148,10 +148,10 @@ class TestMultiEpochNumericalAccuracy:
 
     def test_two_epoch_population_lik_reduces_to_single_epoch(self) -> None:
         """Test that two identical epochs match single-epoch result."""
-        birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        death_rate_val = torch.tensor([0.05], dtype=torch.float64)
-        final_time = torch.tensor([100.0], dtype=torch.float64)
-        n = torch.tensor([5], dtype=torch.int64)
+        birth_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        death_rate_val = jnp.array([0.05], dtype=jnp.float64)
+        final_time = jnp.array([100.0], dtype=jnp.float64)
+        n = jnp.array([5], dtype=jnp.int32)
 
         # Single epoch result
         single_result = calculate_populations_log_lik(
@@ -163,9 +163,9 @@ class TestMultiEpochNumericalAccuracy:
 
         # Two epochs with same parameters should give same result
         two_epoch_result = calculate_populations_log_lik(
-            torch.tensor([birth_rate_val[0], birth_rate_val[0]], dtype=torch.float64),
-            torch.tensor([death_rate_val[0], death_rate_val[0]], dtype=torch.float64),
-            times=torch.tensor([final_time[0] / 2, final_time[0]], dtype=torch.float64),
+            jnp.array([birth_rate_val[0], birth_rate_val[0]], dtype=jnp.float64),
+            jnp.array([death_rate_val[0], death_rate_val[0]], dtype=jnp.float64),
+            times=jnp.array([final_time[0] / 2, final_time[0]], dtype=jnp.float64),
             ns=n,
         )
 
@@ -177,9 +177,9 @@ class TestMultiEpochNumericalAccuracy:
 
     def test_multi_epoch_extinction_pr_bounds(self) -> None:
         """Test that multi-epoch extinction probability is in [0, 1]."""
-        birth_rates = torch.tensor([0.2, 0.15, 0.1], dtype=torch.float64)
-        death_rates = torch.tensor([0.1, 0.12, 0.15], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.2, 0.15, 0.1], dtype=jnp.float64)
+        death_rates = jnp.array([0.1, 0.12, 0.15], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
         result = calculate_extinction_pr(birth_rates, death_rates, times)
 
@@ -193,12 +193,12 @@ class TestMultiEpochNumericalAccuracy:
         and second epochs produce finite log densities with the current closed-form
         implementation.
         """
-        birth_rates = torch.tensor([0.1, 0.2], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.1], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.2], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.1], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         # Age in first epoch
-        age_epoch1 = torch.tensor([30.0], dtype=torch.float64)
+        age_epoch1 = jnp.array([30.0], dtype=jnp.float64)
         result1 = calculate_spine_ages_log_lik(
             birth_rates,
             death_rates,
@@ -208,7 +208,7 @@ class TestMultiEpochNumericalAccuracy:
         assert np.isfinite(float(result1))
 
         # Age in second epoch
-        age_epoch2 = torch.tensor([70.0], dtype=torch.float64)
+        age_epoch2 = jnp.array([70.0], dtype=jnp.float64)
         result2 = calculate_spine_ages_log_lik(
             birth_rates,
             death_rates,
@@ -224,12 +224,12 @@ class TestMultiEpochNumericalAccuracy:
         handles ages on either side of an epoch boundary and returns a negative
         summed log-density as expected for probabilities < 1.
         """
-        birth_rates = torch.tensor([0.15, 0.1], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.08], dtype=torch.float64)
-        times = torch.tensor([100.0, 200.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.15, 0.1], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.08], dtype=jnp.float64)
+        times = jnp.array([100.0, 200.0], dtype=jnp.float64)
 
         # Ages spanning both epochs
-        ages = torch.tensor([20.0, 60.0, 120.0, 180.0], dtype=torch.float64)
+        ages = jnp.array([20.0, 60.0, 120.0, 180.0], dtype=jnp.float64)
 
         result = calculate_non_spine_ages_log_lik(birth_rates, death_rates, ages, times)
 
@@ -240,9 +240,9 @@ class TestMultiEpochNumericalAccuracy:
 
     def test_two_epoch_geometric_parameter(self) -> None:
         """Test population_geometric_parameter for two epochs."""
-        birth_rates = torch.tensor([0.2, 0.3], dtype=torch.float64)
-        death_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.2, 0.3], dtype=jnp.float64)
+        death_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         result = population_geometric_parameter(birth_rates, death_rates, times)
 
@@ -257,13 +257,13 @@ class TestMultiEpochConsistency:
     def test_epoch_order_matters(self) -> None:
         """Test that swapping epoch parameters changes results."""
         # Different parameters for each epoch
-        birth_rates1 = torch.tensor([0.2, 0.1], dtype=torch.float64)
-        death_rates1 = torch.tensor([0.1, 0.05], dtype=torch.float64)
-        times = torch.tensor([60.0, 100.0], dtype=torch.float64)
+        birth_rates1 = jnp.array([0.2, 0.1], dtype=jnp.float64)
+        death_rates1 = jnp.array([0.1, 0.05], dtype=jnp.float64)
+        times = jnp.array([60.0, 100.0], dtype=jnp.float64)
 
         # Swapped parameters
-        birth_rates2 = torch.tensor([0.1, 0.2], dtype=torch.float64)
-        death_rates2 = torch.tensor([0.05, 0.1], dtype=torch.float64)
+        birth_rates2 = jnp.array([0.1, 0.2], dtype=jnp.float64)
+        death_rates2 = jnp.array([0.05, 0.1], dtype=jnp.float64)
 
         result1 = calculate_populations_log_lik(
             birth_rates1,
@@ -283,11 +283,11 @@ class TestMultiEpochConsistency:
 
     def test_multi_epoch_ages_sum_property(self) -> None:
         """Test that multi-epoch age likelihood sums correctly across ages."""
-        birth_rates = torch.tensor([0.12, 0.08], dtype=torch.float64)
-        death_rates = torch.tensor([0.04, 0.06], dtype=torch.float64)
-        times = torch.tensor([100.0, 200.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.12, 0.08], dtype=jnp.float64)
+        death_rates = jnp.array([0.04, 0.06], dtype=jnp.float64)
+        times = jnp.array([100.0, 200.0], dtype=jnp.float64)
 
-        ages = torch.tensor([20.0, 80.0, 150.0], dtype=torch.float64)
+        ages = jnp.array([20.0, 80.0, 150.0], dtype=jnp.float64)
 
         # Compute for array
         result_array = calculate_non_spine_ages_log_lik(
@@ -302,7 +302,7 @@ class TestMultiEpochConsistency:
             calculate_non_spine_ages_log_lik(
                 birth_rates,
                 death_rates,
-                torch.tensor([age], dtype=torch.float64),
+                jnp.array([age], dtype=jnp.float64),
                 times=times,
             )
             for age in ages
@@ -330,20 +330,20 @@ class TestMultiEpochEqualsSingleEpoch:
 
     def test_extinction_pr_multi_equals_single(self) -> None:
         birth_rate_val, death_rate_val, times = (
-            torch.tensor([0.02], dtype=torch.float64),
-            torch.tensor([0.01], dtype=torch.float64),
-            torch.tensor([120.0], dtype=torch.float64),
+            jnp.array([0.02], dtype=jnp.float64),
+            jnp.array([0.01], dtype=jnp.float64),
+            jnp.array([120.0], dtype=jnp.float64),
         )
 
         single = calculate_extinction_pr(birth_rate_val, death_rate_val, times)
 
-        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (3,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -355,18 +355,18 @@ class TestMultiEpochEqualsSingleEpoch:
 
     def testpopulation_geometric_parameter_multi_equals_single(self) -> None:
         birth_rate_val, death_rate_val, times = (
-            torch.tensor([0.03], dtype=torch.float64),
-            torch.tensor([0.02], dtype=torch.float64),
-            torch.tensor([90.0], dtype=torch.float64),
+            jnp.array([0.03], dtype=jnp.float64),
+            jnp.array([0.02], dtype=jnp.float64),
+            jnp.array([90.0], dtype=jnp.float64),
         )
         single = population_geometric_parameter(birth_rate_val, death_rate_val, times)
-        times = torch.tensor([30.0, 60.0, 90.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([30.0, 60.0, 90.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (3,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -376,18 +376,18 @@ class TestMultiEpochEqualsSingleEpoch:
 
     def testpr_extinction_numerator_multi_equals_single(self) -> None:
         birth_rate_val, death_rate_val, times = (
-            torch.tensor([0.015], dtype=torch.float64),
-            torch.tensor([0.01], dtype=torch.float64),
-            torch.tensor([100.0], dtype=torch.float64),
+            jnp.array([0.015], dtype=jnp.float64),
+            jnp.array([0.01], dtype=jnp.float64),
+            jnp.array([100.0], dtype=jnp.float64),
         )
         single = pr_extinction_numerator(birth_rate_val, death_rate_val, times)
-        times = torch.tensor([25.0, 50.0, 75.0, 100.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([25.0, 50.0, 75.0, 100.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (4,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (4,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -396,14 +396,14 @@ class TestMultiEpochEqualsSingleEpoch:
         np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
 
     def test_log_lik_lifetimes_multi_equals_single(self) -> None:
-        lifetimes = torch.tensor([10.0, 30.0, 60.0, 90.0], dtype=torch.float64)
+        lifetimes = jnp.array([10.0, 30.0, 60.0, 90.0], dtype=jnp.float64)
         death_rate_val, times = (
-            torch.tensor([0.02], dtype=torch.float64),
-            torch.tensor([120.0], dtype=torch.float64),
+            jnp.array([0.02], dtype=jnp.float64),
+            jnp.array([120.0], dtype=jnp.float64),
         )
         single = calculate_log_lik_lifetimes(lifetimes, death_rate_val, times)
-        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        death_rates = torch.full(
+        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -414,11 +414,11 @@ class TestMultiEpochEqualsSingleEpoch:
     def test_log_pr_extinction_given_initial_lifetimes_multi_equals_single(
         self,
     ) -> None:
-        lifetimes = torch.tensor([10.0, 45.0, 75.0, 110.0], dtype=torch.float64)
+        lifetimes = jnp.array([10.0, 45.0, 75.0, 110.0], dtype=jnp.float64)
         birth_rate_val, death_rate_val, times = (
-            torch.tensor([0.02], dtype=torch.float64),
-            torch.tensor([0.01], dtype=torch.float64),
-            torch.tensor([120.0], dtype=torch.float64),
+            jnp.array([0.02], dtype=jnp.float64),
+            jnp.array([0.01], dtype=jnp.float64),
+            jnp.array([120.0], dtype=jnp.float64),
         )
         single = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetimes,
@@ -426,13 +426,13 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val,
             times,
         )
-        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (3,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -448,11 +448,11 @@ class TestMultiEpochEqualsSingleEpoch:
     def test_log_lik_initial_lifetimes_given_extinction_multi_equals_single(
         self,
     ) -> None:
-        lifetimes = torch.tensor([12.0, 50.0, 95.0], dtype=torch.float64)
+        lifetimes = jnp.array([12.0, 50.0, 95.0], dtype=jnp.float64)
         birth_rate_val, death_rate_val, times = (
-            torch.tensor([0.025], dtype=torch.float64),
-            torch.tensor([0.01], dtype=torch.float64),
-            torch.tensor([120.0], dtype=torch.float64),
+            jnp.array([0.025], dtype=jnp.float64),
+            jnp.array([0.01], dtype=jnp.float64),
+            jnp.array([120.0], dtype=jnp.float64),
         )
         single = calculate_log_lik_initial_lifetimes_given_extinction(
             lifetimes,
@@ -460,13 +460,13 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val,
             times,
         )
-        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (3,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -482,11 +482,11 @@ class TestMultiEpochEqualsSingleEpoch:
     def test_log_lik_initial_lifetimes_given_non_extinction_multi_equals_single(
         self,
     ) -> None:
-        lifetimes = torch.tensor([12.0, 50.0, 95.0], dtype=torch.float64)
+        lifetimes = jnp.array([12.0, 50.0, 95.0], dtype=jnp.float64)
         birth_rate_val, death_rate_val, times = (
-            torch.tensor([0.025], dtype=torch.float64),
-            torch.tensor([0.01], dtype=torch.float64),
-            torch.tensor([120.0], dtype=torch.float64),
+            jnp.array([0.025], dtype=jnp.float64),
+            jnp.array([0.01], dtype=jnp.float64),
+            jnp.array([120.0], dtype=jnp.float64),
         )
         single = calculate_log_lik_initial_lifetimes_given_non_extinction(
             lifetimes,
@@ -494,13 +494,13 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val,
             times,
         )
-        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (3,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -514,11 +514,11 @@ class TestMultiEpochEqualsSingleEpoch:
         np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
 
     def test_non_spine_ages_log_lik_multi_equals_single(self) -> None:
-        ages = torch.tensor([15.0, 60.0, 95.0], dtype=torch.float64)
+        ages = jnp.array([15.0, 60.0, 95.0], dtype=jnp.float64)
         birth_rate_val, death_rate_val, times = (
-            torch.tensor([0.02], dtype=torch.float64),
-            torch.tensor([0.01], dtype=torch.float64),
-            torch.tensor([120.0], dtype=torch.float64),
+            jnp.array([0.02], dtype=jnp.float64),
+            jnp.array([0.01], dtype=jnp.float64),
+            jnp.array([120.0], dtype=jnp.float64),
         )
         # Single-epoch via scalar
         single = calculate_non_spine_ages_log_lik(
@@ -528,13 +528,13 @@ class TestMultiEpochEqualsSingleEpoch:
             times,
         )
         # Multi-epoch via arrays with identical rates
-        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (3,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -545,11 +545,11 @@ class TestMultiEpochEqualsSingleEpoch:
         np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
 
     def test_spine_ages_log_lik_multi_equals_single(self) -> None:
-        ages = torch.tensor([20.0, 40.0, 110.0], dtype=torch.float64)
+        ages = jnp.array([20.0, 40.0, 110.0], dtype=jnp.float64)
         birth_rate_val, death_rate_val, final_time = (
-            torch.tensor([0.018], dtype=torch.float64),
-            torch.tensor([0.009], dtype=torch.float64),
-            torch.tensor([120.0], dtype=torch.float64),
+            jnp.array([0.018], dtype=jnp.float64),
+            jnp.array([0.009], dtype=jnp.float64),
+            jnp.array([120.0], dtype=jnp.float64),
         )
         single = calculate_spine_ages_log_lik(
             birth_rate_val,
@@ -557,13 +557,13 @@ class TestMultiEpochEqualsSingleEpoch:
             ages,
             final_time,
         )
-        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (3,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -574,10 +574,10 @@ class TestMultiEpochEqualsSingleEpoch:
         np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
 
     def test_spine_ages_log_lik_return_array_matches_sum(self) -> None:
-        ages = torch.tensor([20.0, 40.0, 110.0], dtype=torch.float64)
-        birth_rates = torch.tensor([0.018], dtype=torch.float64)
-        death_rates = torch.tensor([0.009], dtype=torch.float64)
-        times = torch.tensor([120.0], dtype=torch.float64)
+        ages = jnp.array([20.0, 40.0, 110.0], dtype=jnp.float64)
+        birth_rates = jnp.array([0.018], dtype=jnp.float64)
+        death_rates = jnp.array([0.009], dtype=jnp.float64)
+        times = jnp.array([120.0], dtype=jnp.float64)
 
         per_age = calculate_spine_ages_log_lik(
             birth_rates,
@@ -594,11 +594,11 @@ class TestMultiEpochEqualsSingleEpoch:
         )
 
     def test_ages_log_lik_multi_equals_single_non_spine(self) -> None:
-        ages = torch.tensor([10.0, 55.0, 90.0], dtype=torch.float64)
+        ages = jnp.array([10.0, 55.0, 90.0], dtype=jnp.float64)
         birth_rate_val, death_rate_val, times = (
-            torch.tensor([0.02], dtype=torch.float64),
-            torch.tensor([0.01], dtype=torch.float64),
-            torch.tensor([120.0], dtype=torch.float64),
+            jnp.array([0.02], dtype=jnp.float64),
+            jnp.array([0.01], dtype=jnp.float64),
+            jnp.array([120.0], dtype=jnp.float64),
         )
         single = calculate_ages_log_lik(
             birth_rate_val,
@@ -607,13 +607,13 @@ class TestMultiEpochEqualsSingleEpoch:
             times,
             are_spines=False,
         )
-        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (3,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -630,10 +630,10 @@ class TestMultiEpochEqualsSingleEpoch:
         np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
 
     def test_non_spine_ages_log_lik_return_array_matches_sum(self) -> None:
-        ages = torch.tensor([10.0, 55.0, 90.0], dtype=torch.float64)
-        birth_rates = torch.tensor([0.02], dtype=torch.float64)
-        death_rates = torch.tensor([0.01], dtype=torch.float64)
-        times = torch.tensor([120.0], dtype=torch.float64)
+        ages = jnp.array([10.0, 55.0, 90.0], dtype=jnp.float64)
+        birth_rates = jnp.array([0.02], dtype=jnp.float64)
+        death_rates = jnp.array([0.01], dtype=jnp.float64)
+        times = jnp.array([120.0], dtype=jnp.float64)
 
         per_age = calculate_non_spine_ages_log_lik(
             birth_rates,
@@ -660,11 +660,11 @@ class TestMultiEpochEqualsSingleEpoch:
         # use different branch handling at the boundary (survival function vs
         # density), producing a small but real numerical discrepancy there.
         # The time-reversal identity is correct for all interior ages.
-        ages = torch.tensor([15.0, 60.0, 100.0], dtype=torch.float64)
+        ages = jnp.array([15.0, 60.0, 100.0], dtype=jnp.float64)
         birth_rate_val, death_rate_val, final_time = (
-            torch.tensor([0.018], dtype=torch.float64),
-            torch.tensor([0.009], dtype=torch.float64),
-            torch.tensor([120.0], dtype=torch.float64),
+            jnp.array([0.018], dtype=jnp.float64),
+            jnp.array([0.009], dtype=jnp.float64),
+            jnp.array([120.0], dtype=jnp.float64),
         )
         single = calculate_ages_log_lik(
             birth_rate_val,
@@ -673,13 +673,13 @@ class TestMultiEpochEqualsSingleEpoch:
             final_time,
             are_spines=True,
         )
-        times = torch.tensor([30.0, 90.0, 120.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([30.0, 90.0, 120.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (3,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -700,9 +700,9 @@ class TestMultiEpochEqualsSingleEpoch:
     ) -> None:
         birth_time = 30.0
         birth_rate_val, death_rate_val, final_time = (
-            torch.tensor([0.02], dtype=torch.float64),
-            torch.tensor([0.01], dtype=torch.float64),
-            torch.tensor([120.0], dtype=torch.float64),
+            jnp.array([0.02], dtype=jnp.float64),
+            jnp.array([0.01], dtype=jnp.float64),
+            jnp.array([120.0], dtype=jnp.float64),
         )
         single = _integrand_surv_from_weighted_birth_time(
             birth_time,
@@ -710,13 +710,13 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val,
             final_time,
         )
-        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
-        birth_rates = torch.full(
+        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
+        birth_rates = jnp.full(
             (3,),
             birth_rate_val.item(),
             dtype=birth_rate_val.dtype,
         )
-        death_rates = torch.full(
+        death_rates = jnp.full(
             (3,),
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
@@ -744,8 +744,8 @@ class TestNumericalAccuracy:
 
     def test_extinction_pr_critical_case_analytical(self) -> None:
         """Test extinction probability when λ = μ (analytical formula)."""
-        birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        final_time = torch.tensor([100.0], dtype=torch.float64)
+        birth_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        final_time = jnp.array([100.0], dtype=jnp.float64)
 
         # Expected: alpha_t = 0.1 * 100 / (1 + 0.1 * 100) = 10 / 11 ≈ 0.909091
         expected = birth_rate_val * final_time / (1 + birth_rate_val * final_time)
@@ -757,25 +757,25 @@ class TestNumericalAccuracy:
 
     def test_populations_log_lik_n0_simple(self) -> None:
         """Test log P(n=0) for simple parameters."""
-        birth_rate_val = torch.tensor([0.2], dtype=torch.float64)
-        death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        final_time = torch.tensor([10.0], dtype=torch.float64)
+        birth_rate_val = jnp.array([0.2], dtype=jnp.float64)
+        death_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        final_time = jnp.array([10.0], dtype=jnp.float64)
 
         # Compute expected alpha_t manually
         growth = (birth_rate_val - death_rate_val) * final_time  # 1.0
-        exp_growth = torch.exp(growth)  # e^1.0 ≈ 2.71828
+        exp_growth = jnp.exp(growth)  # e^1.0 ≈ 2.71828
         alpha_t = (
             death_rate_val
             * (exp_growth - 1)
             / (birth_rate_val * exp_growth - death_rate_val)
         )
-        expected_log_prob = torch.log(alpha_t)
+        expected_log_prob = jnp.log(alpha_t)
 
         result = calculate_populations_log_lik(
             birth_rate_val,
             death_rate_val,
             times=final_time,
-            ns=torch.tensor([0], dtype=torch.int64),
+            ns=jnp.array([0], dtype=jnp.int32),
         )
 
         np.testing.assert_allclose(
@@ -784,31 +784,31 @@ class TestNumericalAccuracy:
 
     def test_populations_log_lik_critical_case_n0(self) -> None:
         """Test log P(n=0) when λ = μ."""
-        birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        final_time = torch.tensor([50.0], dtype=torch.float64)
+        birth_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        final_time = jnp.array([50.0], dtype=jnp.float64)
 
         # Expected: alpha_t = 0.1 * 50 / (1 + 0.1 * 50) = 5/6
         alpha_t = birth_rate_val * final_time / (1 + birth_rate_val * final_time)
-        expected = torch.log(alpha_t)
+        expected = jnp.log(alpha_t)
 
         result = calculate_populations_log_lik(
             birth_rate_val,
             birth_rate_val,
             times=final_time,
-            ns=torch.tensor([0], dtype=torch.int64),
+            ns=jnp.array([0], dtype=jnp.int32),
         )
 
         np.testing.assert_allclose(np.array(result), np.array(expected), rtol=1.3e-6)
 
     def test_populations_log_lik_n1_simple(self) -> None:
         """Test log P(n=1) for simple parameters."""
-        birth_rate_val = torch.tensor([0.3], dtype=torch.float64)
-        death_rate_val = torch.tensor([0.2], dtype=torch.float64)
-        final_time = torch.tensor([5.0], dtype=torch.float64)
+        birth_rate_val = jnp.array([0.3], dtype=jnp.float64)
+        death_rate_val = jnp.array([0.2], dtype=jnp.float64)
+        final_time = jnp.array([5.0], dtype=jnp.float64)
 
         # Compute alpha_t and beta_t
         growth = (birth_rate_val - death_rate_val) * final_time
-        exp_growth = torch.exp(growth)
+        exp_growth = jnp.exp(growth)
         alpha_t = (
             death_rate_val
             * (exp_growth - 1)
@@ -816,13 +816,13 @@ class TestNumericalAccuracy:
         )
         beta_t = (birth_rate_val / death_rate_val) * alpha_t
 
-        expected = torch.log(1 - alpha_t) + torch.log(1 - beta_t)
+        expected = jnp.log(1 - alpha_t) + jnp.log(1 - beta_t)
 
         result = calculate_populations_log_lik(
             birth_rate_val,
             death_rate_val,
             times=final_time,
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
         )
 
         np.testing.assert_allclose(np.array(result), np.array(expected), rtol=1.3e-6)
@@ -832,10 +832,10 @@ class TestNumericalAccuracy:
 
         At t=0 (age zero), the density involves special limiting behavior.
         """
-        birth_rate_val = torch.tensor([0.2], dtype=torch.float64)
-        death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        final_time = torch.tensor([10.0], dtype=torch.float64)
-        age = torch.tensor([0.0], dtype=torch.float64)
+        birth_rate_val = jnp.array([0.2], dtype=jnp.float64)
+        death_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        final_time = jnp.array([10.0], dtype=jnp.float64)
+        age = jnp.array([0.0], dtype=jnp.float64)
 
         result = calculate_spine_ages_log_lik(
             birth_rate_val,
@@ -849,22 +849,21 @@ class TestNumericalAccuracy:
 
     def test_geometric_scalar_case(self) -> None:
         """Docstring for test_geometric_scalar_case."""
-        final_time = torch.tensor([10.0], dtype=torch.float64)
-        birth_rate_val = torch.tensor([1.0], dtype=torch.float64)
-        death_rate_val = torch.tensor([2.0], dtype=torch.float64)
+        final_time = jnp.array([10.0], dtype=jnp.float64)
+        birth_rate_val = jnp.array([1.0], dtype=jnp.float64)
+        death_rate_val = jnp.array([2.0], dtype=jnp.float64)
 
         def _integrand(x: float) -> float:
             lam = float(birth_rate_val[0])
             mu = float(death_rate_val[0])
-            x_arr = torch.as_tensor(x)
-            return float(mu * torch.exp(-(lam - mu) * x_arr))
+            return float(mu * jnp.exp(-(lam - mu) * x))
 
         integral, _ = scipy.integrate.quad(
             _integrand,
             0,
             final_time.item(),
         )
-        expected = torch.exp(-(birth_rate_val - death_rate_val) * final_time) / (
+        expected = jnp.exp(-(birth_rate_val - death_rate_val) * final_time) / (
             1 + integral
         )
         result = population_geometric_parameter(
@@ -876,21 +875,20 @@ class TestNumericalAccuracy:
 
     def test_geometric_parameter_critical_case(self) -> None:
         """Test population_geometric_parameter when λ = μ."""
-        birth_rate_val = death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        final_time = torch.tensor([20.0], dtype=torch.float64)
+        birth_rate_val = death_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        final_time = jnp.array([20.0], dtype=jnp.float64)
 
         def _integrand(x: float) -> float:
             lam = float(birth_rate_val[0])
             mu = float(death_rate_val[0])
-            x_arr = torch.as_tensor(x)
-            return float(mu * torch.exp(-(lam - mu) * x_arr))
+            return float(mu * jnp.exp(-(lam - mu) * x))
 
         integral, _ = scipy.integrate.quad(
             _integrand,
             0,
             final_time.item(),
         )
-        expected = torch.exp(-(birth_rate_val - death_rate_val) * final_time) / (
+        expected = jnp.exp(-(birth_rate_val - death_rate_val) * final_time) / (
             1 + integral
         )
         result = population_geometric_parameter(
@@ -903,32 +901,31 @@ class TestNumericalAccuracy:
 
     def test_geometric_parameter_general_case(self) -> None:
         """Test population_geometric_parameter for λ ≠ μ."""
-        birth_rates = torch.tensor([0.3, 0.4], dtype=torch.float64)
-        death_rates = torch.tensor([0.1, 0.3], dtype=torch.float64)
-        epoch_ends = torch.tensor([5.0, 9.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.3, 0.4], dtype=jnp.float64)
+        death_rates = jnp.array([0.1, 0.3], dtype=jnp.float64)
+        epoch_ends = jnp.array([5.0, 9.0], dtype=jnp.float64)
 
         def _integrand(x: float) -> float:
-            x_arr = torch.as_tensor(x)
-            first = (
-                torch.exp(-(birth_rates[0] - death_rates[0]) * x_arr) * death_rates[0]
+            first = float(
+                jnp.exp(-(birth_rates[0] - death_rates[0]) * x) * death_rates[0]
             )
-            second = (
-                torch.exp(
+            second = float(
+                jnp.exp(
                     -(
                         (birth_rates[0] - death_rates[0]) * epoch_ends[0]
-                        + (birth_rates[1] - death_rates[1]) * (x_arr - epoch_ends[0])
+                        + (birth_rates[1] - death_rates[1]) * (x - epoch_ends[0])
                     ),
                 )
                 * death_rates[1]
             )
-            return float(torch.where(x_arr <= epoch_ends[0], first, second))
+            return first if x <= float(epoch_ends[0]) else second
 
         integral, _ = scipy.integrate.quad(
             _integrand,
             0.0,
             epoch_ends[1].item(),
         )
-        expected = torch.exp(
+        expected = jnp.exp(
             -(
                 (birth_rates[1] - death_rates[1]) * (epoch_ends[1] - epoch_ends[0])
                 + epoch_ends[0] * (birth_rates[0] - death_rates[0])
@@ -944,9 +941,9 @@ class TestNumericalAccuracy:
         Private function test: Validates that function returns a positive finite value.
         The exact formula is complex and involves integration - we validate properties.
         """
-        birth_rate_val = torch.tensor([0.2], dtype=torch.float64)
-        death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        final_time = torch.tensor([10.0], dtype=torch.float64)
+        birth_rate_val = jnp.array([0.2], dtype=jnp.float64)
+        death_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        final_time = jnp.array([10.0], dtype=jnp.float64)
 
         result = pr_extinction_numerator(
             birth_rate_val,
@@ -965,9 +962,9 @@ class TestNumericalAccuracy:
 
         Private function test: log density involves birth rate and growth.
         """
-        death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        age = torch.tensor([20.0], dtype=torch.float64)
-        final_time = torch.tensor([100.0], dtype=torch.float64)
+        death_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        age = jnp.array([20.0], dtype=jnp.float64)
+        final_time = jnp.array([100.0], dtype=jnp.float64)
 
         # For simple case: log f(t) = log(λ) - λt
         # (This is simplified; actual formula may differ)
@@ -986,9 +983,9 @@ class TestNumericalAccuracy:
 
         Private function test: should sum log likelihoods across ages.
         """
-        death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        ages = torch.tensor([10.0, 30.0, 50.0], dtype=torch.float64)
-        final_time = torch.tensor([100.0], dtype=torch.float64)
+        death_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        ages = jnp.array([10.0, 30.0, 50.0], dtype=jnp.float64)
+        final_time = jnp.array([100.0], dtype=jnp.float64)
 
         # Compute for array
         result_array = calculate_log_lik_lifetimes(
@@ -1000,7 +997,7 @@ class TestNumericalAccuracy:
         # Compute individually and sum
         result_sum = sum(
             calculate_log_lik_lifetimes(
-                torch.tensor([age], dtype=torch.float64),
+                jnp.array([age], dtype=jnp.float64),
                 death_rate_val,
                 final_time,
             )
@@ -1016,23 +1013,23 @@ class TestNumericalAccuracy:
 
         For specific parameter values, compute expected log density.
         """
-        birth_rate_val = torch.tensor([0.2], dtype=torch.float64)
-        death_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        age = torch.tensor([5.0], dtype=torch.float64)
-        final_time = torch.tensor([20.0], dtype=torch.float64)
+        birth_rate_val = jnp.array([0.2], dtype=jnp.float64)
+        death_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        age = jnp.array([5.0], dtype=jnp.float64)
+        final_time = jnp.array([20.0], dtype=jnp.float64)
 
         # Non-spine density: f(t) = [λe^{-λt} - μe^{-(λ-μ)T}e^{-μt}] / [1 - e^{-(λ-μ)T}]
         growth_rate = birth_rate_val - death_rate_val
-        term1 = birth_rate_val * torch.exp(-birth_rate_val * age)
+        term1 = birth_rate_val * jnp.exp(-birth_rate_val * age)
         term2 = (
             death_rate_val
-            * torch.exp(-growth_rate * final_time)
-            * torch.exp(-death_rate_val * age)
+            * jnp.exp(-growth_rate * final_time)
+            * jnp.exp(-death_rate_val * age)
         )
         numerator = term1 - term2
-        denominator = 1 - torch.exp(-growth_rate * final_time)
+        denominator = 1 - jnp.exp(-growth_rate * final_time)
         density = numerator / denominator
-        expected = torch.log(density)
+        expected = jnp.log(density)
 
         result = calculate_non_spine_ages_log_lik(
             birth_rate_val,
@@ -1054,9 +1051,9 @@ class TestNumericalAccuracy:
 
         for birth_rate_val, death_rate_val, final_time in test_cases:
             result = calculate_extinction_pr(
-                torch.tensor(birth_rate_val, dtype=torch.float64),
-                torch.tensor(death_rate_val, dtype=torch.float64),
-                torch.tensor(final_time, dtype=torch.float64),
+                jnp.array(birth_rate_val, dtype=jnp.float64),
+                jnp.array(death_rate_val, dtype=jnp.float64),
+                jnp.array(final_time, dtype=jnp.float64),
             )
 
             assert 0 < result < 1, (
@@ -1069,10 +1066,10 @@ class TestNumericalAccuracy:
 
         Private function test: Validates function returns reasonable log probability.
         """
-        birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        death_rate_val = torch.tensor([0.05], dtype=torch.float64)
-        final_time = torch.tensor([100.0], dtype=torch.float64)
-        age = torch.tensor([0.0], dtype=torch.float64)
+        birth_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        death_rate_val = jnp.array([0.05], dtype=jnp.float64)
+        final_time = jnp.array([100.0], dtype=jnp.float64)
+        age = jnp.array([0.0], dtype=jnp.float64)
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
             age,
@@ -1091,10 +1088,10 @@ class TestNumericalAccuracy:
 
         A single-epoch piecewise-constant model should match scalar input.
         """
-        birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        death_rate_val = torch.tensor([0.07], dtype=torch.float64)
-        final_time = torch.tensor([80.0], dtype=torch.float64)
-        n = torch.tensor([5], dtype=torch.int64)
+        birth_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        death_rate_val = jnp.array([0.07], dtype=jnp.float64)
+        final_time = jnp.array([80.0], dtype=jnp.float64)
+        n = jnp.array([5], dtype=jnp.int32)
 
         # Scalar computation
         result_scalar = calculate_populations_log_lik(
@@ -1127,7 +1124,7 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_basic(
         self,
-        standard_array_params: dict[str, torch.Tensor],
+        standard_array_params: dict[str, jax.Array],
     ) -> None:
         """Test basic extinction probability calculation."""
         result = calculate_extinction_pr(
@@ -1140,7 +1137,7 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_return_log_prob(
         self,
-        standard_array_params: dict[str, torch.Tensor],
+        standard_array_params: dict[str, jax.Array],
     ) -> None:
         """Test extinction probability with return_log_prob=True."""
         result = calculate_extinction_pr(
@@ -1157,12 +1154,12 @@ class TestExtinctionProbability:
     def test_extinction_pr_critical_case(self) -> None:
         """Test numerical stability when λ ≈ μ."""
         # Nearly equal rates
-        birth_rate_arr = torch.tensor([0.1, 0.1, 0.1], dtype=torch.float64)
-        death_rate_arr = torch.tensor(
+        birth_rate_arr = jnp.array([0.1, 0.1, 0.1], dtype=jnp.float64)
+        death_rate_arr = jnp.array(
             [0.1 + 1e-13, 0.1 + 1e-13, 0.1 + 1e-13],
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )
-        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
         result = calculate_extinction_pr(birth_rate_arr, death_rate_arr, times)
 
@@ -1172,9 +1169,9 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_zero_rates_both(self) -> None:
         """Test extinction probability when both λ = 0 and μ = 0."""
-        birth_rate_arr = torch.tensor([0.0], dtype=torch.float64)
-        death_rate_arr = torch.tensor([0.0], dtype=torch.float64)
-        times = torch.tensor([100.0], dtype=torch.float64)
+        birth_rate_arr = jnp.array([0.0], dtype=jnp.float64)
+        death_rate_arr = jnp.array([0.0], dtype=jnp.float64)
+        times = jnp.array([100.0], dtype=jnp.float64)
 
         result = calculate_extinction_pr(birth_rate_arr, death_rate_arr, times)
 
@@ -1183,9 +1180,9 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_zero_birth_only(self) -> None:
         """Test extinction probability when λ = 0 and μ > 0 (only death)."""
-        birth_rate_arr = torch.tensor([0.0], dtype=torch.float64)
-        death_rate_arr = torch.tensor([0.1], dtype=torch.float64)
-        times = torch.tensor([100.0], dtype=torch.float64)
+        birth_rate_arr = jnp.array([0.0], dtype=jnp.float64)
+        death_rate_arr = jnp.array([0.1], dtype=jnp.float64)
+        times = jnp.array([100.0], dtype=jnp.float64)
 
         result = calculate_extinction_pr(birth_rate_arr, death_rate_arr, times)
 
@@ -1193,9 +1190,9 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_zero_death_only(self) -> None:
         """Test extinction probability when λ > 0 and μ = 0 (only birth)."""
-        birth_rate_arr = torch.tensor([0.1], dtype=torch.float64)
-        death_rate_arr = torch.tensor([0.0], dtype=torch.float64)
-        times = torch.tensor([100.0], dtype=torch.float64)
+        birth_rate_arr = jnp.array([0.1], dtype=jnp.float64)
+        death_rate_arr = jnp.array([0.0], dtype=jnp.float64)
+        times = jnp.array([100.0], dtype=jnp.float64)
 
         result = calculate_extinction_pr(birth_rate_arr, death_rate_arr, times)
 
@@ -1205,9 +1202,9 @@ class TestExtinctionProbability:
     def test_extinction_pr_zero_rates_multi_epoch(self) -> None:
         """Test extinction probability with multi-epoch with some zero-rate epochs."""
         # Some epochs with normal rates, some with zero rates
-        birth_rate_arr = torch.tensor([0.1, 0.0, 0.15], dtype=torch.float64)
-        death_rate_arr = torch.tensor([0.05, 0.0, 0.08], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+        birth_rate_arr = jnp.array([0.1, 0.0, 0.15], dtype=jnp.float64)
+        death_rate_arr = jnp.array([0.05, 0.0, 0.08], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
         result = calculate_extinction_pr(birth_rate_arr, death_rate_arr, times)
 
@@ -1216,8 +1213,8 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_increases_with_time(self) -> None:
         """Test that extinction probability increases as observation time increases."""
-        birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        death_rate_val = torch.tensor([0.05], dtype=torch.float64)
+        birth_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        death_rate_val = jnp.array([0.05], dtype=jnp.float64)
 
         # Compare extinction probabilities at different times
         times = [50.0, 100.0, 200.0, 400.0]
@@ -1225,7 +1222,7 @@ class TestExtinctionProbability:
             calculate_extinction_pr(
                 birth_rate_val,
                 death_rate_val,
-                torch.tensor([t], dtype=torch.float64),
+                jnp.array([t], dtype=jnp.float64),
             )
             for t in times
         ]
@@ -1239,15 +1236,15 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_increases_with_death_rate(self) -> None:
         """Test that extinction probability increases as death rate increases."""
-        birth_rate_val = torch.tensor([0.1], dtype=torch.float64)
-        final_time = torch.tensor([100.0], dtype=torch.float64)
+        birth_rate_val = jnp.array([0.1], dtype=jnp.float64)
+        final_time = jnp.array([100.0], dtype=jnp.float64)
 
         # Compare extinction probabilities at different death rates
         death_rates = [
-            torch.tensor([0.02], dtype=torch.float64),
-            torch.tensor([0.05], dtype=torch.float64),
-            torch.tensor([0.08], dtype=torch.float64),
-            torch.tensor([0.1], dtype=torch.float64),
+            jnp.array([0.02], dtype=jnp.float64),
+            jnp.array([0.05], dtype=jnp.float64),
+            jnp.array([0.08], dtype=jnp.float64),
+            jnp.array([0.1], dtype=jnp.float64),
         ]
         results = [
             calculate_extinction_pr(birth_rate_val, death_rate_val, final_time)
@@ -1263,15 +1260,15 @@ class TestExtinctionProbability:
 
     def test_extinction_pr_decreases_with_birth_rate(self) -> None:
         """Test that extinction probability decreases as birth rate increases."""
-        death_rate_val = torch.tensor([0.05], dtype=torch.float64)
-        final_time = torch.tensor([100.0], dtype=torch.float64)
+        death_rate_val = jnp.array([0.05], dtype=jnp.float64)
+        final_time = jnp.array([100.0], dtype=jnp.float64)
 
         # Compare extinction probabilities at different birth rates
         birth_rates = [
-            torch.tensor([0.05], dtype=torch.float64),
-            torch.tensor([0.1], dtype=torch.float64),
-            torch.tensor([0.15], dtype=torch.float64),
-            torch.tensor([0.2], dtype=torch.float64),
+            jnp.array([0.05], dtype=jnp.float64),
+            jnp.array([0.1], dtype=jnp.float64),
+            jnp.array([0.15], dtype=jnp.float64),
+            jnp.array([0.2], dtype=jnp.float64),
         ]
         results = [
             calculate_extinction_pr(birth_rate_val, death_rate_val, final_time)
@@ -1296,28 +1293,28 @@ class TestPopulationsLogLikelihood:
 
     def test_scalar_inputs_basic(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Test basic scalar input case."""
         result = calculate_populations_log_lik(
             standard_scalar_params["birth_rate"],
             standard_scalar_params["death_rate"],
             times=standard_scalar_params["time"],
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
         )
 
         assert np.isfinite(float(result))
 
     def test_scalar_inputs_n_zero(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Test n=0 (extinction) case."""
         result = calculate_populations_log_lik(
             standard_scalar_params["birth_rate"],
             standard_scalar_params["death_rate"],
             times=standard_scalar_params["time"],
-            ns=torch.tensor([0], dtype=torch.int64),
+            ns=jnp.array([0], dtype=jnp.int32),
         )
 
         # P(n=0) = alpha_t, so log P should be finite and negative
@@ -1326,8 +1323,8 @@ class TestPopulationsLogLikelihood:
 
     def test_scalar_inputs_array_ns(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
-        sample_population_counts: torch.Tensor,
+        standard_scalar_params: dict[str, jax.Array],
+        sample_population_counts: jax.Array,
     ) -> None:
         """Test scalar parameters with array of population counts."""
         result = calculate_populations_log_lik(
@@ -1342,21 +1339,21 @@ class TestPopulationsLogLikelihood:
 
     def test_array_inputs_piecewise_constant(
         self,
-        standard_array_params: dict[str, torch.Tensor],
+        standard_array_params: dict[str, jax.Array],
     ) -> None:
         """Test piecewise-constant rates (array inputs)."""
         result = calculate_populations_log_lik(
             standard_array_params["birth_rates"],
             standard_array_params["death_rates"],
             times=standard_array_params["times"],
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
         )
 
         assert np.isfinite(float(result))
 
     def test_negative_time_returns_error(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Test that negative time raises ValueError."""
         with pytest.raises(ValueError, match="times must be positive"):
@@ -1364,12 +1361,12 @@ class TestPopulationsLogLikelihood:
                 standard_scalar_params["birth_rate"],
                 standard_scalar_params["death_rate"],
                 times=-100.0,  # Negative time
-                ns=torch.tensor([1], dtype=torch.int64),
+                ns=jnp.array([1], dtype=jnp.int32),
             )
 
     def test_negative_ns_returns_error(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Test behavior for negative population count.
 
@@ -1387,14 +1384,14 @@ class TestPopulationsLogLikelihood:
 
     def test_critical_case_scalar(
         self,
-        nearly_equal_params: dict[str, torch.Tensor],
+        nearly_equal_params: dict[str, jax.Array],
     ) -> None:
         """Test numerical stability when λ ≈ μ (scalar)."""
         result = calculate_populations_log_lik(
             nearly_equal_params["birth_rate"],
             nearly_equal_params["death_rate"],
             times=nearly_equal_params["time"],
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
         )
 
         assert np.isfinite(float(result))
@@ -1403,13 +1400,13 @@ class TestPopulationsLogLikelihood:
         """Test that mismatched array lengths raise ValueError."""
         with pytest.raises(ValueError, match="Arrays must have matching lengths"):
             calculate_populations_log_lik(
-                birth_rates=torch.tensor([0.1, 0.15], dtype=torch.float64),
-                death_rates=torch.tensor(
+                birth_rates=jnp.array([0.1, 0.15], dtype=jnp.float64),
+                death_rates=jnp.array(
                     [0.05, 0.06, 0.055],
-                    dtype=torch.float64,
+                    dtype=jnp.float64,
                 ),  # Different length
-                times=torch.tensor([50.0, 100.0], dtype=torch.float64),
-                ns=torch.tensor([1], dtype=torch.int64),
+                times=jnp.array([50.0, 100.0], dtype=jnp.float64),
+                ns=jnp.array([1], dtype=jnp.int32),
             )
 
 
@@ -1423,8 +1420,8 @@ class TestSpineAgesLogLikelihood:
 
     def test_scalar_age(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
-        sample_ages_scalar: torch.Tensor,
+        standard_scalar_params: dict[str, jax.Array],
+        sample_ages_scalar: jax.Array,
     ) -> None:
         """Test with single age value."""
         result = calculate_spine_ages_log_lik(
@@ -1438,8 +1435,8 @@ class TestSpineAgesLogLikelihood:
 
     def test_array_ages(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
-        sample_ages_array: torch.Tensor,
+        standard_scalar_params: dict[str, jax.Array],
+        sample_ages_array: jax.Array,
     ) -> None:
         """Test with array of ages."""
         result = calculate_spine_ages_log_lik(
@@ -1454,7 +1451,7 @@ class TestSpineAgesLogLikelihood:
 
     def test_age_at_boundary(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Test age exactly equal to observation timefinal_time."""
         final_time = standard_scalar_params["time"]
@@ -1469,8 +1466,8 @@ class TestSpineAgesLogLikelihood:
 
     def test_critical_case(
         self,
-        nearly_equal_params: dict[str, torch.Tensor],
-        sample_ages_scalar: torch.Tensor,
+        nearly_equal_params: dict[str, jax.Array],
+        sample_ages_scalar: jax.Array,
     ) -> None:
         """Test numerical stability when λ ≈ μ."""
         result = calculate_spine_ages_log_lik(
@@ -1484,7 +1481,7 @@ class TestSpineAgesLogLikelihood:
 
     def test_invalid_age_greater_than_final_time(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Test that age > final_time returns -inf."""
         with pytest.raises(
@@ -1500,7 +1497,7 @@ class TestSpineAgesLogLikelihood:
 
     def test_negative_age_returns_minus_inf(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Test that negative age returns -inf."""
         with pytest.raises(
@@ -1523,38 +1520,38 @@ class TestSpineAgesLogLikelihood:
 class TestNonSpineAgesLogLikelihood:
     """Test age log-likelihood for non-spine individuals."""
 
-    def test_scalar_params_scalar_age(self, sample_ages_scalar: torch.Tensor) -> None:
+    def test_scalar_params_scalar_age(self, sample_ages_scalar: jax.Array) -> None:
         """Test with scalar parameters and single age."""
         # For single-epoch case, wrap scalars in arrays of length 1
         result = calculate_non_spine_ages_log_lik(
-            birth_rates=torch.tensor([0.1], dtype=torch.float64),
-            death_rates=torch.tensor([0.05], dtype=torch.float64),
+            birth_rates=jnp.array([0.1], dtype=jnp.float64),
+            death_rates=jnp.array([0.05], dtype=jnp.float64),
             ages=sample_ages_scalar,
-            times=torch.tensor([100.0], dtype=torch.float64),
+            times=jnp.array([100.0], dtype=jnp.float64),
         )
 
         assert np.isfinite(float(result))
 
-    def test_scalar_params_array_ages(self, sample_ages_array: torch.Tensor) -> None:
+    def test_scalar_params_array_ages(self, sample_ages_array: jax.Array) -> None:
         """Test with scalar parameters and array of ages."""
         # For single-epoch case, wrap scalars in arrays of length 1
         result = calculate_non_spine_ages_log_lik(
-            birth_rates=torch.tensor([0.1], dtype=torch.float64),
-            death_rates=torch.tensor([0.05], dtype=torch.float64),
+            birth_rates=jnp.array([0.1], dtype=jnp.float64),
+            death_rates=jnp.array([0.05], dtype=jnp.float64),
             ages=sample_ages_array,
-            times=torch.tensor([100.0], dtype=torch.float64),
+            times=jnp.array([100.0], dtype=jnp.float64),
         )
 
         assert np.isfinite(float(result))
 
     def test_array_params_piecewise_constant(
         self,
-        standard_array_params: dict[str, torch.Tensor],
+        standard_array_params: dict[str, jax.Array],
     ) -> None:
         """Test with piecewise-constant rates (array parameters)."""
         # Use ages within the valid time range
         max_time = standard_array_params["times"][-1]
-        ages = torch.tensor([10.0, 50.0, max_time - 10.0], dtype=torch.float64)
+        ages = jnp.array([10.0, 50.0, max_time - 10.0], dtype=jnp.float64)
         result = calculate_non_spine_ages_log_lik(
             birth_rates=standard_array_params["birth_rates"],
             death_rates=standard_array_params["death_rates"],
@@ -1564,24 +1561,24 @@ class TestNonSpineAgesLogLikelihood:
 
         assert np.isfinite(float(result))
 
-    def test_single_epoch(self, sample_ages_scalar: torch.Tensor) -> None:
+    def test_single_epoch(self, sample_ages_scalar: jax.Array) -> None:
         """Test with single epoch (single-element arrays)."""
         result = calculate_non_spine_ages_log_lik(
-            birth_rates=torch.tensor([0.1], dtype=torch.float64),
-            death_rates=torch.tensor([0.05], dtype=torch.float64),
+            birth_rates=jnp.array([0.1], dtype=jnp.float64),
+            death_rates=jnp.array([0.05], dtype=jnp.float64),
             ages=sample_ages_scalar,
-            times=torch.tensor([100.0], dtype=torch.float64),
+            times=jnp.array([100.0], dtype=jnp.float64),
         )
 
         assert np.isfinite(float(result))
 
-    def test_critical_case(self, sample_ages_scalar: torch.Tensor) -> None:
+    def test_critical_case(self, sample_ages_scalar: jax.Array) -> None:
         """Test numerical stability when λ ≈ μ."""
         result = calculate_non_spine_ages_log_lik(
-            birth_rates=torch.tensor([0.1], dtype=torch.float64),
-            death_rates=torch.tensor([0.1 + 1e-13], dtype=torch.float64),
+            birth_rates=jnp.array([0.1], dtype=jnp.float64),
+            death_rates=jnp.array([0.1 + 1e-13], dtype=jnp.float64),
             ages=sample_ages_scalar,
-            times=torch.tensor([100.0], dtype=torch.float64),
+            times=jnp.array([100.0], dtype=jnp.float64),
         )
 
         assert np.isfinite(float(result))
@@ -1591,41 +1588,41 @@ class TestNonSpineAgesLogLikelihood:
         # Age > T
         with pytest.raises(ValueError, match=r"ages must be in \[0, .*\]. Got ages:"):
             calculate_non_spine_ages_log_lik(
-                birth_rates=torch.tensor([0.1], dtype=torch.float64),
-                death_rates=torch.tensor([0.05], dtype=torch.float64),
+                birth_rates=jnp.array([0.1], dtype=jnp.float64),
+                death_rates=jnp.array([0.05], dtype=jnp.float64),
                 ages=150.0,  # age > times[-1]
-                times=torch.tensor([100.0], dtype=torch.float64),
+                times=jnp.array([100.0], dtype=jnp.float64),
             )
 
     def test_shape_mismatch_raises_error(
         self,
-        sample_ages_scalar: torch.Tensor,
+        sample_ages_scalar: jax.Array,
     ) -> None:
         """Test that parameter shape mismatches raise ValueError."""
         with pytest.raises(ValueError, match="matching lengths"):
             calculate_non_spine_ages_log_lik(
-                birth_rates=torch.tensor([0.1, 0.15], dtype=torch.float64),
-                death_rates=torch.tensor(
+                birth_rates=jnp.array([0.1, 0.15], dtype=jnp.float64),
+                death_rates=jnp.array(
                     [0.05],
-                    dtype=torch.float64,
+                    dtype=jnp.float64,
                 ),  # Different shape
                 ages=sample_ages_scalar,
-                times=torch.tensor([50.0, 100.0], dtype=torch.float64),
+                times=jnp.array([50.0, 100.0], dtype=jnp.float64),
             )
 
     def test_non_monotonic_times_raises_error(
         self,
-        sample_ages_scalar: torch.Tensor,
+        sample_ages_scalar: jax.Array,
     ) -> None:
         """Test that non-monotonic times raise ValueError."""
         with pytest.raises(ValueError, match="strictly increasing"):
             calculate_non_spine_ages_log_lik(
-                birth_rates=torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64),
-                death_rates=torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64),
+                birth_rates=jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64),
+                death_rates=jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64),
                 ages=sample_ages_scalar,
-                times=torch.tensor(
+                times=jnp.array(
                     [50.0, 100.0, 90.0],
-                    dtype=torch.float64,
+                    dtype=jnp.float64,
                 ),  # Not monotonic
             )
 
@@ -1640,8 +1637,8 @@ class TestAgesLogLikelihood:
 
     def test_spine_routing(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
-        sample_ages_scalar: torch.Tensor,
+        standard_scalar_params: dict[str, jax.Array],
+        sample_ages_scalar: jax.Array,
     ) -> None:
         """Test that are_spines=True routes to spine implementation."""
         result = calculate_ages_log_lik(
@@ -1662,7 +1659,7 @@ class TestAgesLogLikelihood:
 
         np.testing.assert_allclose(np.array(result), np.array(expected), rtol=1.3e-6)
 
-    def test_non_spine_routing(self, sample_ages_scalar: torch.Tensor) -> None:
+    def test_non_spine_routing(self, sample_ages_scalar: jax.Array) -> None:
         """Test that are_spines=False routes to non-spine implementation."""
         result = calculate_ages_log_lik(
             birth_rates=0.1,
@@ -1674,10 +1671,10 @@ class TestAgesLogLikelihood:
 
         # Should match non-spine calculation (using array inputs)
         expected = calculate_non_spine_ages_log_lik(
-            birth_rates=torch.tensor([0.1], dtype=torch.float64),
-            death_rates=torch.tensor([0.05], dtype=torch.float64),
+            birth_rates=jnp.array([0.1], dtype=jnp.float64),
+            death_rates=jnp.array([0.05], dtype=jnp.float64),
             ages=sample_ages_scalar,
-            times=torch.tensor([100.0], dtype=torch.float64),
+            times=jnp.array([100.0], dtype=jnp.float64),
         )
 
         np.testing.assert_allclose(np.array(result), np.array(expected), rtol=1.3e-6)
@@ -1693,7 +1690,7 @@ class TestMathematicalProperties:
 
     def test_pr_bounds_population(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Test that log probabilities are negative (probabilities < 1)."""
         for n in range(20):
@@ -1706,22 +1703,22 @@ class TestMathematicalProperties:
             # Log probabilities should be ≤ 0
             assert result <= 0 or np.isclose(
                 float(result),
-                float(torch.tensor(0.0, dtype=torch.float64)),
+                float(jnp.array(0.0, dtype=jnp.float64)),
             )
 
     def test_extinction_pr_increases_with_mu(self) -> None:
         """Test that extinction probability increases as death rate increases."""
-        birth_rates = torch.tensor([0.1, 0.1, 0.1], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.1, 0.1], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
         alpha_1 = calculate_extinction_pr(
             birth_rates,
-            torch.tensor([0.05, 0.05, 0.05], dtype=torch.float64),
+            jnp.array([0.05, 0.05, 0.05], dtype=jnp.float64),
             times,
         )
         alpha_2 = calculate_extinction_pr(
             birth_rates,
-            torch.tensor([0.08, 0.08, 0.08], dtype=torch.float64),
+            jnp.array([0.08, 0.08, 0.08], dtype=jnp.float64),
             times,
         )
 
@@ -1734,14 +1731,14 @@ class TestMathematicalProperties:
             birth_rates=0.1,
             death_rates=0.05,
             times=100.0,
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
         )
 
         array_result = calculate_populations_log_lik(
-            birth_rates=torch.tensor([0.1], dtype=torch.float64),
-            death_rates=torch.tensor([0.05], dtype=torch.float64),
-            times=torch.tensor([100.0], dtype=torch.float64),
-            ns=torch.tensor([1], dtype=torch.int64),
+            birth_rates=jnp.array([0.1], dtype=jnp.float64),
+            death_rates=jnp.array([0.05], dtype=jnp.float64),
+            times=jnp.array([100.0], dtype=jnp.float64),
+            ns=jnp.array([1], dtype=jnp.int32),
         )
 
         # Results should be very close
@@ -1751,10 +1748,10 @@ class TestMathematicalProperties:
 
     def test_sum_property_array_ns(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Test that array of ns gives sum of individual likelihoods."""
-        ns_array = torch.tensor([5, 10, 15], dtype=torch.int64)
+        ns_array = jnp.array([5, 10, 15], dtype=jnp.int32)
 
         # Compute together
         result_together = calculate_populations_log_lik(
@@ -1795,7 +1792,7 @@ class TestNumericalStability:
             birth_rates=0.001,  # Small rates to prevent overflow
             death_rates=0.0005,
             times=10000.0,  # Very large time
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
         )
 
         # Should not return inf or nan
@@ -1808,13 +1805,13 @@ class TestNumericalStability:
             birth_rates=1.0,
             death_rates=0.001,
             times=10.0,
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
         )
 
         # Should handle gracefully
-        assert np.isfinite(float(result1)) or result1 == -torch.tensor(
+        assert np.isfinite(float(result1)) or result1 == -jnp.array(
             float("inf"),
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )
 
         # μ >> λ (high death)
@@ -1822,12 +1819,12 @@ class TestNumericalStability:
             birth_rates=0.001,
             death_rates=1.0,
             times=10.0,
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
         )
 
-        assert np.isfinite(float(result2)) or result2 == -torch.tensor(
+        assert np.isfinite(float(result2)) or result2 == -jnp.array(
             float("inf"),
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )
 
     def test_very_small_rates(self) -> None:
@@ -1844,25 +1841,25 @@ class TestNumericalStability:
     def test_many_epochs(self) -> None:
         """Test with many epochs (long array)."""
         n_epochs = 100
-        birth_rates = torch.linspace(0.08, 0.12, n_epochs)
-        death_rates = torch.linspace(0.04, 0.06, n_epochs)
-        times = torch.linspace(1.0, 100.0, n_epochs)
+        birth_rates = jnp.linspace(0.08, 0.12, n_epochs)
+        death_rates = jnp.linspace(0.04, 0.06, n_epochs)
+        times = jnp.linspace(1.0, 100.0, n_epochs)
 
         result = calculate_populations_log_lik(
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
-            ns=torch.tensor([1], dtype=torch.int64),
+            ns=jnp.array([1], dtype=jnp.int32),
         )
 
         assert np.isfinite(float(result)) or float(result) == -jnp.inf
 
     def test_ages_near_observation_time(self) -> None:
         """Test age likelihood with ages very close to final_time."""
-        final_time = torch.tensor([100.0], dtype=torch.float64)
-        ages = torch.tensor(
+        final_time = jnp.array([100.0], dtype=jnp.float64)
+        ages = jnp.array(
             [final_time - 1e-6, final_time - 1e-8, final_time - 1e-10],
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )
 
         result = calculate_spine_ages_log_lik(
@@ -1885,8 +1882,8 @@ class TestIntegration:
 
     def test_spine_non_spine_different_formulas(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
-        sample_ages_scalar: torch.Tensor,
+        standard_scalar_params: dict[str, jax.Array],
+        sample_ages_scalar: jax.Array,
     ) -> None:
         """Test that spine and non-spine give different results (different formulas)."""
         spine_result = calculate_spine_ages_log_lik(
@@ -1897,10 +1894,10 @@ class TestIntegration:
         )
 
         non_spine_result = calculate_non_spine_ages_log_lik(
-            torch.tensor([standard_scalar_params["birth_rate"]], dtype=torch.float64),
-            torch.tensor([standard_scalar_params["death_rate"]], dtype=torch.float64),
+            jnp.array([standard_scalar_params["birth_rate"]], dtype=jnp.float64),
+            jnp.array([standard_scalar_params["death_rate"]], dtype=jnp.float64),
             sample_ages_scalar,
-            torch.tensor([standard_scalar_params["time"]], dtype=torch.float64),
+            jnp.array([standard_scalar_params["time"]], dtype=jnp.float64),
         )
 
         # These should be different (different conditioning)
@@ -1917,12 +1914,12 @@ class TestVectorization:
 
     def test_array_ages_more_efficient_than_loop(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Verify that array processing is implemented (not just a loop)."""
         # This is more of a smoke test - actual performance testing
         # would require timing benchmarks
-        ages = torch.linspace(10, 90, 100)
+        ages = jnp.linspace(10, 90, 100)
 
         result = calculate_spine_ages_log_lik(
             standard_scalar_params["birth_rate"],
@@ -1935,10 +1932,10 @@ class TestVectorization:
 
     def test_large_population_counts_array(
         self,
-        standard_scalar_params: dict[str, torch.Tensor],
+        standard_scalar_params: dict[str, jax.Array],
     ) -> None:
         """Test with large array of population counts."""
-        ns = torch.arange(0, 100)
+        ns = jnp.arange(0, 100)
 
         result = calculate_populations_log_lik(
             standard_scalar_params["birth_rate"],
@@ -1965,9 +1962,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_basic_single_epoch(self) -> None:
         """Test basic functionality with a single epoch."""
         birth_time = 5.0
-        birth_rates = torch.tensor([0.1], dtype=torch.float64)
-        death_rates = torch.tensor([0.05], dtype=torch.float64)
-        times = torch.tensor([100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1], dtype=jnp.float64)
+        death_rates = jnp.array([0.05], dtype=jnp.float64)
+        times = jnp.array([100.0], dtype=jnp.float64)
 
         result = _integrand_surv_from_weighted_birth_time(
             birth_time,
@@ -1983,9 +1980,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_basic_multiple_epochs(self) -> None:
         """Test with multiple epochs."""
         birth_time = 25.0
-        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
         result = _integrand_surv_from_weighted_birth_time(
             birth_time,
@@ -2000,9 +1997,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_birth_time_at_zero(self) -> None:
         """Test when birth_time is 0 (start of process)."""
         birth_time = 0.0
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         result = _integrand_surv_from_weighted_birth_time(
             birth_time,
@@ -2017,9 +2014,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_birth_time_equals_first_epoch_end(self) -> None:
         """Test edge case when birth_time equals first epoch end time."""
         birth_time = 50.0
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         # After subtracting birth_time, times becomes [0.0, 50.0]
         # valid_indices will be where times > 0, so only index 1
@@ -2036,9 +2033,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_birth_time_beyond_all_epochs_returns_zero(self) -> None:
         """Test that birth_time beyond all epochs returns 0.0."""
         birth_time = 150.0  # Beyond all epochs
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         result = _integrand_surv_from_weighted_birth_time(
             birth_time,
@@ -2051,9 +2048,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_birth_time_slightly_beyond_last_epoch(self) -> None:
         """Test birth_time just beyond the last epoch time."""
         birth_time = 100.1
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         # After subtracting birth_time, times becomes negative, no valid indices
         result = _integrand_surv_from_weighted_birth_time(
@@ -2067,9 +2064,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_birth_time_within_first_epoch(self) -> None:
         """Test normal case with birth_time within first epoch."""
         birth_time = 10.0
-        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
         result = _integrand_surv_from_weighted_birth_time(
             birth_time,
@@ -2084,9 +2081,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_birth_time_within_middle_epoch(self) -> None:
         """Test birth_time within a middle epoch."""
         birth_time = 75.0
-        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
         # After subtracting, times becomes [-25.0, 25.0, 75.0]
         # valid_indices will be [1, 2]
@@ -2103,9 +2100,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_scalar_inputs_converted_to_arrays(self) -> None:
         """Test that scalar inputs are properly converted to arrays."""
         birth_time = 10.0
-        birth_rates = torch.tensor([0.1], dtype=torch.float64)
-        death_rates = torch.tensor([0.05], dtype=torch.float64)
-        times = torch.tensor([100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1], dtype=jnp.float64)
+        death_rates = jnp.array([0.05], dtype=jnp.float64)
+        times = jnp.array([100.0], dtype=jnp.float64)
 
         result = _integrand_surv_from_weighted_birth_time(
             birth_time,
@@ -2120,13 +2117,13 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_result_proportional_to_birth_rate(self) -> None:
         """Test that result is proportional to the first valid birth rate."""
         birth_time = 10.0
-        birth_rates1 = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        birth_rates2 = torch.tensor(
+        birth_rates1 = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        birth_rates2 = jnp.array(
             [0.2, 0.15],
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )  # Double the first rate
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         result1 = _integrand_surv_from_weighted_birth_time(
             birth_time,
@@ -2153,11 +2150,11 @@ class TestIntegrandSurvFromWeightedBirthTime:
         erroring — we just verify it doesn't crash.
         """
         birth_time = 10.0
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)  # Length 2
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)  # Length 2
-        times = torch.tensor(
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)  # Length 2
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)  # Length 2
+        times = jnp.array(
             [50.0, 100.0, 150.0],
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )  # Length 3 - MISMATCH!
 
         result = _integrand_surv_from_weighted_birth_time(
@@ -2171,9 +2168,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_array_length_mismatch_rates_longer(self) -> None:
         """Test when birth_rates/death_rates arrays are longer than times array."""
         birth_time = 10.0
-        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         result = _integrand_surv_from_weighted_birth_time(
             birth_time,
@@ -2186,12 +2183,12 @@ class TestIntegrandSurvFromWeightedBirthTime:
     def test_birth_and_death_rates_different_lengths(self) -> None:
         """Test when birth_rates and death_rates have different lengths."""
         birth_time = 10.0
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)  # Length 2
-        death_rates = torch.tensor(
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)  # Length 2
+        death_rates = jnp.array(
             [0.05, 0.06, 0.055],
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )  # Length 3 - MISMATCH!
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         result = _integrand_surv_from_weighted_birth_time(
             birth_time,
@@ -2209,14 +2206,14 @@ class TestIntegrandSurvFromWeightedBirthTime:
         function returns a float instead of raising.
         """
         lifetime = 100.0
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
         birth_time = 25.0
 
         # times has an extra element vs rate arrays (length mismatch)
-        bad_times = torch.cat(
-            [times, torch.as_tensor(lifetime, dtype=torch.float64).reshape(-1)],
+        bad_times = jnp.concatenate(
+            [times, jnp.array([lifetime], dtype=jnp.float64)],
         )  # Length 3!
 
         result = _integrand_surv_from_weighted_birth_time(
@@ -2231,9 +2228,9 @@ class TestIntegrandSurvFromWeightedBirthTime:
         """Test that valid_indices correctly handles partial epoch truncation."""
         # When birth_time is within epochs, valid_indices should be a subset
         birth_time = 60.0
-        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
         # After subtracting birth_time, times becomes [-10.0, 40.0, 90.0]
         # valid_indices should be [1, 2] (where times > 0)
@@ -2258,10 +2255,10 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
 
     def test_basic_single_lifetime_within_epochs(self) -> None:
         """Test basic case with lifetime within epoch boundaries."""
-        lifetime = torch.tensor([50.0], dtype=torch.float64)
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([75.0, 150.0], dtype=torch.float64)
+        lifetime = jnp.array([50.0], dtype=jnp.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([75.0, 150.0], dtype=jnp.float64)
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetime,
@@ -2275,9 +2272,9 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
     def test_lifetime_equals_last_epoch(self) -> None:
         """Test when lifetime equals the last epoch end time."""
         lifetime = 100.0
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         # This should work - lifetime is at boundary
         result = calculate_log_pr_extinction_given_initial_lifetimes(
@@ -2298,9 +2295,9 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
         functional sentinel for invalid input rather than a ValueError.
         """
         lifetime = 120.0  # Beyond last epoch at 100
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetime,
@@ -2316,13 +2313,13 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
         The out-of-range lifetime (120 > 100) produces NaN via negative residual
         time; the sum propagates NaN to the total.
         """
-        lifetimes = torch.tensor(
+        lifetimes = jnp.array(
             [50.0, 80.0, 120.0],
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )  # Last one beyond times
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetimes,
@@ -2335,9 +2332,9 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
     def test_lifetime_at_first_epoch_boundary(self) -> None:
         """Test lifetime at first epoch boundary."""
         lifetime = 50.0
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetime,
@@ -2354,9 +2351,9 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
         Negative residual time (150 - 200 < 0) propagates NaN.
         """
         lifetime = 200.0
-        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetime,
@@ -2372,9 +2369,9 @@ class TestCalculateLogPrExtinctionGivenInitialLifetimes:
         Negative residual time (100 - 500 < 0) propagates NaN.
         """
         lifetime = 500.0  # Much larger than last epoch at 100
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         result = calculate_log_pr_extinction_given_initial_lifetimes(
             lifetime,
@@ -2396,9 +2393,9 @@ class TestTimeReversalInvolution:
 
     def test_double_reversal_two_epochs(self) -> None:
         """Test double reversal for two-epoch case."""
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         # Apply reversal once
         inv_times_1, refl_birth_1, refl_death_1 = _reverse_time(
@@ -2425,9 +2422,9 @@ class TestTimeReversalInvolution:
 
     def test_double_reversal_three_epochs(self) -> None:
         """Test double reversal for three-epoch case."""
-        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
-        times = torch.tensor([40.0, 80.0, 120.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
+        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
 
         # Apply reversal twice
         inv_times_1, refl_birth_1, refl_death_1 = _reverse_time(
@@ -2455,15 +2452,15 @@ class TestTimeReversalInvolution:
     def test_double_reversal_many_epochs(self) -> None:
         """Test double reversal with many epochs."""
         # Create 5-epoch case
-        birth_rates = torch.tensor(
+        birth_rates = jnp.array(
             [0.10, 0.12, 0.11, 0.13, 0.09],
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )
-        death_rates = torch.tensor(
+        death_rates = jnp.array(
             [0.05, 0.06, 0.055, 0.065, 0.04],
-            dtype=torch.float64,
+            dtype=jnp.float64,
         )
-        times = torch.tensor([30.0, 60.0, 90.0, 120.0, 150.0], dtype=torch.float64)
+        times = jnp.array([30.0, 60.0, 90.0, 120.0, 150.0], dtype=jnp.float64)
 
         # Apply reversal twice
         inv_times_1, refl_birth_1, refl_death_1 = _reverse_time(
@@ -2488,9 +2485,9 @@ class TestTimeReversalInvolution:
 
     def test_single_reversal_swaps_rates(self) -> None:
         """Test that single reversal correctly swaps birth and death rates."""
-        birth_rates = torch.tensor([0.1, 0.15], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
 
         _, refl_birth, refl_death = _reverse_time(
             birth_rates,
@@ -2499,8 +2496,8 @@ class TestTimeReversalInvolution:
         )
 
         # After first reversal, birth rates should be flipped death rates
-        expected_birth = torch.flip(death_rates, dims=[0])
-        expected_death = torch.flip(birth_rates, dims=[0])
+        expected_birth = jnp.flip(death_rates, axis=0)
+        expected_death = jnp.flip(birth_rates, axis=0)
 
         np.testing.assert_allclose(
             np.array(refl_birth), np.array(expected_birth), rtol=1.3e-6
@@ -2511,9 +2508,9 @@ class TestTimeReversalInvolution:
 
     def test_reversed_times_are_monotonic(self) -> None:
         """Test that reversed times remain monotonically increasing."""
-        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
-        times = torch.tensor([50.0, 100.0, 150.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
+        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
         inv_times, _, _ = _reverse_time(birth_rates, death_rates, times)
 
@@ -2523,9 +2520,9 @@ class TestTimeReversalInvolution:
 
     def test_total_time_preserved(self) -> None:
         """Test that total elapsed time is preserved under reversal."""
-        birth_rates = torch.tensor([0.1, 0.15, 0.12], dtype=torch.float64)
-        death_rates = torch.tensor([0.05, 0.06, 0.055], dtype=torch.float64)
-        times = torch.tensor([40.0, 90.0, 130.0], dtype=torch.float64)
+        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
+        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
+        times = jnp.array([40.0, 90.0, 130.0], dtype=jnp.float64)
 
         inv_times, _, _ = _reverse_time(birth_rates, death_rates, times)
 

@@ -57,6 +57,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Phase 2e — cutover & cleanup**: removed `torch`, `torchvision`, `pyro-ppl` from
+  project dependencies and `types-torch` from dev; promoted JAX stack (`jax`,
+  `jaxtyping`, `numpyro`, `optax`, `optimistix`) to main dependencies; removed the
+  transient `models._jax` spike package and `tests/test_jax_torch_equivalence.py`
+  equivalence gate; all remaining `torch` usages in test files replaced with JAX/numpy
+  equivalents; updated `CLAUDE.md` design note from "PyTorch everywhere" to "JAX
+  everywhere"; basedpyright suppression comments updated to reflect JAX stub gaps.
+
 - `inference.fitting`, `inference._optimizer_runners`, `inference._fit_types`,
   `inference.uncertainty` — Phase 2c: optimizer layer migrated from PyTorch
   (LBFGS closure / `nn.Parameter`) to JAX + optimistix BFGS/LBFGS and optax Adam;

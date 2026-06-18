@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import jax.numpy as jnp
 import pandas as pd
 import pytest
-import torch
 
 from inf_bp_texts.models.birth_death_process import BirthDeathProcess
 
@@ -78,9 +78,9 @@ def sample_fit_results() -> dict[str, Any]:
 def canonical_single_epoch_params() -> dict[str, Any]:
     """Canonical single-epoch parameters reused across regression and recovery tests."""
     return {
-        "birth_rates": torch.tensor([0.05], dtype=torch.float64),
-        "death_rates": torch.tensor([0.03], dtype=torch.float64),
-        "times": torch.tensor([1500.0], dtype=torch.float64),
+        "birth_rates": jnp.array([0.05], dtype=jnp.float64),
+        "death_rates": jnp.array([0.03], dtype=jnp.float64),
+        "times": jnp.array([1500.0], dtype=jnp.float64),
     }
 
 

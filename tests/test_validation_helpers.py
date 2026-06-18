@@ -1,8 +1,9 @@
 """Tests for shared validation helpers."""
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
-import torch
 
 import inf_bp_texts.analysis.validation_helpers as validation_helpers_module
 from inf_bp_texts.analysis import (
@@ -293,12 +294,12 @@ class TestNewValidationHelpers:
         assert robust_y_max([None]) == pytest.approx(1.0)
 
     def test_theoretical_age_density_integrates_to_approximately_one(self) -> None:
-        birth_rate = torch.tensor([0.1], dtype=torch.float64)
-        death_rate = torch.tensor([0.05], dtype=torch.float64)
+        birth_rate = jnp.array([0.1], dtype=jnp.float64)
+        death_rate = jnp.array([0.05], dtype=jnp.float64)
         T = 100.0
-        times = torch.tensor([T], dtype=torch.float64)
+        times = jnp.array([T], dtype=jnp.float64)
 
-        def log_lik_fn(age: torch.Tensor) -> torch.Tensor:
+        def log_lik_fn(age: jax.Array) -> jax.Array:
             return calculate_non_spine_ages_log_lik(birth_rate, death_rate, age, times)
 
         x_grid, y_vals = theoretical_age_density(

@@ -1,6 +1,6 @@
 """Tests verifying LBFGS makes at least one improvement step from initial values."""
 
-import torch
+import numpy as np
 
 from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference.fitting import fit_birth_death_processes
@@ -8,7 +8,7 @@ from inf_bp_texts.inference.fitting import fit_birth_death_processes
 
 def _make_simple_ages():
     # all ages must be <= observation time (1.0)
-    return torch.tensor([0.1, 0.2, 0.5, 0.7, 0.95], dtype=torch.float64)
+    return np.array([0.1, 0.2, 0.5, 0.7, 0.95], dtype=np.float64)
 
 
 def _run_lbfgs(line_search_fn: str | None = None):

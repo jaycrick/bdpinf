@@ -7,18 +7,20 @@ requires-python = ">=3.13"
 dependencies = [
     "griffe<2.0.0",
     "itables>=2.7.0",
+    "jax>=0.4.38",
+    "jaxtyping>=0.2.38",
     "joblib>=1.5.3",
     "jupyter>=1.1.1",
     "kaleido>=1.2.0",
     "lxml>=6.0.2",
     "numpy>=2.4.2",
+    "numpyro>=0.16.0",
+    "optax>=0.2.4",
+    "optimistix>=0.0.9",
     "pandas>=3.0.0",
     "plotly>=6.5.2",
     "pydantic>=2.12.5",
-    "pyro-ppl>=1.9.1",
     "scipy>=1.17.0",
-    "torch>=2.10.0",
-    "torchvision>=0.25.0",
     "typer>=0.24.1",
 ]
 
@@ -29,17 +31,6 @@ inf-bp-texts = "inf_bp_texts.cli:main"
 altair-migration = [
     "altair>=5",
     "vl-convert-python>=1.9.0.post1",
-]
-# Phase 2 JAX migration group — torch/pyro remain in main deps during the
-# equivalence-gate phase; they will be dropped in Phase 2e once this group's
-# tests pass.  For GPU use on the A40 run:
-#   pip install "jax[cuda12]"   (after uv sync --group jax-port)
-jax-port = [
-    "jax>=0.4.38",
-    "jaxtyping>=0.2.38",
-    "numpyro>=0.16.0",
-    "optax>=0.2.4",
-    "optimistix>=0.0.9",
 ]
 dev = [
     "basedpyright>=1.22.0",
@@ -58,7 +49,6 @@ dev = [
     "ruff>=0.15.1",
     "scipy-stubs>=1.17.0.2",
     "toml-sort>=0.24.3",
-    "types-torch>=0.1.1",
     "typing-extensions>=4.15.0",
 ]
 
@@ -73,13 +63,12 @@ include = ["src"]
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = "warning"
-# types-torch community stubs are incomplete — suppress cascading failures until stubs improve
+# JAX/jaxtyping stubs have gaps — suppress unknown-type cascades until upstream improves
 reportUnknownMemberType = "none"
 reportUnknownVariableType = "none"
 reportUnknownArgumentType = "none"
 reportUnknownParameterType = "none"
 reportAttributeAccessIssue = "none"
-# Cascade from unknown torch tensor types:
 reportIndexIssue = "none"
 reportOperatorIssue = "none"
 reportAbstractUsage = "none"

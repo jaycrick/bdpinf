@@ -3,7 +3,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-import torch
 
 from inf_bp_texts.inference.fitting import (
     ParameterConstraints,
@@ -299,7 +298,7 @@ class TestIntegration:
             higher_death_ll,
             lower_death_ll,
         ]
-        unique_values = len(set(likelihoods))
+        unique_values = len(set(float(ll) for ll in likelihoods))
         assert unique_values == 5  # All different
 
     def test_data_quality_robustness(self) -> None:
@@ -379,19 +378,19 @@ class TestIntegration:
 
     def test_simulate_then_log_likelihood_is_finite(self) -> None:
         rng = np.random.default_rng(77)
-        br = torch.tensor(0.01, dtype=torch.float64)
-        dr = torch.tensor(0.004, dtype=torch.float64)
-        T = torch.tensor(600.0, dtype=torch.float64)
+        br = 0.01
+        dr = 0.004
+        T = 600.0
         process = simulate_bdp_ages_from_distributions(
             br, dr, T, rng, ensure_non_extinct=True
         )
-        ages = process.manuscript_ages
-        if ages.numel() == 0:
+        ages = np.asarray(process.manuscript_ages)
+        if ages.size == 0:
             return
         ll = log_likelihood(
             birth_rates=br,
             death_rates=dr,
-            ages=ages.numpy(),
+            ages=ages,
             times=600.0,
         )
         assert np.isfinite(_as_float(ll))

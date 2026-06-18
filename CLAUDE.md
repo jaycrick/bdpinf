@@ -170,7 +170,7 @@ All NTVMR ETL modules live in the `inf_bp_texts/data/` subpackage. Key public AP
 
 ## Key design decisions
 
-1. **PyTorch everywhere**: All rates and ages are `torch.Tensor` (float64) — enables gradient-based optimization and ensures numerical precision throughout the pipeline.
+1. **JAX everywhere**: All rates and ages are `jax.Array` (float64) — enables gradient-based optimization via `jax.grad`/`jax.jit` and ensures numerical precision throughout the pipeline. `jax.config.update("jax_enable_x64", True)` is set at package import.
 
 2. **Pure math functions, not methods**: `math_extinction.py`, `math_ages.py`, `math_populations.py` contain only free functions with no class state, keeping the math testable and composable independently of `BirthDeathProcess`.
 
