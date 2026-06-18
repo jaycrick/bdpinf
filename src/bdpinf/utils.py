@@ -31,8 +31,8 @@ def ensure_1d_tensor(x: object) -> jax.Array:
     Parameters
     ----------
     x : array-like
-        Input value to convert. Can be a scalar, numpy array, JAX array, or
-        torch.Tensor (CPU). Multi-dimensional arrays are flattened.
+        Input value to convert. Can be a scalar, numpy array, or JAX array.
+        Multi-dimensional arrays are flattened.
 
     Returns
     -------
