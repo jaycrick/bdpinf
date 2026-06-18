@@ -26,12 +26,14 @@ birth and death rates are identical in each epoch.
 ## Setup
 
 ```{python}
+from typing import Any
+
 import altair as alt
 import numpy as np
 import pandas as pd
 import torch
-from typing import Any
 from IPython.display import display
+from joblib import Parallel, delayed
 
 from inf_bp_texts.analysis import (
     boundary_corrected_kde_on_support,
@@ -48,7 +50,6 @@ from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 from inf_bp_texts.simulation import simulate_birth_death_process
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
-from joblib import Parallel, delayed
 ```
 
 ## Simulate Age Vectors
@@ -71,7 +72,11 @@ three_epoch_times = np.array([500.0, 1000.0, 1500.0], dtype=float)
 
 
 def sample_age_vector_process(
-    sim_idx: int, br: np.ndarray | float, dr: np.ndarray | float, span: np.ndarray | float, base_seed: int
+    sim_idx: int,
+    br: np.ndarray | float,
+    dr: np.ndarray | float,
+    span: np.ndarray | float,
+    base_seed: int,
 ) -> np.ndarray:
     run_seed = base_seed + sim_idx
     simulated_df = simulate_birth_death_process(
@@ -240,14 +245,24 @@ for bc, cnt_s, cnt_t in zip(
     population_empirical_counts_three,
 ):
     _pop_records += [
-        {"bin": float(bc), "count": int(cnt_s), "method": "Observed (single-epoch process)"},
-        {"bin": float(bc), "count": int(cnt_t), "method": "Observed (three-epoch process)"},
+        {
+            "bin": float(bc),
+            "count": int(cnt_s),
+            "method": "Observed (single-epoch process)",
+        },
+        {
+            "bin": float(bc),
+            "count": int(cnt_t),
+            "method": "Observed (three-epoch process)",
+        },
     ]
 _pop_df = pd.DataFrame(_pop_records)
-_theory_df = pd.DataFrame({
-    "bin": population_bin_centers.tolist(),
-    "count": population_theoretical_counts.tolist(),
-})
+_theory_df = pd.DataFrame(
+    {
+        "bin": population_bin_centers.tolist(),
+        "count": population_theoretical_counts.tolist(),
+    }
+)
 
 _pop_color = alt.Scale(
     domain=["Observed (single-epoch process)", "Observed (three-epoch process)"],
@@ -260,7 +275,9 @@ _pop_bars = (
         x=alt.X("bin:Q", title="Population size", scale=alt.Scale(domain=[0, 2000])),
         y=alt.Y("count:Q", title="Count"),
         xOffset="method:N",
-        color=alt.Color("method:N", scale=_pop_color, legend=alt.Legend(title=None, orient="top")),
+        color=alt.Color(
+            "method:N", scale=_pop_color, legend=alt.Legend(title=None, orient="top")
+        ),
     )
 )
 _theory_line = (
@@ -279,15 +296,15 @@ fig_population = (_pop_bars + _theory_line).properties(
     height=350,
 )
 display(fig_population)
-save_chart(fig_population, "methods_validation_population_distribution", width=600, height=350)
+save_chart(
+    fig_population, "methods_validation_population_distribution", width=600, height=350
+)
 print("Saved population figure")
 ```
 
 ## Spine and Non-Spine Age Checks
 
 ```{python}
-
-
 spine_age_samples_single = np.asarray(
     [
         arr[0]
@@ -387,7 +404,9 @@ def _kde_panel(
         kde_df = pd.DataFrame({"Age": kde_x.tolist(), "Density": kde_y.tolist()})
         layers.append(
             alt.Chart(kde_df)
-            .mark_area(opacity=0.4, color=color, line={"color": color, "strokeWidth": 2})
+            .mark_area(
+                opacity=0.4, color=color, line={"color": color, "strokeWidth": 2}
+            )
             .encode(
                 x=alt.X("Age:Q", title=x_label, scale=alt.Scale(domain=x_dom)),
                 y=alt.Y("Density:Q", title=y_label, scale=alt.Scale(domain=y_domain)),
@@ -409,12 +428,52 @@ ns_dom = [0.0, non_spine_y_max]
 sp_dom = [0.0, spine_y_max]
 fig_summary = alt.vconcat(
     alt.hconcat(
-        _kde_panel(non_spine_grid_single, non_spine_kde_single, non_spine_theory_x, non_spine_theory_y, PTOLQUAL[0], "Single-epoch process", "Age (single-epoch process)", "Density (non-spine)", ns_dom),
-        _kde_panel(non_spine_grid_three, non_spine_kde_three, non_spine_theory_x, non_spine_theory_y, PTOLQUAL[2], "Three-epoch process", "Age (three-epoch process)", "", ns_dom),
+        _kde_panel(
+            non_spine_grid_single,
+            non_spine_kde_single,
+            non_spine_theory_x,
+            non_spine_theory_y,
+            PTOLQUAL[0],
+            "Single-epoch process",
+            "Age (single-epoch process)",
+            "Density (non-spine)",
+            ns_dom,
+        ),
+        _kde_panel(
+            non_spine_grid_three,
+            non_spine_kde_three,
+            non_spine_theory_x,
+            non_spine_theory_y,
+            PTOLQUAL[2],
+            "Three-epoch process",
+            "Age (three-epoch process)",
+            "",
+            ns_dom,
+        ),
     ),
     alt.hconcat(
-        _kde_panel(spine_grid_single, spine_kde_single, spine_theory_x, spine_theory_y, PTOLQUAL[0], "Single-epoch process", "Age (single-epoch process)", "Density (spine)", sp_dom),
-        _kde_panel(spine_grid_three, spine_kde_three, spine_theory_x, spine_theory_y, PTOLQUAL[2], "Three-epoch process", "Age (three-epoch process)", "", sp_dom),
+        _kde_panel(
+            spine_grid_single,
+            spine_kde_single,
+            spine_theory_x,
+            spine_theory_y,
+            PTOLQUAL[0],
+            "Single-epoch process",
+            "Age (single-epoch process)",
+            "Density (spine)",
+            sp_dom,
+        ),
+        _kde_panel(
+            spine_grid_three,
+            spine_kde_three,
+            spine_theory_x,
+            spine_theory_y,
+            PTOLQUAL[2],
+            "Three-epoch process",
+            "Age (three-epoch process)",
+            "",
+            sp_dom,
+        ),
     ),
 ).properties(title="Age Densities by Generator (Single-Epoch vs Three-Epoch Process)")
 display(fig_summary)

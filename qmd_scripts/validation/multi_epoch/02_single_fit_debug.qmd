@@ -13,6 +13,7 @@ date: last-modified
 # | include: false
 
 import time
+
 __compile_start = time.perf_counter()
 ```
 
@@ -95,11 +96,10 @@ print(single_fit_result)
 ```
 
 ```{python}
-
 # Profile the fit using cProfile/pstats (replaces the %%prun cell magic)
 import cProfile
-import pstats
 import io
+import pstats
 from pathlib import Path
 
 prof_file = "prof-multi-epoch-single-fit.prof"
@@ -126,8 +126,8 @@ finally:
 # | include: false
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_multi_epoch_single_fit_debug.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

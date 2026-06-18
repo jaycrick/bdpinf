@@ -22,10 +22,10 @@ __compile_start = time.perf_counter()
 ```{python}
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 
 from inf_bp_texts.analysis import FitModelConfig, fit_single_model
 from inf_bp_texts.simulation import simulate_birth_death_process
-from joblib import Parallel, delayed
 ```
 
 ## Sensitivity Sweep
@@ -96,7 +96,8 @@ print(results_df.to_string(index=False, float_format="%.4f"))
 ## Benchmark Note
 
 This notebook provides runtime and success-rate benchmarking for multi-epoch
-fitting across a small configuration sweep. For deep profiling, run
+fitting across a small configuration sweep.
+For deep profiling, run
 [methods_validation_multi_epoch_single_fit_debug.qmd](methods_validation_multi_epoch_single_fit_debug.qmd).
 
 ```{python}
@@ -106,8 +107,8 @@ fitting across a small configuration sweep. For deep profiling, run
 
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_multi_epoch_sensitivity_benchmark.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

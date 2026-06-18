@@ -8,10 +8,6 @@ project:
     - "!qmd_scripts/validation/bayesian_multi_epoch/**/*.qmd"
     - "!qmd_scripts/core_analysis/04_bayesian/**/*.qmd"
     - docs/*.qmd
-    - reference/*.qmd
-
-metadata-files:
-  - reference/_sidebar.yml
 
 bibliography: bibliography.bib
 cite-method: biblatex
@@ -25,8 +21,6 @@ website:
   page-navigation: true
   navbar:
     left:
-      - text: "Reference"
-        file: reference/index.qmd
       - text: "Data Exploration"
         menu:
           - text: "NTVMR Data Exploration"
@@ -112,8 +106,6 @@ website:
 
 format:
   html:
-    css:
-      - reference/_styles-quartodoc.css
     respect-user-color-scheme: true
     code-overflow: wrap
     theme: flatly
@@ -132,76 +124,3 @@ execute:
   warning: true
   message: true
   cache: true
-
-quartodoc:
-  package: inf_bp_texts
-  sidebar: reference/_sidebar.yml
-  css: reference/_styles-quartodoc.css
-  parser: numpy
-  sections:
-    - title: Core model
-      desc: >
-        BirthDeathProcess — the central data structure passed between all
-        modules. Holds creation times, epoch boundaries, per-epoch birth/death
-        rates, and optional manuscript genealogy.
-      contents:
-        - models.birth_death_process.BirthDeathProcess
-
-    - title: Mathematical functions
-      desc: >
-        Pure likelihood and probability functions. No class state; all inputs
-        and outputs are float64 JAX arrays.
-      contents:
-        - models.math_extinction
-        - models.math_ages
-        - models.math_populations
-
-    - title: Input validation
-      desc: >
-        Normalisation and runtime validation for tensors, shapes, ranges, and
-        epoch monotonicity.
-      contents:
-        - models.validation
-
-    - title: Inference
-      desc: Maximum likelihood estimation and covariance.
-      contents:
-        - inference.fitting.fit_birth_death_processes
-        - inference.fitting.fit_from_data_frame
-        - inference.fitting.ParameterConstraints
-        - inference.likelihood.log_likelihood
-        - inference.likelihood.negative_log_likelihood
-        - inference.uncertainty
-
-    - title: Simulation
-      desc: Gillespie simulation and multilevel splitting for rare-event estimation.
-      contents:
-        - simulation.simulator.simulate_birth_death_process
-        - simulation.simulator.simulate_bdp_ages_from_distributions
-        - simulation.splitting.simulate_subcritical_survival_splitting
-        - simulation.splitting.SplittingConfig
-        - simulation.splitting.select_level_times_for_band
-
-    - title: Visualization
-      desc: Plotly rendering utilities for model results and diagnostics.
-      contents:
-        - visualization.plotting.save_figure
-        - visualization.splitting_plots
-        - visualization.parameter_plots
-
-    - title: Analysis
-      desc: Higher-level helpers for summarising and comparing fit results.
-      contents:
-        - analysis.single_epoch
-
-    - title: Data pipeline
-      desc: >
-        NTVMR manuscript data download, XML processing, cleaning, and pattern
-        analysis.
-      contents:
-        - data.ntvmr
-        - data.xml_processing
-        - data.data_cleaning
-        - data.content_extraction
-        - data.pattern_analysis
-        - data.reports

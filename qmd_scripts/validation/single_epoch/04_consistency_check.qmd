@@ -8,7 +8,7 @@ date: last-modified
 **TODOs:**
 
 - [ ] Generate a bunch of simulations from increasingly large Ts.
-Plot the mean parameter estimates vs T, and the parameter variance vs T.
+  Plot the mean parameter estimates vs T, and the parameter variance vs T.
 
 ```{python}
 # ruff: noqa: E402
@@ -29,8 +29,8 @@ __compile_start = time.perf_counter()
 
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_consistency_check.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

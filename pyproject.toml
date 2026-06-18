@@ -5,7 +5,6 @@ description = "A Python platform for New Testament manuscript data and running q
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "griffe<2.0.0",
     "itables>=2.7.0",
     "jax>=0.4.38",
     "jaxtyping>=0.2.38",
@@ -34,18 +33,19 @@ altair-migration = [
 ]
 dev = [
     "basedpyright>=1.22.0",
+    "great-docs>=0.14.0",
     "isort>=7.0.0",
     "joblib-stubs>=1.5.3.1.20260117",
     "jupyter-cache>=1.0.1",
     "lintquarto>=0.13.1",
     "lxml-stubs>=0.5.1",
+    "panache-cli>=2.56.0",
     "pandas-stubs>=3.0.0.260204",
     "plotly-stubs>=0.1.2",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "quarto>=0.1.0",
-    "quartodoc>=0.11.1",
     "ruff>=0.15.1",
     "scipy-stubs>=1.17.0.2",
     "toml-sort>=0.24.3",

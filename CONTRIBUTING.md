@@ -23,6 +23,10 @@ uv run pre-commit run --all-files
 uv run ruff format src tests
 uv run ruff check --fix src tests
 uv run basedpyright --project pyproject.toml src/
+
+# Markdown/Quarto prose linting and formatting (config in panache.toml)
+uv run panache format .
+uv run panache lint --fix .
 ```
 
 ## Quarto notebooks
@@ -33,13 +37,20 @@ uv run quarto render          # full site build
 uv run quarto preview         # live preview
 
 # Lint notebook Python cells
-uv run lintquarto -l ruff basedpyright -p qmd_scripts docs -e .venv _output reference
+uv run lintquarto -l ruff basedpyright -p qmd_scripts docs -e .venv _output
+```
+
+## API reference (separate site)
+
+```bash
+uv run great-docs build       # regenerate the reference site
+uv run great-docs preview     # live preview
 ```
 
 ## Pull requests
 
 - One bundled commit per logical change (code + tests + docs together).
-- Commit messages must start with a shortcode prefix — see `CLAUDE.md` for
+- Commit messages must start with a shortcode prefix --- see `CLAUDE.md` for
   the full list (`:zap:`, `:bug:`, `:tv:`, `:cop:`, `:abc:`).
 - All pre-commit hooks must pass before opening a PR.
 - New public functions require NumPy-style docstrings.

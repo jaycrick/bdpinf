@@ -20,13 +20,15 @@ __compile_start = time.perf_counter()
 ## Setup
 
 ```{python}
+from collections import Counter
+
 import altair as alt
 import numpy as np
 import pandas as pd
-from collections import Counter
 from IPython.display import display
 from joblib import Parallel, delayed
 
+from inf_bp_texts.analysis.single_epoch import extract_alive_ages, summarize_fit_success
 from inf_bp_texts.analysis.validation_helpers import (
     FitModelConfig,
     extract_epoch_parameter_arrays,
@@ -35,13 +37,13 @@ from inf_bp_texts.analysis.validation_helpers import (
     has_ages_in_each_epoch,
     iqr_plotting_subset,
 )
-from inf_bp_texts.analysis.single_epoch import extract_alive_ages, summarize_fit_success
 from inf_bp_texts.simulation import simulate_birth_death_process
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
 
-Only simulations that contain at least one observed age in each fitted epoch are kept. This avoids sending single-epoch samples into a two-epoch fit, which would make the recovered rates harder to interpret.
+Only simulations that contain at least one observed age in each fitted epoch are kept.
+This avoids sending single-epoch samples into a two-epoch fit, which would make the recovered rates harder to interpret.
 
 ```{python}
 # | label: simulate-full-two-rate
@@ -61,8 +63,6 @@ simulated_processes = Parallel(n_jobs=-1)(
     )
     for i in range(num_sims)
 )
-
-
 
 
 raw_list_of_ages = []
@@ -190,6 +190,7 @@ if plotting_row_count > 0:
             + f"median: {np.median(values):.6f} (true={true_value:.6f})"
         )
 
+
 def _param_hist_panel(
     values: np.ndarray, true_value: float, color: str, panel_title: str
 ) -> alt.LayerChart:
@@ -199,14 +200,18 @@ def _param_hist_panel(
         alt.Chart(_df)
         .mark_bar(opacity=0.8, color=color)
         .encode(
-            x=alt.X("rate:Q", bin=_bins, title="Fitted rate", scale=alt.Scale(zero=True)),
+            x=alt.X(
+                "rate:Q", bin=_bins, title="Fitted rate", scale=alt.Scale(zero=True)
+            ),
             y=alt.Y("count():Q", title="Count"),
         )
         .properties(title=panel_title, width=260, height=200)
     )
-    _vline = alt.Chart(pd.DataFrame({"x": [true_value]})).mark_rule(
-        strokeDash=[4, 2], color=color, strokeWidth=2
-    ).encode(x=alt.X("x:Q"))
+    _vline = (
+        alt.Chart(pd.DataFrame({"x": [true_value]}))
+        .mark_rule(strokeDash=[4, 2], color=color, strokeWidth=2)
+        .encode(x=alt.X("x:Q"))
+    )
     return _hist + _vline
 
 
@@ -220,7 +225,10 @@ if plotting_row_count > 0:
         alt.hconcat(_panels[2], _panels[3]),
     ).properties(title="Epoch-Specific Parameter Histograms")
     display(fig_hist)
-    save_chart(fig_hist, "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_histograms")
+    save_chart(
+        fig_hist,
+        "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_histograms",
+    )
     print("Saved parameter histogram figure")
 
 
@@ -242,7 +250,10 @@ if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
         .repeat(row=_col_names, column=_col_names)
     )
     display(fig_pairs)
-    save_chart(fig_pairs, "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_pairs_scatter_matrix")
+    save_chart(
+        fig_pairs,
+        "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_pairs_scatter_matrix",
+    )
     print("Saved pairs scatter matrix figure")
 ```
 
@@ -253,8 +264,8 @@ if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
 
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_multi_epoch_bulk_inference.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

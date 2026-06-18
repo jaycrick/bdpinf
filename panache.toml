@@ -1,0 +1,25 @@
+# Markdown/Quarto linter+formatter config. See https://panache.bz/guide/configuration.html
+[format]
+# Semantic line breaks: wrap at clause/sentence boundaries rather than a
+# fixed column, so diffs are scoped to the sentence that actually changed.
+wrap = "semantic"
+
+[extensions]
+# Normalize curly quotes/apostrophes only — unlike `smart`, this does not also
+# normalize dashes or ellipsis, so em-dashes ("—") still get rewritten to
+# "---" by the formatter's default dash handling (accepted).
+smart-quotes = true
+
+[formatters]
+python = ["isort", "ruff"]
+
+[lint.rules]
+# False-positive prone on this project's bracket notation: Keep-a-Changelog
+# "[Unreleased]" headers, array indexing ("x[0]"), interval notation ("[a, b]").
+# NB: the CLI's own diagnostic note misnames this key as
+# "undefined-reference-label" — the real config key is "undefined-references".
+undefined-references = false
+# 261 existing chunks across qmd_scripts/ predate this convention; enforcing
+# it now would be an unrelated mass edit. Revisit once new notebooks default
+# to labelled chunks.
+missing-chunk-labels = false
