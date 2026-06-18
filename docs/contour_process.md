@@ -7,9 +7,11 @@ This document describes the contour-process based simulator introduced in
 
 ## Concepts
 
-- Spine component: the distinguished lineage. Built as an excursion started
+- Spine component: the distinguished lineage.
+  Built as an excursion started
   at the terminal time `T` that alternates between downward (death) and
-  upward (birth) moves. If an upward jump would hit the terminal time `T`,
+  upward (birth) moves.
+  If an upward jump would hit the terminal time `T`,
   the spine generation restarts from `T` (reset rule).
 
 - Non-spine component: a single excursion started at `T` that alternates
@@ -56,11 +58,12 @@ This document describes the contour-process based simulator introduced in
 
 - Manuscripts whose recorded death time equals the terminal time `T` are
   treated as still alive at observation and their `death_time` is stored as
-  ``NaN`` in the canonical `manuscript_records` table. This ensures the
+  `NaN` in the canonical `manuscript_records` table.
+  This ensures the
   `survived` boolean and `age` fields reflect survival to `T`.
 - Exactly one manuscript will be marked `is_spine = True`: the first
   surviving manuscript (the earliest created manuscript that is alive at
-  `T`) — this matches the convention used by the genealogy ordering
+  `T`) --- this matches the convention used by the genealogy ordering
   utilities.
 
 ## Reproducibility and RNG
@@ -72,7 +75,8 @@ This document describes the contour-process based simulator introduced in
 ## Usage
 
 Call `simulate_birth_death_process_from_contour_process(...)` from the
-`inf_bp_texts.simulation` package. See the function docstring and
+`inf_bp_texts.simulation` package.
+See the function docstring and
 `src/inf_bp_texts/simulation/simulator.py` for parameter descriptions and
 examples.
 
@@ -80,7 +84,8 @@ examples.
 
 - The reconstructed manuscripts currently have their `is_spine` field set
   using the canonical `BirthDeathProcess` logic (the genealogical ordering
-  functions mark the first surviving lineage as the spine). If a different
+  functions mark the first surviving lineage as the spine).
+  If a different
   `is_spine` convention is desired (e.g. mark all spine-origin manuscripts
   explicitly), modify `_contour_process_list_to_birth_death_process` to
   set the `is_spine` flag during record creation.

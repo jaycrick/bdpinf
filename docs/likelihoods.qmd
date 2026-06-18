@@ -34,7 +34,7 @@ The implementation supports:
 The function returns a scalar log-likelihood:
 
 $$
-\log L = \sum_i \log f(t_i)
+  \log L = \sum_i \log f(t_i)
 $$
 
 ## Single-epoch formula ($\lambda \ne \mu$)
@@ -42,81 +42,82 @@ $$
 For constant rates and $0 \le t \le T$, the non-spine age density is calculated as
 
 $$
-\begin{align}
-\rho &= \lambda - \mu \\
-N &= \lambda e^{-\lambda t} - \mu e^{-\rho T} e^{-\mu t} \\
-D &= 1 - e^{-\rho T} \\
-f(t) &= \frac{N}{D}
-\end{align}
+  \begin{align}
+  \rho &= \lambda - \mu \\
+  N &= \lambda e^{-\lambda t} - \mu e^{-\rho T} e^{-\mu t} \\
+  D &= 1 - e^{-\rho T} \\
+  f(t) &= \frac{N}{D}
+  \end{align}
 $$
 
 For a vector of times $\mathbf{t} = (t_1, \dots, t_n)$,
 the likelihood is
 $$
-\ln L(\mathbf{t}) = \sum_{i = 1}^n (N_i - D_i).
+  \ln L(\mathbf{t}) = \sum_{i = 1}^n (N_i - D_i).
 $$
 
 Expanding this, we get the same formula as in [@kuck_age_2018, (3.6)].
 $$
-f(t)
-= \frac{
-    \lambda e^{-\lambda t}-\mu e^{-(\lambda-\mu)T}e^{-\mu t}
-}{
-    1-e^{-(\lambda-\mu)T}
-}.
+  f(t)
+  = \frac{
+      \lambda e^{-\lambda t}-\mu e^{-(\lambda-\mu)T}e^{-\mu t}
+  }{
+      1-e^{-(\lambda-\mu)T}
+  }.
 $$
 
 ### Multi-epoch formula
 
 $$
-\begin{align}
-\mathbf{t}^\text{shift} &:= (t_1 - b, \dots, t_n - b) \\
-\mathbf{t}^\text{trunc} &:= (t_j^\text{shift} - b, \dots, t_n^\text{shift} - b) \\
-\boldsymbol{\lambda}^\text{trunc} &:= (\lambda_j, \dots, \lambda_n) \\
-\boldsymbol{\mu}^\text{trunc} &:= (\mu_j, \dots, \mu_n)
-\end{align}
+  \begin{align}
+  \mathbf{t}^\text{shift} &:= (t_1 - b, \dots, t_n - b) \\
+  \mathbf{t}^\text{trunc} &:= (t_j^\text{shift} - b, \dots, t_n^\text{shift} - b) \\
+  \boldsymbol{\lambda}^\text{trunc} &:= (\lambda_j, \dots, \lambda_n) \\
+  \boldsymbol{\mu}^\text{trunc} &:= (\mu_j, \dots, \mu_n)
+  \end{align}
 $$
 where $j = \min\{i: t_i > b\}$
 
 $$
-\operatorname{ISWBT}(b, \boldsymbol{\lambda}, \boldsymbol{\mu}, \mathbf{t})
-= \mu_j P_0(
-    \boldsymbol{\lambda}^\text{trunc},
-    \boldsymbol{\mu}^\text{trunc},
-    \mathbf{t}^\text{trunc}
-)
+  \operatorname{ISWBT}(b, \boldsymbol{\lambda}, \boldsymbol{\mu}, \mathbf{t})
+  = \mu_j P_0(
+      \boldsymbol{\lambda}^\text{trunc},
+      \boldsymbol{\mu}^\text{trunc},
+      \mathbf{t}^\text{trunc}
+  )
 $$
 where
 $$
-P_0(
-    \boldsymbol{\lambda}^\text{trunc},
-    \boldsymbol{\mu}^\text{trunc},
-    \mathbf{t}^\text{trunc}
-)
-= 1 - \frac{1}{1 + \operatorname{PEN}(
-    \boldsymbol{\lambda}^\text{trunc},
-    \boldsymbol{\mu}^\text{trunc},
-    \mathbf{t}^\text{trunc}
-)}
+  P_0(
+      \boldsymbol{\lambda}^\text{trunc},
+      \boldsymbol{\mu}^\text{trunc},
+      \mathbf{t}^\text{trunc}
+  )
+  = 1 - \frac{1}{1 + \operatorname{PEN}(
+      \boldsymbol{\lambda}^\text{trunc},
+      \boldsymbol{\mu}^\text{trunc},
+      \mathbf{t}^\text{trunc}
+  )}
 $$
 and
 $$
-\operatorname{PEN}(
-    \boldsymbol{\lambda}^\text{trunc},
-    \boldsymbol{\mu}^\text{trunc},
-    \mathbf{t}^\text{trunc}
-) =
+  \operatorname{PEN}(
+      \boldsymbol{\lambda}^\text{trunc},
+      \boldsymbol{\mu}^\text{trunc},
+      \mathbf{t}^\text{trunc}
+  ) =
 $$
 
 Then
 
 ### Limiting case ($\lambda \approx \mu$)
 
-When $\lambda = \mu$, the denominator is zero. The
+When $\lambda = \mu$, the denominator is zero.
+The
 implementation uses the limiting form
 
 $$
-f(t)=\frac{1+\lambda(T-t)}{T}e^{-\lambda t}
+  f(t)=\frac{1+\lambda(T-t)}{T}e^{-\lambda t}
 $$
 
 which is smooth as $\lambda \to \mu$.
@@ -128,22 +129,23 @@ For $K$ epochs with end times $T_1 < T_2 < \dots < T_K$, the function uses a
 extinction-conditioned likelihood of initial lifetimes:
 
 $$
-\log L(\{t_i\})
-= \log L_{\text{ext}}(\{t_i\}; \tilde{\lambda}, \tilde{\mu}, \tilde{T}).
+  \log L(\{t_i\})
+  = \log L_{\text{ext}}(\{t_i\}; \tilde{\lambda}, \tilde{\mu}, \tilde{T}).
 $$
 
 The reversed parameters are constructed as
 
 $$
-\tilde{T}_k = T_K - T_{K-k},
+  \tilde{T}_k = T_K - T_{K-k},
 $$
 
 $$
-\tilde{\lambda}_k = \mu_{K-k+1}, \qquad \tilde{\mu}_k = \lambda_{K-k+1}.
+  \tilde{\lambda}_k = \mu_{K-k+1}, \qquad \tilde{\mu}_k = \lambda_{K-k+1}.
 $$
 
 In code this is done by reversing the rate arrays and using the reversed epoch
-boundaries. This transformation enables reuse of the extinction-conditioned lifetime
+boundaries.
+This transformation enables reuse of the extinction-conditioned lifetime
 likelihood for the multi-epoch case.
 
 ## Numerical stability and validation
@@ -156,7 +158,8 @@ The function performs input checks and returns $-\infty$ on numerical invalidity
 
 For multi-epoch calculations, differences between the single-epoch formula and the
 time-reversal reduction can appear if the transformed calculation is numerically
-sensitive. This is the primary source of single vs multi-epoch discrepancies when
+sensitive.
+This is the primary source of single vs multi-epoch discrepancies when
 rates are identical.
 
 ## Example
@@ -183,26 +186,28 @@ log_lik = calculate_non_spine_ages_log_lik(birth_rates_val, death_rates_val, age
 ## Unknown Spine (Default Inference Path)
 
 In `log_likelihood`, when `spine_ages` is not provided and `is_ordered=False`,
-the spine is treated as unknown among the provided ages. The implementation
+the spine is treated as unknown among the provided ages.
+The implementation
 assumes exactly one spine with a uniform prior over the $n$ observed ages.
 
 Let $f(x_i;\theta)$ be the non-spine age density and $g(x_i;\theta)$ be the
-spine age density. The age-component log-likelihood is
+spine age density.
+The age-component log-likelihood is
 
 $$
-\ell(\theta)= \sum_{i=1}^n \log f(x_i;\theta) - \log n + \log \left( \sum_{k=1}^n \exp\big( \log g(x_k;\theta) - \log f(x_k;\theta) \big) \right).
+  \ell(\theta)= \sum_{i=1}^n \log f(x_i;\theta) - \log n + \log \left( \sum_{k=1}^n \exp\big( \log g(x_k;\theta) - \log f(x_k;\theta) \big) \right).
 $$
 
 Define
 
 $$
-a_k = \log g(x_k;\theta) - \log f(x_k;\theta).
+  a_k = \log g(x_k;\theta) - \log f(x_k;\theta).
 $$
 
 Then compute the summation term with a stable log-sum-exp transform:
 
 $$
-\log \sum_{k=1}^n e^{a_k}= m + \log \sum_{k=1}^n e^{a_k - m},\quad m = \max_k a_k.
+  \log \sum_{k=1}^n e^{a_k}= m + \log \sum_{k=1}^n e^{a_k - m},\quad m = \max_k a_k.
 $$
 
 This avoids underflow/overflow and is numerically robust for optimization.

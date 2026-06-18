@@ -29,7 +29,8 @@ a terminal time $T$, operating in the strictly subcritical regime ($\lambda < \m
 
 This notebook benchmarks both methods across three parameter regimes with a shared
 birth rate $\lambda = 1$ and death rates $\mu \in \{1.1, 2, 10\}$ at terminal time
-$T = 20$.  The regimes span a wide range of subcriticality so that the comparison
+$T = 20$.
+The regimes span a wide range of subcriticality so that the comparison
 exercises both mild and extreme rare-event behaviour.
 
 **Splitting: fixed-factor enrichment (RESTART).** The level grid is auto-selected via
@@ -40,7 +41,8 @@ so grid-selection cost does not inflate the splitting runtime comparison.
 
 **Spine labelling caveat.** The contour simulator marks the earliest-created surviving
 manuscript as the spine, while the splitting method marks `alive_ids[0]`
-(insertion order).  Both select a single surviving lineage; the visual difference is
+(insertion order).
+Both select a single surviving lineage; the visual difference is
 expected to be small.
 
 ## Setup
@@ -104,7 +106,8 @@ def extract_ages_from_process(
 
 ## Parameter Regimes and Level Grid Precomputation
 
-The three regimes share $\lambda = 1$ and $T = 20$ but differ in $\mu$.  The level
+The three regimes share $\lambda = 1$ and $T = 20$ but differ in $\mu$.
+The level
 grid and splitting factor $R$ are predetermined here --- outside any timed code --- so that
 the benchmark cells measure only the simulation cost.
 
@@ -153,7 +156,8 @@ for dr, lvl, r in zip(DEATH_RATES, regime_grids, regime_r_values):
 
 ## Speed Benchmark
 
-Contour calls are run serially (embarrassingly parallel in practice).  Splitting is
+Contour calls are run serially (embarrassingly parallel in practice).
+Splitting is
 run once per regime with the precomputed grid --- **no grid-selection cost included**.
 
 ```{python}
@@ -331,8 +335,11 @@ for rd in regime_data:
 
 ## Age Density Overlays
 
-Each column is a parameter regime.  Row 1 = non-spine individuals; Row 2 = spine
-individual.  Solid fill = empirical KDE; dashed = theoretical density.  Both methods
+Each column is a parameter regime.
+Row 1 = non-spine individuals; Row 2 = spine
+individual.
+Solid fill = empirical KDE; dashed = theoretical density.
+Both methods
 should agree with theory.
 
 ```{python}
@@ -474,7 +481,8 @@ print("Saved age-density figure")
 ## Statistical Goodness-of-Fit Tests
 
 Pairwise Anderson--Darling and Kolmogorov--Smirnov tests compare Contour vs Splitting
-within each regime.  Pairs are skipped when fewer than 10 samples are available.
+within each regime.
+Pairs are skipped when fewer than 10 samples are available.
 High p-values indicate indistinguishable distributions.
 
 ```{python}

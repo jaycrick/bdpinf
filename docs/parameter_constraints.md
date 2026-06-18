@@ -1,8 +1,10 @@
 # Parameter Constraints in Birth-Death Process Fitting
 
 The fitting module now supports flexible parameter constraints, allowing you to:
-1. **Fix parameters** to specific values (they won't be optimized)
-2. **Create equality groups** where multiple parameters must be equal
+1.
+**Fix parameters** to specific values (they won't be optimized)
+2.
+**Create equality groups** where multiple parameters must be equal
 
 ## Quick Start Examples
 

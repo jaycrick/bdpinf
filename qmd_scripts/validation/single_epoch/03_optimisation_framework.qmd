@@ -5,7 +5,8 @@ author: "JC"
 date: last-modified
 ---
 
-This document implements a lightweight optimisation benchmarking workflow for single-epoch validation fits. It runs configurable optimiser strategies (Adam, LBFGS, and sequential strategies), captures per-iteration diagnostics (NLL, gradient norms, parameter snapshots, timestamps), and emits diagnostic plots and structured results to `_output/` for further analysis.
+This document implements a lightweight optimisation benchmarking workflow for single-epoch validation fits.
+It runs configurable optimiser strategies (Adam, LBFGS, and sequential strategies), captures per-iteration diagnostics (NLL, gradient norms, parameter snapshots, timestamps), and emits diagnostic plots and structured results to `_output/` for further analysis.
 
 **TODO (from mle_optimisation_framework_prompt)**
 

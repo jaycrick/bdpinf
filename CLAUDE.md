@@ -18,9 +18,13 @@ Use the colon-wrapped shortcode (e.g. `:zap:`), not the Unicode emoji character.
 
 Example: `:zap: Add users endpoint, fixes #27`
 
-**Commit granularity:** Prefer bundled commits that group related code, tests, and docs into a single commit. Choose the prefix that reflects the commit's primary concern. Do not split a feature into separate per-prefix commits (e.g. one `:zap:` for the code, one `:cop:` for its tests, one `:abc:` for its docs) unless those pieces genuinely belong in separate commits for other reasons.
+**Commit granularity:** Prefer bundled commits that group related code, tests, and docs into a single commit.
+Choose the prefix that reflects the commit's primary concern.
+Do not split a feature into separate per-prefix commits (e.g. one `:zap:` for the code, one `:cop:` for its tests, one `:abc:` for its docs) unless those pieces genuinely belong in separate commits for other reasons.
 
-**CHANGELOG.md**: Update `CHANGELOG.md` at the repo root whenever a commit adds a new feature, changes public API, or fixes a user-visible bug. Add a bullet under `## [Unreleased]` --- one line describing the change and which module it affects. No need to touch `CHANGELOG.md` for pure tooling/CI changes (`:tv:`) or test-only commits (`:cop:`).
+**CHANGELOG.md**: Update `CHANGELOG.md` at the repo root whenever a commit adds a new feature, changes public API, or fixes a user-visible bug.
+Add a bullet under `## [Unreleased]` --- one line describing the change and which module it affects.
+No need to touch `CHANGELOG.md` for pure tooling/CI changes (`:tv:`) or test-only commits (`:cop:`).
 
 ## Commands
 
@@ -94,11 +98,15 @@ class TestSubject:
 
 ### Conventions
 
-- **Module docstring** is the first statement, single line, ends with `.`. `D100` is enforced so every file must have one.
-- **No per-file `# ruff: noqa` lines** — test-wide relaxations live in `[tool.ruff.lint.per-file-ignores]` in `pyproject.toml`, not in individual files.
-- **Class grouping** — all tests live inside a `class Test<Subject>:` with a one-line `"""Test ..."""` docstring. Test methods take `self`. One class per file is the default.
-- **Class/method docstrings are optional** — `D101`/`D102` are centrally ignored for tests via `pyproject.toml`; method names are self-documenting.
-- **Module-level helpers stay at module scope** — fixtures, helper functions, and constants shared within a file remain outside the test class (pytest resolves module-scoped fixtures inside class methods). Cross-file helpers and fixtures go in `tests/conftest.py`.
+- **Module docstring** is the first statement, single line, ends with `.`.
+  `D100` is enforced so every file must have one.
+- **No per-file `# ruff: noqa` lines** --- test-wide relaxations live in `[tool.ruff.lint.per-file-ignores]` in `pyproject.toml`, not in individual files.
+- **Class grouping** --- all tests live inside a `class Test<Subject>:` with a one-line `"""Test ..."""` docstring.
+  Test methods take `self`.
+  One class per file is the default.
+- **Class/method docstrings are optional** --- `D101`/`D102` are centrally ignored for tests via `pyproject.toml`; method names are self-documenting.
+- **Module-level helpers stay at module scope** --- fixtures, helper functions, and constants shared within a file remain outside the test class (pytest resolves module-scoped fixtures inside class methods).
+  Cross-file helpers and fixtures go in `tests/conftest.py`.
 - **Non-ruff pragmas** (e.g. `# mypy: disable-error-code=import-untyped`) go directly under the module docstring, before imports.
 
 ## Architecture
@@ -107,7 +115,9 @@ class TestSubject:
 
 ### Core data structure: `BirthDeathProcess`
 
-`models/birth_death_process.py` is the canonical object passed between modules. It holds `creation_times`, `epoch_end_times`, per-epoch `birth_rates`/`death_rates` (all `torch.Tensor` float64), and optional `manuscript_records` for genealogy. Key methods: `log_likelihood()`, `update_parameters()`, `plot_genealogy_tree()`, `to_newick()`.
+`models/birth_death_process.py` is the canonical object passed between modules.
+It holds `creation_times`, `epoch_end_times`, per-epoch `birth_rates`/`death_rates` (all `torch.Tensor` float64), and optional `manuscript_records` for genealogy.
+Key methods: `log_likelihood()`, `update_parameters()`, `plot_genealogy_tree()`, `to_newick()`.
 
 ### Mathematical layer: `models/`
 
@@ -120,7 +130,8 @@ Three submodules contain pure functions (no class state):
 
 `mathematical_derivatives.py` --- numerical derivatives used during optimization.
 
-`validation.py` --- `normalize_and_validate_inputs()` converts scalars/arrays to float64 tensors and enforces shape, range, and monotonicity constraints. `ValidationConfig` (Pydantic) controls which checks run.
+`validation.py` --- `normalize_and_validate_inputs()` converts scalars/arrays to float64 tensors and enforces shape, range, and monotonicity constraints.
+`ValidationConfig` (Pydantic) controls which checks run.
 
 ### Inference layer: `inference/`
 
@@ -128,7 +139,8 @@ Three submodules contain pure functions (no class state):
 - `fit_birth_death_processes()` --- MLE via PyTorch optimizers (LBFGS, Adam); supports initial perturbation for robustness and convergence detection with multi-restart
 - `ParameterConstraints` dataclass --- fixed parameters (index → value) and equality groups (lists of indices forced equal); validated before optimization to reduce parameter space
 - `estimate_mle_covariance()` --- covariance via numerical Hessian inversion
-- Optimizer internals are split across `_fit_types.py` (shared dataclasses: `ConvergenceConfig`, `OptimizerStrategy`, etc.) and `_optimizer_runners.py` (`_run_lbfgs_optimizer`, `_run_first_order_optimizer`). `ConvergenceConfig` is exported from `inference/__init__.py`.
+- Optimizer internals are split across `_fit_types.py` (shared dataclasses: `ConvergenceConfig`, `OptimizerStrategy`, etc.) and `_optimizer_runners.py` (`_run_lbfgs_optimizer`, `_run_first_order_optimizer`).
+`ConvergenceConfig` is exported from `inference/__init__.py`.
 
 `likelihood.py` --- `log_likelihood()` / `negative_log_likelihood()` wrappers that handle log-scale vs. positive-scale parameters and marginalize over unknown spine positions.
 
@@ -138,7 +150,8 @@ Three submodules contain pure functions (no class state):
 
 `simulator.py` --- `simulate_birth_death_process()` runs a Gillespie algorithm with time-varying rates; `predict_manuscript_counts()` predicts future population given current observations via rejection sampling.
 
-`splitting.py` --- Multilevel splitting for rare-event simulation (estimating small extinction probabilities). Plotting functions for splitting results live in `visualization/splitting_plots.py`.
+`splitting.py` --- Multilevel splitting for rare-event simulation (estimating small extinction probabilities).
+Plotting functions for splitting results live in `visualization/splitting_plots.py`.
 
 ### Visualization layer: `visualization/`
 
@@ -150,7 +163,8 @@ Three submodules contain pure functions (no class state):
 
 ### Data pipeline: `data/`
 
-All NTVMR ETL modules live in the `inf_bp_texts/data/` subpackage. Key public API (also re-exported from `inf_bp_texts.data`):
+All NTVMR ETL modules live in the `inf_bp_texts/data/` subpackage.
+Key public API (also re-exported from `inf_bp_texts.data`):
 
 `ntvmr.py` --- downloads from NTVMR API with resume support; `format_xml_files()` pretty-prints XML and strips Unicode line separators (U+2028/U+2029) for clean git diffs.
 
@@ -172,35 +186,43 @@ All NTVMR ETL modules live in the `inf_bp_texts/data/` subpackage. Key public AP
 
 `schemas.py` --- `ValidationConfig` Pydantic model (also available from `models.validation`) controlling which validation checks are enforced.
 
-`_paths.py` --- `get_project_root()` (exported from `inf_bp_texts` top-level): returns the Quarto project root via `$QUARTO_PROJECT_DIR` env var, or walks up from `cwd` to find `_quarto.yml`. Use this in notebooks and scripts instead of hardcoded relative paths.
+`_paths.py` --- `get_project_root()` (exported from `inf_bp_texts` top-level): returns the Quarto project root via `$QUARTO_PROJECT_DIR` env var, or walks up from `cwd` to find `_quarto.yml`.
+Use this in notebooks and scripts instead of hardcoded relative paths.
 
 **CLI**: The package installs an `inf-bp-texts` command (entry point: `inf_bp_texts.cli:main`) via `[project.scripts]` in `pyproject.toml`.
 
 ## Key design decisions
 
-1. **PyTorch everywhere**: All rates and ages are `torch.Tensor` (float64) — enables gradient-based optimization and ensures numerical precision throughout the pipeline.
+1. **PyTorch everywhere**: All rates and ages are `torch.Tensor` (float64) --- enables gradient-based optimization and ensures numerical precision throughout the pipeline.
 
 2. **Pure math functions, not methods**: `math_extinction.py`, `math_ages.py`, `math_populations.py` contain only free functions with no class state, keeping the math testable and composable independently of `BirthDeathProcess`.
 
-3. **Time-reversal for multi-epoch efficiency**: The non-spine likelihood is reformulated as an extinction-conditioned backward-time integral. This avoids summing over all possible genealogy orderings (exponential in epoch count) and reduces it to a single pass.
+3. **Time-reversal for multi-epoch efficiency**: The non-spine likelihood is reformulated as an extinction-conditioned backward-time integral.
+   This avoids summing over all possible genealogy orderings (exponential in epoch count) and reduces it to a single pass.
 
-4. **`ParameterConstraints` as first-class input**: Equality groups and fixed parameters are validated early and applied throughout the optimizer loop — reducing effective dimension of the search space for parsimonious models.
+4. **`ParameterConstraints` as first-class input**: Equality groups and fixed parameters are validated early and applied throughout the optimizer loop --- reducing effective dimension of the search space for parsimonious models.
 
 5. **Likelihood marginalizes unknown spine**: When the spine (ancestral lineage) is unspecified, `log_likelihood()` sums over all possible spine assignments, so the fitter works with incomplete genealogy data.
 
 ## Known challenges
 
-**Multi-epoch convergence**: High-dimensional parameter space with sensitivity at epoch boundaries. Mitigate by: using equality constraints (constant rates across epochs), providing good initial guesses, using LBFGS first then Adam, and setting `perturb_initial_params_std > 0`.
+**Multi-epoch convergence**: High-dimensional parameter space with sensitivity at epoch boundaries.
+Mitigate by: using equality constraints (constant rates across epochs), providing good initial guesses, using LBFGS first then Adam, and setting `perturb_initial_params_std > 0`.
 
-**Numerical stability**: Likelihoods are always computed in log-space. Extreme rate values (μ >> λ or vice versa) and ages near epoch boundaries can still cause issues.
+**Numerical stability**: Likelihoods are always computed in log-space.
+Extreme rate values (μ >> λ or vice versa) and ages near epoch boundaries can still cause issues.
 
-**XML edge cases**: `format_xml_files()` must be run after downloads to clean U+2028/U+2029 characters before parsing. Malformed or empty `originYear` elements surface in `examine_manuscript_xml()`.
+**XML edge cases**: `format_xml_files()` must be run after downloads to clean U+2028/U+2029 characters before parsing.
+Malformed or empty `originYear` elements surface in `examine_manuscript_xml()`.
 
 ## Quarto notebooks (`qmd_scripts/`)
 
-`_quarto.yml` is the single source of truth for the research-notebook website: render globs, navbar menus, and HTML format (output to `_output/`). Cell output is cached globally (`execute: cache: true`). **Always use `uv run quarto ...`** --- plain `quarto` uses system Python (no venv) and fails immediately.
+`_quarto.yml` is the single source of truth for the research-notebook website: render globs, navbar menus, and HTML format (output to `_output/`).
+Cell output is cached globally (`execute: cache: true`).
+**Always use `uv run quarto ...`** --- plain `quarto` uses system Python (no venv) and fails immediately.
 
-The **API reference** is a separate site, generated by **great-docs** from `great-docs.yml` (not part of `_quarto.yml` --- great-docs owns its own Quarto project under `great-docs/`, which cannot host the executable research notebooks because it has no `execute.cache`/`bibliography` equivalent). See `docs/design/DOCS_TOOLING_EVALUATION.md` for why this is two sites rather than one.
+The **API reference** is a separate site, generated by **great-docs** from `great-docs.yml` (not part of `_quarto.yml` --- great-docs owns its own Quarto project under `great-docs/`, which cannot host the executable research notebooks because it has no `execute.cache`/`bibliography` equivalent).
+See `docs/design/DOCS_TOOLING_EVALUATION.md` for why this is two sites rather than one.
 
 ### Directory taxonomy
 
@@ -221,9 +243,11 @@ The **API reference** is a separate site, generated by **great-docs** from `grea
 Every executable notebook follows this structure:
 
 - **Frontmatter**: `title`, `subtitle`, `author: "JC"`, `date: last-modified`.
-- **Timing bracket**: first cell `# | label: compile-time-start` captures `time.perf_counter()`; last cell `# | label: compile-time-report` writes elapsed seconds to `_output/compile_times.json`. Both cells use `# | cache: false` / `# | echo: false` / `# | include: false`.
-- **Cell options**: hash-pipe syntax inside code fences — `# | label:`, `# | cache: false`, `# | echo: false`, `# | include: false`.
+- **Timing bracket**: first cell `# | label: compile-time-start` captures `time.perf_counter()`; last cell `# | label: compile-time-report` writes elapsed seconds to `_output/compile_times.json`.
+  Both cells use `# | cache: false` / `# | echo: false` / `# | include: false`.
+- **Cell options**: hash-pipe syntax inside code fences --- `# | label:`, `# | cache: false`, `# | echo: false`, `# | include: false`.
 - **Import noqa**: import cells open with `# ruff: noqa: E402` (imports are not at the top of the Python file, which ruff would flag).
 - **Keep logic in `src/`**: cells import from `inf_bp_texts`; heavy computation belongs in the package, not inline.
-- **Figures**: saved via `save_figure` from `inf_bp_texts.visualization` into `figures/`, resolved as `figures_dir = get_project_root() / "figures"` (import `get_project_root` from `inf_bp_texts`). Do not use hardcoded `Path("../../../figures")`.
+- **Figures**: saved via `save_figure` from `inf_bp_texts.visualization` into `figures/`, resolved as `figures_dir = get_project_root() / "figures"` (import `get_project_root` from `inf_bp_texts`).
+  Do not use hardcoded `Path("../../../figures")`.
 - **Design docs**: architecture/audit documents live in `docs/design/` (not the repo root).

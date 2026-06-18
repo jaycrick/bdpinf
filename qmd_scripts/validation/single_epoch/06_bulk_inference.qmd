@@ -7,7 +7,8 @@ date: last-modified
 
 **TODOs:**
 
-- [ ] Do some IQR-based outlier removal on the fitted rates vs ... plots. Alternative to filtering, look at limiting the x and y axes to the correct range
+- [ ] Do some IQR-based outlier removal on the fitted rates vs ... plots.
+  Alternative to filtering, look at limiting the x and y axes to the correct range
 - [ ] Add true line for growth rate (λ-μ) to the rates vs population/mean age plots
 - [ ] Include a correlation matrix in addition to covariance matrix
 - [ ] Add labels to all simulations such that they can be reproduced and debugged separately (including on plots)
@@ -106,43 +107,43 @@ If there are $n$ observed ages and exactly one is the spine (uniformly over
 positions), the age-component likelihood is
 
 $$
-L_{\text{ages}}(\lambda, \mu)
-= \frac{1}{n}\sum_{k=1}^n
-\left[
-g(x_k; \lambda, \mu)
-\prod_{i\neq k} f(x_i; \lambda, \mu)
-\right].
+  L_{\text{ages}}(\lambda, \mu)
+  = \frac{1}{n}\sum_{k=1}^n
+  \left[
+  g(x_k; \lambda, \mu)
+  \prod_{i\neq k} f(x_i; \lambda, \mu)
+  \right].
 $$
 
 Equivalent log form:
 
 $$
-\ell_{\text{ages}}(\lambda, \mu)
-= \sum_{i=1}^n \log f(x_i; \lambda, \mu)
-- \log n
-+ \log\!\left(\sum_{k=1}^n
-\exp\!\big(\log g(x_k; \lambda, \mu)-\log f(x_k; \lambda, \mu)\big)
-\right).
+  \ell_{\text{ages}}(\lambda, \mu)
+  = \sum_{i=1}^n \log f(x_i; \lambda, \mu)
+  - \log n
+  + \log\!\left(\sum_{k=1}^n
+  \exp\!\big(\log g(x_k; \lambda, \mu)-\log f(x_k; \lambda, \mu)\big)
+  \right).
 $$
 
 For numerical stability, define
 
 $$
-a_k = \log g(x_k; \lambda, \mu)-\log f(x_k; \lambda, \mu),
+  a_k = \log g(x_k; \lambda, \mu)-\log f(x_k; \lambda, \mu),
 $$
 
 and compute the inner term with log-sum-exp:
 
 $$
-\log\sum_{k=1}^n e^{a_k} = \operatorname{logsumexp}(a_1,\dots,a_n).
+  \log\sum_{k=1}^n e^{a_k} = \operatorname{logsumexp}(a_1,\dots,a_n).
 $$
 
 The full objective adds the population term:
 
 $$
-\ell(\lambda, \mu)
-= \log P_n(T\mid \lambda,\mu)
-+ \ell_{\text{ages}}(\lambda,\mu).
+  \ell(\lambda, \mu)
+  = \log P_n(T\mid \lambda,\mu)
+  + \ell_{\text{ages}}(\lambda,\mu).
 $$
 
 ## Fit Remaining Models

@@ -29,8 +29,10 @@ Every test file follows the canonical layout documented in `CLAUDE.md ## Tests`:
 - Module-level helpers, fixtures, and constants (if any).
 - One `class Test<Subject>:` grouping all tests for that module.
 
-All `test_` methods take `self`. Module-level helpers and fixtures stay at module scope
-(not inside the class). Cross-file fixtures live in `conftest.py`.
+All `test_` methods take `self`.
+Module-level helpers and fixtures stay at module scope
+(not inside the class).
+Cross-file fixtures live in `conftest.py`.
 
 ## Test files
 
@@ -74,11 +76,12 @@ All `test_` methods take `self`. Module-level helpers and fixtures stay at modul
 
 ## Adding new tests
 
-Follow the canonical layout in `CLAUDE.md ## Tests`. Key points:
+Follow the canonical layout in `CLAUDE.md ## Tests`.
+Key points:
 
 - One `class Test<Subject>:` per file, named after the module under test.
 - Module docstring is mandatory (`D100` is enforced by ruff).
-- `S101`, `D101`, and `D102` are centrally ignored for `tests/*` in `pyproject.toml` —
+- `S101`, `D101`, and `D102` are centrally ignored for `tests/*` in `pyproject.toml` ---
   do not add per-file `# ruff: noqa` lines.
 - Slow tests (those hitting real network calls or expensive optimizations) should be
   marked `@pytest.mark.slow` so they are excluded from the default run.

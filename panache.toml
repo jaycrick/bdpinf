@@ -1,8 +1,8 @@
 # Markdown/Quarto linter+formatter config. See https://panache.bz/guide/configuration.html
 [format]
-# Prose in this project is not hard-wrapped; preserve existing line breaks
-# instead of reflowing every paragraph to line-width.
-wrap = "preserve"
+# Semantic line breaks: wrap at clause/sentence boundaries rather than a
+# fixed column, so diffs are scoped to the sentence that actually changed.
+wrap = "semantic"
 
 [extensions]
 # Normalize curly quotes/apostrophes only — unlike `smart`, this does not also

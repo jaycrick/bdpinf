@@ -50,7 +50,7 @@ uv run great-docs preview     # live preview
 ## Pull requests
 
 - One bundled commit per logical change (code + tests + docs together).
-- Commit messages must start with a shortcode prefix — see `CLAUDE.md` for
+- Commit messages must start with a shortcode prefix --- see `CLAUDE.md` for
   the full list (`:zap:`, `:bug:`, `:tv:`, `:cop:`, `:abc:`).
 - All pre-commit hooks must pass before opening a PR.
 - New public functions require NumPy-style docstrings.

@@ -8,7 +8,8 @@ date: last-modified
 **TODOs:**
 
 - [ ] Do the validation on the single fit from `methods_validation_optimisation_framework.qmd` instead of a new simulation, or delete file if superfluous
-- [ ] Here or elsewhere, implement a graph showing a sample tree, possible from the newick format. This should be in depth first search order.
+- [ ] Here or elsewhere, implement a graph showing a sample tree, possible from the newick format.
+  This should be in depth first search order.
 
 ```{python}
 # ruff: noqa: E402

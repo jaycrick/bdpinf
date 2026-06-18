@@ -7,16 +7,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `visualization.date_distribution_plots.plot_date_range_kde_comparison` — new reusable
+- `visualization.date_distribution_plots.plot_date_range_kde_comparison` --- new reusable
   Altair builder for the recurring date-range figure (midpoint histogram + weighted KDE
   curve + resampled-date histogram), re-exported from `inf_bp_texts.visualization`
-  (Phase 5). Configurable `midpoint_label`, an `interaction` mode (`"none"`/`"filter"`/
+  (Phase 5).
+  Configurable `midpoint_label`, an `interaction` mode (`"none"`/`"filter"`/
   `"highlight"`) that binds a legend `selection_point` (`"filter"` shows only the clicked
   series, `"highlight"` dims the unselected ones; both HTML-only, PDFs keep the static
   default), and an `x_domain` that pins the bin extent and x scale so the axis does not
-  rescale when a series is filtered out. Replaces inline per-notebook `go.Figure` copies.
+  rescale when a series is filtered out.
+  Replaces inline per-notebook `go.Figure` copies.
 
-- `visualization.altair_theme` — the theme now draws faint horizontal (y-axis) gridlines
+- `visualization.altair_theme` --- the theme now draws faint horizontal (y-axis) gridlines
   (`config.axisY`, `#E8E8E8`) in a Tufte style; the x-axis stays gridless.
 
 - Data-exploration notebooks migrated to Altair with HTML interactivity:
@@ -27,11 +29,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `gaNum` hover tooltip) and `kashouh_data_exploration.qmd` (parsed-date histogram that
   filters to the clicked source; FamilyK/FamilyJB legends filter to the clicked series).
 
-- `visualization.altair_theme` — new module beginning the Plotly→Altair migration
-  (Phase 1). Registers and enables the `inf_bp_texts` Altair theme (ptolqual palette,
+- `visualization.altair_theme` --- new module beginning the Plotly→Altair migration
+  (Phase 1).
+  Registers and enables the `inf_bp_texts` Altair theme (ptolqual palette,
   serif font stack, muted `#FAFAFA` background, non-bold titles/labels, Tufte axes) and
-  provides `save_chart`, the vl-convert PDF/SVG/PNG export chokepoint — pure and
-  fail-loud, unlike the Plotly `save_figure`. Re-exported from `inf_bp_texts.visualization`.
+  provides `save_chart`, the vl-convert PDF/SVG/PNG export chokepoint --- pure and
+  fail-loud, unlike the Plotly `save_figure`.
+  Re-exported from `inf_bp_texts.visualization`.
   The 5000-row Altair guard is disabled (these are static publication figures).
 
 ### Changed
@@ -39,38 +43,48 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `visualization.splitting_plots` (`plot_conditioned_trajectories`,
   `plot_empirical_population_mean`, `plot_level_survival_probabilities`) and
   `visualization.plotting` (`save_multi_epoch_convergence_figure`,
-  `save_multi_epoch_fit_figure`) — migrated to Altair (Phase 2, the easy figures). The
+  `save_multi_epoch_fit_figure`) --- migrated to Altair (Phase 2, the easy figures).
+  The
   `plot_*` functions now return `alt.Chart`; the `save_*` functions render via Altair and
-  export through `save_chart`. Call signatures are unchanged, so notebooks and the
+  export through `save_chart`.
+  Call signatures are unchanged, so notebooks and the
   splitting test are unaffected.
 
 - `visualization.parameter_plots` (`create_kde_density_plot`,
   `create_parameter_box_plot`) and `visualization.age_fit_plot`
-  (`plot_creation_year_fit`) — migrated to Altair (Phase 3, moderate figures), now
-  returning `alt.LayerChart`. The KDE arrow annotation becomes a dashed `mark_rule` +
+  (`plot_creation_year_fit`) --- migrated to Altair (Phase 3, moderate figures), now
+  returning `alt.LayerChart`.
+  The KDE arrow annotation becomes a dashed `mark_rule` +
   `mark_text` label; the box plot drops the redundant median dot (the box already draws
-  the median line) and reproduces `boxmean` as an explicit mean marker. The
+  the median line) and reproduces `boxmean` as an explicit mean marker.
+  The
   observed-creation-year histogram + density logic is consolidated into a single shared
   `visualization.age_fit_plot.creation_year_fit_chart` builder reused by both
   `plot_creation_year_fit` and `save_multi_epoch_birth_time_figure` (removing duplicated
-  density-scaling code). The two NTVMR inference notebooks switch the age-fit figure to
+  density-scaling code).
+  The two NTVMR inference notebooks switch the age-fit figure to
   `display(...)` + `save_chart(...)`.
 
 - `visualization.genealogy.plot_genealogy_tree` and
-  `models.BirthDeathProcess.plot_genealogy_tree` — migrated to Altair (Phase 4), now
-  returning `alt.LayerChart` instead of a Plotly figure. Lifetimes are horizontal
+  `models.BirthDeathProcess.plot_genealogy_tree` --- migrated to Altair (Phase 4), now
+  returning `alt.LayerChart` instead of a Plotly figure.
+  Lifetimes are horizontal
   `mark_rule` segments colour/size-coded by lineage (extinct / surviving / spine) on a
   per-row ordinal axis labelled by `manuscript_id`; parent→child connectors are dashed
-  vertical `mark_rule` segments. `BirthDeathProcess` no longer imports Plotly.
+  vertical `mark_rule` segments.
+  `BirthDeathProcess` no longer imports Plotly.
 
-- `visualization.plotting.plot_parameter_consistency` — migrated to Altair (Phase 4),
+- `visualization.plotting.plot_parameter_consistency` --- migrated to Altair (Phase 4),
   now returning an `alt.FacetChart` faceted by regime (rows) × statistic (columns) with
-  `mark_area` bootstrap CI bands, log-scaled `T`, and dashed true-value rules. The
+  `mark_area` bootstrap CI bands, log-scaled `T`, and dashed true-value rules.
+  The
   bootstrap statistics are extracted into a new pure, testable
   `visualization.plotting.compute_consistency_bands` returning a tidy long-form frame
   (regime, T, statistic, estimate, lower, upper, true_value), replacing the previous
-  ~270-line hand-built 36-trace subplot grid. `visualization.plotting` no longer imports
-  Plotly figure constructors. The asymptotic-consistency notebook switches to
+  \~270-line hand-built 36-trace subplot grid.
+  `visualization.plotting` no longer imports
+  Plotly figure constructors.
+  The asymptotic-consistency notebook switches to
   `display(...)`.
 
 - Notebook type-checking switched from `pyright` to `basedpyright` via
@@ -79,78 +93,83 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
-- `visualization.plotting` — deleted dead code: the unused `layout_config` dict, the
+- `visualization.plotting` --- deleted dead code: the unused `layout_config` dict, the
   seven unused `my_*` colour constants, and the never-called `apply_tufte_legend`
-  (superseded by the Altair theme). No public call sites existed.
+  (superseded by the Altair theme).
+  No public call sites existed.
 
 ### Fixed
 
-- `analysis.subset_inference.build_manuscript_subsets` — `_make()` now catches
+- `analysis.subset_inference.build_manuscript_subsets` --- `_make()` now catches
   `ValueError` from the KDE resampler (triggered when a subset has zero-variance date
   ranges, e.g. Revelation with a handful of same-year manuscripts) and falls back to
   `midYear`, preventing a hard crash at notebook render time.
-- `analysis.subset_inference.fit_manuscript_subset` — the per-epoch manuscript count
+- `analysis.subset_inference.fit_manuscript_subset` --- the per-epoch manuscript count
   (`epoch_n`) now uses an inclusive upper bound (`<=`) for the last epoch, so
   manuscripts dated exactly at the final year are no longer silently excluded.
-- `visualization.age_fit_plot.plot_creation_year_fit` — when all observed creation
+- `visualization.age_fit_plot.plot_creation_year_fit` --- when all observed creation
   years are identical the theoretical density overlay is now skipped entirely (with a
   warning) rather than rendered with an incorrect `bin_width = 1.0` scale factor that
   mis-scaled the curve by orders of magnitude.
 
 ### Added
 
-- `analysis.subset_inference` — new module with `build_manuscript_subsets` (splits the
+- `analysis.subset_inference` --- new module with `build_manuscript_subsets` (splits the
   cleaned NTVMR DataFrame into six canonical subsets with independent per-subset KDE
   resampling) and `fit_manuscript_subset` (builds a BirthDeathProcess, fits via MLE,
   and returns a `SubsetFitResult` dataclass with per-epoch rates, SEs, and 95% CIs).
   `ManuscriptSubset` and `SubsetFitResult` also re-exported from `inf_bp_texts.analysis`.
 
-- `visualization.age_fit_plot.plot_creation_year_fit` — shared helper that renders
+- `visualization.age_fit_plot.plot_creation_year_fit` --- shared helper that renders
   observed creation-year histograms with the theoretical birth-time density overlay
   (replaces duplicated inline code across inference notebooks); re-exported from
   `inf_bp_texts.visualization`.
 
 - NTVMR `ntvmr_single_epoch_inference.qmd` and `ntvmr_birth_death_inference.qmd` now
-  run the analysis on **six dataset subsets**: non-lectionaries combined (groups 1–3,
+  run the analysis on **six dataset subsets**: non-lectionaries combined (groups 1--3,
   the new default), lectionaries (group 4), and four per-section non-lectionary analyses
-  (Gospels e, Acts+Catholic Epistles a, Pauline p, Revelation r).  Each subset gets
+  (Gospels e, Acts+Catholic Epistles a, Pauline p, Revelation r).
+  Each subset gets
   full per-subset diagnostics (convergence + age-fit figures) and the notebooks end with
   a cross-subset comparison (single-epoch: grouped bar + table; multi-epoch: 2-panel λ/μ
   line plot over epochs + birth-rate and death-rate summary tables).
 
-- `analysis.date_density.resample_dates_from_ranges` — convenience wrapper over
+- `analysis.date_density.resample_dates_from_ranges` --- convenience wrapper over
   `quantile_resample_dates` that accepts lists/arrays and defaults `n_samples` to
   `len(early)`; re-exported from `inf_bp_texts.analysis`.
 
-- `manuscript_data_exploration.qmd` — NTVMR subset analysis: filters `docID > 50000`
+- `manuscript_data_exploration.qmd` --- NTVMR subset analysis: filters `docID > 50000`
   (versional/named items), adds a `group` column (`docID // 10000`), stacks the
   Biblical Books histogram and the Manuscripts by Century chart by group
-  (papyri/majuscules/minuscules/lectionaries), adds a non-lectionary (groups 1–3)
+  (papyri/majuscules/minuscules/lectionaries), adds a non-lectionary (groups 1--3)
   date-range KDE plot, a lectionary (group 4) date-range KDE plot, and two 2×2
   faceted per-section date distribution figures (non-lectionary and lectionary) with
   100-year bins, shared legend, and shared axis titles.
 
-- `analysis.date_density` — three new functions for manuscript date-range handling:
+- `analysis.date_density` --- three new functions for manuscript date-range handling:
   `explode_date_ranges` (year-explosion + 1/n weights), `manuscript_date_density`
   (weighted boundary-corrected KDE in calendar-year space), and
-  `quantile_resample_dates` (Hazen-position deterministic resampling).  All three
+  `quantile_resample_dates` (Hazen-position deterministic resampling).
+  All three
   are re-exported from `inf_bp_texts.analysis`.
 
-- `data_cleaning.add_resampled_year_column` — populates a resampled-year column in
+- `data_cleaning.add_resampled_year_column` --- populates a resampled-year column in
   manuscript DataFrames; now accepts keyword arguments `early_col`, `late_col`,
   `mid_col`, and `out_col` (all default to NTVMR names for backward compatibility)
   so it can be applied to any dataset with arbitrary column names.
 
 - Kashouh families **jB** and **K** now use weighted date-range KDE `resampledYear`
   creation dates for inference (single-epoch, multi-epoch, and Bayesian notebooks);
-  midpoint `parsed_year` is retained for plots and axes.  New KDE overlay figures
+  midpoint `parsed_year` is retained for plots and axes.
+  New KDE overlay figures
   (`kashouh_family_k_date_range_kde`, `kashouh_family_jb_date_range_kde`) added to
   the Kashouh data-exploration notebook.
 
 - Kashouh multi-epoch Case 1-3 fits (`kashouh_multi_epoch_inference.qmd`) now pass
   `resampledYear` (KDE-resampled) rather than `parsed_year` (midyear) as
   `creation_times` via `prepare_multi_epoch_fit`, matching all other Kashouh and
-  NTVMR inference notebooks.  The helper also clamps `start_time` to the century
+  NTVMR inference notebooks.
+  The helper also clamps `start_time` to the century
   floor of the earliest resampled year to prevent creation-before-epoch-start errors.
 
 - `boundary_corrected_kde_on_support` and `boundary_corrected_kde_at_zero` now accept
@@ -222,8 +241,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `BirthDeathProcess.__getitem__`: dict/DataFrame subscript interface removed;
   use `.spine_ages`, `.non_spine_ages`, `.surviving_manuscripts`,
   `.extinct_manuscripts`, and `.manuscript_records` properties instead
-- `BirthDeathProcess.__eq__` dict branch: comparison against `{"spine": [...],
-  "non_spine": [...]}` dicts no longer supported
+- `BirthDeathProcess.__eq__` dict branch: comparison against `{"spine": [...],   "non_spine": [...]}` dicts no longer supported
 - `fit_birth_death_processes_bayesian()` `unbias` keyword argument removed;
   pass `model_config=BayesianModelConfig(unbias=...)` instead
 
@@ -244,7 +262,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Tensor dtype mismatch in regression likelihood tests
   (`torch.float64` now explicit on expected values)
 - `np.trapz` replaced with `np.trapezoid` for NumPy 2.x compatibility
-- `BirthDeathProcess.equals()` returns a tensor — callers now use `bool()`
+- `BirthDeathProcess.equals()` returns a tensor --- callers now use `bool()`
 - Simulator could produce ages > T; integration tests now filter them
 
 ## [0.1.0] --- initial release

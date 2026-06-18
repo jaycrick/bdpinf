@@ -43,7 +43,8 @@ from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 
 ## Simulate and Fit
 
-Only simulations that contain at least one observed age in each fitted epoch are kept. This prevents a two-epoch fit from being applied to samples that live entirely on one side of the epoch boundary.
+Only simulations that contain at least one observed age in each fitted epoch are kept.
+This prevents a two-epoch fit from being applied to samples that live entirely on one side of the epoch boundary.
 
 ```{python}
 # | label: simulate-sample

@@ -42,7 +42,8 @@ from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
 
-Only simulations that contain at least one observed age in each fitted epoch are kept. This avoids sending single-epoch samples into a two-epoch fit, which would make the recovered rates harder to interpret.
+Only simulations that contain at least one observed age in each fitted epoch are kept.
+This avoids sending single-epoch samples into a two-epoch fit, which would make the recovered rates harder to interpret.
 
 ```{python}
 # | label: simulate-full-two-rate

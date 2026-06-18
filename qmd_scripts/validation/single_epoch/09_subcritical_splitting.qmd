@@ -20,7 +20,8 @@ __compile_start = time.perf_counter()
 ## Why splitting is needed
 
 For a subcritical branching process with $\lambda < \mu$, extinction is typical and
-$P(\tau > T)$ becomes very small when $T$ is large. Naive direct simulation wastes
+$P(\tau > T)$ becomes very small when $T$ is large.
+Naive direct simulation wastes
 most trajectories because they hit the absorbing state $Z_t = 0$ long before $T$.
 
 Multilevel splitting introduces times
@@ -28,9 +29,9 @@ $0=t_0<t_1<\dots<t_K=T$, estimates each conditional probability
 $P(\tau>t_k\mid\tau>t_{k-1})$, and multiplies them:
 
 $$
-\widehat{P}(\tau>T)=\prod_{k=1}^{K}\widehat{p}_k,
-\qquad
-\widehat{p}_k=\frac{\#\{\text{survivors at }t_k\}}{N}.
+  \widehat{P}(\tau>T)=\prod_{k=1}^{K}\widehat{p}_k,
+  \qquad
+  \widehat{p}_k=\frac{\#\{\text{survivors at }t_k\}}{N}.
 $$
 
 Resampling survivors at each level concentrates computation on rare surviving lineages.
