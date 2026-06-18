@@ -130,6 +130,59 @@ The full migration is complete. Final state:
   All 10 golden-value regression tests pass.
 - **basedpyright**: 0 errors, 5 expected warnings (missing stubs for numpyro/optax).
 
+## Post-JIT benchmark (Phase 2b–2e, 2026-06-19)
+
+Measured on the same NVIDIA A40-12Q host (CPU backend — CUDA jaxlib not installed
+on this deployment). `n_repeats=10` warm repeats; cold (first-call, includes
+XLA compilation) shown separately. Script: `scripts/bench_jax_jit.py`.
+
+The NLL closure benchmarked mirrors `_compute_nll` inside the fitting loop:
+`jit(value_and_grad(lambda log_params: -(pop_ll + spine_ll + non_spine_ll)))`.
+All validation bypassed (`_skip_normalization=True`) so the JIT path is fully
+traceable. Eager numbers match the Phase 2a spike because neither uses JIT.
+
+### Likelihood (forward): eager vs JIT warm (ms)
+
+| epochs | n_ages | eager (ms) | JIT warm (ms) | speedup |
+|--------|--------|-----------|---------------|---------|
+| 1 | 10 | 8.37 | 0.06 | **132×** |
+| 1 | 100 | 10.61 | 0.10 | 109× |
+| 1 | 1000 | 11.15 | 0.17 | 65× |
+| 2 | 10 | 320.74 | 0.09 | **3,512×** |
+| 2 | 100 | 314.20 | 0.24 | 1,310× |
+| 2 | 1000 | 319.93 | 0.41 | 772× |
+| 6 | 10 | 343.07 | 0.10 | **3,518×** |
+| 6 | 100 | 337.30 | 0.12 | 2,870× |
+| 6 | 1000 | 346.08 | 0.22 | 1,564× |
+
+### value_and_grad: eager vs JIT warm (ms)
+
+| epochs | n_ages | eager (ms) | JIT warm (ms) | speedup |
+|--------|--------|-----------|---------------|---------|
+| 1 | 10 | 83.02 | 0.06 | **1,404×** |
+| 1 | 100 | 72.22 | 0.20 | 366× |
+| 1 | 1000 | 70.05 | 0.27 | 263× |
+| 2 | 10 | 835.90 | 0.12 | **7,126×** |
+| 2 | 100 | 844.61 | 0.27 | 3,099× |
+| 2 | 1000 | 816.94 | 0.46 | 1,768× |
+| 6 | 10 | 867.95 | 0.08 | **10,453×** |
+| 6 | 100 | 900.92 | 0.17 | 5,160× |
+| 6 | 1000 | 794.85 | 0.42 | 1,870× |
+
+### Interpretation
+
+JIT compilation eliminates the Python-level `lax.scan` dispatch overhead
+(~320–345 ms per call in eager mode). With JIT, all nine epoch/ages combinations
+settle below **0.5 ms** per forward pass and per `value_and_grad` call.
+
+**Implication for the optimizer:** the current `_optimizer_runners.py` calls
+`jax.value_and_grad(compute_nll_fn)` eagerly at each L-BFGS-B iteration.
+Wrapping this with `jax.jit` before the optimization loop would reduce per-step
+time from ~320–870 ms to < 0.5 ms — a 3–10,000× wall-clock speedup for the
+multi-epoch fitter. The JIT cold-compile cost (a few seconds) is amortized over
+hundreds of optimizer iterations.
+
 ## Raw data
 
-Full JSON at `_output/jax_torch_benchmarks.json`.
+Phase 2a torch-vs-JAX eager: `_output/jax_torch_benchmarks.json`.
+Phase 2b–2e post-JIT: `_output/jax_jit_benchmarks.json`.

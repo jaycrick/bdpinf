@@ -57,6 +57,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Post-JIT benchmark**: added `scripts/bench_jax_jit.py` measuring explicit
+  `jax.jit` speedup over the eager path on the same (epochs × n_ages) grid as
+  the Phase 2a torch comparison. JIT reduces per-call NLL time from ~8–346 ms
+  (eager) to < 0.5 ms (warm JIT) — 65×–10,453× speedup depending on epoch count.
+  Results recorded in `_output/jax_jit_benchmarks.json` and
+  `docs/design/JAX_MIGRATION_BENCHMARKS.md`.
+
 - **Phase 2e — cutover & cleanup**: removed `torch`, `torchvision`, `pyro-ppl` from
   project dependencies and `types-torch` from dev; promoted JAX stack (`jax`,
   `jaxtyping`, `numpyro`, `optax`, `optimistix`) to main dependencies; removed the
