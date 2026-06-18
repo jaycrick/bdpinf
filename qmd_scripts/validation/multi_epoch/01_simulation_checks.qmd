@@ -26,11 +26,14 @@ birth and death rates are identical in each epoch.
 ## Setup
 
 ```{python}
+from typing import Any
+
+import altair as alt
 import numpy as np
 import pandas as pd
-import plotly.graph_objs as go
-from plotly.subplots import make_subplots
 import torch
+from IPython.display import display
+from joblib import Parallel, delayed
 
 from inf_bp_texts.analysis import (
     boundary_corrected_kde_on_support,
@@ -45,13 +48,8 @@ from inf_bp_texts.models.math_ages import (
 from inf_bp_texts.models.math_extinction import calculate_extinction_pr
 from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 from inf_bp_texts.simulation import simulate_birth_death_process
-from inf_bp_texts.visualization.plotting import (
-    apply_professional_styling,
-    apply_tufte_axes,
-    ptolqual,
-    save_figure,
-)
-from joblib import Parallel, delayed
+from inf_bp_texts.visualization import save_chart
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
 
 ## Simulate Age Vectors
@@ -74,7 +72,11 @@ three_epoch_times = np.array([500.0, 1000.0, 1500.0], dtype=float)
 
 
 def sample_age_vector_process(
-    sim_idx: int, br: np.ndarray | float, dr: np.ndarray | float, span: np.ndarray | float, base_seed: int
+    sim_idx: int,
+    br: np.ndarray | float,
+    dr: np.ndarray | float,
+    span: np.ndarray | float,
+    base_seed: int,
 ) -> np.ndarray:
     run_seed = base_seed + sim_idx
     simulated_df = simulate_birth_death_process(
@@ -191,8 +193,6 @@ print(
 ## Population Distribution
 
 ```{python}
-fig_population = go.Figure()
-
 population_max = int(
     max(
         population_sizes_single_epoch.max(),
@@ -238,66 +238,73 @@ population_theoretical_counts, _ = np.histogram(
     weights=population_pmf * num_sims,
 )
 
-fig_population.add_trace(
-    go.Bar(
-        x=population_bin_centers,
-        y=population_empirical_counts_single,
-        marker=dict(color=ptolqual[0]),
-        name="Observed (single-epoch process)",
-        opacity=0.65,
+_pop_records: list[dict[str, Any]] = []
+for bc, cnt_s, cnt_t in zip(
+    population_bin_centers,
+    population_empirical_counts_single,
+    population_empirical_counts_three,
+):
+    _pop_records += [
+        {
+            "bin": float(bc),
+            "count": int(cnt_s),
+            "method": "Observed (single-epoch process)",
+        },
+        {
+            "bin": float(bc),
+            "count": int(cnt_t),
+            "method": "Observed (three-epoch process)",
+        },
+    ]
+_pop_df = pd.DataFrame(_pop_records)
+_theory_df = pd.DataFrame(
+    {
+        "bin": population_bin_centers.tolist(),
+        "count": population_theoretical_counts.tolist(),
+    }
+)
+
+_pop_color = alt.Scale(
+    domain=["Observed (single-epoch process)", "Observed (three-epoch process)"],
+    range=[PTOLQUAL[0], PTOLQUAL[2]],
+)
+_pop_bars = (
+    alt.Chart(_pop_df)
+    .mark_bar(opacity=0.65)
+    .encode(
+        x=alt.X("bin:Q", title="Population size", scale=alt.Scale(domain=[0, 2000])),
+        y=alt.Y("count:Q", title="Count"),
+        xOffset="method:N",
+        color=alt.Color(
+            "method:N", scale=_pop_color, legend=alt.Legend(title=None, orient="top")
+        ),
     )
 )
-fig_population.add_trace(
-    go.Bar(
-        x=population_bin_centers,
-        y=population_empirical_counts_three,
-        marker=dict(color=ptolqual[2]),
-        name="Observed (three-epoch process)",
-        opacity=0.65,
+_theory_line = (
+    alt.Chart(_theory_df)
+    .mark_line(
+        point=alt.OverlayMarkDef(size=25, color=PTOLQUAL[1]),
+        strokeDash=[4, 2],
+        strokeWidth=2,
+        color=PTOLQUAL[1],
     )
+    .encode(x=alt.X("bin:Q"), y=alt.Y("count:Q"))
 )
-fig_population.add_trace(
-    go.Scatter(
-        x=population_bin_centers,
-        y=population_theoretical_counts,
-        mode="lines+markers",
-        name="Theoretical",
-        line=dict(color=ptolqual[1], width=2, dash="dash"),
-        marker=dict(color=ptolqual[1], size=5),
-    )
+fig_population = (_pop_bars + _theory_line).properties(
+    title="Population Distribution: Single-Epoch Process vs Three-Epoch Process",
+    width=600,
+    height=350,
 )
-fig_population = apply_professional_styling(
-    fig_population,
-    "Population Distribution: Single-Epoch Process vs Three-Epoch Process",
-    "Population size",
-    "Count",
+display(fig_population)
+save_chart(
+    fig_population, "methods_validation_population_distribution", width=600, height=350
 )
-fig_population = apply_tufte_axes(fig_population)
-fig_population.update_layout(
-    barmode="group",
-    legend=dict(
-        x=0.99,
-        y=0.99,
-        xanchor="right",
-        yanchor="top",
-    ),
-)
-fig_population.update_xaxes(dtick=population_bin_width, range=[0, 2000])
-fig_population.show()
-saved_population = save_figure(
-    fig_population,
-    "methods_validation_population_distribution",
-    width=400,
-    height=300,
-)
-print(f"Saved population figure: {saved_population}")
+print("Saved population figure")
 ```
 
 ## Spine and Non-Spine Age Checks
 
 ```{python}
-
-
 spine_age_samples_single = np.asarray(
     [
         arr[0]
@@ -342,100 +349,31 @@ non_spine_prop_not_at_max = proportion_not_at_upper(
     non_spine_age_samples_all, time_span
 )
 
-fig_summary = make_subplots(
-    rows=2,
-    cols=2,
-    horizontal_spacing=0.08,
-    vertical_spacing=0.08,
-    shared_xaxes="columns",
-    shared_yaxes="rows",
-)
-
 non_spine_grid_single, non_spine_kde_single = boundary_corrected_kde_on_support(
     non_spine_age_samples_single,
     support_upper=time_span,
 )
-if non_spine_grid_single is not None:
-    fig_summary.add_trace(
-        go.Scatter(
-            x=non_spine_grid_single,
-            y=non_spine_kde_single,
-            mode="lines",
-            line=dict(color=ptolqual[0], width=2),
-            fill="tozeroy",
-            name="KDE single-epoch process",
-        ),
-        row=1,
-        col=1,
-    )
-
 non_spine_grid_three, non_spine_kde_three = boundary_corrected_kde_on_support(
     non_spine_age_samples_three,
     support_upper=time_span,
 )
-if non_spine_grid_three is not None:
-    fig_summary.add_trace(
-        go.Scatter(
-            x=non_spine_grid_three,
-            y=non_spine_kde_three,
-            mode="lines",
-            line=dict(color=ptolqual[2], width=2),
-            fill="tozeroy",
-            name="KDE three-epoch process",
-        ),
-        row=1,
-        col=2,
-    )
-
 non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
-    lambda age: calculate_non_spine_ages_log_lik(
+    lambda age: calculate_non_spine_ages_log_lik(  # pyright: ignore[reportUnknownLambdaType]
         birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
     ),
     time_span,
     proportion_not_at_upper=non_spine_prop_not_at_max,
 )
-
-
 spine_grid_single, spine_kde_single = boundary_corrected_kde_on_support(
     spine_age_samples_single,
     support_upper=time_span,
 )
-if spine_grid_single is not None:
-    fig_summary.add_trace(
-        go.Scatter(
-            x=spine_grid_single,
-            y=spine_kde_single,
-            mode="lines",
-            line=dict(color=ptolqual[0], width=2),
-            fill="tozeroy",
-            name="KDE single-epoch process",
-            showlegend=False,
-        ),
-        row=2,
-        col=1,
-    )
-
 spine_grid_three, spine_kde_three = boundary_corrected_kde_on_support(
     spine_age_samples_three,
     support_upper=time_span,
 )
-if spine_grid_three is not None:
-    fig_summary.add_trace(
-        go.Scatter(
-            x=spine_grid_three,
-            y=spine_kde_three,
-            mode="lines",
-            line=dict(color=ptolqual[2], width=2),
-            fill="tozeroy",
-            name="KDE three-epoch process",
-            showlegend=False,
-        ),
-        row=2,
-        col=2,
-    )
-
 spine_theory_x, spine_theory_y = theoretical_age_density(
-    lambda age: calculate_spine_ages_log_lik(
+    lambda age: calculate_spine_ages_log_lik(  # pyright: ignore[reportUnknownLambdaType]
         birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
     ),
     time_span,
@@ -448,94 +386,99 @@ non_spine_y_max = robust_y_max(
 )
 spine_y_max = robust_y_max([spine_kde_single, spine_kde_three, spine_theory_y])
 
-fig_summary.add_trace(
-    go.Scatter(
-        x=non_spine_theory_x,
-        y=non_spine_theory_y,
-        mode="lines",
-        line=dict(color=ptolqual[1], width=2, dash="dash"),
-        name="Theoretical Density",
-    ),
-    row=1,
-    col=1,
-)
-fig_summary.add_trace(
-    go.Scatter(
-        x=non_spine_theory_x,
-        y=non_spine_theory_y,
-        mode="lines",
-        line=dict(color=ptolqual[1], width=2, dash="dash"),
-        name="Theoretical Density",
-        showlegend=False,
-    ),
-    row=1,
-    col=2,
-)
-fig_summary.add_trace(
-    go.Scatter(
-        x=spine_theory_x,
-        y=spine_theory_y,
-        mode="lines",
-        line=dict(color=ptolqual[1], width=2, dash="dash"),
-        name="Theoretical Density",
-        showlegend=False,
-    ),
-    row=2,
-    col=1,
-)
-fig_summary.add_trace(
-    go.Scatter(
-        x=spine_theory_x,
-        y=spine_theory_y,
-        mode="lines",
-        line=dict(color=ptolqual[1], width=2, dash="dash"),
-        name="Theoretical Density",
-        showlegend=False,
-    ),
-    row=2,
-    col=2,
-)
 
-fig_summary = apply_professional_styling(
-    fig_summary,
-    "Age Densities by Generator (Single-Epoch vs Three-Epoch Process)",
-    "",
-    "",
-)
-fig_summary = apply_tufte_axes(fig_summary)
-fig_summary.update_layout(
-    margin=dict(t=50),
-    legend=dict(
-        x=0.99,
-        y=0.99,
-        xanchor="right",
-        yanchor="top",
+def _kde_panel(
+    kde_x: np.ndarray | None,
+    kde_y: np.ndarray | None,
+    theory_x: np.ndarray,
+    theory_y: np.ndarray,
+    color: str,
+    panel_title: str,
+    x_label: str,
+    y_label: str,
+    y_domain: list[float],
+) -> alt.LayerChart:
+    x_dom = [0.0, float(time_span)]
+    layers: list[alt.Chart] = []
+    if kde_x is not None and kde_y is not None:
+        kde_df = pd.DataFrame({"Age": kde_x.tolist(), "Density": kde_y.tolist()})
+        layers.append(
+            alt.Chart(kde_df)
+            .mark_area(
+                opacity=0.4, color=color, line={"color": color, "strokeWidth": 2}
+            )
+            .encode(
+                x=alt.X("Age:Q", title=x_label, scale=alt.Scale(domain=x_dom)),
+                y=alt.Y("Density:Q", title=y_label, scale=alt.Scale(domain=y_domain)),
+            )
+        )
+    theory_df = pd.DataFrame({"Age": theory_x.tolist(), "Density": theory_y.tolist()})
+    layers.append(
+        alt.Chart(theory_df)
+        .mark_line(strokeDash=[4, 2], color=PTOLQUAL[1], strokeWidth=2)
+        .encode(
+            x=alt.X("Age:Q", scale=alt.Scale(domain=x_dom)),
+            y=alt.Y("Density:Q", scale=alt.Scale(domain=y_domain)),
+        )
+    )
+    return alt.layer(*layers).properties(title=panel_title, width=280, height=200)
+
+
+ns_dom = [0.0, non_spine_y_max]
+sp_dom = [0.0, spine_y_max]
+fig_summary = alt.vconcat(
+    alt.hconcat(
+        _kde_panel(
+            non_spine_grid_single,
+            non_spine_kde_single,
+            non_spine_theory_x,
+            non_spine_theory_y,
+            PTOLQUAL[0],
+            "Single-epoch process",
+            "Age (single-epoch process)",
+            "Density (non-spine)",
+            ns_dom,
+        ),
+        _kde_panel(
+            non_spine_grid_three,
+            non_spine_kde_three,
+            non_spine_theory_x,
+            non_spine_theory_y,
+            PTOLQUAL[2],
+            "Three-epoch process",
+            "Age (three-epoch process)",
+            "",
+            ns_dom,
+        ),
     ),
-)
-fig_summary.update_xaxes(range=[0.0, time_span], row=1, col=1)
-fig_summary.update_xaxes(range=[0.0, time_span], row=1, col=2)
-fig_summary.update_xaxes(
-    title_text="Age (single-epoch process)", range=[0.0, time_span], row=2, col=1
-)
-fig_summary.update_xaxes(
-    title_text="Age (three-epoch process)", range=[0.0, time_span], row=2, col=2
-)
-fig_summary.update_yaxes(title_text="Density (non-spine)", row=1, col=1)
-fig_summary.update_yaxes(title_text="", row=1, col=2)
-fig_summary.update_yaxes(title_text="Density (spine)", row=2, col=1)
-fig_summary.update_yaxes(title_text="", row=2, col=2)
-fig_summary.update_yaxes(range=[0.0, non_spine_y_max], row=1, col=1)
-fig_summary.update_yaxes(range=[0.0, non_spine_y_max], row=1, col=2)
-fig_summary.update_yaxes(range=[0.0, spine_y_max], row=2, col=1)
-fig_summary.update_yaxes(range=[0.0, spine_y_max], row=2, col=2)
-fig_summary.show()
-saved_age_densities = save_figure(
-    fig_summary,
-    "methods_validation_age_densities",
-    width=400,
-    height=350,
-)
-print(f"Saved age-density figure: {saved_age_densities}")
+    alt.hconcat(
+        _kde_panel(
+            spine_grid_single,
+            spine_kde_single,
+            spine_theory_x,
+            spine_theory_y,
+            PTOLQUAL[0],
+            "Single-epoch process",
+            "Age (single-epoch process)",
+            "Density (spine)",
+            sp_dom,
+        ),
+        _kde_panel(
+            spine_grid_three,
+            spine_kde_three,
+            spine_theory_x,
+            spine_theory_y,
+            PTOLQUAL[2],
+            "Three-epoch process",
+            "Age (three-epoch process)",
+            "",
+            sp_dom,
+        ),
+    ),
+).properties(title="Age Densities by Generator (Single-Epoch vs Three-Epoch Process)")
+display(fig_summary)
+save_chart(fig_summary, "methods_validation_age_densities")
+print("Saved age-density figure")
 ```
 
 The density of the spine age distribution does not include the point mass at the maximum time span.

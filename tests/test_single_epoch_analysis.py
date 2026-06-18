@@ -22,6 +22,18 @@ from inf_bp_texts.analysis import (
 from inf_bp_texts.models.birth_death_process import BirthDeathProcess
 
 
+def _layer_mark_types(spec: dict[str, Any]) -> set[str]:
+    """Collect the mark-type strings from every layer of an Altair spec dict."""
+    marks: set[str] = set()
+    for layer in spec.get("layer", []):
+        mark = layer.get("mark")
+        if isinstance(mark, dict):
+            marks.add(mark["type"])
+        elif isinstance(mark, str):
+            marks.add(mark)
+    return marks
+
+
 class TestSingleEpochAnalysis:
     """Test single-epoch analysis helpers."""
 
@@ -113,8 +125,8 @@ class TestSingleEpochAnalysis:
         assert summary["success_rate"] == pytest.approx(33.3333333333)
         assert summary["warn_low_success"]
 
-    def test_create_kde_density_plot_returns_expected_traces(self) -> None:
-        fig = create_kde_density_plot(
+    def test_create_kde_density_plot_layers_density_and_true_rule(self) -> None:
+        chart = create_kde_density_plot(
             rates=np.array([0.001, 0.002, 0.003, 0.004]),
             true_rate=0.0025,
             config=KdePlotConfig(
@@ -124,11 +136,12 @@ class TestSingleEpochAnalysis:
                 true_line_color="#ff0000",
             ),
         )
-        assert len(fig.data) == 2
-        assert getattr(fig.data[0], "name", None) == "Density"
+        marks = _layer_mark_types(chart.to_dict())
+        # Density curve, dashed true-value rule, and the true-value text label.
+        assert {"line", "rule", "text"} <= marks
 
-    def test_create_parameter_box_plot_adds_all_marker_traces(self) -> None:
-        fig = create_parameter_box_plot(
+    def test_create_parameter_box_plot_layers_box_and_markers(self) -> None:
+        chart = create_parameter_box_plot(
             birth_rates=np.array([0.01, 0.02, 0.03]),
             death_rates=np.array([0.004, 0.005, 0.006]),
             true_rates=(0.02, 0.005),
@@ -139,8 +152,10 @@ class TestSingleEpochAnalysis:
                 median_color="#444444",
             ),
         )
-        # Two box traces plus six marker traces.
-        assert len(fig.data) == 8
+        marks = _layer_mark_types(chart.to_dict())
+        # Box plot plus overlaid true/mean/median point markers.
+        assert "boxplot" in marks
+        assert "point" in marks
 
     def test_compute_boxplot_summary_matches_expected_shape(self) -> None:
         summary = compute_boxplot_summary(

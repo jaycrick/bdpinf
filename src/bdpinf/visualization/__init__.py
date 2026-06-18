@@ -5,6 +5,13 @@ process models and their results.
 """
 
 from .age_fit_plot import plot_creation_year_fit
+from .altair_theme import (
+    PTOLQUAL,
+    THEME_NAME,
+    register_export_fonts,
+    save_chart,
+)
+from .date_distribution_plots import plot_date_range_kde_comparison
 from .parameter_plots import (
     BoxPlotStyle,
     KdePlotConfig,
@@ -13,6 +20,7 @@ from .parameter_plots import (
     create_parameter_box_plot,
 )
 from .plotting import (
+    convergence_chart,
     save_figure,
     save_multi_epoch_birth_time_figure,
     save_multi_epoch_convergence_figure,
@@ -25,9 +33,15 @@ from .splitting_plots import (
 )
 
 __all__ = [
+    "PTOLQUAL",
+    "THEME_NAME",
     "BoxPlotStyle",
     "KdePlotConfig",
+    "convergence_chart",
     "plot_creation_year_fit",
+    "plot_date_range_kde_comparison",
+    "register_export_fonts",
+    "save_chart",
     "compute_boxplot_summary",
     "create_kde_density_plot",
     "create_parameter_box_plot",

@@ -10,7 +10,6 @@ import pytest
 from inf_bp_texts.visualization.plotting import (
     apply_professional_styling,
     apply_tufte_axes,
-    apply_tufte_legend,
     save_figure,
 )
 
@@ -189,25 +188,11 @@ class TestPlotting:
         assert returned is fig
         assert len(fig.layout_updates) == 1
         update = fig.layout_updates[0]
-        assert update["title"] == "Title"
+        assert update["title"]["text"] == "Title"
         assert update["xaxis_title"] == "X"
         assert update["yaxis_title"] == "Y"
         assert update["height"] == height
         assert update["margin"]["t"] == top_margin
-
-    def test_apply_tufte_legend_fallback_position(self) -> None:
-        """apply_tufte_legend should fall back to top-right for unknown positions."""
-        fallback_position = 0.98
-
-        fig = DummyFigure()
-        apply_tufte_legend(fig, position="unknown", showlegend=False)
-
-        update = fig.layout_updates[0]
-        assert update["showlegend"] is False
-        assert update["legend"]["x"] == fallback_position
-        assert update["legend"]["y"] == fallback_position
-        assert update["legend"]["xanchor"] == "right"
-        assert update["legend"]["yanchor"] == "top"
 
     def test_apply_tufte_axes_updates_both_axes(self) -> None:
         """apply_tufte_axes should apply minimalist settings to both axes."""

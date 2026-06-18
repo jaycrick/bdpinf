@@ -1,10 +1,9 @@
 # inf-bp-texts
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![codecov](https://codecov.io/gh/jaycrick/inf-bp-texts/graph/badge.svg?token=5QNFKWSL7G)](https://codecov.io/gh/jaycrick/inf-bp-texts)
-
 
 A Python platform for downloading New Testament manuscript data from the NTVMR API
 and running quality control, analysis, and birth-death process inference.
@@ -72,13 +71,13 @@ Run tests:
 uv run pytest
 ```
 
-Generate API docs:
+Generate API reference docs:
 
 ```sh
-uv run quartodoc build
+uv run great-docs build
 ```
 
-Preview documentation site:
+Preview the research-notebook site:
 
 ```sh
 uv run quarto preview

@@ -5,7 +5,8 @@ author: "JC"
 date: last-modified
 ---
 
-This document implements a lightweight optimisation benchmarking workflow for single-epoch validation fits. It runs configurable optimiser strategies (Adam, LBFGS, and sequential strategies), captures per-iteration diagnostics (NLL, gradient norms, parameter snapshots, timestamps), and emits diagnostic plots and structured results to `_output/` for further analysis.
+This document implements a lightweight optimisation benchmarking workflow for single-epoch validation fits.
+It runs configurable optimiser strategies (Adam, LBFGS, and sequential strategies), captures per-iteration diagnostics (NLL, gradient norms, parameter snapshots, timestamps), and emits diagnostic plots and structured results to `_output/` for further analysis.
 
 **TODO (from mle_optimisation_framework_prompt)**
 
@@ -17,7 +18,6 @@ This document implements a lightweight optimisation benchmarking workflow for si
 - [ ] Add utilities for Hessian / Fisher information diagnostics (autograd + finite differences).
 - [ ] Provide experiment runner API to iterate optimisers, starts, and store summaries.
 - [ ] Document configuration options and reproducibility steps (seeds, dtypes).
-
 
 ```{python}
 # ruff: noqa: E402
@@ -35,29 +35,22 @@ __compile_start = time.perf_counter()
 
 ```{python}
 import json
-import numpy as np
 import os
-import pandas as pd
-import torch
-import plotly.graph_objs as go
-
 from pathlib import Path
 from typing import Any, cast
 
+import altair as alt
+import numpy as np
+import pandas as pd
+import torch
+from IPython.display import display
 from itables import show as show_table
-from inf_bp_texts.utils import format_table_dataframe
 
-from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference.fitting import fit_birth_death_processes
-from inf_bp_texts.visualization.plotting import (
-    apply_professional_styling,
-    apply_tufte_axes,
-    gridcolor,
-    paper_bgcolor,
-    plot_bgcolor,
-    ptolqual,
-)
+from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
+from inf_bp_texts.utils import format_table_dataframe
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 
 torch.set_default_dtype(torch.float64)
 ```
@@ -236,103 +229,122 @@ for r in results:
         param_history = att.get("param_history") or []
 
         if nll_history:
-            fig_nll = go.Figure()
-            fig_nll.add_trace(
-                go.Scatter(
-                    x=list(range(1, len(nll_history) + 1)),
-                    y=nll_history,
-                    mode="lines",
-                    name="NLL",
-                    line=dict(color=ptolqual[1], width=2),
+            _nll_df = pd.DataFrame(
+                {
+                    "Iteration": list(range(1, len(nll_history) + 1)),
+                    "NLL": nll_history,
+                }
+            )
+            fig_nll = (
+                alt.Chart(_nll_df)
+                .mark_line(color=PTOLQUAL[1], strokeWidth=2)
+                .encode(
+                    x=alt.X(
+                        "Iteration:Q", title="Iteration", axis=alt.Axis(format="d")
+                    ),
+                    y=alt.Y(
+                        "NLL:Q",
+                        title="Negative Log-Likelihood",
+                        scale=alt.Scale(zero=False),
+                    ),
+                )
+                .properties(
+                    title=f"NLL vs Iteration ({r['label']}:{att.get('optimizer')})",
+                    width=600,
+                    height=300,
                 )
             )
-            fig_nll.update_layout(
-                title=f"NLL vs Iteration ({r['label']}:{att.get('optimizer')})",
-                xaxis_title="Iteration",
-                yaxis_title="Negative Log-Likelihood",
-                plot_bgcolor=plot_bgcolor,
-                paper_bgcolor=paper_bgcolor,
-            )
-            fig_nll = apply_professional_styling(fig_nll, "", "Iteration", "NLL")
-            fig_nll = apply_tufte_axes(fig_nll)
-            fig_nll.update_xaxes(showgrid=True, gridcolor=gridcolor)
-            fig_nll.update_yaxes(showgrid=True, gridcolor=gridcolor)
             out_html = Path("_output") / f"nll_history_{r['label']}_{att_idx}.html"
             out_html.parent.mkdir(parents=True, exist_ok=True)
-            fig_nll.write_html(str(out_html))
+            fig_nll.save(str(out_html))
             try:
-                fig_nll.show()
+                display(fig_nll)
             except Exception:
                 pass
 
         if grad_norms:
-            fig_g = go.Figure()
-            fig_g.add_trace(
-                go.Scatter(
-                    x=list(range(1, len(grad_norms) + 1)),
-                    y=grad_norms,
-                    mode="lines+markers",
-                    name="GradNorm",
-                    line=dict(color=ptolqual[2], width=2),
+            _grad_df = pd.DataFrame(
+                {
+                    "Iteration": list(range(1, len(grad_norms) + 1)),
+                    "GradNorm": grad_norms,
+                }
+            )
+            fig_g = (
+                alt.Chart(_grad_df)
+                .mark_line(
+                    point=alt.OverlayMarkDef(size=20, color=PTOLQUAL[2]),
+                    color=PTOLQUAL[2],
+                    strokeWidth=2,
+                )
+                .encode(
+                    x=alt.X(
+                        "Iteration:Q", title="Iteration", axis=alt.Axis(format="d")
+                    ),
+                    y=alt.Y(
+                        "GradNorm:Q", title="Gradient Norm", scale=alt.Scale(zero=False)
+                    ),
+                )
+                .properties(
+                    title=f"Gradient Norm vs Iteration ({r['label']}:{att.get('optimizer')})",
+                    width=600,
+                    height=300,
                 )
             )
-            fig_g.update_layout(
-                title=f"Gradient Norm vs Iteration ({r['label']}:{att.get('optimizer')})",
-                xaxis_title="Iteration",
-                yaxis_title="Gradient Norm",
-                plot_bgcolor=plot_bgcolor,
-                paper_bgcolor=paper_bgcolor,
-            )
-            fig_g = apply_professional_styling(fig_g, "", "Iteration", "Grad Norm")
-            fig_g = apply_tufte_axes(fig_g)
-            fig_g.update_xaxes(showgrid=True, gridcolor=gridcolor)
-            fig_g.update_yaxes(showgrid=True, gridcolor=gridcolor)
             out_html = (
                 Path("_output") / f"grad_norm_history_{r['label']}_{att_idx}.html"
             )
-            fig_g.write_html(str(out_html))
+            out_html.parent.mkdir(parents=True, exist_ok=True)
+            fig_g.save(str(out_html))
             try:
-                fig_g.show()
+                display(fig_g)
             except Exception:
                 pass
 
         if param_history:
             try:
-                import numpy as _np
-
-                ph = _np.asarray(param_history, dtype=float)
+                ph = np.asarray(param_history, dtype=float)
                 # ph: (n_iters, n_params) in log-space
-                params_nat = _np.exp(ph)
+                params_nat = np.exp(ph)
                 n_params = params_nat.shape[1]
                 for p in range(n_params):
-                    fig_p = go.Figure()
-                    fig_p.add_trace(
-                        go.Scatter(
-                            x=list(range(1, params_nat.shape[0] + 1)),
-                            y=params_nat[:, p].tolist(),
-                            mode="lines+markers",
-                            name=f"param_{p}",
-                            line=dict(width=2),
+                    _param_df = pd.DataFrame(
+                        {
+                            "Iteration": list(range(1, params_nat.shape[0] + 1)),
+                            "Value": params_nat[:, p].tolist(),
+                        }
+                    )
+                    fig_p = (
+                        alt.Chart(_param_df)
+                        .mark_line(
+                            point=alt.OverlayMarkDef(size=20),
+                            strokeWidth=2,
+                        )
+                        .encode(
+                            x=alt.X(
+                                "Iteration:Q",
+                                title="Iteration",
+                                axis=alt.Axis(format="d"),
+                            ),
+                            y=alt.Y(
+                                "Value:Q",
+                                title="Parameter (natural scale)",
+                                scale=alt.Scale(zero=False),
+                            ),
+                        )
+                        .properties(
+                            title=f"Parameter {p} trajectory ({r['label']}:{att.get('optimizer')})",
+                            width=600,
+                            height=300,
                         )
                     )
-                    fig_p.update_layout(
-                        title=f"Parameter {p} trajectory ({r['label']}:{att.get('optimizer')})",
-                        xaxis_title="Iteration",
-                        yaxis_title="Parameter (natural scale)",
-                        plot_bgcolor=plot_bgcolor,
-                        paper_bgcolor=paper_bgcolor,
-                    )
-                    fig_p = apply_professional_styling(fig_p, "", "Iteration", f"param_{p}")
-                    fig_p = apply_tufte_axes(fig_p)
-                    fig_p.update_xaxes(showgrid=True, gridcolor=gridcolor)
-                    fig_p.update_yaxes(showgrid=True, gridcolor=gridcolor)
                     out_html = (
                         Path("_output")
                         / f"param_{p}_history_{r['label']}_{att_idx}.html"
                     )
-                    fig_p.write_html(str(out_html))
+                    out_html.parent.mkdir(parents=True, exist_ok=True)
+                    fig_p.save(str(out_html))
                     try:
-                        fig_p.show()
+                        display(fig_p)
                     except Exception:
                         pass
             except Exception as _exc:

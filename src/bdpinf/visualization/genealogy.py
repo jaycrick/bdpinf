@@ -5,18 +5,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import cast
 
+import altair as alt
 import numpy as np
 import pandas as pd
-import plotly.graph_objs as go
 
-from inf_bp_texts.visualization.plotting import (
-    apply_professional_styling,
-    apply_tufte_axes,
-    gridcolor,
-    paper_bgcolor,
-    plot_bgcolor,
-    ptolqual,
-)
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+
+# Map a Plotly-style dash keyword onto a Vega-Lite strokeDash array.
+_DASH_ARRAYS: dict[str, list[int]] = {"dot": [2, 2], "dash": [6, 4], "solid": []}
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,12 +21,12 @@ class GenealogyPlotConfig:
 
     title: str = "Genealogy Tree"
     xaxis_title: str = "Time"
-    yaxis_title: str = "DFS order index"
+    yaxis_title: str = "Manuscript ID"
     width: int = 1100
     height: int | None = None
     lifetime_color: str = "#000000"
-    survivor_color: str = ptolqual[2]
-    spine_color: str = ptolqual[2]
+    survivor_color: str = PTOLQUAL[2]
+    spine_color: str = PTOLQUAL[2]
     connector_color: str = "#666666"
     lifetime_width: float = 2.0
     survivor_width: float = 2.5
@@ -220,14 +216,28 @@ def genealogy_dfs_order(
     return frame.sort_values("dfs_index").reset_index(drop=True)
 
 
+def _genealogy_category(*, survived: bool, is_spine: bool) -> str:
+    """Classify a lineage as extinct, surviving, or the spine (first survivor)."""
+    if not survived:
+        return "extinct"
+    return "spine" if is_spine else "survivor"
+
+
 def plot_genealogy_tree(
     records: pd.DataFrame,
     *,
     start_time: float,
     simulation_end_time: float,
     config: GenealogyPlotConfig | None = None,
-) -> go.Figure:
-    """Render a genealogy tree with lifetimes and parent-child connectors."""
+) -> alt.LayerChart:
+    """Render a genealogy tree with lifetimes and parent-child connectors.
+
+    Lifetimes are horizontal ``mark_rule`` segments (birth → death) on a per-row
+    ordinal axis ordered by DFS index and labelled by ``manuscript_id``; their
+    colour and thickness distinguish extinct / surviving / spine lineages.
+    Parent→child connectors are dashed vertical ``mark_rule`` segments at the
+    child's birth time, spanning the parent's and child's rows.
+    """
     plot_config = config or GenealogyPlotConfig()
     frame = genealogy_dfs_order(
         records,
@@ -235,113 +245,91 @@ def plot_genealogy_tree(
         simulation_end_time=simulation_end_time,
     )
 
-    fig = go.Figure()
     if frame.empty:
-        fig.update_layout(title=plot_config.title)
-        return fig
-
-    # Reconstruct typed records from the frame for reliable static typing
-    frame_dicts = frame.to_dict(orient="records")
-    frame_records = []
-    for d in frame_dicts:
-        parent_raw = d.get("parent_id")
-        parent = None if pd.isna(parent_raw) else int(parent_raw)
-        rec = _GeneRecord(
-            dfs_index=int(cast("int", d["dfs_index"])),
-            manuscript_id=int(cast("int", d["manuscript_id"])),
-            parent_id=parent,
-            creation_time=float(cast("float", d["creation_time"])),
-            birth_time=float(cast("float", d["birth_time"])),
-            death_time=float(cast("float", d["death_time"])),
-            plot_death_time=float(cast("float", d["plot_death_time"])),
-            survived=bool(d["survived"]),
-            is_spine=bool(d.get("is_spine", False)),
-        )
-        frame_records.append(rec)
-
-    parent_y_by_id = {rec.manuscript_id: float(rec.dfs_index) for rec in frame_records}
-
-    shapes: list[dict[str, object]] = []
-    for rec in frame_records:
-        if rec.survived:
-            line_color = (
-                plot_config.spine_color if rec.is_spine else plot_config.survivor_color
-            )
-            line_width = (
-                plot_config.spine_width if rec.is_spine else plot_config.survivor_width
-            )
-        else:
-            line_color = plot_config.lifetime_color
-            line_width = plot_config.lifetime_width
-
-        shapes.append(
-            {
-                "type": "line",
-                "xref": "x",
-                "yref": "y",
-                "x0": float(rec.birth_time),
-                "y0": float(rec.dfs_index),
-                "x1": float(rec.plot_death_time),
-                "y1": float(rec.dfs_index),
-                "line": {"color": str(line_color), "width": float(line_width)},
-            },
+        empty = pd.DataFrame({"birth_time": [], "plot_death_time": [], "row": []})
+        return cast(
+            "alt.LayerChart",
+            alt.layer(alt.Chart(empty).mark_rule()).properties(title=plot_config.title),
         )
 
-        if rec.parent_id is not None:
-            shapes.append(
-                {
-                    "type": "line",
-                    "xref": "x",
-                    "yref": "y",
-                    "x0": float(rec.birth_time),
-                    "y0": parent_y_by_id[rec.parent_id],
-                    "x1": float(rec.birth_time),
-                    "y1": float(rec.dfs_index),
-                    "line": {
-                        "color": plot_config.connector_color,
-                        "width": plot_config.connector_width,
-                        "dash": plot_config.connector_dash,
-                    },
-                },
+    frame = frame.copy()
+    frame["category"] = [
+        _genealogy_category(survived=bool(s), is_spine=bool(sp))
+        for s, sp in zip(frame["survived"], frame["is_spine"], strict=True)
+    ]
+    # Ordinal y domain: manuscript ids in DFS order, so the root (index 0) is on
+    # top, matching the previous reversed-axis Plotly rendering.
+    order = [
+        str(mid) for mid in frame.sort_values("dfs_index")["manuscript_id"].tolist()
+    ]
+    frame["row"] = frame["manuscript_id"].astype(str)
+    y_scale = alt.Scale(domain=order)
+
+    categories = ["extinct", "survivor", "spine"]
+    color_scale = alt.Scale(
+        domain=categories,
+        range=[
+            plot_config.lifetime_color,
+            plot_config.survivor_color,
+            plot_config.spine_color,
+        ],
+    )
+    size_scale = alt.Scale(
+        domain=categories,
+        range=[
+            plot_config.lifetime_width,
+            plot_config.survivor_width,
+            plot_config.spine_width,
+        ],
+    )
+
+    lifetimes = (
+        alt.Chart(frame)
+        .mark_rule()
+        .encode(
+            x=alt.X("birth_time:Q", title=plot_config.xaxis_title),
+            x2="plot_death_time:Q",
+            y=alt.Y("row:N", scale=y_scale, title=plot_config.yaxis_title),
+            color=alt.Color("category:N", scale=color_scale, legend=None),
+            size=alt.Size("category:N", scale=size_scale, legend=None),
+        )
+    )
+
+    layers: list[alt.Chart] = [lifetimes]
+
+    connector_frame = frame[frame["parent_id"].notna()].copy()
+    if not connector_frame.empty:
+        connector_frame["parent_row"] = (
+            connector_frame["parent_id"].astype(int).astype(str)
+        )
+        connectors = (
+            alt.Chart(connector_frame)
+            .mark_rule(
+                color=plot_config.connector_color,
+                strokeWidth=plot_config.connector_width,
+                strokeDash=_DASH_ARRAYS.get(plot_config.connector_dash, [2, 2]),
             )
+            .encode(
+                x="birth_time:Q",
+                y=alt.Y("parent_row:N", scale=y_scale),
+                y2="row:N",
+            )
+        )
+        layers.append(connectors)
 
     computed_height = (
         max(420, 28 * len(frame) + 120)
         if plot_config.height is None
         else plot_config.height
     )
-    min_time = float(frame["birth_time"].min())
-    max_time = float(frame["plot_death_time"].max())
-
-    fig.update_layout(
-        width=plot_config.width,
-        height=computed_height,
-        plot_bgcolor=plot_bgcolor,
-        paper_bgcolor=paper_bgcolor,
-        shapes=shapes,
+    return cast(
+        "alt.LayerChart",
+        alt.layer(*layers).properties(
+            title=plot_config.title,
+            width=plot_config.width,
+            height=computed_height,
+        ),
     )
-    fig = apply_professional_styling(
-        fig,
-        plot_config.title,
-        plot_config.xaxis_title,
-        plot_config.yaxis_title,
-        height=computed_height,
-    )
-    fig = apply_tufte_axes(fig)
-    fig.update_xaxes(
-        showgrid=True,
-        gridcolor=gridcolor,
-        range=[min_time, max_time * 1.05 if max_time > 0 else max_time + 1.0],
-    )
-    fig.update_yaxes(
-        showgrid=True,
-        gridcolor=gridcolor,
-        autorange="reversed",
-        tickmode="array",
-        tickvals=frame["dfs_index"].tolist(),
-        ticktext=frame["manuscript_id"].astype(str).tolist(),
-    )
-    return cast("go.Figure", fig)
 
 
 __all__ = ["GenealogyPlotConfig", "genealogy_dfs_order", "plot_genealogy_tree"]

@@ -8,8 +8,8 @@ date: last-modified
 **TODOs:**
 
 - [ ] Create a way of investigating why there is a massive spike in some of the fits.
-Output all the information necessary to reproduce the spike in a single fit,
-and then investigate that fit in isolation.
+  Output all the information necessary to reproduce the spike in a single fit,
+  and then investigate that fit in isolation.
 
 ```{python}
 # ruff: noqa: E402
@@ -29,28 +29,28 @@ __compile_start = time.perf_counter()
 # | label: setup
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import Any, TypedDict, cast
 
 import numpy as np
 import pandas as pd
-from joblib import Parallel, delayed
+from IPython.display import display
 from itables import show as show_table
+from joblib import Parallel, delayed
 
+from inf_bp_texts.analysis.asymptotic_consistency import (
+    FittingRunConfig,
+    reproduce_replicate,
+    run_single_replicate,
+)
 from inf_bp_texts.analysis.spike_detection import (
     compute_ci_width_table,
     select_extreme_replicates,
     select_max_ci_times,
 )
-from inf_bp_texts.inference import ConvergenceConfig
-
-from inf_bp_texts.analysis.asymptotic_consistency import (
-    FittingRunConfig,
-    run_single_replicate,
-    reproduce_replicate,
-)
 from inf_bp_texts.analysis.validation_helpers import safe_mean, safe_var
+from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.utils import format_table_dataframe, json_safe
 from inf_bp_texts.visualization.plotting import plot_parameter_consistency
 
@@ -313,7 +313,7 @@ fig_birth = plot_parameter_consistency(
     true_rate_key="birth_rate",
     title="Birth-rate consistency across observation time",
 )
-fig_birth.show()
+display(fig_birth)
 fig_death = plot_parameter_consistency(
     summary_df=summary_df,
     results_df=results_df,
@@ -324,7 +324,7 @@ fig_death = plot_parameter_consistency(
     true_rate_key="death_rate",
     title="Death-rate consistency across observation time",
 )
-fig_death.show()
+display(fig_death)
 ```
 
 ```{python}

@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objs as go
 import torch
 from numpy.typing import NDArray
 
@@ -22,6 +21,8 @@ from inf_bp_texts.models.validation import (
 )
 
 if TYPE_CHECKING:
+    import altair as alt
+
     from inf_bp_texts.visualization.genealogy import GenealogyPlotConfig
 
 NumericInput = float | list[float] | NDArray[np.float64] | torch.Tensor
@@ -68,7 +69,7 @@ class BirthDeathProcess:
     - `genealogy_dfs_order`: validate the manuscript record table and return
         a preorder DFS ordering for the rooted genealogy used by the
         serializer and plotting helpers.
-    - `plot_genealogy_tree`: return a Plotly `Figure` showing manuscript
+    - `plot_genealogy_tree`: return an Altair chart showing manuscript
         lifetimes and the genealogy (requires `manuscript_records`).
     - `log_likelihood` / `negative_log_likelihood`: compute the likelihood
         given per-epoch `birth_rates` and `death_rates` (stored internally as
@@ -567,8 +568,8 @@ class BirthDeathProcess:
         self,
         *,
         config: GenealogyPlotConfig | None = None,
-    ) -> go.Figure:
-        """Return a Plotly figure showing manuscript lifetimes and genealogy."""
+    ) -> alt.LayerChart:
+        """Return an Altair chart showing manuscript lifetimes and genealogy."""
         from inf_bp_texts.visualization.genealogy import (
             plot_genealogy_tree as _plot_genealogy_tree,
         )

@@ -20,9 +20,10 @@ __compile_start = time.perf_counter()
 ## Setup
 
 ```{python}
+from pathlib import Path
+
 import numpy as np
 import torch
-from pathlib import Path
 
 from inf_bp_texts.inference import fit_birth_death_processes_bayesian
 from inf_bp_texts.inference.bayesian import (
@@ -80,8 +81,8 @@ print(single_fit_result)
 ```{python}
 # Profile the fit using cProfile/pstats (replaces the %%prun cell magic)
 import cProfile
-import pstats
 import io
+import pstats
 
 prof_file = "prof-multi-epoch-bayesian-single-fit.prof"
 txt_file = "prof-multi-epoch-bayesian-single-fit.txt"
@@ -113,8 +114,8 @@ finally:
 
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_multi_epoch_bayesian_single_fit_debug.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

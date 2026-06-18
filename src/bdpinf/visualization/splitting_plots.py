@@ -1,20 +1,26 @@
-"""Plotly rendering functions for multilevel splitting simulation results."""
+"""Altair rendering functions for multilevel splitting simulation results."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
+import altair as alt
 import numpy as np
-import plotly.graph_objs as go
+import pandas as pd
 
-from inf_bp_texts.visualization.plotting import (
-    apply_professional_styling,
-    apply_tufte_axes,
-    ptolqual,
-)
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 
 if TYPE_CHECKING:
     from inf_bp_texts.simulation.splitting import ConditionedTrajectory
+
+
+def _point(color: str) -> alt.OverlayMarkDef:
+    """Line-overlay point marker that matches its line colour.
+
+    ``OverlayMarkDef`` does not inherit the parent line's colour, so it must be
+    set explicitly or the points fall back to the theme's default category.
+    """
+    return alt.OverlayMarkDef(size=40, color=color)
 
 
 def plot_conditioned_trajectories(
@@ -22,40 +28,48 @@ def plot_conditioned_trajectories(
     *,
     max_trajectories: int = 12,
     title: str = "Conditioned Trajectories",
-) -> go.Figure:
-    """Plot sample conditioned population paths."""
-    fig = go.Figure()
+) -> alt.Chart:
+    """Plot sample conditioned population paths, one coloured line per particle."""
     if not trajectories:
-        fig.add_annotation(text="No conditioned trajectories available")
-        return cast(
-            "go.Figure",
-            apply_professional_styling(
-                fig,
-                title,
-                "Time",
-                "Population size",
-            ),
+        placeholder = pd.DataFrame({"_x": [0.0], "_y": [0.0]})
+        return (
+            alt.Chart(placeholder)
+            .mark_text(text="No conditioned trajectories available", color="#777777")
+            .encode(
+                x=alt.X("_x:Q", title="Time"),
+                y=alt.Y("_y:Q", title="Population size"),
+            )
+            .properties(title=title)
         )
 
     n_show = min(max_trajectories, len(trajectories))
-    for idx in range(n_show):
-        traj = trajectories[idx]
-        color = ptolqual[idx % len(ptolqual)]
-        fig.add_trace(
-            go.Scatter(
-                x=traj.times,
-                y=traj.populations,
-                mode="lines",
-                line={"color": color, "width": 1.6},
-                name=f"Particle {traj.particle_id}",
-            ),
-        )
-
-    styled = cast(
-        "go.Figure",
-        apply_professional_styling(fig, title, "Time", "Population size"),
+    frame = pd.concat(
+        [
+            pd.DataFrame(
+                {
+                    "Time": np.asarray(trajectories[idx].times, dtype=float),
+                    "Population size": np.asarray(
+                        trajectories[idx].populations, dtype=float
+                    ),
+                    "Particle": f"Particle {trajectories[idx].particle_id}",
+                }
+            )
+            for idx in range(n_show)
+        ],
+        ignore_index=True,
     )
-    return cast("go.Figure", apply_tufte_axes(styled))
+
+    # Colour cycles through the ptolqual category range supplied by the theme.
+    return (
+        alt.Chart(frame)
+        .mark_line(strokeWidth=1.6)
+        .encode(
+            x=alt.X("Time:Q", title="Time"),
+            y=alt.Y("Population size:Q", title="Population size"),
+            color=alt.Color("Particle:N", legend=alt.Legend(title=None)),
+        )
+        .properties(title=title)
+    )
 
 
 def plot_empirical_population_mean(
@@ -63,24 +77,23 @@ def plot_empirical_population_mean(
     level_times: np.ndarray,
     mean_populations: np.ndarray,
     title: str = "Empirical Mean Population Across Levels",
-) -> go.Figure:
+) -> alt.Chart:
     """Plot empirical ensemble mean population vs level times."""
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=level_times,
-            y=mean_populations,
-            mode="lines+markers",
-            line={"color": ptolqual[0], "width": 2.0},
-            marker={"size": 6},
-            name="Empirical mean",
-        ),
+    frame = pd.DataFrame(
+        {
+            "Level time": np.asarray(level_times, dtype=float),
+            "Mean population": np.asarray(mean_populations, dtype=float),
+        }
     )
-    styled = cast(
-        "go.Figure",
-        apply_professional_styling(fig, title, "Level time", "Mean population"),
+    return (
+        alt.Chart(frame)
+        .mark_line(point=_point(PTOLQUAL[0]), strokeWidth=2, color=PTOLQUAL[0])
+        .encode(
+            x=alt.X("Level time:Q", title="Level time"),
+            y=alt.Y("Mean population:Q", title="Mean population"),
+        )
+        .properties(title=title)
     )
-    return cast("go.Figure", apply_tufte_axes(styled))
 
 
 def plot_level_survival_probabilities(
@@ -88,7 +101,7 @@ def plot_level_survival_probabilities(
     level_times: np.ndarray,
     level_survival_probabilities: np.ndarray,
     title: str = "Estimated Survival Probabilities Across Levels",
-) -> go.Figure:
+) -> alt.Chart:
     """Plot level-wise conditional survival probabilities."""
     if len(level_times) != len(level_survival_probabilities) + 1:
         msg = (
@@ -96,21 +109,22 @@ def plot_level_survival_probabilities(
         )
         raise ValueError(msg)
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=level_times[1:],
-            y=level_survival_probabilities,
-            mode="lines+markers",
-            line={"color": ptolqual[1], "width": 2.0},
-            marker={"size": 6},
-            name="Level conditional survival",
-        ),
+    frame = pd.DataFrame(
+        {
+            "Level time": np.asarray(level_times[1:], dtype=float),
+            "Probability": np.asarray(level_survival_probabilities, dtype=float),
+        }
     )
-    styled = cast(
-        "go.Figure",
-        apply_professional_styling(fig, title, "Level time", "Probability"),
+    return (
+        alt.Chart(frame)
+        .mark_line(point=_point(PTOLQUAL[1]), strokeWidth=2, color=PTOLQUAL[1])
+        .encode(
+            x=alt.X("Level time:Q", title="Level time"),
+            y=alt.Y(
+                "Probability:Q",
+                title="Probability",
+                scale=alt.Scale(domain=[0.0, 1.0]),
+            ),
+        )
+        .properties(title=title)
     )
-    styled = cast("go.Figure", apply_tufte_axes(styled))
-    styled.update_yaxes(range=[0.0, 1.0])
-    return styled

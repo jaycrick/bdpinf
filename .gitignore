@@ -241,3 +241,18 @@ docs/**/*.py
 
 # Claude Code
 .claude/settings.local.json
+
+# Skills manager artifacts (downloaded skill defs + symlinks, unrelated to this project)
+.agents/
+.claude/skills/
+data/skills/
+skills-lock.json
+
+# Great Docs build directory (ephemeral, do not commit)
+great-docs/
+
+# Great Docs versioned-build artifacts
+_great_docs_build/
+.great-docs-build/
+.great-docs-cache/
+.great-docs/

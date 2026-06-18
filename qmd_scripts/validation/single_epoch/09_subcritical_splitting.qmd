@@ -20,7 +20,8 @@ __compile_start = time.perf_counter()
 ## Why splitting is needed
 
 For a subcritical branching process with $\lambda < \mu$, extinction is typical and
-$P(\tau > T)$ becomes very small when $T$ is large. Naive direct simulation wastes
+$P(\tau > T)$ becomes very small when $T$ is large.
+Naive direct simulation wastes
 most trajectories because they hit the absorbing state $Z_t = 0$ long before $T$.
 
 Multilevel splitting introduces times
@@ -28,9 +29,9 @@ $0=t_0<t_1<\dots<t_K=T$, estimates each conditional probability
 $P(\tau>t_k\mid\tau>t_{k-1})$, and multiplies them:
 
 $$
-\widehat{P}(\tau>T)=\prod_{k=1}^{K}\widehat{p}_k,
-\qquad
-\widehat{p}_k=\frac{\#\{\text{survivors at }t_k\}}{N}.
+  \widehat{P}(\tau>T)=\prod_{k=1}^{K}\widehat{p}_k,
+  \qquad
+  \widehat{p}_k=\frac{\#\{\text{survivors at }t_k\}}{N}.
 $$
 
 Resampling survivors at each level concentrates computation on rare surviving lineages.
@@ -78,7 +79,9 @@ print(
     f"Estimated survival probability P(tau > T): {splitting_result.survival_probability_estimate:.6e}"
 )
 print(f"Final survivor bank size: {splitting_result.final_survivor_count}")
-print(f"Returned conditioned trajectories: {len(splitting_result.conditioned_trajectories)}")
+print(
+    f"Returned conditioned trajectories: {len(splitting_result.conditioned_trajectories)}"
+)
 print(
     "Product check: ",
     f"{np.prod(splitting_result.level_survival_probabilities):.6e}",
@@ -166,8 +169,8 @@ print(
 # | include: false
 import json
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 doc_name = "methods_validation_subcritical_splitting.qmd"
 project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))

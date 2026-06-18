@@ -47,3 +47,13 @@ repos:
       - id: toml-sort
         args: [--no-sort-tables, --sort-inline-arrays, --sort-inline-tables]
         files: '\.toml$'
+        exclude: ^panache\.toml$
+
+  # panache: Markdown/Quarto linting and formatting
+  - repo: https://github.com/jolars/panache-pre-commit
+    rev: v2.56.0
+    hooks:
+      - id: panache-lint
+        args: [--fix]
+      - id: panache-format
+        args: [--check]

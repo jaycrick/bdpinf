@@ -1,13 +1,23 @@
 """Tests for visualization.genealogy: DFS ordering and tree plotting."""
 
+import altair as alt
 import pandas as pd
-import plotly.graph_objs as go
 import pytest
 
 from inf_bp_texts.visualization.genealogy import (
     genealogy_dfs_order,
     plot_genealogy_tree,
 )
+
+
+def _layer_mark_types(spec: dict) -> set[str]:
+    """Collect the mark-type strings from every layer of an Altair spec dict."""
+    marks: set[str] = set()
+    for layer in spec.get("layer", []):
+        mark = layer.get("mark")
+        marks.add(mark["type"] if isinstance(mark, dict) else mark)
+    return marks
+
 
 _T = 500.0
 
@@ -48,10 +58,14 @@ class TestGenealogy:
             or frame["is_spine"].isin([True, False]).all()
         )
 
-    def test_plot_genealogy_tree_returns_figure(self) -> None:
+    def test_plot_genealogy_tree_returns_layered_rule_chart(self) -> None:
         records = _simple_records()
-        fig = plot_genealogy_tree(records, start_time=0.0, simulation_end_time=_T)
-        assert isinstance(fig, go.Figure)
+        chart = plot_genealogy_tree(records, start_time=0.0, simulation_end_time=_T)
+        assert isinstance(chart, alt.LayerChart)
+        spec = chart.to_dict()
+        assert _layer_mark_types(spec) == {"rule"}
+        # y axis is labelled by manuscript_id with the root (id 1) on top.
+        assert spec["layer"][0]["encoding"]["y"]["scale"]["domain"] == ["1", "2"]
 
     def test_genealogy_requires_single_root(self) -> None:
         two_roots = pd.DataFrame(
