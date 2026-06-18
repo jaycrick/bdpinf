@@ -63,7 +63,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   transient `models._jax` spike package and `tests/test_jax_torch_equivalence.py`
   equivalence gate; all remaining `torch` usages in test files replaced with JAX/numpy
   equivalents; updated `CLAUDE.md` design note from "PyTorch everywhere" to "JAX
-  everywhere"; basedpyright suppression comments updated to reflect JAX stub gaps.
+  everywhere"; basedpyright reaches 0 errors (fixed 6 pre-existing issues surfaced
+  by the type-check pass); `models.mathematical_derivatives` removed from `_quarto.yml`
+  API reference (module was deleted in Phase 2b.4); `scripts/bench_jax_vs_torch.py`
+  retired (benchmark data archived in `docs/design/JAX_MIGRATION_BENCHMARKS.md`).
 
 - `inference.fitting`, `inference._optimizer_runners`, `inference._fit_types`,
   `inference.uncertainty` — Phase 2c: optimizer layer migrated from PyTorch

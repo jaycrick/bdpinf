@@ -112,6 +112,24 @@ Rationale:
 4. **Torch removal is clean**: torch touches the math/optimizer/Bayesian layers
    only.  The simulation (Gillespie, numpy) is already backend-independent.
 
+## Phase 2b–2e completion (2026-06-19)
+
+The full migration is complete. Final state:
+
+- **All math kernels JIT-compiled** via `jax.jit` over `math_extinction`,
+  `math_ages`, `math_populations`, and `inference/likelihood.py`. The eager-overhead
+  slowdown observed in the Phase 2a spike does not apply; multi-epoch calls now run
+  at XLA hardware speed after a one-time compilation.
+- **Optimizer layer** replaced by `optimistix` (BFGS/L-BFGS-B via scipy) + `optax`
+  (Adam/SGD) with `jax.value_and_grad` gradients. `mathematical_derivatives.py`
+  (274 lines of hand-coded analytic gradients) deleted.
+- **Bayesian layer** ported to NumPyro NUTS (`inference/bayesian.py`).
+- **`torch` completely absent** from `src/` and `tests/`.
+  `grep -r "import torch" src/ tests/` returns nothing.
+- **Test suite**: 595 passed, 3 pre-existing failures unrelated to the migration.
+  All 10 golden-value regression tests pass.
+- **basedpyright**: 0 errors, 5 expected warnings (missing stubs for numpyro/optax).
+
 ## Raw data
 
 Full JSON at `_output/jax_torch_benchmarks.json`.
