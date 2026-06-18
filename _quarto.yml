@@ -150,12 +150,11 @@ quartodoc:
     - title: Mathematical functions
       desc: >
         Pure likelihood and probability functions. No class state; all inputs
-        and outputs are float64 tensors.
+        and outputs are float64 JAX arrays.
       contents:
         - models.math_extinction
         - models.math_ages
         - models.math_populations
-        - models.mathematical_derivatives
 
     - title: Input validation
       desc: >
