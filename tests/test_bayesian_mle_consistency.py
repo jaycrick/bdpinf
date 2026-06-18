@@ -10,7 +10,6 @@ Run explicitly with:
 
 import numpy as np
 import pytest
-import torch
 
 from inf_bp_texts.inference import (
     fit_birth_death_processes,
@@ -36,7 +35,7 @@ _TIMES_SINGLE = 1500.0
 _AGES_MULTI = np.array(
     [80.0, 200.0, 350.0, 500.0, 650.0, 720.0, 900.0, 1050.0, 1200.0, 1400.0]
 )
-_TIMES_MULTI = torch.tensor([750.0, 1500.0], dtype=torch.float64)
+_TIMES_MULTI = np.array([750.0, 1500.0], dtype=np.float64)
 
 # ---------------------------------------------------------------------------
 # Weak priors — data should dominate so posterior mean ≈ MLE
@@ -64,7 +63,7 @@ class TestBayesianMleConsistency:
     def test_single_epoch_posterior_near_mle(self) -> None:
         """Single-epoch Bayesian fit agrees with MLE birth and death rates."""
         mle = fit_birth_death_processes(
-            list_of_ages=[torch.as_tensor(_AGES_SINGLE, dtype=torch.float64)],
+            list_of_ages=[_AGES_SINGLE],
             times=_TIMES_SINGLE,
             random_seed=0,
         )
@@ -95,7 +94,7 @@ class TestBayesianMleConsistency:
     def test_multi_epoch_posterior_near_mle(self) -> None:
         """Two-epoch Bayesian fit agrees with MLE birth and death rates."""
         mle = fit_birth_death_processes(
-            list_of_ages=[torch.as_tensor(_AGES_MULTI, dtype=torch.float64)],
+            list_of_ages=[_AGES_MULTI],
             times=_TIMES_MULTI,
             random_seed=0,
         )

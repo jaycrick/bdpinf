@@ -1,7 +1,7 @@
-"""Bayesian inference utilities for birth-death process parameters using Pyro.
+"""Bayesian inference utilities for birth-death process parameters using NumPyro.
 
-This module drives full posterior inference (Pyro NUTS) over birth and death
-rates, reusing the validated PyTorch likelihood verbatim via ``pyro.factor``.
+This module drives full posterior inference (NumPyro NUTS) over birth and death
+rates, using the JAX math layer via ``numpyro.factor``.
 
 Key design choices
 ------------------
@@ -13,10 +13,19 @@ Key design choices
 * ``BayesianPriorConfig`` supports per-rate-family and per-epoch loc/scale
   overrides on top of scalar fallbacks, enabling weakly-informative priors
   that differ between birth and death rates or between epochs.
-* ``device`` on ``BayesianModelConfig`` moves all data tensors to the
-  requested device (e.g. ``"cuda"``).  When using a GPU, set
-  ``num_chains=1``; Pyro spawns OS processes for multi-chain runs, and
-  CUDA contexts are not safely forkable.
+* Multi-chain inference uses ``chain_method="vectorized"`` (JAX vmap over
+  chains) which is safe on both CPU and GPU without subprocess overhead.
+* The ``device`` field of ``BayesianModelConfig`` is accepted for API
+  compatibility but ignored: JAX uses its default backend (set via
+  ``JAX_PLATFORMS`` or ``jax.default_backend()``).
+* Data tensors in ``BayesianModelData`` are stored as **NumPy arrays** so that
+  they remain concrete (not abstract tracers) inside NumPyro's JIT-compiled
+  ``lax.while_loop``.  The model function converts them to JAX at the boundary
+  before calling the math layer.
+* The model calls ``calculate_populations_log_lik`` and the age-likelihood
+  functions *directly* (with ``_skip_normalization=True``) rather than going
+  through ``log_likelihood``, avoiding validation code that uses Python-level
+  ``float()`` / ``bool()`` / ``int()`` on JAX arrays — which fail under JIT.
 """
 
 from __future__ import annotations
@@ -24,24 +33,26 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, TypedDict, Unpack
 
+import jax
+import jax.numpy as jnp
 import numpy as np
+import numpyro
+import numpyro.distributions as dist
 import pandas as pd
-import pyro  # no type stubs — unknown members suppressed in pyproject.toml
-import pyro.distributions as dist  # no type stubs
-import torch
 from numpy.typing import NDArray
-from pyro.infer import MCMC, NUTS  # no type stubs
-from pyro.infer.mcmc.util import summary  # no type stubs
+from numpyro.infer import MCMC, NUTS
 
 from inf_bp_texts.inference.fitting import ParameterConstraints
+from inf_bp_texts.models.math_ages import (
+    calculate_non_spine_ages_log_lik,
+    calculate_spine_ages_log_lik,
+)
+from inf_bp_texts.models.math_populations import calculate_populations_log_lik
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
-from inf_bp_texts.utils import ensure_1d_torch_tensor as ensure_1d_tensor
-
-from .likelihood import log_likelihood
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +112,9 @@ class BayesianPriorConfig:
     def resolve_tensors(
         self,
         n_epochs: int,
-        device: str = "cpu",
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return ``(loc_tensor, scale_tensor)`` of shape ``[2 * n_epochs]``.
+        device: str = "cpu",  # noqa: ARG002 — kept for API compatibility
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Return ``(loc_array, scale_array)`` of shape ``[2 * n_epochs]``.
 
         Index convention: ``i < n_epochs`` → birth epoch ``i``; ``i >= n_epochs``
         → death epoch ``i - n_epochs``.
@@ -113,13 +124,12 @@ class BayesianPriorConfig:
         n_epochs : int
             Number of epochs in the model.
         device : str
-            PyTorch device string (e.g. ``"cpu"`` or ``"cuda"``).
+            Ignored (JAX uses its default backend).  Kept for API compatibility.
 
         Returns
         -------
-        tuple[torch.Tensor, torch.Tensor]
-            ``(locs, scales)`` — both float64, shape ``[2 * n_epochs]``, on
-            ``device``.
+        tuple[NDArray, NDArray]
+            ``(locs, scales)`` — both float64, shape ``[2 * n_epochs]``.
 
         """
 
@@ -127,14 +137,12 @@ class BayesianPriorConfig:
             override: float | Sequence[float] | None,
             fallback: float,
             n: int,
-        ) -> torch.Tensor:
+        ) -> NDArray[np.float64]:
             if override is None:
-                return torch.full((n,), fallback, dtype=torch.float64, device=device)
+                return np.full((n,), fallback, dtype=np.float64)
             if isinstance(override, (int, float)):
-                return torch.full(
-                    (n,), float(override), dtype=torch.float64, device=device
-                )
-            vec = torch.tensor(list(override), dtype=torch.float64, device=device)
+                return np.full((n,), float(override), dtype=np.float64)
+            vec = np.array(list(override), dtype=np.float64)
             if vec.shape[0] != n:
                 msg = (
                     f"Prior sequence length {vec.shape[0]} does not match n_epochs={n}"
@@ -147,8 +155,8 @@ class BayesianPriorConfig:
         birth_scales = _resolve(self.birth_scale, self.scale, n_epochs)
         death_scales = _resolve(self.death_scale, self.scale, n_epochs)
 
-        locs = torch.cat([birth_locs, death_locs])
-        scales = torch.cat([birth_scales, death_scales])
+        locs = np.concatenate([birth_locs, death_locs])
+        scales = np.concatenate([birth_scales, death_scales])
         return locs, scales
 
 
@@ -163,15 +171,15 @@ class BayesianMCMCConfig:
     warmup_steps : int
         NUTS adaptation (warm-up) steps; discarded.
     num_chains : int
-        Number of independent chains.  For GPU runs, use ``num_chains=1``
-        (Pyro spawns OS processes for multi-chain and CUDA contexts are not
-        safely forkable).
+        Number of independent chains.  Multiple chains are parallelised via
+        JAX vmap (``chain_method="vectorized"``), which is safe on both CPU
+        and GPU.
     target_accept_prob : float
         NUTS dual-averaging target acceptance probability.
     max_tree_depth : int
         Maximum leapfrog tree depth per step.
     jit_compile : bool
-        JIT-compile the log-potential for speed (experimental).
+        Unused (NumPyro always JIT-compiles the model).  Kept for API compat.
     disable_progressbar : bool
         Suppress the per-step progress display.
 
@@ -182,7 +190,7 @@ class BayesianMCMCConfig:
     num_chains: int = 1
     target_accept_prob: float = 0.7
     max_tree_depth: int = 10
-    jit_compile: bool = False
+    jit_compile: bool = False  # noqa: ARG002 — NumPyro always JIT-compiles
     disable_progressbar: bool = True
 
 
@@ -195,9 +203,9 @@ class BayesianModelConfig:
     is_ordered : bool
         If ``True``, the first age in each group is treated as the ancestral
         spine.
-    spine_ages : torch.Tensor | None
+    spine_ages : jax.Array | NDArray | None
         Explicit spine ages (mutually exclusive with ``is_ordered=True``).
-    population_sizes : torch.Tensor | None
+    population_sizes : jax.Array | NDArray | None
         Observed per-epoch counts.  Inferred from ``list_of_ages`` if
         ``None``.
     initial_population : int
@@ -205,34 +213,31 @@ class BayesianModelConfig:
     unbias : bool
         Condition on non-extinction when computing the population likelihood.
     rng_seed : int | None
-        Seed for ``pyro.set_rng_seed`` (reproducibility).
+        Seed for the JAX PRNG (reproducibility).
     constraints : ParameterConstraints | None
         Fixed parameters and equality groups.  When provided, only the free
-        parameters are sampled; constraints are applied *inside* the Pyro
+        parameters are sampled; constraints are applied *inside* the NumPyro
         model (not post-hoc).
     device : str
-        PyTorch device for inference (``"cpu"`` or ``"cuda"``).  All data
-        tensors are moved to this device before sampling.
-    init_log_rates : torch.Tensor | None
+        Ignored.  JAX uses its default backend (set via ``JAX_PLATFORMS``).
+        Kept for API compatibility with notebooks that pass ``device="cuda"``.
+    init_log_rates : jax.Array | NDArray | None
         Starting values for the ``free_log_rates`` sample site (shape
         ``[n_free]``).  When provided, NUTS warmup begins at this point
-        rather than sampling from the prior.  Strongly recommended when the
-        prior is diffuse and the posterior is far from the prior mean (e.g.
-        pass the log of the MLE estimates for the free parameters).  For
-        multi-chain runs a small per-chain perturbation (±0.1 in log-space)
-        is added automatically so chains explore different regions.
+        rather than sampling from the prior.  For multi-chain runs a small
+        per-chain perturbation (±0.1 in log-space) is added automatically.
 
     """
 
     is_ordered: bool = False
-    spine_ages: torch.Tensor | None = None
-    population_sizes: torch.Tensor | None = None
+    spine_ages: jax.Array | NDArray[np.float64] | None = None
+    population_sizes: jax.Array | NDArray[np.float64] | None = None
     initial_population: int = 1
     unbias: bool = True
     rng_seed: int | None = None
     constraints: ParameterConstraints | None = None
-    device: str = "cpu"
-    init_log_rates: torch.Tensor | None = None
+    device: str = "cpu"  # kept for API compat; ignored by JAX backend
+    init_log_rates: jax.Array | NDArray[np.float64] | None = None
 
 
 class BayesianFitKwargs(TypedDict, total=False):
@@ -244,31 +249,41 @@ class BayesianFitKwargs(TypedDict, total=False):
 
 
 # ---------------------------------------------------------------------------
-# Internal data container for the Pyro model
+# Internal data container for the NumPyro model
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class BayesianModelData:
-    """Normalized tensors and metadata required by ``BayesianLikelihoodModel``.
+    """Pre-validated data and metadata required by the NumPyro model.
 
-    All tensors are on the target device and float64.
+    All array fields are **NumPy** arrays (not JAX arrays).  This ensures they
+    remain concrete constants inside NumPyro's JIT-compiled ``lax.while_loop``
+    rather than becoming abstract tracers.  JAX arrays closed over inside the
+    traced model become abstract; NumPy arrays do not.
+
+    Python-level flags (``use_unknown_spine_marginal``, ``n_non_spine_ages``,
+    ``total_pop_size``) are pre-computed at construction time so the model
+    function itself contains no Python-level branching on JAX values.
     """
 
     n_epochs: int
-    non_spine_ages: torch.Tensor
-    times_tensor: torch.Tensor
-    spine_ages_tensor: torch.Tensor | None
-    population_sizes_tensor: torch.Tensor
+    non_spine_ages: NDArray[np.float64]  # pre-validated, boundary-detected
+    times: NDArray[np.float64]
+    spine_ages: NDArray[np.float64] | None  # explicit or auto-detected
+    ns: NDArray[np.int32]  # population sizes per epoch
     initial_population: int
     unbias: bool
-    # Prior tensors for the free parameters only (already sliced to free indices)
-    free_prior_locs: torch.Tensor  # shape [n_free]
-    free_prior_scales: torch.Tensor  # shape [n_free]
+    # Prior arrays for the free parameters only (already sliced to free indices)
+    free_prior_locs: NDArray[np.float64]  # shape [n_free]
+    free_prior_scales: NDArray[np.float64]  # shape [n_free]
     # Constraint metadata (precomputed for speed inside the model)
     constraints: ParameterConstraints | None
-    free_indices: list[int]  # precomputed free param indices
-    device: str
+    free_indices: list[int]
+    # Pre-computed Python-level flags (avoids Python branching on JAX tracers)
+    use_unknown_spine_marginal: bool
+    n_non_spine_ages: int  # len(non_spine_ages)
+    has_spine: bool  # spine_ages is not None
 
 
 # ---------------------------------------------------------------------------
@@ -277,37 +292,16 @@ class BayesianModelData:
 
 
 def _expand_log_rates(
-    free_log_rates: torch.Tensor,
+    free_log_rates: jax.Array,
     constraints: ParameterConstraints | None,
     n_total: int,
     free_indices: list[int],
-) -> torch.Tensor:
+) -> jax.Array:
     """Expand a ``[n_free]`` free-log-rate vector to ``[n_total]``.
 
-    This is called *inside* the Pyro model on each NUTS step, so it must be
-    differentiable with respect to ``free_log_rates``.  Fixed-param entries
-    are inserted as constants (no gradient needed); equality-group
-    non-representatives are aliased to their representative's tensor element
-    (``torch.stack`` of slices preserves the autograd graph).
-
-    Parameters
-    ----------
-    free_log_rates : torch.Tensor
-        Sampled free log-rates, shape ``[n_free]``.
-    constraints : ParameterConstraints | None
-        Constraint specification.  ``None`` → return ``free_log_rates``
-        unchanged (unconstrained case).
-    n_total : int
-        Total parameter count (``2 * n_epochs``).
-    free_indices : list[int]
-        Precomputed free-param indices (``constraints.get_free_param_indices``
-        or ``list(range(n_total))`` when unconstrained).
-
-    Returns
-    -------
-    torch.Tensor
-        Full log-rate vector, shape ``[n_total]``, on the same device and
-        dtype as ``free_log_rates``.
+    Called inside the NumPyro model on each NUTS step — must be differentiable
+    with respect to ``free_log_rates``.  Fixed-param entries are inserted as
+    constants; equality-group non-representatives are aliased via ``jnp.stack``.
 
     """
     if constraints is None:
@@ -318,55 +312,26 @@ def _expand_log_rates(
         idx: min(g) for g in constraints.equality_groups for idx in g
     }
 
-    parts: list[torch.Tensor] = []
+    parts: list[jax.Array] = []
     for idx in range(n_total):
         if idx in constraints.fixed_params:
             val = constraints.fixed_params[idx]
             log_val = math.log(val) if val > 0.0 else _LOG_ZERO
-            parts.append(
-                torch.tensor(
-                    log_val,
-                    dtype=free_log_rates.dtype,
-                    device=free_log_rates.device,
-                )
-            )
+            parts.append(jnp.array(log_val, dtype=free_log_rates.dtype))
         else:
             src = rep_of.get(idx, idx)
             parts.append(free_log_rates[pos_of[src]])
 
-    return torch.stack(parts)
+    return jnp.stack(parts)
 
 
 def _expand_log_rates_batch(
-    free_log_samples: torch.Tensor,
+    free_log_samples: NDArray[np.float64],
     constraints: ParameterConstraints | None,
     n_total: int,
     free_indices: list[int],
-) -> torch.Tensor:
-    """Expand a ``[..., n_free]`` batch of free-log-rate samples to ``[..., n_total]``.
-
-    Used in post-processing to reconstruct the full rate arrays from the single
-    ``free_log_rates`` sample site (which may cover only the constrained
-    free-parameter subspace).
-
-    Parameters
-    ----------
-    free_log_samples : torch.Tensor
-        Batched free log-rate samples, shape ``[..., n_free]``
-        (e.g. ``[n_samples, n_free]`` or ``[n_chains, n_samples, n_free]``).
-    constraints : ParameterConstraints | None
-        Constraint specification.
-    n_total : int
-        Total parameter count (``2 * n_epochs``).
-    free_indices : list[int]
-        Precomputed free-param indices.
-
-    Returns
-    -------
-    torch.Tensor
-        Expanded batch, shape ``[..., n_total]``.
-
-    """
+) -> NDArray[np.float64]:
+    """Expand a ``[..., n_free]`` batch to ``[..., n_total]`` by filling constraints."""
     if constraints is None:
         return free_log_samples
 
@@ -376,18 +341,12 @@ def _expand_log_rates_batch(
     }
 
     batch_shape = free_log_samples.shape[:-1]
-    full = torch.zeros(
-        *batch_shape,
-        n_total,
-        dtype=free_log_samples.dtype,
-        device=free_log_samples.device,
-    )
+    full = np.zeros((*batch_shape, n_total), dtype=np.float64)
 
     for idx in range(n_total):
         if idx in constraints.fixed_params:
             val = constraints.fixed_params[idx]
-            log_val = math.log(val) if val > 0.0 else _LOG_ZERO
-            full[..., idx] = log_val
+            full[..., idx] = math.log(val) if val > 0.0 else _LOG_ZERO
         else:
             src = rep_of.get(idx, idx)
             full[..., idx] = free_log_samples[..., pos_of[src]]
@@ -396,69 +355,118 @@ def _expand_log_rates_batch(
 
 
 # ---------------------------------------------------------------------------
-# Pyro model
+# NumPyro model
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class BayesianLikelihoodModel:
-    """Pickle-safe callable Pyro model for multiprocessing MCMC chains.
+    """Callable NumPyro model for MCMC chains.
 
     Samples a single ``free_log_rates`` site of shape ``[n_free]``, expands
     it to the full ``[2 * n_epochs]`` log-rate vector (applying any
-    ``ParameterConstraints`` differentiably), and injects the existing
-    PyTorch log-likelihood via ``pyro.factor``.
+    ``ParameterConstraints`` differentiably), and computes the JAX
+    log-likelihood via ``numpyro.factor``.
+
+    Data is stored as NumPy arrays in ``model_data`` to remain concrete inside
+    NumPyro's JIT-compiled ``lax.while_loop``.  Python-level flags are
+    pre-computed so the model contains no abstract-value branching.
     """
 
     model_data: BayesianModelData
 
     def __call__(self) -> None:
-        """Evaluate the Pyro model for one MCMC draw."""
-        free_log_rates = pyro.sample(
+        """Evaluate the NumPyro model for one MCMC draw."""
+        md = self.model_data
+        n_epochs = md.n_epochs
+        n_total = 2 * n_epochs
+
+        free_log_rates = numpyro.sample(
             "free_log_rates",
             dist.Normal(
-                self.model_data.free_prior_locs,
-                self.model_data.free_prior_scales,
+                # NumPy arrays → concrete JAX constants in the prior
+                jnp.asarray(md.free_prior_locs),
+                jnp.asarray(md.free_prior_scales),
             ).to_event(1),
         )
 
-        n_epochs = self.model_data.n_epochs
-        n_total = 2 * n_epochs
         full_log_rates = _expand_log_rates(
-            free_log_rates,
-            self.model_data.constraints,
-            n_total,
-            self.model_data.free_indices,
+            free_log_rates, md.constraints, n_total, md.free_indices
+        )
+        birth_rates = jnp.exp(full_log_rates[:n_epochs])
+        death_rates = jnp.exp(full_log_rates[n_epochs:])
+
+        # Convert NumPy data to JAX for computation.  These become JAX
+        # constants (not abstract tracers) when created from NumPy inside the
+        # JIT-compiled model, so all downstream math is grad-safe.
+        times_jax = jnp.asarray(md.times)
+        ns_jax = jnp.asarray(md.ns)
+
+        # Population log-likelihood (skip normalization — data pre-validated)
+        log_P_n_T = calculate_populations_log_lik(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            times=times_jax,
+            ns=ns_jax,
+            initial_population=md.initial_population,
+            unbias=md.unbias,
+            _skip_normalization=True,
         )
 
-        log_birth = full_log_rates[:n_epochs]
-        log_death = full_log_rates[n_epochs:]
+        # Ages log-likelihood.  All Python-level branching uses pre-computed
+        # flags (Python bools/ints) to avoid abstract-value errors.
+        ages_log_lik = jnp.float64(0.0)
 
-        try:
-            total_log_lik = log_likelihood(
-                birth_rates=log_birth,
-                death_rates=log_death,
-                ages=self.model_data.non_spine_ages,
-                times=self.model_data.times_tensor,
-                spine_ages=self.model_data.spine_ages_tensor,
-                ns=self.model_data.population_sizes_tensor,
-                initial_population=self.model_data.initial_population,
-                unbias=self.model_data.unbias,
-                is_ordered=False,
-                log_scale_params=True,
+        if md.use_unknown_spine_marginal and md.n_non_spine_ages > 0:
+            ages_jax = jnp.asarray(md.non_spine_ages)
+            n_ages = md.n_non_spine_ages
+            non_spine_ll = calculate_non_spine_ages_log_lik(
+                birth_rates,
+                death_rates,
+                ages_jax,
+                times=times_jax,
+                return_array=True,
+                _skip_normalization=True,
             )
-        except (ValueError, RuntimeError):
-            total_log_lik = torch.tensor(float("-inf"), dtype=torch.float64)
+            spine_ll = calculate_spine_ages_log_lik(
+                birth_rates,
+                death_rates,
+                ages=ages_jax,
+                times=times_jax,
+                return_array=True,
+                _skip_normalization=True,
+            )
+            sum_log_f = non_spine_ll.sum()
+            a = spine_ll - non_spine_ll
+            log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a.max()))) + a.max()
+            ages_log_lik = sum_log_f - jnp.log(jnp.float64(n_ages)) + log_sum_exp
 
-        # log_likelihood now returns a JAX scalar; convert to torch for Pyro
-        total_log_lik = torch.as_tensor(float(total_log_lik), dtype=torch.float64)
+        elif md.has_spine:
+            spine_jax = jnp.asarray(md.spine_ages)
+            ages_log_lik = ages_log_lik + calculate_spine_ages_log_lik(
+                birth_rates,
+                death_rates,
+                ages=spine_jax,
+                times=times_jax,
+                _skip_normalization=True,
+            )
+            if md.n_non_spine_ages > 0:
+                ages_jax = jnp.asarray(md.non_spine_ages)
+                ages_log_lik = ages_log_lik + calculate_non_spine_ages_log_lik(
+                    birth_rates,
+                    death_rates,
+                    ages_jax,
+                    times=times_jax,
+                    _skip_normalization=True,
+                )
 
-        safe_log_lik = torch.where(
-            torch.isfinite(total_log_lik),
+        total_log_lik = log_P_n_T + ages_log_lik
+        safe_log_lik = jnp.where(
+            jnp.isfinite(total_log_lik),
             total_log_lik,
-            torch.tensor(-1e20, dtype=torch.float64),
+            jnp.array(-1e20, dtype=jnp.float64),
         )
-        pyro.factor("obs_log_likelihood", safe_log_lik)
+        numpyro.factor("obs_log_likelihood", safe_log_lik)
 
 
 # ---------------------------------------------------------------------------
@@ -467,40 +475,29 @@ class BayesianLikelihoodModel:
 
 
 def _prepare_age_inputs(
-    list_of_ages: list[torch.Tensor | NDArray[np.float64] | list[float]],
+    list_of_ages: list[jax.Array | NDArray[np.float64] | list[float]],
+    times_np: NDArray[np.float64],
     *,
     is_ordered: bool,
-    spine_ages: torch.Tensor | None,
-    population_sizes: torch.Tensor | None,
-    device: str,
-) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
-    """Prepare non-spine ages, spine ages, and population-size vector.
+    spine_ages: jax.Array | NDArray[np.float64] | None,
+    population_sizes: jax.Array | NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64] | None, NDArray[np.int32], bool]:
+    """Prepare age and population data as NumPy arrays.
 
-    Parameters
-    ----------
-    list_of_ages : list
-        Age observations grouped by population/epoch.
-    is_ordered : bool
-        If ``True``, the first age of each group is the spine.
-    spine_ages : torch.Tensor | None
-        Explicit spine ages (mutually exclusive with ``is_ordered``).
-    population_sizes : torch.Tensor | None
-        Override per-group population counts.
-    device : str
-        Target device.
+    Handles spine auto-detection (ages at the final observation time) and
+    returns the ``use_unknown_spine_marginal`` flag.
 
     Returns
     -------
-    tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]
-        ``(non_spine_ages, spine_ages_tensor, population_sizes_tensor)`` — all
-        on ``device``, float64 (int64 for counts).
+    tuple
+        ``(non_spine_ages, spine_ages_or_none, ns, use_unknown_spine_marginal)``
+        All arrays are NumPy; ``ns`` has dtype int32.
 
     """
-    age_tensors = [
-        ensure_1d_tensor(torch.as_tensor(ages, dtype=torch.float64).to(device))
-        for ages in list_of_ages
+    age_arrays = [
+        np.asarray(ages, dtype=np.float64).reshape(-1) for ages in list_of_ages
     ]
-    if not age_tensors or not any(t.numel() > 0 for t in age_tensors):
+    if not age_arrays or not any(a.size > 0 for a in age_arrays):
         msg = "No valid data points for fitting"
         raise ValueError(msg)
 
@@ -508,128 +505,119 @@ def _prepare_age_inputs(
         msg = "Cannot have both is_ordered=True and spine_ages provided."
         raise ValueError(msg)
 
-    inferred_population_sizes = torch.tensor(
-        [len(ages) for ages in age_tensors],
-        dtype=torch.int64,
-        device=device,
+    inferred_ns = np.array([len(ages) for ages in age_arrays], dtype=np.int32)
+
+    spine_np: NDArray[np.float64] | None = (
+        np.asarray(spine_ages, dtype=np.float64).reshape(-1)
+        if spine_ages is not None
+        else None
     )
 
-    spine_ages_tensor: torch.Tensor | None = (
-        ensure_1d_tensor(spine_ages.to(device)) if spine_ages is not None else None
-    )
-
-    non_spine_ages: torch.Tensor
     if is_ordered:
-        spine_list: list[torch.Tensor] = []
-        non_spine_list: list[torch.Tensor] = []
-        for ages in age_tensors:
-            if len(ages) == 0:
+        spine_list: list[NDArray[np.float64]] = []
+        non_spine_list: list[NDArray[np.float64]] = []
+        for ages in age_arrays:
+            if ages.size == 0:
                 continue
             spine_list.append(ages[:1])
-            if len(ages) > 1:
+            if ages.size > 1:
                 non_spine_list.append(ages[1:])
 
-        spine_ages_tensor = (
-            torch.cat(spine_list).to(dtype=torch.float64, device=device)
-            if spine_list
-            else torch.empty(0, dtype=torch.float64, device=device)
+        spine_np = (
+            np.concatenate(spine_list) if spine_list else np.empty(0, dtype=np.float64)
         )
-        non_spine_ages = (
-            torch.cat(non_spine_list).to(dtype=torch.float64, device=device)
+        non_spine_np = (
+            np.concatenate(non_spine_list)
             if non_spine_list
-            else torch.empty(0, dtype=torch.float64, device=device)
+            else np.empty(0, dtype=np.float64)
         )
-    else:
-        non_spine_ages = torch.cat(age_tensors).to(dtype=torch.float64, device=device)
+        ns = population_sizes if population_sizes is not None else inferred_ns
+        return non_spine_np, spine_np, np.asarray(ns, dtype=np.int32), False
 
-    if population_sizes is None:
-        population_sizes_tensor = inferred_population_sizes
-    else:
-        population_sizes_tensor = torch.as_tensor(
-            population_sizes, dtype=torch.int64, device=device
-        )
-        if len(population_sizes_tensor) != len(age_tensors):
+    # Non-ordered: concatenate all ages, then do boundary detection
+    all_ages = (
+        np.concatenate(age_arrays) if age_arrays else np.empty(0, dtype=np.float64)
+    )
+    end_time = float(times_np[-1])
+
+    if spine_np is not None:
+        # Explicit spine provided — no boundary detection needed
+        ns = population_sizes if population_sizes is not None else inferred_ns
+        return all_ages, spine_np, np.asarray(ns, dtype=np.int32), False
+
+    # Boundary detection: age at final time → inferred spine
+    use_unknown_spine = True
+    if all_ages.size > 0:
+        at_final = np.isclose(all_ages, end_time)
+        n_terminal = int(at_final.sum())
+        if n_terminal > 1:
             msg = (
-                "Length of population_sizes must match list_of_ages length. "
-                f"Got {len(population_sizes_tensor)} and {len(age_tensors)}."
+                "More than one age equals the final observation time. "
+                "Exactly one spine is assumed; provide explicit spine_ages."
             )
             raise ValueError(msg)
+        if n_terminal == 1:
+            spine_np = all_ages[at_final]
+            all_ages = all_ages[~at_final]
+            use_unknown_spine = False
+        elif all_ages.size == 1:
+            spine_np = all_ages.copy()
+            all_ages = np.empty(0, dtype=np.float64)
+            use_unknown_spine = False
 
-    return non_spine_ages, spine_ages_tensor, population_sizes_tensor
+    ns = population_sizes if population_sizes is not None else inferred_ns
+    return all_ages, spine_np, np.asarray(ns, dtype=np.int32), use_unknown_spine
 
 
 def _run_nuts_mcmc(
-    model: Callable[[], None],
+    model: BayesianLikelihoodModel,
     mcmc_config: BayesianMCMCConfig,
     rng_seed: int | None,
-    device: str,
     *,
-    init_log_rates: torch.Tensor | None = None,
+    init_log_rates: jax.Array | NDArray[np.float64] | None = None,
 ) -> MCMC:
-    """Configure and run Pyro NUTS, returning the fitted MCMC object."""
-    if device != "cpu" and mcmc_config.num_chains > 1:
-        warnings.warn(
-            f"GPU device '{device}' with num_chains={mcmc_config.num_chains}: "
-            "Pyro spawns OS processes for multi-chain runs and CUDA contexts are "
-            "not safely forkable.  Set num_chains=1 for GPU inference.",
-            UserWarning,
-            stacklevel=3,
-        )
-
-    if rng_seed is not None:
-        pyro.set_rng_seed(rng_seed)
+    """Configure and run NumPyro NUTS, returning the fitted MCMC object."""
+    seed = rng_seed if rng_seed is not None else 0
+    rng_key = jax.random.PRNGKey(seed)
 
     nuts_kernel = NUTS(
         model,
         target_accept_prob=mcmc_config.target_accept_prob,
         max_tree_depth=mcmc_config.max_tree_depth,
-        jit_compile=mcmc_config.jit_compile,
-        ignore_jit_warnings=True,
     )
 
-    initial_params: dict[str, torch.Tensor] | None = None
-    if init_log_rates is not None:
-        init = init_log_rates.to(dtype=torch.float64, device=device)
-        if mcmc_config.num_chains > 1:
-            # Different per-chain start to break symmetry; ±0.1 log-space noise
-            gen = torch.Generator()
-            if rng_seed is not None:
-                gen.manual_seed(rng_seed)
-            noise = (
-                torch.randn(
-                    mcmc_config.num_chains,
-                    init.shape[0],
-                    dtype=torch.float64,
-                    device=device,
-                    generator=gen,
-                )
-                * 0.1
-            )
-            init = init.unsqueeze(0).expand(mcmc_config.num_chains, -1) + noise
-        initial_params = {"free_log_rates": init}
-
-    mp_context = "spawn" if mcmc_config.num_chains > 1 else None
     mcmc = MCMC(
         nuts_kernel,
+        num_warmup=mcmc_config.warmup_steps,
         num_samples=mcmc_config.num_samples,
-        warmup_steps=mcmc_config.warmup_steps,
         num_chains=mcmc_config.num_chains,
-        disable_progbar=mcmc_config.disable_progressbar,
-        mp_context=mp_context,
-        initial_params=initial_params,
+        chain_method="vectorized",
+        progress_bar=not mcmc_config.disable_progressbar,
     )
-    mcmc.run()
+
+    init_params: dict[str, jax.Array] | None = None
+    if init_log_rates is not None:
+        init = np.asarray(init_log_rates, dtype=np.float64)
+        n_chains = mcmc_config.num_chains
+        if n_chains > 1:
+            noise_key, rng_key = jax.random.split(rng_key)
+            noise = np.array(
+                jax.random.normal(noise_key, shape=(n_chains, init.shape[0])) * 0.1
+            )
+            init = np.broadcast_to(init, (n_chains, init.shape[0])) + noise
+        init_params = {"free_log_rates": jnp.array(init)}
+
+    mcmc.run(rng_key, init_params=init_params, extra_fields=("diverging",))
     return mcmc
 
 
-def _num_divergences_from_diagnostics(diagnostics: dict[str, Any]) -> int:
-    """Extract total divergence count from Pyro diagnostics payload."""
-    divergences = diagnostics.get("divergences", {})
-    if isinstance(divergences, dict):
-        return sum(len(chain_divs) for chain_divs in divergences.values())
-    if isinstance(divergences, Sequence):
-        return len(divergences)
-    return int(divergences) if divergences else 0
+def _num_divergences(mcmc: MCMC) -> int:
+    """Count total divergent transitions across all chains."""
+    extra = mcmc.get_extra_fields()
+    diverging = extra.get("diverging")
+    if diverging is None:
+        return 0
+    return int(jnp.sum(diverging))
 
 
 def _metric_as_array(
@@ -641,8 +629,6 @@ def _metric_as_array(
     metric_value = summary_dict.get(metric_name)
     if metric_value is None:
         return np.full(expected_length, np.nan, dtype=np.float64)
-    if isinstance(metric_value, torch.Tensor):
-        metric_value = metric_value.detach().cpu()
     metric_array = np.asarray(metric_value, dtype=np.float64)
     if metric_array.ndim == 0:
         return np.full(expected_length, float(metric_array), dtype=np.float64)
@@ -655,8 +641,8 @@ def _build_diagnostics_payload(
     n_epochs: int,
 ) -> dict[str, dict[str, NDArray[np.float64]]]:
     """Build R-hat and ESS arrays for each rate family."""
-    birth_stats = posterior_summary_by_chain["birth_rates"]
-    death_stats = posterior_summary_by_chain["death_rates"]
+    birth_stats = posterior_summary_by_chain.get("birth_rates", {})
+    death_stats = posterior_summary_by_chain.get("death_rates", {})
     return {
         "birth_rates": {
             "r_hat": _metric_as_array(birth_stats, "r_hat", n_epochs),
@@ -678,7 +664,7 @@ def mle_init_log_rates(
     mle_result: dict[str, Any],
     constraints: ParameterConstraints | None,
     n_epochs: int,
-) -> torch.Tensor:
+) -> NDArray[np.float64]:
     """Extract free log-rates from an MLE result for use as NUTS initialization.
 
     Converts the MLE birth/death rate estimates to log-space, assembles the
@@ -698,7 +684,7 @@ def mle_init_log_rates(
 
     Returns
     -------
-    torch.Tensor
+    NDArray[np.float64]
         Free log-rates, shape ``[n_free]``, float64.
 
     """
@@ -708,7 +694,7 @@ def mle_init_log_rates(
     full_rates = np.concatenate([birth, death])
     # Clamp to avoid log(0)
     full_rates = np.clip(full_rates, 1e-300, None)
-    log_full = torch.tensor(np.log(full_rates), dtype=torch.float64)
+    log_full = np.log(full_rates)
 
     if constraints is None:
         return log_full
@@ -717,20 +703,20 @@ def mle_init_log_rates(
 
 
 def fit_birth_death_processes_bayesian(
-    list_of_ages: list[torch.Tensor | NDArray[np.float64] | list[float]],
-    times: torch.Tensor | float,
+    list_of_ages: list[jax.Array | NDArray[np.float64] | list[float]],
+    times: jax.Array | NDArray[np.float64] | float,
     *,
     model_config: BayesianModelConfig | None = None,
     mcmc_config: BayesianMCMCConfig | None = None,
     prior_config: BayesianPriorConfig | None = None,
 ) -> dict[str, Any]:
-    """Fit birth-death rates using Bayesian inference with Pyro NUTS.
+    """Fit birth-death rates using Bayesian inference with NumPyro NUTS.
 
     Parameters
     ----------
-    list_of_ages : list[torch.Tensor | ndarray | list[float]]
+    list_of_ages : list[jax.Array | ndarray | list[float]]
         Age observations grouped by population/epoch.
-    times : torch.Tensor | float
+    times : jax.Array | ndarray | float
         Observation time(s) — one value per epoch.
     model_config : BayesianModelConfig | None
         Model options: ordered inputs, spine ages, population sizes, initial
@@ -768,9 +754,9 @@ def fit_birth_death_processes_bayesian(
         ``"posterior_log_samples_by_chain"``
             Same, grouped.
         ``"posterior_summary"``
-            Pyro ``summary()`` dict (rate-space, flat).
+            NumPyro ``diagnostics.summary()`` dict (rate-space, flat).
         ``"posterior_summary_by_chain"``
-            Pyro ``summary()`` dict (rate-space, by-chain).
+            Same dict (rate-space, by-chain).
         ``"diagnostics"``
             Dict ``{"birth_rates": {"r_hat", "n_eff"}, "death_rates": ...}``.
         ``"num_divergences"``
@@ -791,16 +777,22 @@ def fit_birth_death_processes_bayesian(
     mcmc_config = mcmc_config or BayesianMCMCConfig()
     prior_config = prior_config or BayesianPriorConfig()
 
-    device = model_config.device
+    if model_config.device not in ("cpu", ""):
+        warnings.warn(
+            f"BayesianModelConfig(device='{model_config.device}'): the JAX/NumPyro "
+            "backend uses its default platform (set via JAX_PLATFORMS). The device "
+            "parameter is accepted for API compatibility but has no effect.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     if model_config.initial_population <= 0:
         msg = "initial_population must be a positive integer"
         raise ValueError(msg)
 
     (times_jax,) = normalize_and_validate_inputs(times=times)
-    times_tensor = ensure_1d_tensor(times_jax).to(device)
-
-    n_epochs = len(times_tensor)
+    times_np = np.asarray(times_jax, dtype=np.float64)
+    n_epochs = int(times_np.shape[0])
     n_total = 2 * n_epochs
 
     # Validate constraints before building anything
@@ -811,33 +803,42 @@ def fit_birth_death_processes_bayesian(
     else:
         free_indices = list(range(n_total))
 
-    # Resolve prior tensors for all 2*n_epochs params, then slice to free
-    all_prior_locs, all_prior_scales = prior_config.resolve_tensors(n_epochs, device)
+    # Resolve prior arrays for all 2*n_epochs params, then slice to free
+    all_prior_locs, all_prior_scales = prior_config.resolve_tensors(n_epochs)
     free_prior_locs = all_prior_locs[free_indices]
     free_prior_scales = all_prior_scales[free_indices]
 
-    # Prepare age and population data
-    non_spine_ages, spine_ages_tensor, population_sizes_tensor = _prepare_age_inputs(
+    # Prepare age and population data (host-side; all NumPy)
+    non_spine_np, spine_np, ns_np, use_unknown_spine_marginal = _prepare_age_inputs(
         list_of_ages,
+        times_np,
         is_ordered=model_config.is_ordered,
         spine_ages=model_config.spine_ages,
         population_sizes=model_config.population_sizes,
-        device=device,
     )
+
+    if model_config.initial_population > 1 and use_unknown_spine_marginal:
+        msg = (
+            "Unknown-spine marginal is not supported for initial_population > 1. "
+            "Provide explicit spine_ages or use is_ordered=True."
+        )
+        raise ValueError(msg)
 
     model_data = BayesianModelData(
         n_epochs=n_epochs,
-        non_spine_ages=non_spine_ages,
-        times_tensor=times_tensor,
-        spine_ages_tensor=spine_ages_tensor,
-        population_sizes_tensor=population_sizes_tensor,
+        non_spine_ages=non_spine_np,
+        times=times_np,
+        spine_ages=spine_np,
+        ns=ns_np,
         initial_population=model_config.initial_population,
         unbias=model_config.unbias,
         free_prior_locs=free_prior_locs,
         free_prior_scales=free_prior_scales,
         constraints=constraints,
         free_indices=free_indices,
-        device=device,
+        use_unknown_spine_marginal=use_unknown_spine_marginal,
+        n_non_spine_ages=int(non_spine_np.shape[0]),
+        has_spine=spine_np is not None,
     )
 
     model = BayesianLikelihoodModel(model_data=model_data)
@@ -846,7 +847,6 @@ def fit_birth_death_processes_bayesian(
         model,
         mcmc_config,
         model_config.rng_seed,
-        device,
         init_log_rates=model_config.init_log_rates,
     )
 
@@ -855,10 +855,8 @@ def fit_birth_death_processes_bayesian(
     posterior_flat = mcmc.get_samples(group_by_chain=False)
     posterior_by_chain = mcmc.get_samples(group_by_chain=True)
 
-    free_flat = posterior_flat["free_log_rates"].to(dtype=torch.float64)  # [S, n_free]
-    free_by_chain = posterior_by_chain["free_log_rates"].to(
-        dtype=torch.float64
-    )  # [C, S, n_free]
+    free_flat = np.asarray(posterior_flat["free_log_rates"], dtype=np.float64)
+    free_by_chain = np.asarray(posterior_by_chain["free_log_rates"], dtype=np.float64)
 
     # Expand free params → full [2*n_epochs] log-rate vectors
     full_log_flat = _expand_log_rates_batch(
@@ -871,39 +869,31 @@ def fit_birth_death_processes_bayesian(
     # Split into birth / death
     log_birth_flat = full_log_flat[:, :n_epochs]
     log_death_flat = full_log_flat[:, n_epochs:]
-    birth_flat = torch.exp(log_birth_flat)
-    death_flat = torch.exp(log_death_flat)
+    birth_flat = np.exp(log_birth_flat)
+    death_flat = np.exp(log_death_flat)
 
     log_birth_by_chain = full_log_by_chain[..., :n_epochs]
     log_death_by_chain = full_log_by_chain[..., n_epochs:]
-    birth_by_chain = torch.exp(log_birth_by_chain)
-    death_by_chain = torch.exp(log_death_by_chain)
+    birth_by_chain = np.exp(log_birth_by_chain)
+    death_by_chain = np.exp(log_death_by_chain)
 
     # ---- Credible intervals --------------------------------------------------
 
-    quantiles = torch.tensor(
-        [0.05, 0.95], dtype=torch.float64, device=birth_flat.device
-    )
-    birth_ci = torch.quantile(birth_flat, quantiles, dim=0).transpose(0, 1)
-    death_ci = torch.quantile(death_flat, quantiles, dim=0).transpose(0, 1)
+    birth_ci = np.quantile(birth_flat, [0.05, 0.95], axis=0).T  # [n_epochs, 2]
+    death_ci = np.quantile(death_flat, [0.05, 0.95], axis=0).T
 
     # ---- Divergences ---------------------------------------------------------
 
-    diagnostics = mcmc.diagnostics()
-    num_divergences = _num_divergences_from_diagnostics(diagnostics)
+    num_divergences = _num_divergences(mcmc)
 
-    # ---- Pyro summary (rate-space, for diagnostics) -------------------------
+    # ---- Summary (rate-space, for diagnostics) ------------------------------
 
-    posterior_summary = summary(
-        {"birth_rates": birth_flat, "death_rates": death_flat},
-        prob=0.9,
-        group_by_chain=False,
-    )
-    posterior_summary_by_chain = summary(
+    # diagnostics.summary requires shape [n_chains, n_samples, ...] for ESS/R-hat
+    posterior_summary = numpyro.diagnostics.summary(  # type: ignore[no-any-return]
         {"birth_rates": birth_by_chain, "death_rates": death_by_chain},
         prob=0.9,
-        group_by_chain=True,
     )
+    posterior_summary_by_chain = posterior_summary
     diagnostics_payload = _build_diagnostics_payload(
         posterior_summary_by_chain,
         n_epochs=n_epochs,
@@ -911,25 +901,25 @@ def fit_birth_death_processes_bayesian(
 
     return {
         "success": True,
-        "birth_rates": birth_flat.mean(dim=0).cpu().numpy(),
-        "death_rates": death_flat.mean(dim=0).cpu().numpy(),
-        "birth_rates_90_ci": birth_ci.cpu().numpy(),
-        "death_rates_90_ci": death_ci.cpu().numpy(),
+        "birth_rates": birth_flat.mean(axis=0),
+        "death_rates": death_flat.mean(axis=0),
+        "birth_rates_90_ci": birth_ci,
+        "death_rates_90_ci": death_ci,
         "posterior_samples": {
-            "birth_rates": birth_flat.cpu().numpy(),
-            "death_rates": death_flat.cpu().numpy(),
+            "birth_rates": birth_flat,
+            "death_rates": death_flat,
         },
         "posterior_samples_by_chain": {
-            "birth_rates": birth_by_chain.cpu().numpy(),
-            "death_rates": death_by_chain.cpu().numpy(),
+            "birth_rates": birth_by_chain,
+            "death_rates": death_by_chain,
         },
         "posterior_log_samples": {
-            "birth_rates": log_birth_flat.cpu().numpy(),
-            "death_rates": log_death_flat.cpu().numpy(),
+            "birth_rates": log_birth_flat,
+            "death_rates": log_death_flat,
         },
         "posterior_log_samples_by_chain": {
-            "birth_rates": log_birth_by_chain.cpu().numpy(),
-            "death_rates": log_death_by_chain.cpu().numpy(),
+            "birth_rates": log_birth_by_chain,
+            "death_rates": log_death_by_chain,
         },
         "posterior_summary": posterior_summary,
         "posterior_summary_by_chain": posterior_summary_by_chain,
@@ -948,7 +938,7 @@ def fit_birth_death_processes_bayesian(
 
 def fit_birth_death_processes_bayesian_from_data_frame(
     df: pd.DataFrame,
-    times: float | NDArray[np.float64] | torch.Tensor,
+    times: float | NDArray[np.float64] | jax.Array,
     *,
     age_column: str | None = None,
     **fit_kwargs: Unpack[BayesianFitKwargs],
@@ -962,7 +952,7 @@ def fit_birth_death_processes_bayesian_from_data_frame(
     ----------
     df : pd.DataFrame
         DataFrame containing age observations.
-    times : float | ndarray | torch.Tensor
+    times : float | ndarray | jax.Array
         Observation time(s).
     age_column : str | None
         Column name containing ages.  Auto-detected if ``None``.
@@ -991,13 +981,10 @@ def fit_birth_death_processes_bayesian_from_data_frame(
         age_column = candidates[0]
 
     ages_array = df[age_column].to_numpy(dtype=np.float64, copy=True)
-    ages_tensor = torch.as_tensor(ages_array, dtype=torch.float64)
-    times_tensor = torch.as_tensor(
-        np.asarray(times, dtype=np.float64), dtype=torch.float64
-    )
+    times_array = np.asarray(times, dtype=np.float64)
 
     return fit_birth_death_processes_bayesian(
-        list_of_ages=[ages_tensor],
-        times=times_tensor,
+        list_of_ages=[ages_array],
+        times=times_array,
         **fit_kwargs,
     )
