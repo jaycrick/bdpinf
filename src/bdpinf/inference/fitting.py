@@ -30,7 +30,10 @@ from ._optimizer_runners import (
     run_first_order_optimizer,
     run_lbfgs_optimizer,
 )
-from .likelihood import negative_log_likelihood
+from .likelihood import _log_likelihood_jit_core  # pyright: ignore[reportPrivateUsage]
+from .likelihood import (
+    negative_log_likelihood,
+)
 from .uncertainty import estimate_mle_covariance
 
 
@@ -562,25 +565,67 @@ def _run_optimizer_strategies(
     log_params_initial = jnp.log(free_initial_params)
     log_params = log_params_initial
 
-    def _compute_nll(log_params_free: jax.Array) -> jax.Array:
+    # ------------------------------------------------------------------
+    # Host-side spine pre-resolution (mirrors log_likelihood lines 216-232).
+    # We resolve all data-dependent and host-side branches here once so the
+    # jitted NLL core sees only static-shape, concrete closure constants.
+    # ------------------------------------------------------------------
+    _jit_ns = population_sizes_tensor
+    _jit_times = times_tensor
+
+    if spine_ages_tensor is None and len(non_spine_ages) > 0:
+        ages_np = np.array(non_spine_ages, dtype=np.float64)
+        t_final = float(times_tensor[-1])
+        at_final = np.isclose(ages_np, t_final)
+        n_terminal = int(at_final.sum())
+        if n_terminal == 1:
+            _jit_spine: jax.Array | None = jnp.array(
+                ages_np[at_final], dtype=jnp.float64
+            )
+            _jit_non_spine = jnp.array(ages_np[~at_final], dtype=jnp.float64)
+            _use_unknown_spine = False
+        elif len(ages_np) == 1 and n_terminal == 0:
+            _jit_spine = non_spine_ages
+            _jit_non_spine = jnp.array([], dtype=jnp.float64)
+            _use_unknown_spine = False
+        else:
+            # Unknown spine: marginalize over all ages.
+            _jit_spine = None
+            _jit_non_spine = non_spine_ages
+            _use_unknown_spine = True
+    else:
+        _jit_spine = spine_ages_tensor
+        _jit_non_spine = non_spine_ages
+        _use_unknown_spine = False
+
+    # ------------------------------------------------------------------
+    # Build the jitted value-and-gradient callable.
+    # The NLL closure calls the math kernels directly with
+    # _skip_normalization=True, avoiding all host-side bool() hazards.
+    # All static info (shapes, flags, data arrays) are closure constants;
+    # only log_params_free is the traced argument.
+    # ------------------------------------------------------------------
+    def _jittable_nll(log_params_free: jax.Array) -> jax.Array:
         full_params = _apply_constraints_to_full_params(
             jnp.exp(log_params_free),
             param_constraints,
             n_total_params,
         )
-        full_log_params = jnp.log(full_params)
-        return negative_log_likelihood(
-            birth_rates=full_log_params[:n_epochs],
-            death_rates=full_log_params[n_epochs:],
-            ages=non_spine_ages,
-            times=times_tensor,
-            spine_ages=spine_ages_tensor,
-            ns=population_sizes_tensor,
+        birth_rates = full_params[:n_epochs]
+        death_rates = full_params[n_epochs:]
+        return -_log_likelihood_jit_core(
+            birth_rates=birth_rates,
+            death_rates=death_rates,
+            non_spine_ages=_jit_non_spine,
+            spine_ages=_jit_spine,
+            times=_jit_times,
+            ns=_jit_ns,
             initial_population=initial_population,
             unbias=unbias,
-            is_ordered=False,
-            log_scale_params=True,
+            use_unknown_spine_marginal=_use_unknown_spine,
         )
+
+    val_and_grad_fn = jax.jit(jax.value_and_grad(_jittable_nll))
 
     converged = False
     selected_attempt_index: int | None = None
@@ -594,7 +639,7 @@ def _run_optimizer_strategies(
             attempt_index=idx,
             log_params=log_params_initial,
             convergence_config=convergence_config,
-            compute_nll_fn=_compute_nll,
+            val_and_grad_fn=val_and_grad_fn,
         )
         attempts.append(attempt)
 
@@ -622,7 +667,7 @@ def _run_single_optimizer(
     attempt_index: int,
     log_params: jax.Array,
     convergence_config: ConvergenceConfig,
-    compute_nll_fn: Callable[[jax.Array], jax.Array],
+    val_and_grad_fn: Callable[[jax.Array], tuple[jax.Array, jax.Array]],
 ) -> tuple[OptimizerAttemptResult, jax.Array | None]:
     """Run a single optimizer strategy and handle results.
 
@@ -652,7 +697,7 @@ def _run_single_optimizer(
             param_history=attempt_param_history,
             timestamps=attempt_timestamps,
             convergence_config=convergence_config,
-            compute_nll_fn=compute_nll_fn,
+            val_and_grad_fn=val_and_grad_fn,
         )
     except (RuntimeError, ValueError) as exc:
         return (

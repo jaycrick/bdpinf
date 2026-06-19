@@ -5,6 +5,7 @@ description = "A Python platform for New Testament manuscript data and running q
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "altair>=6.0.0",
     "itables>=2.7.0",
     "jax>=0.4.38",
     "jaxtyping>=0.2.38",
@@ -21,20 +22,20 @@ dependencies = [
     "pydantic>=2.12.5",
     "scipy>=1.17.0",
     "typer>=0.24.1",
+    "vl-convert-python>=1.9.0.post1",
 ]
 
 [project.scripts]
 inf-bp-texts = "inf_bp_texts.cli:main"
 
 [dependency-groups]
-altair-migration = [
-    "altair>=5",
-    "vl-convert-python>=1.9.0.post1",
+gpu = [
+    "jax[cuda12]>=0.4.38; sys_platform == 'linux'",
 ]
 dev = [
     "basedpyright>=1.22.0",
     "great-docs>=0.14.0",
-    "isort>=7.0.0",
+    "isort>=8.0.0",
     "joblib-stubs>=1.5.3.1.20260117",
     "jupyter-cache>=1.0.1",
     "lintquarto>=0.13.1",

@@ -284,6 +284,127 @@ def log_likelihood(
     return total_log_likelihood
 
 
+def _log_likelihood_jit_core(  # pyright: ignore[reportUnusedFunction]
+    birth_rates: jnp.ndarray,
+    death_rates: jnp.ndarray,
+    non_spine_ages: jnp.ndarray,
+    spine_ages: jnp.ndarray | None,
+    times: jnp.ndarray,
+    ns: jnp.ndarray,
+    *,
+    initial_population: int = 1,
+    unbias: bool = False,
+    use_unknown_spine_marginal: bool = True,
+) -> jnp.ndarray:
+    """Jittable log-likelihood core for the MLE optimizer hot path.
+
+    Unlike ``log_likelihood``, this function contains no host-side hazards
+    (``bool(traced)``, ``np.isclose(traced)``, dynamic mask slicing).  All
+    host-side validation and spine auto-detection must be completed by the
+    caller before invoking this function.
+
+    All JAX-branching on ``use_unknown_spine_marginal``, ``spine_ages is not
+    None``, and array lengths uses Python-level conditionals that resolve at
+    XLA trace time because these flags and shapes are static closure constants.
+    Non-finite outputs are handled with ``jnp.where`` instead of early
+    ``bool()``-guarded returns.
+
+    Parameters
+    ----------
+    birth_rates, death_rates : jnp.ndarray
+        Positive-scale rates (NOT log-scale), shape ``(n_epochs,)`` float64.
+    non_spine_ages : jnp.ndarray
+        Non-spine (or all, when marginalizing) ages, shape ``(m,)`` float64.
+    spine_ages : jnp.ndarray | None
+        Explicit spine ages if known, or ``None`` when ``use_unknown_spine_marginal``
+        is True.
+    times : jnp.ndarray
+        Epoch end times, shape ``(n_epochs,)`` float64.
+    ns : jnp.ndarray
+        Population counts, shape ``(k,)`` float64.  Passed directly to
+        ``calculate_populations_log_lik``; no host-side sum is computed here
+        (closure JAX arrays are abstract inside ``jax.jit``).
+    initial_population : int
+        Initial population size (static, Python int).
+    unbias : bool
+        Condition on non-extinction for positive counts (static, Python bool).
+    use_unknown_spine_marginal : bool
+        If True, ``non_spine_ages`` contains all ages and the spine position
+        is marginalized via logsumexp.  Static Python bool resolved at trace
+        time.
+
+    Returns
+    -------
+    jnp.ndarray
+        Scalar float64 log-likelihood, or ``-inf`` for invalid parameters.
+
+    """
+    _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
+
+    log_P_n_T = calculate_populations_log_lik(
+        birth_rates=birth_rates,
+        death_rates=death_rates,
+        times=times,
+        ns=ns,
+        initial_population=initial_population,
+        unbias=unbias,
+        _skip_normalization=True,
+    )
+
+    # NOTE: do NOT call int(float(ns.sum())) here — closure JAX arrays are
+    # abstract tracers inside jax.jit.  The n_non_spine == 0 guard below
+    # makes the early-return redundant: when there are no ages, ages_log_lik
+    # stays 0.0 and the final jnp.where handles any -inf from log_P_n_T.
+    ages_log_lik = jnp.float64(0.0)
+    n_non_spine = len(non_spine_ages)  # static shape
+
+    if use_unknown_spine_marginal and n_non_spine > 0:
+        # Unknown-spine marginal: all ages are spine candidates; integrate out
+        # the spine position via logsumexp (mirrors log_likelihood lines 237-255).
+        non_spine_ll = calculate_non_spine_ages_log_lik(
+            birth_rates,
+            death_rates,
+            non_spine_ages,
+            times=times,
+            return_array=True,
+            _skip_normalization=True,
+        )
+        spine_ll = calculate_spine_ages_log_lik(
+            birth_rates,
+            death_rates,
+            ages=non_spine_ages,
+            times=times,
+            return_array=True,
+            _skip_normalization=True,
+        )
+        a = spine_ll - non_spine_ll
+        log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a.max()))) + a.max()
+        ages_log_lik = (
+            non_spine_ll.sum() - jnp.log(jnp.float64(n_non_spine)) + log_sum_exp
+        )
+    else:
+        # Known or pre-resolved spine.
+        if spine_ages is not None:
+            ages_log_lik = ages_log_lik + calculate_spine_ages_log_lik(
+                birth_rates,
+                death_rates,
+                ages=spine_ages,
+                times=times,
+                _skip_normalization=True,
+            )
+        if n_non_spine > 0:
+            ages_log_lik = ages_log_lik + calculate_non_spine_ages_log_lik(
+                birth_rates,
+                death_rates,
+                non_spine_ages,
+                times=times,
+                _skip_normalization=True,
+            )
+
+    total = log_P_n_T + ages_log_lik
+    return jnp.where(jnp.isfinite(total), total, _ninf)
+
+
 def calculate_unknown_spine_mixture_age_density(
     birth_rates: object,
     death_rates: object,

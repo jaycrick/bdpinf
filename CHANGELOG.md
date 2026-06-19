@@ -63,6 +63,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Phase 3 — JIT optimizer + CUDA packaging**: MLE optimizer hot path is now
+  JIT-compiled (`inference/fitting.py`, `inference/likelihood.py`,
+  `inference/_optimizer_runners.py`).  A jittable NLL core
+  (`_log_likelihood_jit_core`) bypasses host-side validation and `bool(traced)`
+  guards; `jax.jit(jax.value_and_grad(...))` is compiled once per fit and reused
+  across all LBFGS-B and Adam/SGD iterations, eliminating 320–870 ms per-step
+  eager overhead for multi-epoch fits (expected 3–10 000× speedup per call).
+  A `gpu` `[dependency-groups]` entry (`jax[cuda12]>=0.4.38;
+  sys_platform=="linux"`) allows opt-in CUDA install without affecting the
+  cross-platform CPU lockfile.  GPU verified attempted on A40-12Q vGPU — still
+  blocked by XLA CUDA VMM incompatibility; documented in
+  `docs/design/JAX_MIGRATION_BENCHMARKS.md`.
+
 - **Post-JIT benchmark**: added `scripts/bench_jax_jit.py` measuring explicit
   `jax.jit` speedup over the eager path on the same (epochs × n_ages) grid as
   the Phase 2a torch comparison. JIT reduces per-call NLL time from ~8–346 ms

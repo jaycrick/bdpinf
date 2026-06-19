@@ -90,9 +90,8 @@ hardware speed.  Expected Phase 2b characteristics:
   single-device workloads where Python overhead dominates).
 - Multi-epoch, large n_ages (≥100): JAX JIT expected to match or beat torch as
   vector ops dominate; `lax.scan` fuses the epoch loop into a single kernel.
-- GPU (A40): torch CUDA is available; JAX CUDA currently fails due to XLA CUDA VMM
-  incompatibility on the A40-12Q vGPU.  If resolved, GPU should give 5–20× over CPU
-  for large n_ages.
+- GPU (A40): torch CUDA is available; JAX CUDA fails due to XLA CUDA VMM
+  incompatibility on the A40-12Q vGPU (see Phase 3a results below).
 
 ### Go/no-go decision
 
@@ -181,6 +180,104 @@ Wrapping this with `jax.jit` before the optimization loop would reduce per-step
 time from ~320–870 ms to < 0.5 ms — a 3–10,000× wall-clock speedup for the
 multi-epoch fitter. The JIT cold-compile cost (a few seconds) is amortized over
 hundreds of optimizer iterations.
+
+## Phase 3a — CUDA jaxlib install + A40-12Q GPU verification (2026-06-19)
+
+### Install
+
+`jax[cuda12]>=0.4.38` was added to a `[dependency-groups] gpu` group in
+`pyproject.toml` (linux-only marker so the default CPU lock is unaffected):
+
+```toml
+[dependency-groups]
+gpu = [
+    "jax[cuda12]>=0.4.38; sys_platform == 'linux'",
+]
+```
+
+`uv sync --group gpu` (or `uv sync --all-groups`) installs `jax-cuda12-pjrt`,
+`jax-cuda12-plugin`, and the bundled NVIDIA wheel stack (`nvidia-cublas-cu12`,
+`nvidia-cudnn-cu12`, etc.) into the venv.
+
+**cuDNN pip-wheel caveat (≥9.10):** `nvidia-cudnn-cu12>=9.10` no longer ships
+`libcudnn.so.9`; it ships only extension components
+(`libcudnn_engines_tensor_ir.so.9`, `libcudnn_ext.so.9`). JAX's CUDA plugin
+loads `libcudnn.so.9` dynamically; with the 9.23.x wheel installed JAX
+reports *"Unable to load cuDNN"* and falls back to CPU. Versions `<9.10`
+(e.g. 9.9.0.52, 664 MB) include the full library and resolve this error.
+The resolved runtime issue is pinning `"nvidia-cudnn-cu12<9.10"` alongside the
+`jax[cuda12]` extra in the `gpu` group if a future JAX version relaxes the
+`>=9.8` lower-bound **and** the VMM issue is fixed.
+
+### VMM incompatibility — outcome: STILL FAILS
+
+Even after cuDNN is correctly found, XLA refuses the A40-12Q vGPU:
+
+```
+E Failed to create stream executor for device CUDA:0: Device 0 does not
+  support CUDA Virtual Memory Management (VMM).  VMM is required for device
+  memory allocation in XLA.
+```
+
+This is the same root cause as Phase 2a: XLA's stream executor unconditionally
+requires `cuMemCreate`/`cuMemMap` (CUDA Virtual Memory Management) for device
+memory, which the A40-12Q vGPU profile (`12288 MiB` virtual) does not expose to
+the guest.  The standard workarounds (`XLA_PYTHON_CLIENT_ALLOCATOR=platform`,
+`XLA_PYTHON_CLIENT_PREALLOCATE=false`) change JAX's high-level allocator policy
+*after* XLA initialises; they do not bypass the VMM check in
+`platform_util.cc:271` and have no effect.
+
+**Conclusion for Phase 3b:** NumPyro Bayesian GPU benchmarking cannot be
+completed on this host.  All subsequent benchmarking uses the CPU backend
+(`JAX_PLATFORMS=cpu`).  If access to a hardware GPU (non-vGPU) becomes
+available, re-run `uv sync --group gpu` and `python scripts/bench_jax_jit.py
+--backend gpu` to add GPU rows.
+
+## Phase 3c — JIT optimizer hot path (2026-06-19)
+
+### What changed
+
+`_log_likelihood_jit_core` (private, `inference/likelihood.py`) extracts the
+jittable math from `log_likelihood`: it calls the three math kernels directly
+with `_skip_normalization=True`, performs host-side spine pre-resolution once
+(mirrors `log_likelihood` lines 216–232), and uses `jnp.where` instead of
+`bool(traced)` guards.
+
+In `_run_optimizer_strategies` (`inference/fitting.py`):
+1. Spine is auto-detected host-side once per fit (concrete arrays).
+2. A `_jittable_nll` closure is built that calls `_log_likelihood_jit_core`
+   with static closure constants.
+3. `val_and_grad_fn = jax.jit(jax.value_and_grad(_jittable_nll))` is built
+   once; XLA compiles on the first optimizer step.
+4. `val_and_grad_fn` is passed to both LBFGS and Adam/SGD runners instead of
+   `compute_nll_fn`; the runners no longer call `jax.value_and_grad` internally.
+
+**Coverage:** `initial_population == 1` (the common case) is fully JIT'd.
+`initial_population > 1` also uses the same JIT path because the Python loop
+in `_compute_populations_log_lik_multi_start` unrolls at XLA trace time using
+the static `n0 = initial_population` constant.
+
+**JAX tracing hazard resolved (2026-06-19):** Closure JAX arrays are abstract
+tracers inside `jax.jit`, not concrete values.  The original
+`_log_likelihood_jit_core` had `int(float(ns.sum()))` (an early-return guard
+for zero population) that raised `ConcretizationTypeError` at trace time.
+This was removed: the `n_non_spine == 0` guard already short-circuits the ages
+block, and the final `jnp.where(isfinite(total), total, -inf)` handles the
+zero-population edge case identically without any host-side sum.
+
+### Expected speedup
+
+From `bench_jax_jit.py` benchmarks (Phase 2b–2e, isolated NLL closure):
+
+| epochs | eager warm (ms) | JIT warm (ms) | speedup |
+|--------|-----------------|---------------|---------|
+| 1 | 72–83 | 0.06–0.27 | 263–1,404× |
+| 2 | 816–844 | 0.12–0.46 | 1,768–7,126× |
+| 6 | 795–901 | 0.08–0.42 | 1,870–10,453× |
+
+The optimizer loop (LBFGS-B + Adam) runs hundreds of `value_and_grad` calls per
+fit; the JIT cold-compile cost (~seconds) is amortized.  End-to-end fitter
+wall-clock speedup for 6-epoch fits is expected to be 3–4 orders of magnitude.
 
 ## Raw data
 

@@ -66,9 +66,16 @@ def run_lbfgs_optimizer(
     param_history: list[list[float]],
     timestamps: list[float],
     convergence_config: ConvergenceConfig,
-    compute_nll_fn: Callable[[jax.Array], jax.Array],
+    val_and_grad_fn: Callable[[jax.Array], tuple[jax.Array, jax.Array]],
 ) -> tuple[bool, Exception | None, jax.Array | None, int]:
     """Run L-BFGS-B optimization via scipy.optimize with JAX gradients.
+
+    Parameters
+    ----------
+    val_and_grad_fn : Callable
+        Pre-built ``(params) -> (nll, grad)`` callable.  Pass a
+        ``jax.jit``-compiled callable for maximum throughput; the caller is
+        responsible for compilation.
 
     Returns
     -------
@@ -82,7 +89,7 @@ def run_lbfgs_optimizer(
     improved_once = False
     iterations = 0
 
-    val_and_grad = jax.value_and_grad(compute_nll_fn)
+    val_and_grad = val_and_grad_fn
 
     def scipy_obj(x: np.ndarray) -> tuple[float, np.ndarray]:
         """Return (nll_float, grad_numpy) for scipy.optimize."""
@@ -212,9 +219,16 @@ def run_first_order_optimizer(
     param_history: list[list[float]],
     timestamps: list[float],
     convergence_config: ConvergenceConfig,
-    compute_nll_fn: Callable[[jax.Array], jax.Array],
+    val_and_grad_fn: Callable[[jax.Array], tuple[jax.Array, jax.Array]],
 ) -> tuple[bool, Exception | None, jax.Array | None, int]:
     """Run first-order optimizer (Adam/SGD) via optax with a Python-level loop.
+
+    Parameters
+    ----------
+    val_and_grad_fn : Callable
+        Pre-built ``(params) -> (nll, grad)`` callable.  Pass a
+        ``jax.jit``-compiled callable for maximum throughput; the caller is
+        responsible for compilation.
 
     Returns
     -------
@@ -233,7 +247,7 @@ def run_first_order_optimizer(
     opt_state = tx.init(log_params)
     params = log_params
 
-    val_and_grad = jax.value_and_grad(compute_nll_fn)
+    val_and_grad = val_and_grad_fn
 
     best_nll = float("inf")
     best_params: jax.Array | None = None
