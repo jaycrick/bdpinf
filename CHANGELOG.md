@@ -49,6 +49,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `kashouh_data_exploration.qmd` --- renamed the `source` field/legend/column to
+  `Family` throughout (coverage table, parsed-date-distribution chart), and shortened
+  its values from `"Family jB"`/`"Family K"` to `"jB"`/`"k"` (kept `"other"` for the
+  remaining ALAGM-5 classifications).
+
 - `visualization.splitting_plots` (`plot_conditioned_trajectories`,
   `plot_empirical_population_mean`, `plot_level_survival_probabilities`) and
   `visualization.plotting` (`save_multi_epoch_convergence_figure`,
