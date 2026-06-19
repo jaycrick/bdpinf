@@ -49,6 +49,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `ntvmr_single_epoch_inference.qmd` and `ntvmr_birth_death_inference.qmd` --- the
+  Lectionary (group 4) subset is now fit on an epoch grid starting at **380 CE**
+  instead of 100 CE (the genre only emerges in the late 4th century), still ending by
+  2000 CE; KDE-resampled lectionary dates before 380 are clipped to the new start.
+
 - `kashouh_data_exploration.qmd` --- renamed the `source` field/legend/column to
   `Family` throughout (coverage table, parsed-date-distribution chart), and shortened
   its values from `"Family jB"`/`"Family K"` to `"jB"`/`"k"` (kept `"other"` for the
@@ -125,6 +130,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   years are identical the theoretical density overlay is now skipped entirely (with a
   warning) rather than rendered with an incorrect `bin_width = 1.0` scale factor that
   mis-scaled the curve by orders of magnitude.
+- `visualization.age_fit_plot.plot_creation_year_fit` --- the density grid no longer
+  evaluates exactly at `age == process_duration` (the spine manuscript's age is
+  deterministically the full duration, a point mass rather than a continuous density
+  value); the grid's upper bound is nudged just inside the domain instead, preventing a
+  spurious spike from dominating the overlay's scale.
 
 ### Added
 
