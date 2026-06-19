@@ -15,6 +15,25 @@ def ensure_directory(path: str) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 
 
+def format_ordinal(n: int) -> str:
+    """Format an integer with its ordinal suffix (1st, 2nd, 3rd, 4th, 11th, ...).
+
+    Examples
+    --------
+    >>> format_ordinal(2)
+    '2nd'
+    >>> format_ordinal(11)
+    '11th'
+    >>> format_ordinal(21)
+    '21st'
+
+    """
+    if 11 <= (n % 100) <= 13:
+        return f"{n}th"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
 def safe_int(value: str | None) -> int | None:
     """Convert a string to int, returning None on failure or None input."""
     try:

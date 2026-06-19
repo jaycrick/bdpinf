@@ -163,7 +163,16 @@ def plot_creation_year_fit(
     n = len(ages)
     if n > 0 and birth_rate > 0.0 and death_rate >= 0.0 and ages.size > 0:
         try:
-            age_grid = np.linspace(0.0, float(ages.max()), 400)
+            # age == process_duration is the spine manuscript's age: it is
+            # deterministically alive for the full duration, so the mixture
+            # density has a point mass there rather than a continuous value.
+            # Exclude it from the grid so it does not distort the overlay's
+            # scale.
+            process_duration = float(times[-1])
+            age_upper = float(ages.max())
+            if np.isclose(age_upper, process_duration):
+                age_upper = float(np.nextafter(process_duration, 0.0))
+            age_grid = np.linspace(0.0, age_upper, 400)
             birth_grid_rel = float(times[-1]) - age_grid
             density_years = start_time + birth_grid_rel
             density_values = np.asarray(

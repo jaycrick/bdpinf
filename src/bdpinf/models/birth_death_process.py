@@ -353,7 +353,58 @@ class BirthDeathProcess:
             records["parent_id"] = records["parent_id"].astype("Int64")
         if "manuscript_id" in records.columns:
             records["manuscript_id"] = records["manuscript_id"].astype(int)
+        self._validate_genealogy_birth_death_order(records)
         return records
+
+    @staticmethod
+    def _validate_genealogy_birth_death_order(records: pd.DataFrame) -> None:
+        """Validate that each manuscript is born during its parent's lifetime."""
+        required_columns = {"manuscript_id", "parent_id", "creation_time"}
+        if not required_columns.issubset(records.columns):
+            return
+
+        creation_by_id = dict(
+            zip(records["manuscript_id"], records["creation_time"], strict=True),
+        )
+        death_by_id = (
+            dict(zip(records["manuscript_id"], records["death_time"], strict=True))
+            if "death_time" in records.columns
+            else {}
+        )
+
+        for manuscript_id, parent_id, child_birth in zip(
+            records["manuscript_id"],
+            records["parent_id"],
+            records["creation_time"],
+            strict=True,
+        ):
+            if pd.isna(parent_id):
+                continue
+            parent_id = int(parent_id)
+            if parent_id not in creation_by_id:
+                continue
+
+            parent_birth = creation_by_id[parent_id]
+            if child_birth <= parent_birth:
+                msg = (
+                    f"manuscript {manuscript_id} has creation_time {child_birth} "
+                    f"that is not after parent {parent_id}'s creation_time "
+                    f"{parent_birth}"
+                )
+                raise ValueError(msg)
+
+            parent_death = death_by_id.get(parent_id)
+            if (
+                parent_death is not None
+                and not pd.isna(parent_death)
+                and child_birth >= parent_death
+            ):
+                msg = (
+                    f"manuscript {manuscript_id} has creation_time {child_birth} "
+                    f"that is not before parent {parent_id}'s death_time "
+                    f"{parent_death}"
+                )
+                raise ValueError(msg)
 
     def _normalize_rate_vector(
         self,

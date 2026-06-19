@@ -29,6 +29,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   log-rates from an MLE result for use as NUTS warmup start point; added
   `init_log_rates` field to `BayesianModelConfig` and per-chain ±0.1 noise for
   multi-chain runs; wider default prior (`scale=4.0`); reduced `max_tree_depth=8`.
+- `utils.format_ordinal` --- formats an integer with its ordinal suffix (`1st`,
+  `2nd`, `3rd`, `4th`, `11th`-`13th`, ...); used for century x-axis labels in
+  `manuscript_data_exploration.qmd`'s "Extant Manuscripts by Century" chart.
+- `models.birth_death_process.BirthDeathProcess` --- constructing from
+  `manuscript_records` now validates that every manuscript's `creation_time` falls
+  strictly after its parent's `creation_time` and strictly before its parent's
+  `death_time` (when set), raising `ValueError` on violation.
 
 - `visualization.date_distribution_plots.plot_date_range_kde_comparison` --- new reusable
   Altair builder for the recurring date-range figure (midpoint histogram + weighted KDE
@@ -119,6 +126,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Performance: 433 ms/call → 1.4 ms/call (310× speedup); enables practical NUTS
   sampling for multi-epoch models.  The `_integrand_surv_from_weighted_birth_time`
   helper is retained for testing.
+- `kashouh_data_exploration.qmd` --- renamed the `source` field/legend/column to
+  `Family` throughout (coverage table, parsed-date-distribution chart), and shortened
+  its values from `"Family jB"`/`"Family K"` to `"jB"`/`"k"` (kept `"other"` for the
+  remaining ALAGM-5 classifications).
+- `ntvmr_single_epoch_inference.qmd` and `ntvmr_birth_death_inference.qmd` --- the
+  Lectionary (group 4) subset is now fit on an epoch grid starting at **380 CE**
+  instead of 100 CE (the genre only emerges in the late 4th century), still ending by
+  2000 CE; KDE-resampled lectionary dates before 380 are clipped to the new start.
+- `analysis.subset_inference.build_manuscript_subsets` --- dropped the `(1–3)`/`(4)`
+  group-number suffixes from the `"Non-Lectionary"`/`"Lectionary"` subset labels (the
+  per-section labels `"Gospels (e)"`, `"Acts + Catholic Epistles (a)"`,
+  `"Pauline Epistles (p)"`, `"Revelation (r)"` are unchanged); this label flows into
+  every print statement, chart title, and table column in the two NTVMR inference
+  notebooks.
 
 - `visualization.splitting_plots` (`plot_conditioned_trajectories`,
   `plot_empirical_population_mean`, `plot_level_survival_probabilities`) and
@@ -202,6 +223,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   years are identical the theoretical density overlay is now skipped entirely (with a
   warning) rather than rendered with an incorrect `bin_width = 1.0` scale factor that
   mis-scaled the curve by orders of magnitude.
+- `visualization.age_fit_plot.plot_creation_year_fit` --- the density grid no longer
+  evaluates exactly at `age == process_duration` (the spine manuscript's age is
+  deterministically the full duration, a point mass rather than a continuous density
+  value); the grid's upper bound is nudged just inside the domain instead, preventing a
+  spurious spike from dominating the overlay's scale.
 
 ### Added
 
