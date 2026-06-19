@@ -158,8 +158,8 @@ def build_manuscript_subsets(
         return ManuscriptSubset(key=key, label=label, frame=frame)
 
     return [
-        _make("non_lectionary", "Non-Lectionary (1–3)", non_lect_mask),
-        _make("lectionary", "Lectionary (4)", lect_mask),
+        _make("non_lectionary", "Non-Lectionary", non_lect_mask),
+        _make("lectionary", "Lectionary", lect_mask),
         _make("section_e", "Gospels (e)", non_lect_mask & (df["section_e"] == 1)),
         _make(
             "section_a",

@@ -49,15 +49,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `kashouh_data_exploration.qmd` --- renamed the `source` field/legend/column to
+  `Family` throughout (coverage table, parsed-date-distribution chart), and shortened
+  its values from `"Family jB"`/`"Family K"` to `"jB"`/`"k"` (kept `"other"` for the
+  remaining ALAGM-5 classifications).
+
 - `ntvmr_single_epoch_inference.qmd` and `ntvmr_birth_death_inference.qmd` --- the
   Lectionary (group 4) subset is now fit on an epoch grid starting at **380 CE**
   instead of 100 CE (the genre only emerges in the late 4th century), still ending by
   2000 CE; KDE-resampled lectionary dates before 380 are clipped to the new start.
 
-- `kashouh_data_exploration.qmd` --- renamed the `source` field/legend/column to
-  `Family` throughout (coverage table, parsed-date-distribution chart), and shortened
-  its values from `"Family jB"`/`"Family K"` to `"jB"`/`"k"` (kept `"other"` for the
-  remaining ALAGM-5 classifications).
+- `analysis.subset_inference.build_manuscript_subsets` --- dropped the `(1–3)`/`(4)`
+  group-number suffixes from the `"Non-Lectionary"`/`"Lectionary"` subset labels (the
+  per-section labels `"Gospels (e)"`, `"Acts + Catholic Epistles (a)"`,
+  `"Pauline Epistles (p)"`, `"Revelation (r)"` are unchanged); this label flows into
+  every print statement, chart title, and table column in the two NTVMR inference
+  notebooks.
 
 - `visualization.splitting_plots` (`plot_conditioned_trajectories`,
   `plot_empirical_population_mean`, `plot_level_survival_probabilities`) and
