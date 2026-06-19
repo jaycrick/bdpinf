@@ -35,7 +35,6 @@ from typing import Any
 import altair as alt
 import numpy as np
 import pandas as pd
-import torch
 from IPython.display import display
 from joblib import Parallel, delayed
 
@@ -71,9 +70,9 @@ def sample_age_vector(
 ) -> np.ndarray:
     rng = np.random.default_rng(base_seed + sim_idx)
     sampled = simulate_bdp_ages_from_distributions(
-        birth_rate=torch.tensor(br, dtype=torch.float64),
-        death_rate=torch.tensor(dr, dtype=torch.float64),
-        max_time=torch.tensor(span, dtype=torch.float64),
+        birth_rate=float(br),
+        death_rate=float(dr),
+        max_time=float(span),
         rng=rng,
     )
     assert sampled.spine_ages is not None and sampled.non_spine_ages is not None

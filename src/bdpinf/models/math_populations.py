@@ -113,6 +113,102 @@ def _compute_populations_log_lik_multi_start(
 
 
 # ---------------------------------------------------------------------------
+# Private vectorized PMF helper
+# ---------------------------------------------------------------------------
+
+
+def calculate_populations_log_pmf(
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    ns: Float[Array, " n"],
+    times: Float[Array, " epochs"],
+    *,
+    initial_population: int = 1,
+    _skip_normalization: bool = False,
+) -> Float[Array, " n"]:
+    r"""Per-element log P(Z_T = ns[i]) for each i.
+
+    Same math as ``calculate_populations_log_lik`` but returns the shape-(m,)
+    per-element log-probability array rather than their sum.  JIT- and vmap-safe
+    with ``_skip_normalization=True``.
+
+    Parameters
+    ----------
+    birth_rates, death_rates, times : jax.Array
+        Shape (n_epochs,) float64.
+    ns : jax.Array
+        Shape (m,) float64 population counts to evaluate.
+    initial_population : int
+        Z_0. Default 1.
+
+    Returns
+    -------
+    jax.Array
+        Shape (m,) float64 log probabilities.
+
+    """
+    _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
+    _zero = jnp.float64(0.0)
+
+    ns = ensure_1d_tensor(ns)
+
+    if not _skip_normalization:
+        birth_rates, death_rates, times = normalize_and_validate_inputs(
+            birth_rates, death_rates, times
+        )
+
+    alpha_t = calculate_extinction_pr(
+        birth_rates, death_rates, times, _skip_normalization=True
+    )
+    beta_t = 1.0 - population_geometric_parameter(
+        birth_rates, death_rates, times, _skip_normalization=True
+    )
+
+    zero_mask = ns == 0
+    nonzero_mask = ~zero_mask
+
+    log_pr = jnp.zeros_like(ns, dtype=jnp.float64)
+
+    safe_alpha = jnp.where(alpha_t > 0, alpha_t, jnp.ones_like(alpha_t))
+    log_alpha_n0 = jnp.log(safe_alpha) * jnp.float64(initial_population)
+    log_pr = jnp.where(
+        zero_mask,
+        jnp.where(alpha_t > 0, log_alpha_n0, _ninf),
+        log_pr,
+    )
+
+    if initial_population == 1:
+        safe_alpha_lt1 = jnp.where(alpha_t < 1, alpha_t, jnp.zeros_like(alpha_t))
+        safe_beta_lt1 = jnp.where(beta_t < 1, beta_t, jnp.zeros_like(beta_t))
+        log_term1 = jnp.log1p(-safe_alpha_lt1)
+        log_term2 = jnp.log1p(-safe_beta_lt1)
+        log_beta = jnp.where(beta_t > 0, jnp.log(beta_t), _ninf)
+        log_term3 = jnp.where(ns == 1, _zero, (ns - 1.0) * log_beta)
+        finite_12 = (
+            (alpha_t < 1)
+            & (beta_t < 1)
+            & jnp.isfinite(log_term1)
+            & jnp.isfinite(log_term2)
+        )
+        nonzero_val = log_term1 + log_term2 + log_term3
+        log_pr = jnp.where(
+            nonzero_mask,
+            jnp.where(finite_12, nonzero_val, _ninf),
+            log_pr,
+        )
+    else:
+        log_pr = _compute_populations_log_lik_multi_start(
+            ns=ns,
+            nonzero_mask=nonzero_mask,
+            n0=initial_population,
+            alpha_t=alpha_t,
+            beta_t=beta_t,
+        )
+
+    return log_pr
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -194,83 +290,71 @@ def calculate_populations_log_lik(
             birth_rates, death_rates, times
         )
 
-    # Unified JAX-native formulas (grad-safe, works for single and multi-epoch)
+    # Delegate to the per-element PMF function for the standard path.
+    if not unbias:
+        log_pr = calculate_populations_log_pmf(
+            birth_rates,
+            death_rates,
+            ns,
+            times,
+            initial_population=initial_population,
+            _skip_normalization=True,
+        )
+        # Global validity guard: collapse to -inf if params are out of range.
+        alpha_t = calculate_extinction_pr(
+            birth_rates, death_rates, times, _skip_normalization=True
+        )
+        beta_t = 1.0 - population_geometric_parameter(
+            birth_rates, death_rates, times, _skip_normalization=True
+        )
+        valid_params = (
+            (alpha_t >= 0.0) & (alpha_t <= 1.0) & (beta_t >= 0.0) & (beta_t <= 1.0)
+        )
+        beta_zero_invalid = (beta_t <= 0) & jnp.any(ns > 1)
+        all_finite = jnp.all(jnp.isfinite(log_pr))
+        return jnp.where(
+            all_finite & valid_params & ~beta_zero_invalid, log_pr.sum(), _ninf
+        )
+
+    # unbias=True path (initial_population==1 only).
     alpha_t = calculate_extinction_pr(
         birth_rates, death_rates, times, _skip_normalization=True
     )
     beta_t = 1.0 - population_geometric_parameter(
         birth_rates, death_rates, times, _skip_normalization=True
     )
-
-    # Range validation — functional path, returns -inf
     valid_params = (
         (alpha_t >= 0.0) & (alpha_t <= 1.0) & (beta_t >= 0.0) & (beta_t <= 1.0)
     )
     beta_zero_invalid = (beta_t <= 0) & jnp.any(ns > 1)
-
     zero_mask = ns == 0
     nonzero_mask = ~zero_mask
 
-    log_pr = jnp.zeros_like(ns, dtype=jnp.float64)
-
-    # n == 0: log alpha^n0
     safe_alpha = jnp.where(alpha_t > 0, alpha_t, jnp.ones_like(alpha_t))
     log_alpha_n0 = jnp.log(safe_alpha) * jnp.float64(initial_population)
+    log_pr = jnp.zeros_like(ns, dtype=jnp.float64)
     log_pr = jnp.where(
         zero_mask,
         jnp.where(alpha_t > 0, log_alpha_n0, _ninf),
         log_pr,
     )
 
-    if unbias and initial_population == 1:
-        safe_beta_lt1 = jnp.where(beta_t < 1, beta_t, jnp.zeros_like(beta_t))
-        log_one_minus_beta = jnp.log1p(-safe_beta_lt1)
-        log_beta = jnp.where(beta_t > 0, jnp.log(beta_t), _ninf)
-        log_term3 = jnp.where(ns == 1, _zero, (ns - 1.0) * log_beta)
-        nonzero_val = log_one_minus_beta + log_term3
-        # beta_t < 1 required: safe_beta_lt1 zeroes out log1p(-beta) when beta=1
-        finite_nonzero = (
-            (beta_t < 1)
-            & jnp.isfinite(log_one_minus_beta)
-            & jnp.all(jnp.where(nonzero_mask, jnp.isfinite(log_term3), True))
-        )
-        log_pr = jnp.where(
-            nonzero_mask,
-            jnp.where(finite_nonzero, nonzero_val, _ninf),
-            log_pr,
-        )
-
-    elif initial_population == 1:
-        safe_alpha_lt1 = jnp.where(alpha_t < 1, alpha_t, jnp.zeros_like(alpha_t))
-        safe_beta_lt1 = jnp.where(beta_t < 1, beta_t, jnp.zeros_like(beta_t))
-        log_term1 = jnp.log1p(-safe_alpha_lt1)
-        log_term2 = jnp.log1p(-safe_beta_lt1)
-        log_beta = jnp.where(beta_t > 0, jnp.log(beta_t), _ninf)
-        log_term3 = jnp.where(ns == 1, _zero, (ns - 1.0) * log_beta)
-        # alpha_t < 1 and beta_t < 1 required: the safe_*_lt1 trick zeroes out
-        # the argument when the rate hits its boundary, making log1p return 0
-        # instead of -inf; the explicit bounds guard enforces the correct -inf.
-        finite_12 = (
-            (alpha_t < 1)
-            & (beta_t < 1)
-            & jnp.isfinite(log_term1)
-            & jnp.isfinite(log_term2)
-        )
-        nonzero_val = log_term1 + log_term2 + log_term3
-        log_pr = jnp.where(
-            nonzero_mask,
-            jnp.where(finite_12, nonzero_val, _ninf),
-            log_pr,
-        )
-
-    else:
-        log_pr = _compute_populations_log_lik_multi_start(
-            ns=ns,
-            nonzero_mask=nonzero_mask,
-            n0=initial_population,
-            alpha_t=alpha_t,
-            beta_t=beta_t,
-        )
+    safe_beta_lt1 = jnp.where(beta_t < 1, beta_t, jnp.zeros_like(beta_t))
+    log_one_minus_beta = jnp.log1p(-safe_beta_lt1)
+    log_beta = jnp.where(beta_t > 0, jnp.log(beta_t), _ninf)
+    log_term3 = jnp.where(ns == 1, _zero, (ns - 1.0) * log_beta)
+    nonzero_val = log_one_minus_beta + log_term3
+    # beta_t < 1 required: safe_beta_lt1 zeroes out log1p(-beta) when beta=1
+    finite_nonzero = (
+        (beta_t < 1)
+        & jnp.isfinite(log_one_minus_beta)
+        & jnp.all(jnp.where(nonzero_mask, jnp.isfinite(log_term3), True))
+    )
+    log_pr = jnp.where(
+        nonzero_mask,
+        jnp.where(finite_nonzero, nonzero_val, _ninf),
+        log_pr,
+    )
 
     all_finite = jnp.all(jnp.isfinite(log_pr))
     return jnp.where(

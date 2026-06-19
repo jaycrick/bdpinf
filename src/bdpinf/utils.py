@@ -66,9 +66,6 @@ def ensure_1d_tensor(x: object) -> jax.Array:
     Array([1., 2., 3., 4.], dtype=float64)
 
     """
-    # Torch tensors expose __array__ but must be detached first
-    if hasattr(x, "detach"):
-        x = x.detach().cpu().numpy()  # type: ignore[union-attr]
     return jnp.atleast_1d(jnp.asarray(x, dtype=jnp.float64)).reshape(-1)
 
 
@@ -97,9 +94,6 @@ def json_safe(value: object) -> object:
     # JAX arrays
     if hasattr(value, "tolist") and hasattr(value, "device"):
         return np.array(value).tolist()  # type: ignore[arg-type]
-    # Torch tensors (if still present during transition)
-    if hasattr(value, "detach") and hasattr(value, "numpy"):
-        return value.detach().cpu().numpy().tolist()  # type: ignore[union-attr]
     if isinstance(value, pd.Timestamp):
         return value.isoformat()
     if value is None:

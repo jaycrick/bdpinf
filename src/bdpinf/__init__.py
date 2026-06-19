@@ -13,6 +13,14 @@ Import the components you need directly from their respective modules.
 """
 
 import logging
+import os
+
+# When jax[cuda12] is installed but the GPU is unavailable (e.g. vGPU with VMM
+# restrictions, or subprocess workers spawned by joblib), JAX raises a fatal
+# RuntimeError during CUDA plugin discovery.  Defaulting to cpu here prevents
+# that failure in fresh subprocesses while still honouring an explicit
+# JAX_PLATFORMS=cuda set by the caller before import.
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
 import jax
 

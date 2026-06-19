@@ -165,14 +165,14 @@ rates are identical.
 ## Example
 
 ```python
-import torch
+import jax.numpy as jnp
 
 from inf_bp_texts.models import calculate_non_spine_ages_log_lik
 
-ages = torch.tensor([15.0, 60.0, 95.0], dtype=torch.float64)
-birth_rates_val = torch.tensor([0.02], dtype=torch.float64)
-death_rates_val = torch.tensor([0.01], dtype=torch.float64)
-T = torch.tensor([120.0], dtype=torch.float64)
+ages = jnp.array([15.0, 60.0, 95.0])
+birth_rates_val = jnp.array([0.02])
+death_rates_val = jnp.array([0.01])
+T = jnp.array([120.0])
 
 log_lik = calculate_non_spine_ages_log_lik(birth_rates_val, death_rates_val, ages, T)
 ```

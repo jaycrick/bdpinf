@@ -42,7 +42,6 @@ from typing import Any, cast
 import altair as alt
 import numpy as np
 import pandas as pd
-import torch
 from IPython.display import display
 from itables import show as show_table
 
@@ -51,8 +50,6 @@ from inf_bp_texts.inference.fitting import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.utils import format_table_dataframe
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
-
-torch.set_default_dtype(torch.float64)
 ```
 
 ## Simulate One Dataset
@@ -65,9 +62,9 @@ NOTEBOOK_SEED = 42  # fixed seed for reproducibility
 
 rng = np.random.default_rng(NOTEBOOK_SEED)
 sampled = simulate_bdp_ages_from_distributions(
-    birth_rate=torch.tensor(birth_rate, dtype=torch.float64),
-    death_rate=torch.tensor(death_rate, dtype=torch.float64),
-    max_time=torch.tensor(time_span, dtype=torch.float64),
+    birth_rate=float(birth_rate),
+    death_rate=float(death_rate),
+    max_time=float(time_span),
     rng=rng,
 )
 assert sampled.spine_ages is not None and sampled.non_spine_ages is not None
@@ -84,7 +81,7 @@ print(f"Population size: {len(ages)}")
 ```{python}
 # Benchmark learning rates on a log scale for both LBFGS and Adam.
 base_fit_kwargs = dict(
-    list_of_ages=[torch.as_tensor(ages, dtype=torch.float64)],
+    list_of_ages=[np.asarray(ages, dtype=np.float64)],
     times=float(time_span),
     is_ordered=True,
     perturb_initial_params_std=0.0,

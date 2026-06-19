@@ -2,7 +2,6 @@
 
 import altair as alt
 import numpy as np
-import torch
 
 from inf_bp_texts.visualization.age_fit_plot import plot_creation_year_fit
 
@@ -12,7 +11,7 @@ class TestPlotCreationYearFit:
 
     def test_returns_layered_chart_with_density_overlay(self) -> None:
         ages = np.array([10.0, 40.0, 70.0, 90.0])
-        times = torch.tensor([100.0], dtype=torch.float64)
+        times = np.array([100.0], dtype=np.float64)
 
         chart = plot_creation_year_fit(
             ages=ages,
@@ -34,7 +33,7 @@ class TestPlotCreationYearFit:
         """
         process_duration = 100.0
         ages = np.array([process_duration, 50.0, 20.0])
-        times = torch.tensor([process_duration], dtype=torch.float64)
+        times = np.array([process_duration], dtype=np.float64)
 
         chart = plot_creation_year_fit(
             ages=ages,

@@ -92,6 +92,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Results recorded in `_output/jax_jit_benchmarks.json` and
   `docs/design/JAX_MIGRATION_BENCHMARKS.md`.
 
+- **Notebook torch removal**: migrated all default-render and Bayesian notebooks
+  from `torch.tensor`/`torch.as_tensor` calls to JAX/NumPy equivalents; removed
+  `.detach().cpu().numpy()` chains from `confidence_intervals_from_log_covariance`
+  and `calculate_unknown_spine_mixture_birth_density` call sites; replaced
+  `BirthDeathProcess.manuscript_ages.numpy()` with `np.asarray(...)`. All
+  notebooks in `qmd_scripts/` and `docs/` now lint-clean without `torch`
+  installed; `kashouh_family_k_bayesian_inference.qmd` GPU detection switched
+  from `torch.cuda.is_available()` to `jax.devices()`.
+
+- **JAX_PLATFORMS CPU default in `__init__.py`**: `os.environ.setdefault("JAX_PLATFORMS", "cpu")`
+  is now set before `import jax` so that fresh subprocess workers spawned by
+  `joblib.Parallel` do not trigger a fatal CUDA initialization error when
+  `jax[cuda12]` is installed but the GPU is unavailable (e.g. on the A40-12Q
+  vGPU with XLA VMM restrictions).  Explicit `JAX_PLATFORMS=cuda` set by the
+  caller before import is still honoured.
+
+- **`models.math_populations.calculate_populations_log_pmf`**: new public helper
+  returns per-element log P(Z_T = n_i) as a shape-(m,) array instead of the sum.
+  `calculate_populations_log_lik` delegates to it for the standard
+  (`initial_population=1, unbias=False`) path, eliminating the code duplication.
+  Notebooks' population-PMF loops replaced with a single vectorised call — one JAX
+  dispatch instead of N per-support-point dispatches.
+
+- **Validation lazy error messages** (`models.validation`): error-message f-strings
+  in `_validate_times_positive` and `_validate_ages_in_range` are now computed
+  inside the failure branch, not at the call site.  Avoids materialising array
+  values into strings on the happy path.
+
+- **Removed stale torch detection** (`utils.ensure_1d_tensor`, `utils.json_safe`):
+  dropped `hasattr(x, "detach")` guard and the `torch.Tensor` branch — torch is
+  no longer a dependency.
+
 - **Phase 2e — cutover & cleanup**: removed `torch`, `torchvision`, `pyro-ppl` from
   project dependencies and `types-torch` from dev; promoted JAX stack (`jax`,
   `jaxtyping`, `numpyro`, `optax`, `optimistix`) to main dependencies; removed the

@@ -91,7 +91,6 @@ print(f"Simulations: {len(list_of_ages)}")
 from collections import Counter
 
 import altair as alt
-import torch
 from IPython.display import display
 
 from inf_bp_texts.analysis.single_epoch import summarize_fit_success
@@ -134,14 +133,9 @@ def fit_constrained_model(
         return None
 
     try:
-        _times = (
-            torch.as_tensor(config.times, dtype=torch.float64)
-            if isinstance(config.times, np.ndarray)
-            else config.times
-        )
         result = fit_birth_death_processes(
-            list_of_ages=[torch.as_tensor(ages, dtype=torch.float64)],
-            times=_times,
+            list_of_ages=[np.asarray(ages, dtype=np.float64)],
+            times=np.asarray(config.times, dtype=np.float64) if isinstance(config.times, np.ndarray) else config.times,
             is_ordered=config.is_ordered,
             perturb_initial_params_std=config.perturb_initial_params_std or 0.0,
             random_seed=config.random_seed,

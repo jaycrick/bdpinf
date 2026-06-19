@@ -2,11 +2,17 @@
 
 import math
 
+import jax.numpy as jnp
+import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
 from inf_bp_texts.inference.likelihood import log_likelihood
-from inf_bp_texts.models import BirthDeathProcess, calculate_populations_log_lik
+from inf_bp_texts.models import (
+    BirthDeathProcess,
+    calculate_populations_log_lik,
+    calculate_populations_log_pmf,
+)
 from inf_bp_texts.models.math_extinction import calculate_extinction_pr
 
 
@@ -447,6 +453,85 @@ class TestPopulationProbability:
             assert float(result) == float("-inf"), (
                 f"Case '{description}' should return -inf due to β_t = 1"
             )
+
+
+class TestPopulationsLogPmf:
+    """Test calculate_populations_log_pmf vectorised PMF."""
+
+    def test_pmf_matches_lik_elementwise(self) -> None:
+        """Vectorised PMF must equal element-wise calculate_populations_log_lik."""
+        birth_rate, death_rate, time = 0.1, 0.05, 100.0
+        ns = np.array([1, 3, 5, 10, 20], dtype=np.float64)
+
+        pmf_vec = np.asarray(
+            calculate_populations_log_pmf(
+                birth_rates=jnp.array([birth_rate]),
+                death_rates=jnp.array([death_rate]),
+                ns=jnp.array(ns),
+                times=jnp.array([time]),
+            )
+        )
+
+        for i, n in enumerate(ns):
+            expected = float(
+                calculate_populations_log_lik(
+                    birth_rate, death_rate, times=time, ns=int(n)
+                )
+            )
+            assert_allclose(
+                pmf_vec[i], expected, rtol=1e-10, err_msg=f"PMF mismatch at n={n}"
+            )
+
+    def test_pmf_sums_to_one(self) -> None:
+        """Probabilities over a wide support should sum close to 1."""
+        birth_rate, death_rate, time = (
+            0.05,
+            0.1,
+            50.0,
+        )  # subcritical so mass concentrates
+        ns = np.arange(0, 200, dtype=np.float64)
+
+        log_pmf = np.asarray(
+            calculate_populations_log_pmf(
+                birth_rates=jnp.array([birth_rate]),
+                death_rates=jnp.array([death_rate]),
+                ns=jnp.array(ns),
+                times=jnp.array([time]),
+            )
+        )
+        total = float(np.sum(np.exp(log_pmf)))
+        assert abs(total - 1.0) < 0.01, f"PMF should sum ≈ 1, got {total}"
+
+    def test_pmf_n_zero_equals_extinction(self) -> None:
+        """P(Z_T = 0) must equal the extinction probability."""
+        birth_rate, death_rate, time = 0.05, 0.1, 50.0
+        log_pmf = calculate_populations_log_pmf(
+            birth_rates=jnp.array([birth_rate]),
+            death_rates=jnp.array([death_rate]),
+            ns=jnp.array([0.0]),
+            times=jnp.array([time]),
+        )
+        expected_log_alpha = float(
+            calculate_extinction_pr(birth_rate, death_rate, time, return_log_prob=True)
+        )
+        assert_allclose(float(log_pmf[0]), expected_log_alpha, rtol=1e-10)
+
+    def test_pmf_skip_normalization_matches_normal(self) -> None:
+        """_skip_normalization=True must return the same values as the default path."""
+        birth_rates = jnp.array([0.1])
+        death_rates = jnp.array([0.05])
+        ns = jnp.array([1.0, 5.0, 10.0])
+        times = jnp.array([100.0])
+
+        normal = np.asarray(
+            calculate_populations_log_pmf(birth_rates, death_rates, ns, times)
+        )
+        skipped = np.asarray(
+            calculate_populations_log_pmf(
+                birth_rates, death_rates, ns, times, _skip_normalization=True
+            )
+        )
+        assert_allclose(normal, skipped, rtol=1e-12)
 
 
 class TestPopulationProbabilityIntegration:

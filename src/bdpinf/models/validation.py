@@ -12,10 +12,10 @@ from inf_bp_texts.utils import (
 )
 
 
-def _validate_times_positive(times: jax.Array, *, error_message: str) -> None:
+def _validate_times_positive(times: jax.Array) -> None:
     """Validate that times are strictly positive."""
     if jnp.any(times <= 0):
-        raise ValueError(error_message)
+        raise ValueError(f"times must be positive. Got times: {times}")
 
 
 def _validate_times_strictly_increasing(
@@ -24,24 +24,21 @@ def _validate_times_strictly_increasing(
     all_positive: bool = False,
 ) -> None:
     """Validate that times are strictly increasing."""
-    error_message = f"times must be strictly increasing. Got times: {times}"
     if all_positive:
         diffs = jnp.diff(jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), times]))
     else:
         diffs = jnp.diff(times)
     if jnp.any(diffs <= 0):
-        raise ValueError(error_message)
+        raise ValueError(f"times must be strictly increasing. Got times: {times}")
 
 
 def _validate_ages_in_range(
     ages: jax.Array,
     end_time: jax.Array,
-    *,
-    error_message: str,
 ) -> None:
     """Validate that ages are within [0, end_time]."""
     if jnp.any(ages < 0) or jnp.any(ages > end_time):
-        raise ValueError(error_message)
+        raise ValueError(f"ages must be in [0, {end_time}]. Got ages: {ages}")
 
 
 def _validate_rates_non_negative(
@@ -102,10 +99,7 @@ def _validate_times_properties(
 ) -> None:
     """Validate time tensor properties."""
     if require_positive:
-        _validate_times_positive(
-            times,
-            error_message=f"times must be positive. Got times: {times}",
-        )
+        _validate_times_positive(times)
     if require_increasing:
         _validate_times_strictly_increasing(
             times,
@@ -181,12 +175,6 @@ def normalize_and_validate_inputs(
             msg = "times is required for age range validation."
             raise ValueError(msg)
         end_time = tensor_map["times"][-1]
-        _validate_ages_in_range(
-            tensor_map["ages"],
-            end_time,
-            error_message=(
-                f"ages must be in [0, {end_time}]. Got ages: {tensor_map['ages']}"
-            ),
-        )
+        _validate_ages_in_range(tensor_map["ages"], end_time)
 
     return tuple(tensor_map[label] for label in labels)
