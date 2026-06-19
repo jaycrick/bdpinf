@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `utils.format_ordinal` --- formats an integer with its ordinal suffix (`1st`,
+  `2nd`, `3rd`, `4th`, `11th`-`13th`, ...); used for century x-axis labels in
+  `manuscript_data_exploration.qmd`'s "Extant Manuscripts by Century" chart.
+
 - `models.birth_death_process.BirthDeathProcess` --- constructing from
   `manuscript_records` now validates that every manuscript's `creation_time` falls
   strictly after its parent's `creation_time` and strictly before its parent's

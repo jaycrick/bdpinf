@@ -5,7 +5,29 @@ import torch
 
 from inf_bp_texts.inference.likelihood import log_likelihood
 from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.utils import ensure_1d_tensor
+from inf_bp_texts.utils import ensure_1d_tensor, format_ordinal
+
+
+class TestFormatOrdinal:
+    """Test format_ordinal suffix handling, including the 11-13 special case."""
+
+    def test_first_second_third(self) -> None:
+        assert format_ordinal(1) == "1st"
+        assert format_ordinal(2) == "2nd"
+        assert format_ordinal(3) == "3rd"
+        assert format_ordinal(4) == "4th"
+
+    def test_eleven_to_thirteen_are_th(self) -> None:
+        assert format_ordinal(11) == "11th"
+        assert format_ordinal(12) == "12th"
+        assert format_ordinal(13) == "13th"
+
+    def test_century_values(self) -> None:
+        assert format_ordinal(21) == "21st"
+        assert format_ordinal(22) == "22nd"
+        assert format_ordinal(23) == "23rd"
+        assert format_ordinal(111) == "111th"
+        assert format_ordinal(113) == "113th"
 
 
 class TestEdgeCases:
