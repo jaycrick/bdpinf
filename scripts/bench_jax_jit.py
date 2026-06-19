@@ -26,6 +26,7 @@ import typer
 
 import inf_bp_texts  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
 from inf_bp_texts import get_project_root
+from inf_bp_texts.inference import fit_birth_death_processes
 from inf_bp_texts.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
@@ -285,6 +286,118 @@ def main(
             f" {r['eager_vag_warm_s'] * 1000:>10.2f}"
             f" {r['jit_vag_warm_s'] * 1000:>10.2f}"
             f" {r['speedup_vag']:>8}×"
+        )
+
+
+N_REPEATS_FITTER_OPT = typer.Option(5, help="Warm repeats per fitter cell.")
+OUTPUT_FITTER_OPT: Path | None = typer.Option(None, help="Output JSON path.")  # pyright: ignore[reportAssignmentType]
+
+
+@app.command()
+def bench_fitter(
+    n_repeats: int = N_REPEATS_FITTER_OPT,
+    output: Path = OUTPUT_FITTER_OPT,
+) -> None:
+    """Benchmark fit_birth_death_processes end-to-end (JIT-compiled optimizer).
+
+    Each fit call builds a fresh jax.jit(value_and_grad(...)) closure.  The
+    first optimizer step within a fit triggers XLA compilation; subsequent
+    steps hit the JIT cache.  JAX also caches across fit calls that share
+    the same input shapes, so the second fit call for a given (epochs, n_ages)
+    cell avoids recompilation.
+
+    Uses LBFGS only (no Adam) and skips Hessian estimation for a clean
+    measurement of the optimizer loop.
+    """
+    default_out = get_project_root() / "_output" / "jax_jit_benchmarks.json"  # pyright: ignore[reportUnusedVariable]
+    out: Path = output if output is not None else default_out  # pyright: ignore[reportUnnecessaryComparison]
+
+    devices = [str(d) for d in jax.devices()]
+    typer.echo(f"JAX devices: {devices}")
+    typer.echo(f"n_repeats={n_repeats}, output={out}")
+
+    fitter_results = []
+
+    for n_epochs in EPOCH_CONFIGS:
+        _, _, times_jax = _make_params(n_epochs)
+        t_max = float(times_jax[-1])
+        times_np = np.array(times_jax)
+
+        for n_ages in N_AGES_CONFIGS:
+            typer.echo(f"  epochs={n_epochs}, n_ages={n_ages} ...", nl=False)
+            spine_ages_jax, non_spine_ages_jax = _make_ages(n_ages, t_max)
+            # Combine into a single flat age list (fitter auto-detects spine)
+            all_ages = np.concatenate(
+                [np.array(non_spine_ages_jax), np.array(spine_ages_jax)]
+            )
+
+            _fit_kwargs: dict[str, Any] = {
+                "optimizers": ["LBFGS"],
+                "estimate_uncertainty": False,
+                "unbias": True,
+            }
+
+            # Cold: first call — includes JIT compilation on the first optimizer step
+            t0 = time.perf_counter()
+            cold_result = fit_birth_death_processes([all_ages], times_np, **_fit_kwargs)
+            cold_s = time.perf_counter() - t0
+            _attempts = cold_result.get("optimization_result", {}).get("attempts", [])
+            cold_iters: int | None = (
+                _attempts[0].get("iterations") if _attempts else None
+            )
+
+            # Warm: n_repeats subsequent calls — JIT-compiled XLA kernel reused
+            warm_times: list[float] = []
+            for _ in range(n_repeats):
+                t0 = time.perf_counter()
+                fit_birth_death_processes([all_ages], times_np, **_fit_kwargs)
+                warm_times.append(time.perf_counter() - t0)
+
+            warm_s = float(np.mean(warm_times))
+            typer.echo(
+                f" cold={cold_s * 1000:.0f}ms warm={warm_s * 1000:.0f}ms"
+                f" (iters={cold_iters})"
+            )
+
+            fitter_results.append(
+                {
+                    "epochs": n_epochs,
+                    "n_ages": n_ages,
+                    "fitter_cold_s": round(cold_s, 3),
+                    "fitter_warm_s": round(warm_s, 3),
+                    "lbfgs_iters": cold_iters,
+                }
+            )
+
+    # Merge into existing benchmark JSON (add fitter_results key)
+    payload: dict[str, Any] = {}
+    if out.exists():
+        payload = json.loads(out.read_text())
+
+    payload["fitter_results"] = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "n_repeats": n_repeats,
+        "platform": {"jax_version": jax.__version__, "jax_devices": devices},
+        "note": (
+            "LBFGS only, estimate_uncertainty=False. "
+            "Cold includes JIT compilation on first optimizer step; "
+            "warm reuses JAX compilation cache (same input shapes)."
+        ),
+        "results": fitter_results,
+    }
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, indent=2))
+    typer.echo(f"\nFitter results written to {out}")
+
+    typer.echo("\n### End-to-end fitter wall-clock time (LBFGS, ms)")
+    typer.echo(f"{'epochs':>6} {'n_ages':>7} {'cold':>10} {'warm':>10} {'iters':>6}")
+    for r in fitter_results:
+        typer.echo(
+            f"{r['epochs']:>6} {r['n_ages']:>7}"
+            f" {r['fitter_cold_s'] * 1000:>10.0f}"
+            f" {r['fitter_warm_s'] * 1000:>10.0f}"
+            f" {str(r['lbfgs_iters']):>6}"
         )
 
 

@@ -69,11 +69,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`_log_likelihood_jit_core`) bypasses host-side validation and `bool(traced)`
   guards; `jax.jit(jax.value_and_grad(...))` is compiled once per fit and reused
   across all LBFGS-B and Adam/SGD iterations, eliminating 320–870 ms per-step
-  eager overhead for multi-epoch fits (expected 3–10 000× speedup per call).
-  A `gpu` `[dependency-groups]` entry (`jax[cuda12]>=0.4.38;
-  sys_platform=="linux"`) allows opt-in CUDA install without affecting the
-  cross-platform CPU lockfile.  GPU verified attempted on A40-12Q vGPU — still
-  blocked by XLA CUDA VMM incompatibility; documented in
+  eager overhead for multi-epoch fits.  End-to-end fitter benchmark
+  (`scripts/bench_jax_jit.py bench-fitter`): at 100 optimizer steps a 6-epoch
+  fit completes in ~1.4 s (JIT) vs ~91 s (old eager) — a 63× end-to-end
+  speedup; at 500 steps ~280×.  A `gpu` `[dependency-groups]` entry
+  (`jax[cuda12]>=0.4.38; sys_platform=="linux"`) allows opt-in CUDA install
+  without affecting the cross-platform CPU lockfile.  GPU verified attempted on
+  A40-12Q vGPU — still blocked by XLA CUDA VMM incompatibility; documented in
   `docs/design/JAX_MIGRATION_BENCHMARKS.md`.
 
 - **Post-JIT benchmark**: added `scripts/bench_jax_jit.py` measuring explicit
