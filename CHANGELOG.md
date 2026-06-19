@@ -7,6 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `models.birth_death_process.BirthDeathProcess` --- constructing from
+  `manuscript_records` now validates that every manuscript's `creation_time` falls
+  strictly after its parent's `creation_time` and strictly before its parent's
+  `death_time` (when set), raising `ValueError` on violation.
+
 - `visualization.date_distribution_plots.plot_date_range_kde_comparison` --- new reusable
   Altair builder for the recurring date-range figure (midpoint histogram + weighted KDE
   curve + resampled-date histogram), re-exported from `inf_bp_texts.visualization`

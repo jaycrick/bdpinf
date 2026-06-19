@@ -298,11 +298,11 @@ class TestBirthDeathProcessGenealogy:
                     "manuscript_id": 0,
                     "parent_id": None,
                     "creation_time": 0.0,
-                    "death_time": 0.5,
+                    "death_time": 2.5,
                     "is_spine": False,
                     "survived": False,
                     "age": np.nan,
-                    "lifespan": 0.5,
+                    "lifespan": 2.5,
                 },
                 {
                     "manuscript_id": 1,
@@ -360,7 +360,7 @@ class TestBirthDeathProcessGenealogy:
         assert order["dfs_index"].tolist() == [0, 1, 2, 3, 4]
         assert order.loc[order["is_spine"], "manuscript_id"].tolist() == [2]
         assert order.loc[order["manuscript_id"] == 2, "plot_death_time"].item() == 10.0
-        assert order.loc[order["manuscript_id"] == 0, "plot_death_time"].item() == 0.5
+        assert order.loc[order["manuscript_id"] == 0, "plot_death_time"].item() == 2.5
 
     def test_plot_genealogy_tree_builds_layered_rule_chart(self) -> None:
         process = BirthDeathProcess.from_manuscript_records(
@@ -404,6 +404,28 @@ class TestBirthDeathProcessGenealogy:
 
         with pytest.raises(ValueError, match="requires manuscript_records"):
             process.plot_genealogy_tree()
+
+    def test_rejects_child_born_before_parent(self) -> None:
+        records = self._sample_genealogy_records()
+        records.loc[records["manuscript_id"] == 1, "creation_time"] = -1.0
+
+        with pytest.raises(ValueError, match="not after parent"):
+            BirthDeathProcess.from_manuscript_records(
+                records,
+                epoch_end_times=10.0,
+                start_time=0.0,
+            )
+
+    def test_rejects_child_born_after_parent_death(self) -> None:
+        records = self._sample_genealogy_records()
+        records.loc[records["manuscript_id"] == 1, "creation_time"] = 3.0
+
+        with pytest.raises(ValueError, match="not before parent"):
+            BirthDeathProcess.from_manuscript_records(
+                records,
+                epoch_end_times=10.0,
+                start_time=0.0,
+            )
 
 
 class TestBirthDeathProcessNewick:
