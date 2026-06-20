@@ -16,20 +16,29 @@ The ``_skip_normalization`` kwarg is accepted for API compatibility but ignored
 
 import jax
 import jax.numpy as jnp
+from beartype import beartype
 from jax import lax
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, jaxtyped
 
 from inf_bp_texts.models.validation import normalize_and_validate_inputs
 from inf_bp_texts.utils import ensure_1d_tensor
 
 # ---------------------------------------------------------------------------
 # Internal helpers
+#
+# Functions below this point are only ever called with already-normalised
+# jax.Array values (never the public API's loose scalar/list convenience
+# inputs), so their jaxtyping shapes are runtime-enforced via beartype. Public
+# functions keep loose ``Float[Array, ...]`` annotations as documentation of
+# their post-normalisation contract -- enforcing them would reject the
+# scalar/list inputs ``normalize_and_validate_inputs`` is designed to accept.
 # ---------------------------------------------------------------------------
 
 _ATOL_CRITICAL: float = 1e-10
 
 
-def _epoch_starts(times: jax.Array) -> jax.Array:
+@jaxtyped(typechecker=beartype)
+def _epoch_starts(times: Float[Array, " epochs"]) -> Float[Array, " epochs"]:
     """Return epoch start times given epoch end times."""
     return jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), times[:-1]])
 
@@ -39,6 +48,7 @@ def _epoch_starts(times: jax.Array) -> jax.Array:
 # ---------------------------------------------------------------------------
 
 
+@jaxtyped(typechecker=beartype)
 def pr_extinction_numerator(
     birth_rates: Float[Array, " epochs"],
     death_rates: Float[Array, " epochs"],
@@ -181,12 +191,13 @@ def calculate_log_lik_lifetimes(
     return log_liks if as_array else log_liks.sum()
 
 
+@jaxtyped(typechecker=beartype)
 def _analytic_log_pr_extinction_per_lifetime(
-    lifetimes: jax.Array,
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    times: jax.Array,
-) -> jax.Array:
+    lifetimes: Float[Array, " n"],
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    times: Float[Array, " epochs"],
+) -> Float[Array, " n"]:
     r"""Closed-form log P(offspring extinct | ancestor lifetime s), vectorised.
 
     The backward recurrence for ``tail`` is expressed as a ``lax.scan``

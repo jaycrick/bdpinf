@@ -13,7 +13,8 @@ All inputs are assumed float64 (``jax_enable_x64`` is set in __init__.py).
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from beartype import beartype
+from jaxtyping import Array, Float, jaxtyped
 
 from inf_bp_texts.models.math_extinction import (
     calculate_log_lik_initial_lifetimes_given_extinction,
@@ -24,14 +25,20 @@ from inf_bp_texts.utils import ensure_1d_tensor
 
 # ---------------------------------------------------------------------------
 # Internal helpers
+#
+# _reverse_time is only ever called with already-normalised jax.Array values
+# (never the public API's loose scalar/list convenience inputs), so its
+# jaxtyping shape is runtime-enforced via beartype -- see the equivalent note
+# in math_extinction.py.
 # ---------------------------------------------------------------------------
 
 
+@jaxtyped(typechecker=beartype)
 def _reverse_time(
-    birth_rates: jax.Array,
-    death_rates: jax.Array,
-    times: jax.Array,
-) -> tuple[jax.Array, jax.Array, jax.Array]:
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    times: Float[Array, " epochs"],
+) -> tuple[Float[Array, " epochs"], Float[Array, " epochs"], Float[Array, " epochs"]]:
     r"""Time-reversal transform for multi-epoch likelihood.
 
     Parameters

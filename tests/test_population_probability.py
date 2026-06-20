@@ -2,6 +2,7 @@
 
 import math
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -532,6 +533,57 @@ class TestPopulationsLogPmf:
             )
         )
         assert_allclose(normal, skipped, rtol=1e-12)
+
+    def test_pmf_initial_population_gt_one_matches_log_lik(self) -> None:
+        """Vectorised n0>1 path must match the per-element formula, incl. n=0."""
+        birth_rate, death_rate, time = 0.2, 0.1, 1.0
+        n0 = 5
+        ns = np.array([0.0, 1.0, 4.0, 5.0], dtype=np.float64)
+
+        pmf_vec = np.asarray(
+            calculate_populations_log_pmf(
+                birth_rates=jnp.array([birth_rate]),
+                death_rates=jnp.array([death_rate]),
+                ns=jnp.array(ns),
+                times=jnp.array([time]),
+                initial_population=n0,
+            )
+        )
+
+        for i, n in enumerate(ns):
+            expected = float(
+                calculate_populations_log_lik(
+                    birth_rate, death_rate, times=time, ns=int(n), initial_population=n0
+                )
+            )
+            assert_allclose(
+                pmf_vec[i], expected, rtol=1e-10, err_msg=f"PMF mismatch at n={n}"
+            )
+
+    def test_pmf_initial_population_gt_one_is_jittable(self) -> None:
+        """Regression: the n0>1 path must trace under jax.jit/make_jaxpr.
+
+        Previously broke tracing via per-element int()/bool() materialization
+        in a Python loop.
+        """
+        birth_rates = jnp.array([0.2])
+        death_rates = jnp.array([0.1])
+        ns = jnp.array([0.0, 1.0, 4.0, 5.0])
+        times = jnp.array([1.0])
+
+        def fn(
+            b: jnp.ndarray, d: jnp.ndarray, n: jnp.ndarray, t: jnp.ndarray
+        ) -> jnp.ndarray:
+            return calculate_populations_log_pmf(
+                b, d, n, t, initial_population=5, _skip_normalization=True
+            )
+
+        jaxpr = jax.make_jaxpr(fn)(birth_rates, death_rates, ns, times)
+        assert jaxpr is not None
+
+        jitted = np.asarray(jax.jit(fn)(birth_rates, death_rates, ns, times))
+        eager = np.asarray(fn(birth_rates, death_rates, ns, times))
+        assert_allclose(jitted, eager, rtol=1e-12)
 
 
 class TestPopulationProbabilityIntegration:

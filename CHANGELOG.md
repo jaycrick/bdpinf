@@ -7,40 +7,59 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- `inference._optimizer_runners` — L-BFGS-B `ftol` was divided by `1e-8`
+- `inference._optimizer_runners` --- L-BFGS-B `ftol` was divided by `1e-8`
   (yielding `ftol=10`), causing scipy to stop after a single iteration and
   triggering false convergence failures for large-NLL problems (e.g. six-epoch
-  manuscript fits).  Fixed by passing `ftol` directly and accepting
+  manuscript fits).
+  Fixed by passing `ftol` directly and accepting
   `opt_result.success` as a valid convergence signal alongside the gradient and
   absolute-NLL-change criteria.
+- `models.math_populations` --- `calculate_populations_log_pmf`'s
+  `initial_population > 1` path used a Python loop with per-element
+  `int()`/`bool()` casts that broke under `jax.jit`/`jax.make_jaxpr`; replaced
+  with `jax.vmap`, making the function jit-compatible for all
+  `initial_population` values with identical numerical output.
 
 ### Added
 
-- `inference.bayesian` — extended `BayesianPriorConfig` with per-family loc/scale
-  (`birth_loc`, `birth_scale`, `death_loc`, `death_scale`); added `constraints:
-  ParameterConstraints | None` and `device: str` to `BayesianModelConfig` so NUTS
+- `models.math_extinction`/`math_ages`/`math_populations` --- runtime
+  shape/dtype enforcement via `@jaxtyped(typechecker=beartype)` on the
+  internal, array-only helper functions (`_epoch_starts`,
+  `pr_extinction_numerator`, `_analytic_log_pr_extinction_per_lifetime`,
+  `_reverse_time`, `_compute_populations_log_lik_multi_start`); `beartype` is
+  now a runtime dependency.
+
+- `inference.bayesian` --- extended `BayesianPriorConfig` with per-family loc/scale
+  (`birth_loc`, `birth_scale`, `death_loc`, `death_scale`); added `constraints:   ParameterConstraints | None` and `device: str` to `BayesianModelConfig` so NUTS
   samples only free log-rates and expands them inside the model (statistically
   correct in-model constraints, replacing post-hoc sample projection); GPU/CUDA
   device support with a `num_chains > 1` warning; `mp_context="spawn"` for
-  multi-chain runs to avoid PyTorch autograd + fork incompatibility.  Result dict
+  multi-chain runs to avoid PyTorch autograd + fork incompatibility.
+  Result dict
   adds `posterior_log_samples`, `posterior_log_samples_by_chain`, `n_epochs`.
-- `qmd_scripts/core_analysis/04_bayesian/` — five Bayesian inference notebooks:
+
+- `qmd_scripts/core_analysis/04_bayesian/` --- five Bayesian inference notebooks:
   `kashouh_family_k_bayesian_inference.qmd` (rewritten; in-model constraints, CPU/GPU
   benchmark), `kashouh_single_epoch_bayesian.qmd`, `ntvmr_single_epoch_bayesian.qmd`,
   `ntvmr_birth_death_bayesian.qmd` (six-epoch), `ntvmr_initial_population_bayesian.qmd`
   (N₀=150 sensitivity).
-- `tests/test_regression_likelihoods.py` — multi-epoch (2-epoch) golden-value
+
+- `tests/test_regression_likelihoods.py` --- multi-epoch (2-epoch) golden-value
   regression fixtures for spine ages, non-spine ages, population, and combined
   log-likelihood.
-- `tests/test_bayesian_mle_consistency.py` — MLE-vs-posterior consistency baseline
+
+- `tests/test_bayesian_mle_consistency.py` --- MLE-vs-posterior consistency baseline
   (marked `slow`).
-- `inference.bayesian` — `mle_init_log_rates()` helper extracts free-parameter
+
+- `inference.bayesian` --- `mle_init_log_rates()` helper extracts free-parameter
   log-rates from an MLE result for use as NUTS warmup start point; added
   `init_log_rates` field to `BayesianModelConfig` and per-chain ±0.1 noise for
   multi-chain runs; wider default prior (`scale=4.0`); reduced `max_tree_depth=8`.
+
 - `utils.format_ordinal` --- formats an integer with its ordinal suffix (`1st`,
   `2nd`, `3rd`, `4th`, `11th`-`13th`, ...); used for century x-axis labels in
   `manuscript_data_exploration.qmd`'s "Extant Manuscripts by Century" chart.
+
 - `models.birth_death_process.BirthDeathProcess` --- constructing from
   `manuscript_records` now validates that every manuscript's `creation_time` falls
   strictly after its parent's `creation_time` and strictly before its parent's
@@ -79,25 +98,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **Phase 3 — JIT optimizer + CUDA packaging**: MLE optimizer hot path is now
+- **Phase 3 --- JIT optimizer + CUDA packaging**: MLE optimizer hot path is now
   JIT-compiled (`inference/fitting.py`, `inference/likelihood.py`,
-  `inference/_optimizer_runners.py`).  A jittable NLL core
+  `inference/_optimizer_runners.py`).
+  A jittable NLL core
   (`_log_likelihood_jit_core`) bypasses host-side validation and `bool(traced)`
   guards; `jax.jit(jax.value_and_grad(...))` is compiled once per fit and reused
-  across all LBFGS-B and Adam/SGD iterations, eliminating 320–870 ms per-step
-  eager overhead for multi-epoch fits.  End-to-end fitter benchmark
+  across all LBFGS-B and Adam/SGD iterations, eliminating 320--870 ms per-step
+  eager overhead for multi-epoch fits.
+  End-to-end fitter benchmark
   (`scripts/bench_jax_jit.py bench-fitter`): at 100 optimizer steps a 6-epoch
-  fit completes in ~1.4 s (JIT) vs ~91 s (old eager) — a 63× end-to-end
-  speedup; at 500 steps ~280×.  A `gpu` `[dependency-groups]` entry
+  fit completes in \~1.4 s (JIT) vs \~91 s (old eager) --- a 63× end-to-end
+  speedup; at 500 steps \~280×.
+  A `gpu` `[dependency-groups]` entry
   (`jax[cuda12]>=0.4.38; sys_platform=="linux"`) allows opt-in CUDA install
-  without affecting the cross-platform CPU lockfile.  GPU verified attempted on
-  A40-12Q vGPU — still blocked by XLA CUDA VMM incompatibility; documented in
+  without affecting the cross-platform CPU lockfile.
+  GPU verified attempted on
+  A40-12Q vGPU --- still blocked by XLA CUDA VMM incompatibility; documented in
   `docs/design/JAX_MIGRATION_BENCHMARKS.md`.
 
 - **Post-JIT benchmark**: added `scripts/bench_jax_jit.py` measuring explicit
   `jax.jit` speedup over the eager path on the same (epochs × n_ages) grid as
-  the Phase 2a torch comparison. JIT reduces per-call NLL time from ~8–346 ms
-  (eager) to < 0.5 ms (warm JIT) — 65×–10,453× speedup depending on epoch count.
+  the Phase 2a torch comparison.
+  JIT reduces per-call NLL time from \~8--346 ms
+  (eager) to < 0.5 ms (warm JIT) --- 65×--10,453× speedup depending on epoch count.
   Results recorded in `_output/jax_jit_benchmarks.json` and
   `docs/design/JAX_MIGRATION_BENCHMARKS.md`.
 
@@ -105,7 +129,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   from `torch.tensor`/`torch.as_tensor` calls to JAX/NumPy equivalents; removed
   `.detach().cpu().numpy()` chains from `confidence_intervals_from_log_covariance`
   and `calculate_unknown_spine_mixture_birth_density` call sites; replaced
-  `BirthDeathProcess.manuscript_ages.numpy()` with `np.asarray(...)`. All
+  `BirthDeathProcess.manuscript_ages.numpy()` with `np.asarray(...)`.
+  All
   notebooks in `qmd_scripts/` and `docs/` now lint-clean without `torch`
   installed; `kashouh_family_k_bayesian_inference.qmd` GPU detection switched
   from `torch.cuda.is_available()` to `jax.devices()`.
@@ -114,26 +139,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is now set before `import jax` so that fresh subprocess workers spawned by
   `joblib.Parallel` do not trigger a fatal CUDA initialization error when
   `jax[cuda12]` is installed but the GPU is unavailable (e.g. on the A40-12Q
-  vGPU with XLA VMM restrictions).  Explicit `JAX_PLATFORMS=cuda` set by the
+  vGPU with XLA VMM restrictions).
+  Explicit `JAX_PLATFORMS=cuda` set by the
   caller before import is still honoured.
 
 - **`models.math_populations.calculate_populations_log_pmf`**: new public helper
   returns per-element log P(Z_T = n_i) as a shape-(m,) array instead of the sum.
   `calculate_populations_log_lik` delegates to it for the standard
   (`initial_population=1, unbias=False`) path, eliminating the code duplication.
-  Notebooks' population-PMF loops replaced with a single vectorised call — one JAX
+  Notebooks' population-PMF loops replaced with a single vectorised call --- one JAX
   dispatch instead of N per-support-point dispatches.
 
 - **Validation lazy error messages** (`models.validation`): error-message f-strings
   in `_validate_times_positive` and `_validate_ages_in_range` are now computed
-  inside the failure branch, not at the call site.  Avoids materialising array
+  inside the failure branch, not at the call site.
+  Avoids materialising array
   values into strings on the happy path.
 
 - **Removed stale torch detection** (`utils.ensure_1d_tensor`, `utils.json_safe`):
-  dropped `hasattr(x, "detach")` guard and the `torch.Tensor` branch — torch is
+  dropped `hasattr(x, "detach")` guard and the `torch.Tensor` branch --- torch is
   no longer a dependency.
 
-- **Phase 2e — cutover & cleanup**: removed `torch`, `torchvision`, `pyro-ppl` from
+- **Phase 2e --- cutover & cleanup**: removed `torch`, `torchvision`, `pyro-ppl` from
   project dependencies and `types-torch` from dev; promoted JAX stack (`jax`,
   `jaxtyping`, `numpyro`, `optax`, `optimistix`) to main dependencies; removed the
   transient `models._jax` spike package and `tests/test_jax_torch_equivalence.py`
@@ -145,36 +172,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   retired (benchmark data archived in `docs/design/JAX_MIGRATION_BENCHMARKS.md`).
 
 - `inference.fitting`, `inference._optimizer_runners`, `inference._fit_types`,
-  `inference.uncertainty` — Phase 2c: optimizer layer migrated from PyTorch
+  `inference.uncertainty` --- Phase 2c: optimizer layer migrated from PyTorch
   (LBFGS closure / `nn.Parameter`) to JAX + optimistix BFGS/LBFGS and optax Adam;
   `estimate_mle_covariance` uses `jax.hessian`; result-dict schema and public API
   are unchanged.
-- `inference.bayesian` — Phase 2d: fully migrated from Pyro/PyTorch to
-  NumPyro/JAX.  `BayesianLikelihoodModel` calls JAX math functions directly
+
+- `inference.bayesian` --- Phase 2d: fully migrated from Pyro/PyTorch to
+  NumPyro/JAX.
+  `BayesianLikelihoodModel` calls JAX math functions directly
   (`calculate_populations_log_lik`, `calculate_non_spine_ages_log_lik`,
   `calculate_spine_ages_log_lik`, all with `_skip_normalization=True`) to avoid
   `ConcretizationTypeError` inside NumPyro's JIT-compiled `lax.while_loop`.
   Model data stored as NumPy arrays (not JAX arrays) to remain concrete in the
-  NUTS trace.  `chain_method="vectorized"` (JAX vmap) replaces Pyro's subprocess
-  multi-chain.  The `device` parameter is accepted for API compatibility but
-  ignored (JAX uses its default backend).  `BayesianPriorConfig.resolve_tensors`
+  NUTS trace.
+  `chain_method="vectorized"` (JAX vmap) replaces Pyro's subprocess
+  multi-chain.
+  The `device` parameter is accepted for API compatibility but
+  ignored (JAX uses its default backend).
+  `BayesianPriorConfig.resolve_tensors`
   now returns NumPy arrays instead of `torch.Tensor`.
 
-- `models.math_extinction` — replaced `scipy.integrate.quad` loop in
+- `models.math_extinction` --- replaced `scipy.integrate.quad` loop in
   `calculate_log_pr_extinction_given_initial_lifetimes` with a closed-form
   analytic expression derived from the Poisson generating functional; fully
   vectorised over lifetimes, autograd-compatible, and device-agnostic (CPU/GPU).
   Performance: 433 ms/call → 1.4 ms/call (310× speedup); enables practical NUTS
-  sampling for multi-epoch models.  The `_integrand_surv_from_weighted_birth_time`
+  sampling for multi-epoch models.
+  The `_integrand_surv_from_weighted_birth_time`
   helper is retained for testing.
+
 - `kashouh_data_exploration.qmd` --- renamed the `source` field/legend/column to
   `Family` throughout (coverage table, parsed-date-distribution chart), and shortened
   its values from `"Family jB"`/`"Family K"` to `"jB"`/`"k"` (kept `"other"` for the
   remaining ALAGM-5 classifications).
+
 - `ntvmr_single_epoch_inference.qmd` and `ntvmr_birth_death_inference.qmd` --- the
   Lectionary (group 4) subset is now fit on an epoch grid starting at **380 CE**
   instead of 100 CE (the genre only emerges in the late 4th century), still ending by
   2000 CE; KDE-resampled lectionary dates before 380 are clipped to the new start.
+
 - `analysis.subset_inference.build_manuscript_subsets` --- dropped the `(1–3)`/`(4)`
   group-number suffixes from the `"Non-Lectionary"`/`"Lectionary"` subset labels (the
   per-section labels `"Gospels (e)"`, `"Acts + Catholic Epistles (a)"`,
@@ -242,13 +278,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- `models.math_extinction.calculate_log_lik_initial_lifetimes_given_extinction` —
+- `models.math_extinction.calculate_log_lik_initial_lifetimes_given_extinction` ---
   internal call to `calculate_log_pr_extinction_given_initial_lifetimes` was missing
   `as_array=True`, so the `return_array=True` path returned a scalar SUM of
-  log-probabilities rather than a per-lifetime array. This caused the multi-epoch
+  log-probabilities rather than a per-lifetime array.
+  This caused the multi-epoch
   combined log-likelihood (used in `inference.likelihood.log_likelihood`) to be
   incorrect; golden value updated from −178.5901579681 to −177.7867323299.
-- `models.mathematical_derivatives.calculate_spine_ages_log_lik_derivatives` —
+
+- `models.mathematical_derivatives.calculate_spine_ages_log_lik_derivatives` ---
   the interior (non-boundary) branch used `T` (epoch end time) instead of the
   manuscript age `t` in the formulas for `B_t`, `exp(-b*T)`, and `exp(-d*T)`, giving
   incorrect gradient values for any age that does not lie exactly at the epoch boundary.
@@ -257,13 +295,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ValueError` from the KDE resampler (triggered when a subset has zero-variance date
   ranges, e.g. Revelation with a handful of same-year manuscripts) and falls back to
   `midYear`, preventing a hard crash at notebook render time.
+
 - `analysis.subset_inference.fit_manuscript_subset` --- the per-epoch manuscript count
   (`epoch_n`) now uses an inclusive upper bound (`<=`) for the last epoch, so
   manuscripts dated exactly at the final year are no longer silently excluded.
+
 - `visualization.age_fit_plot.plot_creation_year_fit` --- when all observed creation
   years are identical the theoretical density overlay is now skipped entirely (with a
   warning) rather than rendered with an incorrect `bin_width = 1.0` scale factor that
   mis-scaled the curve by orders of magnitude.
+
 - `visualization.age_fit_plot.plot_creation_year_fit` --- the density grid no longer
   evaluates exactly at `age == process_duration` (the spine manuscript's age is
   deterministically the full duration, a point mass rather than a continuous density

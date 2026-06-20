@@ -10,17 +10,20 @@ Control-flow notes vs the Phase 2a spike:
 - Host-side range guards on ``alpha_t`` / ``beta_t`` → replaced by
   ``jnp.where``-selected ``-inf``.
 - Finiteness guards → ``jnp.where``-selected ``-inf``.
-- The multi-start path (``initial_population > 1``) still uses a Python loop over
-  the fixed static bound ``n0``; this is JAX-compatible because ``n0`` is a
-  compile-time constant.
+- The multi-start path (``initial_population > 1``) vectorizes over ``ns`` with
+  ``jax.vmap`` (previously a Python loop with per-element ``int()``/``bool()``
+  casts, which is not ``jit``-traceable); the inner sum over the fixed static
+  bound ``n0`` stays a ``jnp.arange(n0)`` vector op, JAX-compatible because
+  ``n0`` is a compile-time constant.
 
 All inputs are assumed float64 (``jax_enable_x64`` is set in ``__init__.py``).
 """
 
 import jax
 import jax.numpy as jnp
+from beartype import beartype
 from jax import scipy as jsp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Bool, Float, jaxtyped
 
 from inf_bp_texts.models.math_extinction import (
     calculate_extinction_pr,
@@ -31,20 +34,27 @@ from inf_bp_texts.utils import ensure_1d_tensor
 
 # ---------------------------------------------------------------------------
 # Internal helpers
+#
+# _compute_populations_log_lik_multi_start is only ever called with already-
+# normalised jax.Array values (never the public API's loose scalar/list
+# convenience inputs), so its jaxtyping shape is runtime-enforced via
+# beartype -- see the equivalent note in math_extinction.py.
 # ---------------------------------------------------------------------------
 
 
+@jaxtyped(typechecker=beartype)
 def _compute_populations_log_lik_multi_start(
-    ns: jax.Array,
-    nonzero_mask: jax.Array,
+    ns: Float[Array, " n"],
+    nonzero_mask: Bool[Array, " n"],
     n0: int,
-    alpha_t: jax.Array,
-    beta_t: jax.Array,
-) -> jax.Array:
+    alpha_t: Float[Array, ""],
+    beta_t: Float[Array, ""],
+) -> Float[Array, " n"]:
     r"""Log probabilities for populations when initial_population > 1.
 
     Replaces the ragged ``torch.arange(j_min, j_max+1)`` per-element loop with
-    a fixed-width ``n0``-length loop masked by validity conditions.
+    a fixed-width ``n0``-length sum masked by validity conditions, vectorized
+    over ``ns`` via ``jax.vmap`` so the whole function is ``jit``-traceable.
 
     Parameters
     ----------
@@ -71,7 +81,7 @@ def _compute_populations_log_lik_multi_start(
     log_one_minus_beta = jnp.where(beta_t < 1, jnp.log1p(-beta_t), _ninf)
     log_one_minus = log_one_minus_alpha + log_one_minus_beta
 
-    def _log_pr_one(n_val: int) -> jax.Array:
+    def _log_pr_one(n_val: jax.Array) -> jax.Array:
         """Log P(Z_T = n_val | Z_0 = n0)."""
         n_f = jnp.float64(n_val)
         n0_f = jnp.float64(n0)
@@ -104,12 +114,8 @@ def _compute_populations_log_lik_multi_start(
         log_terms = jnp.where(valid_j, log_terms, _ninf)
         return jsp.special.logsumexp(log_terms)
 
-    log_pr = jnp.zeros_like(ns, dtype=jnp.float64)
-    for i in range(len(ns)):
-        n_int = int(float(ns[i]))
-        val = _log_pr_one(n_int) if bool(nonzero_mask[i]) else jnp.float64(0.0)
-        log_pr = log_pr.at[i].set(val)
-    return log_pr
+    vals = jax.vmap(_log_pr_one)(ns)
+    return jnp.where(nonzero_mask, vals, jnp.float64(0.0))
 
 
 # ---------------------------------------------------------------------------
