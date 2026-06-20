@@ -1,7 +1,6 @@
 """Test suite for BirthDeathProcess log-likelihood calculations."""
 
 import numpy as np
-import pytest
 from numpy.testing import assert_allclose
 
 from inf_bp_texts.inference.likelihood import log_likelihood, negative_log_likelihood
@@ -287,10 +286,6 @@ class TestLogLikelihood:
         assert np.isfinite(_as_float(result3)) or result3 == -np.inf
         assert result3 < 0
 
-    @pytest.mark.xfail(
-        reason="multi-epoch log-likelihood with identical rates doesn't match"
-        " single-epoch value — pre-existing failure, to be sorted through later"
-    )
     def test_multi_epoch_identical_rates_matches_single_epoch(self) -> None:
         """Test that multi-epoch with identical rates equals single-epoch."""
         # Create test data
@@ -364,11 +359,6 @@ class TestLogLikelihood:
         assert np.isfinite(_as_float(result_multi))
         assert_allclose(result_single, result_multi, rtol=1e-8)
 
-    @pytest.mark.xfail(
-        reason="multi-epoch log-likelihood with identical rates doesn't match"
-        " single-epoch value when populations are included — pre-existing"
-        " failure, to be sorted through later"
-    )
     def test_multi_epoch_identical_rates_with_populations(self) -> None:
         """Test multi-epoch equals single-epoch with population counts.
 
@@ -445,11 +435,6 @@ class TestLogLikelihood:
         # Relaxed tolerance due to known multi-epoch numerical differences
         assert_allclose(result_single, result_multi, rtol=1e-8)
 
-    @pytest.mark.xfail(
-        reason="multi-epoch log-likelihood with identical rates doesn't match"
-        " single-epoch value on the log-scale parameterization — pre-existing"
-        " failure, to be sorted through later"
-    )
     def test_multi_epoch_identical_rates_log_scale(self) -> None:
         """Test multi-epoch equals single-epoch with log-scale parameters.
 
@@ -488,11 +473,6 @@ class TestLogLikelihood:
         # Relaxed tolerance due to known multi-epoch numerical differences
         assert_allclose(result_single, result_multi, rtol=1e-8)
 
-    @pytest.mark.xfail(
-        reason="multi-epoch log-likelihood with identical rates doesn't match"
-        " single-epoch value in the critical (birth_rate == death_rate) case —"
-        " pre-existing failure, to be sorted through later"
-    )
     def test_multi_epoch_identical_rates_critical_case(self) -> None:
         """Test multi-epoch equals single-epoch when birth ≈ death.
 
@@ -529,11 +509,6 @@ class TestLogLikelihood:
         # Relaxed tolerance: critical (λ≈μ) path has larger rounding in JAX multi-epoch
         assert_allclose(result_single, result_multi, rtol=1e-7)
 
-    @pytest.mark.xfail(
-        reason="negative_log_likelihood multi-epoch with identical rates doesn't"
-        " match single-epoch value — pre-existing failure, to be sorted through"
-        " later"
-    )
     def test_negative_log_likelihood_multi_epoch_matches_single(self) -> None:
         """Test negative_log_likelihood multi-epoch equals single-epoch.
 
