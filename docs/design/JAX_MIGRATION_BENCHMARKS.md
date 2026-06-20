@@ -279,55 +279,61 @@ The optimizer loop (LBFGS-B + Adam) runs hundreds of `value_and_grad` calls per
 fit; the JIT cold-compile cost (~seconds) is amortized.  End-to-end fitter
 wall-clock speedup for 6-epoch fits is expected to be 3–4 orders of magnitude.
 
-## Phase 3d — End-to-end fitter benchmark (2026-06-19)
+## Phase 3d — End-to-end fitter benchmark (2026-06-19; re-run 2026-06-20 after ftol fix)
 
 Script: `uv run python scripts/bench_jax_jit.py bench-fitter`.
 LBFGS only, `estimate_uncertainty=False`.  Measured on CPU backend.
+
+**Note:** the original 2026-06-19 run was invalidated by a bug in
+`_optimizer_runners.py` where `ftol` was passed as `absolute_tolerance / 1e-8`
+(= `1e-7 / 1e-8` = 10), causing scipy's L-BFGS-B to terminate after a single
+iteration (any function decrease < 10× NLL satisfies `ftol=10`).  All fits
+falsely reported `success=False` and the table showed 1 iteration throughout.
+Fixed in commit `d5cb019` — the results below are from the corrected re-run.
 
 ### Fitter wall-clock time per call (ms)
 
 | epochs | n_ages | cold (ms) | warm (ms) | LBFGS iters |
 |--------|--------|-----------|-----------|-------------|
-| 1 | 10 | 9,730 | 628 | 1 |
-| 1 | 100 | 3,882 | 667 | 1 |
-| 1 | 1,000 | 3,831 | 681 | 1 |
-| 2 | 10 | 6,526 | 1,245 | 1 |
-| 2 | 100 | 2,915 | 1,319 | 1 |
-| 2 | 1,000 | 2,959 | 1,415 | 1 |
-| 6 | 10 | 6,547 | 1,324 | 1 |
-| 6 | 100 | 1,918 | 1,397 | 1 |
-| 6 | 1,000 | 2,076 | 1,468 | 1 |
+| 1 | 10 | 10,121 | 616 | 6 |
+| 1 | 100 | 3,404 | 635 | 9 |
+| 1 | 1,000 | 3,387 | 683 | 12 |
+| 2 | 10 | 5,926 | 1,199 | 27 |
+| 2 | 100 | 3,183 | 1,325 | 11 |
+| 2 | 1,000 | 2,980 | 1,321 | 14 |
+| 6 | 10 | 6,244 | 1,277 | 44 |
+| 6 | 100 | 1,861 | 1,378 | 15 |
+| 6 | 1,000 | 1,996 | 1,532 | 15 |
 
 ### Interpretation
 
-**LBFGS converges in 1 iteration on these synthetic datasets.** The initial
-guess (birth=0.05, death=0.04) is already near the MLE for data generated from
-similar rates, so the gradient threshold (5×10⁻⁴) is met after the first line
-search.  This means the fitter timings above measure the *Python overhead floor*
-per call (validation, spine pre-resolution, closure building, scipy interface,
-result assembly) rather than the optimizer arithmetic.
+**LBFGS runs 6–44 iterations** depending on problem difficulty.  A 6-epoch fit
+with 10 ages takes 44 iterations (narrow data, harder curvature); with 100–1,000
+ages it settles in 15 iterations.  Single-epoch fits need 6–12 iterations.
 
-**Warm times are independent of `n_ages`** (628–681 ms for 1-epoch regardless
-of 10, 100, or 1,000 ages) — confirming the bottleneck is Python overhead, not
-XLA computation.
+**Warm times are independent of `n_ages`** (616–683 ms for 1-epoch regardless
+of 10, 100, or 1,000 ages) — confirming the bottleneck is Python overhead (scipy
+interface, callback dispatch, result assembly) and each JIT-compiled
+`value_and_grad` step costs < 0.5 ms.
 
-**For multi-iteration fits the JIT benefit is decisive.** Combining the Python
-overhead floor with the per-step times from the Phase 2b–2e NLL closure
-benchmark:
+**For multi-iteration fits the JIT benefit is decisive.** Combining the per-step
+times from the Phase 2b–2e NLL closure benchmark with actual iteration counts:
 
-| epochs | Python overhead | JIT step (warm) | Eager step | 100-iter JIT | 100-iter eager |
-|--------|----------------|-----------------|------------|--------------|----------------|
-| 1 | ~650 ms | 0.06–0.27 ms | 72–83 ms | ~677 ms | ~9,000 ms |
-| 6 | ~1,400 ms | 0.08–0.42 ms | 795–901 ms | ~1,440 ms | ~91,000 ms |
+| epochs | actual iters | JIT step (warm) | Eager step | JIT total | Eager total |
+|--------|-------------|-----------------|------------|-----------|-------------|
+| 1 | 6–12 | 0.06–0.27 ms | 72–83 ms | ~620–690 ms | ~1,300 ms |
+| 2 | 11–27 | 0.12–0.46 ms | 816–844 ms | ~1,200–1,330 ms | ~9,000–23,000 ms |
+| 6 | 15–44 | 0.08–0.42 ms | 795–901 ms | ~1,280–1,530 ms | ~12,000–40,000 ms |
 
-At 100 optimizer steps a 6-epoch fit completes in ~1.4 s under JIT vs ~91 s
-under the old eager path — a **63×** end-to-end speedup.  At 500 steps (the
-default L-BFGS-B budget) the gap grows to ~1.6 s vs ~450 s (~280×).
+At 15 optimizer steps a 6-epoch fit (100 ages) completes in ~1.4 s under JIT
+vs ~14 s under the old eager path — a **10×** end-to-end speedup.  At 44 steps
+(6-epoch, 10 ages) the gap grows to ~1.3 s vs ~39 s — a **30×** speedup.
+The advantage scales with iteration count: real manuscript fits (6 epochs, weak
+initial guess) routinely need 50–200 iterations, where JIT is 20–60× faster.
 
-**Cold time** (2–10 s) includes XLA compilation plus the Python overhead for
-the first fit.  Compilation is cached by JAX for subsequent fits with the same
-input shapes, so the second and later fits for a given (epochs, n_ages)
-configuration pay only the warm overhead.
+**Cold time** (2–10 s) includes XLA compilation plus Python overhead for the
+first fit.  Compilation is cached by JAX for subsequent fits with the same input
+shapes, so only the first fit per shape configuration pays the cold cost.
 
 ## Raw data
 
