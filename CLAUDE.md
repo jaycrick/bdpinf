@@ -116,7 +116,7 @@ class TestSubject:
 ### Core data structure: `BirthDeathProcess`
 
 `models/birth_death_process.py` is the canonical object passed between modules.
-It holds `creation_times`, `epoch_end_times`, per-epoch `birth_rates`/`death_rates` (all `torch.Tensor` float64), and optional `manuscript_records` for genealogy.
+It holds `creation_times`, `epoch_end_times`, per-epoch `birth_rates`/`death_rates` (all `jax.Array` float64), and optional `manuscript_records` for genealogy.
 Key methods: `log_likelihood()`, `update_parameters()`, `plot_genealogy_tree()`, `to_newick()`.
 
 ### Mathematical layer: `models/`
@@ -128,7 +128,7 @@ Three submodules contain pure functions (no class state):
 
 `_reverse_time()` --- **time-reversal trick**: transforms multi-epoch non-spine ages into an extinction-conditioned backward-time problem, avoiding exponential complexity in the number of epochs.
 
-`mathematical_derivatives.py` --- numerical derivatives used during optimization.
+Numerical derivatives used during optimization (Hessian/Jacobian for the MLE covariance) live in `inference/uncertainty.py` via `jax.hessian`/`jax.jacobian`.
 
 `validation.py` --- `normalize_and_validate_inputs()` converts scalars/arrays to float64 tensors and enforces shape, range, and monotonicity constraints.
 `ValidationConfig` (Pydantic) controls which checks run.
