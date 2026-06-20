@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `inference._optimizer_runners` — L-BFGS-B `ftol` was divided by `1e-8`
+  (yielding `ftol=10`), causing scipy to stop after a single iteration and
+  triggering false convergence failures for large-NLL problems (e.g. six-epoch
+  manuscript fits).  Fixed by passing `ftol` directly and accepting
+  `opt_result.success` as a valid convergence signal alongside the gradient and
+  absolute-NLL-change criteria.
+
 ### Added
 
 - `inference.bayesian` — extended `BayesianPriorConfig` with per-family loc/scale

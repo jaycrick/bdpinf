@@ -159,7 +159,7 @@ def run_lbfgs_optimizer(
             options={
                 "maxiter": max_iters,
                 "gtol": gtol,
-                "ftol": ftol / 1e-8,
+                "ftol": ftol,
             },
         )
         iterations = iteration_count[0]
@@ -174,12 +174,16 @@ def run_lbfgs_optimizer(
 
         # Primary convergence check — gradient criterion takes priority.
         # `improved_once` is only required when relying on NLL-change criterion.
+        # Also accept scipy's own convergence signal: L-BFGS-B sets success=True
+        # when either gtol (gradient) or ftol (relative function change) is met.
+        # Our absolute NLL-change check is stricter than scipy's relative one and
+        # would incorrectly reject valid convergence for large-NLL problems.
         converged = _check_convergence_criteria(
             optimizer_name=strategy.name,
             grad_norm=gn_final,
             nll_history=nll_history,
             convergence_config=convergence_config,
-        )
+        ) or (opt_result.success and improved_once)
         if not converged and not improved_once:
             return (
                 False,
