@@ -22,6 +22,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `inf_bp_texts.utils` --- added `derive_worker_seeds()`, deriving independent
+  integer seeds via `jax.random.key`/`jax.random.split` for parallel (joblib)
+  worker seeding; replaces sequential-integer seed offsets (`seed + i`) across
+  the `qmd_scripts/validation/**/*.qmd` bulk-inference and simulation-check
+  notebooks.
+
 - `models.math_extinction`/`math_ages`/`math_populations` --- runtime
   shape/dtype enforcement via `@jaxtyped(typechecker=beartype)` on the
   internal, array-only helper functions (`_epoch_starts`,

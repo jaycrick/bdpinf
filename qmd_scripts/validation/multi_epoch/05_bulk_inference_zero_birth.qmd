@@ -34,10 +34,15 @@ times = np.array([7.5, 15.0], dtype=float)
 seed = 42
 
 from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.utils import derive_worker_seeds
 
 
 def simulate_zero_birth_second_epoch(
-    sim_idx: int, birth_rate_epoch_1: float, death_rate: float, times: np.ndarray
+    first_epoch_seed: int,
+    death_time_seed: int,
+    birth_rate_epoch_1: float,
+    death_rate: float,
+    times: np.ndarray,
 ) -> "pd.DataFrame":
     split_time = float(times[0])
     final_time = float(times[-1])
@@ -45,7 +50,7 @@ def simulate_zero_birth_second_epoch(
         birth_rates=np.array([birth_rate_epoch_1], dtype=float),
         death_rates=np.array([death_rate], dtype=float),
         times=np.array([split_time], dtype=float),
-        random_seed=42000 + sim_idx,
+        random_seed=first_epoch_seed,
     )
 
     assert first_epoch.manuscript_records is not None
@@ -53,7 +58,7 @@ def simulate_zero_birth_second_epoch(
     alive_mask = simulation["death_time"].isna()
     alive_indices = simulation.index[alive_mask]
     if len(alive_indices) > 0:
-        rng = np.random.default_rng(52000 + sim_idx)
+        rng = np.random.default_rng(death_time_seed)
         time_to_death = rng.exponential(
             scale=1.0 / float(death_rate), size=len(alive_indices)
         )
@@ -66,9 +71,15 @@ def simulate_zero_birth_second_epoch(
     return simulation
 
 
+# Two independent jax.random.split-derived seed streams (first-epoch simulation
+# and post-split death-time draws) instead of sequential-integer offsets.
+first_epoch_seeds = derive_worker_seeds(42000, num_sims)
+death_time_seeds = derive_worker_seeds(52000, num_sims)
+
 simulated_processes = Parallel(n_jobs=-1)(
     delayed(simulate_zero_birth_second_epoch)(
-        sim_idx=i,
+        first_epoch_seed=first_epoch_seeds[i],
+        death_time_seed=death_time_seeds[i],
         birth_rate_epoch_1=birth_rate_epoch_1_true,
         death_rate=death_rate_true,
         times=times,

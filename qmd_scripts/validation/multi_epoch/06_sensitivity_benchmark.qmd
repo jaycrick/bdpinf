@@ -26,6 +26,7 @@ from joblib import Parallel, delayed
 
 from inf_bp_texts.analysis import FitModelConfig, fit_single_model
 from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.utils import derive_worker_seeds
 ```
 
 ## Sensitivity Sweep
@@ -42,14 +43,19 @@ configs = [
     for dr2 in [0.0005, 0.0010, 0.0020]
 ]
 
+sim_seed_base = 1000
+
 rows = []
 for cfg_idx, cfg in enumerate(configs):
+    # jax.random.split per config gives an explicit independence guarantee per
+    # worker seed, unlike sequential-integer seeding.
+    cfg_sim_seeds = derive_worker_seeds(sim_seed_base + cfg_idx, num_sims)
     sims = Parallel(n_jobs=-1)(
         delayed(simulate_birth_death_process)(
             birth_rates=cfg["birth_rates"],
             death_rates=cfg["death_rates"],
             times=times,
-            random_seed=1000 + cfg_idx * 10000 + i,
+            random_seed=cfg_sim_seeds[i],
         )
         for i in range(num_sims)
     )

@@ -225,3 +225,38 @@ def validate_matching_lengths(
             "Mismatches: " + ", ".join(parts)
         )
         raise ValueError(message)
+
+
+def derive_worker_seeds(base_seed: int, n: int) -> list[int]:
+    """Derive ``n`` independent integer seeds from a single base seed.
+
+    Uses ``jax.random.key`` + ``jax.random.split`` to generate statistically
+    independent subkeys, then draws one integer per subkey. Prefer this over ad
+    hoc integer arithmetic (e.g. ``base_seed + i``) when seeding independent
+    ``numpy.random.default_rng`` streams across parallel (joblib) workers ---
+    sequential-integer seeds rely on the downstream RNG's seed-mixing to
+    decorrelate adjacent streams, whereas ``jax.random.split`` gives an explicit
+    independence guarantee per stream.
+
+    Parameters
+    ----------
+    base_seed : int
+        Seed for the top-level ``jax.random.key``.
+    n : int
+        Number of independent seeds to derive.
+
+    Returns
+    -------
+    list[int]
+        ``n`` plain Python ints in ``[0, 2**31 - 1)``, suitable for
+        ``numpy.random.default_rng`` or any ``random_seed: int`` parameter.
+
+    """
+
+    def _draw_one(subkey: jax.Array) -> jax.Array:
+        return jax.random.randint(subkey, (), 0, 2**31 - 1)
+
+    top_key = jax.random.key(base_seed)
+    subkeys = jax.random.split(top_key, n)
+    draws = jax.vmap(_draw_one)(subkeys)
+    return [int(s) for s in draws]

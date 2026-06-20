@@ -49,6 +49,7 @@ from inf_bp_texts.analysis import (
 from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference.fitting import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
+from inf_bp_texts.utils import derive_worker_seeds
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
@@ -65,10 +66,8 @@ NOTEBOOK_SEED = (
 )
 
 
-def sample_age_vector(
-    sim_idx: int, br: float, dr: float, span: float, base_seed: int
-) -> np.ndarray:
-    rng = np.random.default_rng(base_seed + sim_idx)
+def sample_age_vector(seed: int, br: float, dr: float, span: float) -> np.ndarray:
+    rng = np.random.default_rng(seed)
     sampled = simulate_bdp_ages_from_distributions(
         birth_rate=float(br),
         death_rate=float(dr),
@@ -82,13 +81,16 @@ def sample_age_vector(
     )
 
 
+# jax.random.split gives an explicit independence guarantee per worker seed,
+# unlike sequential-integer seeding.
+sim_seeds = derive_worker_seeds(NOTEBOOK_SEED, num_sims)
+
 list_of_ages = Parallel(n_jobs=-1)(
     delayed(sample_age_vector)(
-        sim_idx=i,
+        seed=sim_seeds[i],
         br=birth_rate,
         dr=death_rate,
         span=time_span,
-        base_seed=NOTEBOOK_SEED,
     )
     for i in range(num_sims)
 )

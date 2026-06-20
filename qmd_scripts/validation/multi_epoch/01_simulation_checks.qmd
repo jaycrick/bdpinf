@@ -48,6 +48,7 @@ from inf_bp_texts.models.math_ages import (
 from inf_bp_texts.models.math_extinction import calculate_extinction_pr
 from inf_bp_texts.models.math_populations import calculate_populations_log_pmf
 from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.utils import derive_worker_seeds
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
@@ -72,18 +73,16 @@ three_epoch_times = np.array([500.0, 1000.0, 1500.0], dtype=float)
 
 
 def sample_age_vector_process(
-    sim_idx: int,
     br: np.ndarray | float,
     dr: np.ndarray | float,
     span: np.ndarray | float,
-    base_seed: int,
+    seed: int,
 ) -> np.ndarray:
-    run_seed = base_seed + sim_idx
     simulated_df = simulate_birth_death_process(
         birth_rates=br,
         death_rates=dr,
         times=span,
-        random_seed=run_seed,
+        random_seed=seed,
     )
     survivors = simulated_df.surviving_manuscripts
     assert survivors is not None
@@ -102,14 +101,16 @@ def sample_age_vector_process(
     return non_spine_ages.astype(np.float64)
 
 
+single_epoch_seeds = derive_worker_seeds(seed, num_sims)
+three_epoch_seeds = derive_worker_seeds(seed + 100_000, num_sims)
+
 single_epoch_start = time.perf_counter()
 list_of_ages_single_epoch = Parallel(n_jobs=-1)(
     delayed(sample_age_vector_process)(
-        sim_idx=i,
         br=single_epoch_birth_rates,
         dr=single_epoch_death_rates,
         span=single_epoch_times,
-        base_seed=seed,
+        seed=single_epoch_seeds[i],
     )
     for i in range(num_sims)
 )
@@ -118,11 +119,10 @@ single_epoch_seconds = time.perf_counter() - single_epoch_start
 three_epoch_start = time.perf_counter()
 list_of_ages_three_epoch = Parallel(n_jobs=-1)(
     delayed(sample_age_vector_process)(
-        sim_idx=i,
         br=three_epoch_birth_rates,
         dr=three_epoch_death_rates,
         span=three_epoch_times,
-        base_seed=seed + 100_000,
+        seed=three_epoch_seeds[i],
     )
     for i in range(num_sims)
 )

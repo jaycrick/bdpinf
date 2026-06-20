@@ -73,6 +73,7 @@ from inf_bp_texts.simulation import (
     simulate_birth_death_process_from_contour_process,
     simulate_subcritical_survival_splitting,
 )
+from inf_bp_texts.utils import derive_worker_seeds
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
@@ -162,6 +163,10 @@ run once per regime with the precomputed grid --- **no grid-selection cost inclu
 
 ```{python}
 speed_results: list[dict[str, Any]] = []
+# jax.random.split gives an explicit independence guarantee per draw, unlike
+# sequential-integer seeding. The same seed stream is intentionally reused
+# across regimes below -- only `dr` varies, so timings stay comparable.
+speed_seeds = derive_worker_seeds(SEED, N_SPEED_CONTOUR)
 
 for dr, lvl, r in zip(DEATH_RATES, regime_grids, regime_r_values):
     # --- Contour (serial) ---
@@ -171,7 +176,7 @@ for dr, lvl, r in zip(DEATH_RATES, regime_grids, regime_r_values):
             birth_rate=BIRTH_RATE,
             death_rate=dr,
             terminal_time=TERMINAL_TIME,
-            random_seed=SEED + i,
+            random_seed=speed_seeds[i],
         )
     contour_time = time.perf_counter() - t0
 
@@ -248,13 +253,13 @@ parallel calls) and splitting (one run with pinned grid).
 
 ```{python}
 def _run_contour_regime(
-    sim_idx: int, base_seed: int, birth_rate: float, death_rate: float, t: float
+    seed: int, birth_rate: float, death_rate: float, t: float
 ) -> tuple[float | None, np.ndarray]:
     process = simulate_birth_death_process_from_contour_process(
         birth_rate=birth_rate,
         death_rate=death_rate,
         terminal_time=t,
-        random_seed=base_seed + sim_idx,
+        random_seed=seed,
     )
     return extract_ages_from_process(process, t)
 
@@ -265,10 +270,12 @@ regime_data: list[dict[str, Any]] = []
 for regime_idx, (dr, lvl, r) in enumerate(
     zip(DEATH_RATES, regime_grids, regime_r_values)
 ):
-    # Contour: parallel
+    # Contour: parallel. jax.random.split per regime gives an explicit
+    # independence guarantee per worker seed, unlike sequential-integer offsets.
+    contour_seeds = derive_worker_seeds(SEED + regime_idx * 10_000, N_CONTOUR_TREES)
     contour_raw: list[tuple[float | None, np.ndarray]] = Parallel(n_jobs=-1)(
         delayed(_run_contour_regime)(
-            i, SEED + regime_idx * 10_000, BIRTH_RATE, dr, TERMINAL_TIME
+            contour_seeds[i], BIRTH_RATE, dr, TERMINAL_TIME
         )
         for i in range(N_CONTOUR_TREES)
     )

@@ -38,6 +38,7 @@ from inf_bp_texts.analysis.validation_helpers import (
     iqr_plotting_subset,
 )
 from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.utils import derive_worker_seeds
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
@@ -53,13 +54,17 @@ birth_rates_true = np.array([0.5, 0.7], dtype=float)
 death_rates_true = np.array([0.1, 0.15], dtype=float)
 times = np.array([7.5, 15.0], dtype=float)
 seed = 42
+# jax.random.split gives an explicit independence guarantee per worker seed,
+# unlike sequential-integer seeding (seed + i), which relies on the downstream
+# NumPy RNG's seed-mixing to decorrelate adjacent streams.
+sim_seeds = derive_worker_seeds(seed, num_sims)
 
 simulated_processes = Parallel(n_jobs=-1)(
     delayed(simulate_birth_death_process)(
         birth_rates=birth_rates_true,
         death_rates=death_rates_true,
         times=times,
-        random_seed=seed + i,
+        random_seed=sim_seeds[i],
     )
     for i in range(num_sims)
 )

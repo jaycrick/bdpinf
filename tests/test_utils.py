@@ -7,7 +7,7 @@ import pytest
 
 from inf_bp_texts.inference.likelihood import log_likelihood
 from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.utils import ensure_1d_tensor, format_ordinal
+from inf_bp_texts.utils import derive_worker_seeds, ensure_1d_tensor, format_ordinal
 
 
 class TestFormatOrdinal:
@@ -252,3 +252,27 @@ class TestEnsure1dTensor:
         grad_fn = jax.grad(lambda x: x.sum())
         grads = grad_fn(result)
         assert np.allclose(np.array(grads), np.ones(3))
+
+
+class TestDeriveWorkerSeeds:
+    """Test derive_worker_seeds for jax.random.split-based worker seeding."""
+
+    def test_returns_n_plain_ints(self) -> None:
+        seeds = derive_worker_seeds(42, 10)
+        assert len(seeds) == 10
+        assert all(isinstance(s, int) for s in seeds)
+
+    def test_seeds_are_distinct(self) -> None:
+        seeds = derive_worker_seeds(42, 200)
+        assert len(set(seeds)) == len(seeds)
+
+    def test_deterministic_given_same_base_seed(self) -> None:
+        assert derive_worker_seeds(7, 20) == derive_worker_seeds(7, 20)
+
+    def test_different_base_seeds_give_different_streams(self) -> None:
+        assert derive_worker_seeds(1, 20) != derive_worker_seeds(2, 20)
+
+    def test_seeds_usable_by_numpy_default_rng(self) -> None:
+        seeds = derive_worker_seeds(123, 5)
+        draws = [np.random.default_rng(s).random() for s in seeds]
+        assert len(set(draws)) == len(draws)
