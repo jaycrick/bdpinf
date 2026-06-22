@@ -26,6 +26,10 @@ birth and death rates are identical in each epoch.
 ## Setup
 
 ```{python}
+# ruff: noqa: E402
+# inf_bp_texts must be imported before jax so its JAX_PLATFORMS=cpu default
+# (see src/inf_bp_texts/__init__.py) takes effect before jax reads the env var.
+import inf_bp_texts  # noqa: F401
 from typing import Any
 
 import altair as alt

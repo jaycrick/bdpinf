@@ -231,10 +231,10 @@ See `docs/design/DOCS_TOOLING_EVALUATION.md` for why this is two sites rather th
   | `qmd_scripts/core_analysis/01_data_exploration/` | EDA on real manuscript data              | `<dataset>_data_exploration.qmd`                                                       |
   | `qmd_scripts/core_analysis/02_single_epoch/`     | MLE fits to real data, single-epoch      | `<dataset>_single_epoch_inference.qmd`                                                 |
   | `qmd_scripts/core_analysis/03_multi_epoch/`      | MLE fits to real data, multi-epoch       | `<dataset>_multi_epoch_inference.qmd`; topic-only (no dataset) for methods comparisons |
-  | `qmd_scripts/core_analysis/04_bayesian/`         | Bayesian inference on real data          | excluded from default render (slow)                                                    |
+  | `qmd_scripts/core_analysis/04_bayesian/`         | Bayesian inference on real data          | slow (multi-chain NUTS); render on a GPU node via `scripts/render_gpu.slurm`            |
   | `qmd_scripts/validation/single_epoch/`           | Recover known params from synthetic data | `<nn>_<topic>.qmd` (e.g. `01_simulation_checks.qmd`)                                   |
   | `qmd_scripts/validation/multi_epoch/`            | Same, multi-epoch                        | `<nn>_<topic>.qmd` (e.g. `03_bulk_inference.qmd`)                                      |
-  | `qmd_scripts/validation/bayesian_multi_epoch/`   | Bayesian validation                      | `<nn>_<topic>.qmd`; excluded from default render (slow)                                |
+  | `qmd_scripts/validation/bayesian_multi_epoch/`   | Bayesian validation                      | `<nn>_<topic>.qmd`; slow, see above                                                    |
   | `docs/*.qmd`                                     | Prose/math documentation                 | no executable cells                                                                    |
   | `great-docs.yml`                                 | API reference config                     | **drives the separate great-docs site — see above**                                    |
 

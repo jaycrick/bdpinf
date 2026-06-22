@@ -4,20 +4,32 @@ Measures the speedup from explicit jax.jit compilation of the NLL function
 that the optimizer uses, across the same (epochs × n_ages) grid as the
 Phase 2a eager benchmark stored in _output/jax_torch_benchmarks.json.
 
+Results are keyed by `jax.default_backend()` ("cpu" or "gpu") and merged
+into the output file rather than overwritten, so a CPU run and a GPU run
+accumulate side by side and a CPU-vs-GPU speedup can be computed once both
+are present. Backend is selected by the launching environment, e.g.:
+
 Usage
 -----
     uv run python scripts/bench_jax_jit.py
+    JAX_PLATFORMS=cuda uv run python scripts/bench_jax_jit.py
     uv run python scripts/bench_jax_jit.py --n-repeats 20
 """
 
 # ruff: noqa: E402
 
 import json
+import os
 import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+# Must be set before `import jax` — jax reads JAX_PLATFORMS into its config at
+# import time, so setting this any later (e.g. via `import inf_bp_texts`) is
+# too late and lets JAX auto-select GPU whenever CUDA is visible.
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
 import jax
 import jax.numpy as jnp
@@ -166,6 +178,50 @@ def _time_val_and_grad(
 
 
 # ---------------------------------------------------------------------------
+# Backend-keyed merge + cross-backend speedup summary
+# ---------------------------------------------------------------------------
+
+
+def _merge_backend_block(
+    out: Path, section: str, backend: str, block: dict[str, Any]
+) -> dict[str, Any]:
+    """Load `out`, set payload[section][backend] = block, return the full payload."""
+    payload: dict[str, Any] = json.loads(out.read_text()) if out.exists() else {}
+    payload.setdefault(section, {})
+    payload[section][backend] = block
+    return payload
+
+
+def _speedup_summary(
+    payload_section: dict[str, Any], row_key: tuple[str, ...], warm_metric: str
+) -> list[dict[str, Any]] | None:
+    """Pairwise cpu-vs-gpu speedup on `warm_metric`, matched by `row_key` fields.
+
+    Returns None if either backend is missing from `payload_section`.
+    """
+    if "cpu" not in payload_section or "gpu" not in payload_section:
+        return None
+
+    cpu_rows = {
+        tuple(r[k] for k in row_key): r for r in payload_section["cpu"]["results"]
+    }
+    gpu_rows = {
+        tuple(r[k] for k in row_key): r for r in payload_section["gpu"]["results"]
+    }
+
+    summary = []
+    for key in sorted(cpu_rows.keys() & gpu_rows.keys()):
+        cpu_t = cpu_rows[key][warm_metric]
+        gpu_t = gpu_rows[key][warm_metric]
+        row = dict(zip(row_key, key, strict=True))
+        row["cpu_" + warm_metric] = cpu_t
+        row["gpu_" + warm_metric] = gpu_t
+        row["gpu_speedup"] = round(cpu_t / gpu_t, 2) if gpu_t > 0 else None
+        summary.append(row)
+    return summary
+
+
+# ---------------------------------------------------------------------------
 # Main benchmark
 # ---------------------------------------------------------------------------
 
@@ -183,8 +239,9 @@ def main(
     default_out = get_project_root() / "_output" / "jax_jit_benchmarks.json"  # pyright: ignore[reportUnusedVariable]
     out: Path = output if output is not None else default_out  # pyright: ignore[reportUnnecessaryComparison]
 
+    backend = jax.default_backend()
     devices = [str(d) for d in jax.devices()]
-    typer.echo(f"JAX devices: {devices}")
+    typer.echo(f"JAX backend: {backend}, devices: {devices}")
     typer.echo(f"n_repeats={n_repeats}, output={out}")
 
     results = []
@@ -253,7 +310,7 @@ def main(
                 f" | vag: eager={e_vg:.1f}ms jit={j_vg:.1f}ms ({row['speedup_vag']}×)"
             )
 
-    payload = {
+    block = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "n_repeats": n_repeats,
         "platform": {
@@ -264,8 +321,14 @@ def main(
     }
 
     out.parent.mkdir(parents=True, exist_ok=True)
+    payload = _merge_backend_block(out, "results", backend, block)
+    speedup = _speedup_summary(
+        payload["results"], ("epochs", "n_ages"), "jit_ll_warm_s"
+    )
+    if speedup is not None:
+        payload["results"]["_speedup"] = speedup
     out.write_text(json.dumps(payload, indent=2))
-    typer.echo(f"\nResults written to {out}")
+    typer.echo(f"\nResults written to {out} (backend={backend})")
 
     # Print summary table
     typer.echo("\n### Likelihood (forward): eager vs JIT warm (ms)")
@@ -287,6 +350,19 @@ def main(
             f" {r['jit_vag_warm_s'] * 1000:>10.2f}"
             f" {r['speedup_vag']:>8}×"
         )
+
+    if speedup is not None:
+        typer.echo("\n### CPU vs GPU (JIT forward warm, ms)")
+        typer.echo(
+            f"{'epochs':>6} {'n_ages':>7} {'cpu':>10} {'gpu':>10} {'gpu_speedup':>11}"
+        )
+        for r in speedup:
+            typer.echo(
+                f"{r['epochs']:>6} {r['n_ages']:>7}"
+                f" {r['cpu_jit_ll_warm_s'] * 1000:>10.3f}"
+                f" {r['gpu_jit_ll_warm_s'] * 1000:>10.3f}"
+                f" {r['gpu_speedup']:>10}×"
+            )
 
 
 N_REPEATS_FITTER_OPT = typer.Option(5, help="Warm repeats per fitter cell.")
@@ -312,8 +388,9 @@ def bench_fitter(
     default_out = get_project_root() / "_output" / "jax_jit_benchmarks.json"  # pyright: ignore[reportUnusedVariable]
     out: Path = output if output is not None else default_out  # pyright: ignore[reportUnnecessaryComparison]
 
+    backend = jax.default_backend()
     devices = [str(d) for d in jax.devices()]
-    typer.echo(f"JAX devices: {devices}")
+    typer.echo(f"JAX backend: {backend}, devices: {devices}")
     typer.echo(f"n_repeats={n_repeats}, output={out}")
 
     fitter_results = []
@@ -369,12 +446,7 @@ def bench_fitter(
                 }
             )
 
-    # Merge into existing benchmark JSON (add fitter_results key)
-    payload: dict[str, Any] = {}
-    if out.exists():
-        payload = json.loads(out.read_text())
-
-    payload["fitter_results"] = {
+    block = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "n_repeats": n_repeats,
         "platform": {"jax_version": jax.__version__, "jax_devices": devices},
@@ -387,8 +459,14 @@ def bench_fitter(
     }
 
     out.parent.mkdir(parents=True, exist_ok=True)
+    payload = _merge_backend_block(out, "fitter_results", backend, block)
+    speedup = _speedup_summary(
+        payload["fitter_results"], ("epochs", "n_ages"), "fitter_warm_s"
+    )
+    if speedup is not None:
+        payload["fitter_results"]["_speedup"] = speedup
     out.write_text(json.dumps(payload, indent=2))
-    typer.echo(f"\nFitter results written to {out}")
+    typer.echo(f"\nFitter results written to {out} (backend={backend})")
 
     typer.echo("\n### End-to-end fitter wall-clock time (LBFGS, ms)")
     typer.echo(f"{'epochs':>6} {'n_ages':>7} {'cold':>10} {'warm':>10} {'iters':>6}")
@@ -399,6 +477,19 @@ def bench_fitter(
             f" {r['fitter_warm_s'] * 1000:>10.0f}"
             f" {str(r['lbfgs_iters']):>6}"
         )
+
+    if speedup is not None:
+        typer.echo("\n### CPU vs GPU (fitter warm, ms)")
+        typer.echo(
+            f"{'epochs':>6} {'n_ages':>7} {'cpu':>10} {'gpu':>10} {'gpu_speedup':>11}"
+        )
+        for r in speedup:
+            typer.echo(
+                f"{r['epochs']:>6} {r['n_ages']:>7}"
+                f" {r['cpu_fitter_warm_s'] * 1000:>10.1f}"
+                f" {r['gpu_fitter_warm_s'] * 1000:>10.1f}"
+                f" {r['gpu_speedup']:>10}×"
+            )
 
 
 if __name__ == "__main__":

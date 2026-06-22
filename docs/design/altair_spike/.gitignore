@@ -1,3 +1,0 @@
-# Spike artifacts are reproducible via phase0_spike.py — keep them out of git.
-*.pdf
-*.png

@@ -32,6 +32,7 @@ inf-bp-texts = "inf_bp_texts.cli:main"
 [dependency-groups]
 gpu = [
     "jax[cuda12]>=0.4.38; sys_platform == 'linux'",
+    "nvidia-cudnn-cu12<9.10; sys_platform == 'linux'",
 ]
 dev = [
     "basedpyright>=1.22.0",

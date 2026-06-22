@@ -5,8 +5,6 @@ project:
     - qmd_scripts/*.qmd
     - qmd_scripts/validation/**/*.qmd
     - qmd_scripts/core_analysis/**/*.qmd
-    - "!qmd_scripts/validation/bayesian_multi_epoch/**/*.qmd"
-    - "!qmd_scripts/core_analysis/04_bayesian/**/*.qmd"
     - docs/*.qmd
 
 bibliography: bibliography.bib
@@ -55,8 +53,6 @@ website:
             file: qmd_scripts/core_analysis/04_bayesian/ntvmr_single_epoch_bayesian.qmd
           - text: "NTVMR Six-Epoch Bayesian"
             file: qmd_scripts/core_analysis/04_bayesian/ntvmr_birth_death_bayesian.qmd
-          - text: "NTVMR Initial-Population Bayesian"
-            file: qmd_scripts/core_analysis/04_bayesian/ntvmr_initial_population_bayesian.qmd
       - text: "Validation: Single-Epoch"
         menu:
           - text: "Simulation checks"
