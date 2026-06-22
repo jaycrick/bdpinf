@@ -52,7 +52,9 @@ uv run inf-bp-texts inference --input-csv manuscript_analysis_cleaned.csv --plot
 ```
 
 Render the research-notebook site (notebooks live under `qmd_scripts/`; output
-goes to `_output/`; see `docs/cli.md` for the full CLI reference):
+goes to `_output/`; see `docs/cli.md` for the full CLI reference). This
+includes the slow, multi-chain Bayesian notebooks --- see "HPC / batch
+rendering" below for a faster, resource-bucketed alternative:
 
 ```sh
 uv run quarto render

@@ -67,6 +67,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unified to `NOTEBOOK_SEED`/`SIMULATION_SEED` constants.
 - CI pytest step no longer uses `continue-on-error: true` (test failures now
   fail the build).
+- `_quarto.yml`'s `render:` list no longer excludes the Bayesian (NumPyro/NUTS)
+  notebooks --- a plain `quarto render` of the whole site now executes them
+  too. Use the new `scripts/render_*.slurm` (see Added) to render large
+  batches efficiently on HPC instead of a full site render on a laptop.
 
 ### Fixed
 
