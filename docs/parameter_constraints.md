@@ -13,7 +13,7 @@ The fitting module now supports flexible parameter constraints, allowing you to:
 Fix the death rate at epoch 0 to 0.1 while optimizing all other parameters:
 
 ```python
-import torch
+import jax.numpy as jnp
 
 from inf_bp_texts.inference.fitting import (
     ParameterConstraints,
@@ -25,8 +25,8 @@ constraints = ParameterConstraints(
     fixed_params={2: 0.1}  # death_rates[0] = 0.1
 )
 
-ages = torch.tensor([10.0, 20.0, 30.0])
-times = torch.tensor([100.0])
+ages = jnp.array([10.0, 20.0, 30.0])
+times = jnp.array([100.0])
 
 result = fit_birth_death_processes(
     list_of_ages=[ages], times=times, param_constraints=constraints

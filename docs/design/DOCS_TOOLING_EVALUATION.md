@@ -94,7 +94,8 @@ panache's **formatter** (`panache format`) is more invasive than the linter by d
 - Markdown tables get realigned to fixed-width columns regardless of `wrap` --- there is no config
   key to disable this.
   It's cosmetic (output renders identically) and was accepted as-is.
-- **Bug found**: a single file, `docs/design/PLOTLY_TO_ALTAIR_EVALUATION.md`, hit a genuine
+- **Bug found**: a single file, `docs/design/PLOTLY_TO_ALTAIR_EVALUATION.md` (since removed, its
+  decision having been acted on), hit a genuine
   formatter idempotency bug --- `panache format` is supposed to satisfy
   `format(format(x)) == format(x)`, but a bold span (`**...**`) that crossed a wrapped line inside
   a `>` blockquote caused the formatter to prepend an extra `>` to one line on every run, growing
