@@ -15,7 +15,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `quantile_resample_dates`, `resample_dates_from_ranges` for weighted KDE over
   manuscript date *ranges* (year-explosion + 1/n weights) instead of midpoints;
   `data_cleaning.add_resampled_year_column` populates the resulting
-  `resampledYear` column. See `docs/design/KDE_DATE_RANGE_HANDLING.md`.
+  `resampledYear` column.
+  See `docs/design/KDE_DATE_RANGE_HANDLING.md`.
 - `visualization.age_fit_plot.plot_creation_year_fit` and
   `visualization.date_distribution_plots.plot_date_range_kde_comparison` --- shared
   Altair builders for the recurring creation-year/date-range figures, replacing
@@ -30,11 +31,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `BayesianModelConfig`, and `mle_init_log_rates()` for MLE-warm-started NUTS.
 - `qmd_scripts/core_analysis/04_bayesian/` --- four Bayesian inference notebooks
   (Kashouh FamilyK, Kashouh single-epoch, NTVMR single-epoch, NTVMR six-epoch)
-  and a `gpu` dependency group for rendering them on an HPC GPU node.
-- `scripts/render_gpu.slurm`, `scripts/render_cpu_light.slurm`,
-  `scripts/render_cpu_parallel.slurm` --- SLURM batch scripts covering all
-  notebooks in three resource-appropriate buckets (GPU, light CPU, parallel
-  CPU), plus `scripts/render_all.sh` to submit them as a dependency chain; see
+  and an optional `gpu` dependency group for ad-hoc CPU-vs-GPU benchmarking
+  (not used for routine rendering --- see Changed).
+- `scripts/render_cpu_light.slurm`, `scripts/render_cpu_parallel.slurm` ---
+  SLURM batch scripts covering all notebooks, including the Bayesian ones, in
+  two resource-appropriate buckets (light/serial and embarrassingly-parallel),
+  plus `scripts/render_all.sh` to submit them as a dependency chain; see
   `docs/design/GPU_RENDERING_PROTOCOL.md`.
 - `utils.derive_worker_seeds()` (JAX-based independent seeding for joblib
   workers) and `utils.format_ordinal()`; `schemas` module (Pydantic v2 input
@@ -50,13 +52,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Migrated the numerical/optimization core from PyTorch to JAX**: math
   kernels (`models/math_*`), the MLE optimizer layer (`optimistix`/`optax`
   replacing the PyTorch LBFGS closure), and Bayesian inference (NumPyro NUTS
-  replacing Pyro) are now pure JAX, float64, and JIT-compiled. The MLE hot path
-  is JIT-compiled end-to-end, giving a 65×–10,000× per-call speedup and a
-  60×–280× end-to-end fitter speedup on multi-epoch fits; the extinction
+  replacing Pyro) are now pure JAX, float64, and JIT-compiled.
+  The MLE hot path
+  is JIT-compiled end-to-end, giving a 65×--10,000× per-call speedup and a
+  60×--280× end-to-end fitter speedup on multi-epoch fits; the extinction
   probability integral was replaced with a closed-form analytic expression
-  (310× speedup, also autograd- and GPU-compatible). `torch`/`pyro-ppl` are no
-  longer dependencies. Benchmarks and the still-open real-GPU verification item
-  are recorded in `docs/design/JAX_MIGRATION_BENCHMARKS.md`.
+  (310× speedup, also autograd- and GPU-compatible).
+  `torch`/`pyro-ppl` are no
+  longer dependencies.
+  Benchmarked CPU vs. real-GPU (A100) execution across the
+  JIT MLE hot path and Bayesian NUTS fits (varying sample count, chain count,
+  and a 67× larger multi-subset NTVMR model): CPU won every configuration
+  tested, by roughly 1.6×--8×, with NUTS's control-flow-heavy tree-building
+  the likely cause (suits CPU better than GPU's SIMD-throughput model,
+  independent of problem size).
+  `scripts/render_gpu.slurm` was removed as a
+  result --- the Bayesian notebooks now render on CPU via
+  `scripts/render_cpu_light.slurm`.
+  See `docs/design/JAX_MIGRATION_BENCHMARKS.md`
+  and `docs/design/GPU_RENDERING_PROTOCOL.md` for the numbers.
 - `models.math_populations.calculate_populations_log_pmf` is now a public
   helper (per-element log P(Z_T = n_i)); `calculate_populations_log_lik`
   delegates to it.
@@ -69,7 +83,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fail the build).
 - `_quarto.yml`'s `render:` list no longer excludes the Bayesian (NumPyro/NUTS)
   notebooks --- a plain `quarto render` of the whole site now executes them
-  too. Use the new `scripts/render_*.slurm` (see Added) to render large
+  too.
+  Use the new `scripts/render_*.slurm` (see Added) to render large
   batches efficiently on HPC instead of a full site render on a laptop.
 
 ### Fixed
@@ -83,6 +98,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `models.mathematical_derivatives.calculate_spine_ages_log_lik_derivatives`
   (pre-JAX-migration) --- interior branch used epoch end time `T` instead of
   manuscript age `t`, giving wrong gradients off epoch boundaries.
+- `kashouh_family_k_bayesian_inference.qmd` --- `import jax` ran before
+  `from inf_bp_texts import ...`, so the package's CPU-default
+  `os.environ.setdefault("JAX_PLATFORMS", "cpu")` never took effect once the
+  `gpu` dependency group was installed; the notebook would silently render on
+  GPU regardless of intent.
+  Fixed by setting the env var directly before
+  `import jax`, matching `scripts/bench_jax_jit.py`.
 - `analysis.subset_inference` --- zero-variance date ranges no longer crash KDE
   resampling (falls back to `midYear`); per-epoch manuscript counts now use an
   inclusive upper bound so manuscripts dated exactly at the final year aren't

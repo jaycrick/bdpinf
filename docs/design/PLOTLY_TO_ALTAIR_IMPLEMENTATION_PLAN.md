@@ -2,8 +2,9 @@
 
 **Status:** in progress · **Last updated:** 2026-06-22
 
-Phases 0–4 (spike, theme/export chokepoint, easy/moderate/hard helper
-migration) and Phase 5 (18 of 19 notebooks) are done. Altair is the house
+Phases 0--4 (spike, theme/export chokepoint, easy/moderate/hard helper
+migration) and Phase 5 (18 of 19 notebooks) are done.
+Altair is the house
 plotting library; Plotly survives only in the two locations below.
 
 ## What remains
@@ -11,7 +12,8 @@ plotting library; Plotly survives only in the two locations below.
 1. **Last Plotly notebook** --- `04_bayesian/kashouh_family_k_bayesian_inference.qmd`:
    4 figures (`prior_posterior` 2×2 KDE, `posterior_rates` bar, `trace_plots`
    2×2 line, `ppc` line+band), all currently `make_subplots` + `go.Scatter`.
-   Slow (multi-chain NUTS, normally rendered via `scripts/render_gpu.slurm`);
+   Slow (multi-chain NUTS, rendered on CPU via `scripts/render_cpu_light.slurm`
+   --- GPU benchmarked slower, see `docs/design/GPU_RENDERING_PROTOCOL.md`);
    convert using the same Altair theme chokepoint
    (`visualization/altair_theme.py`) and helpers used by the other
    `04_bayesian` notebooks.
@@ -27,5 +29,6 @@ plotting library; Plotly survives only in the two locations below.
      must be empty, then `uv run pre-commit run --all-files` and
      `uv run pytest` (coverage ≥80%).
 
-**Rollback:** the migration is additive until Phase 6 — any earlier phase can
-be reverted independently. Phase 6 is the point of no easy return.
+**Rollback:** the migration is additive until Phase 6 --- any earlier phase can
+be reverted independently.
+Phase 6 is the point of no easy return.

@@ -52,7 +52,8 @@ uv run inf-bp-texts inference --input-csv manuscript_analysis_cleaned.csv --plot
 ```
 
 Render the research-notebook site (notebooks live under `qmd_scripts/`; output
-goes to `_output/`; see `docs/cli.md` for the full CLI reference). This
+goes to `_output/`; see `docs/cli.md` for the full CLI reference).
+This
 includes the slow, multi-chain Bayesian notebooks --- see "HPC / batch
 rendering" below for a faster, resource-bucketed alternative:
 
@@ -90,6 +91,9 @@ uv run quarto preview
 
 ### HPC / batch rendering
 
-The slow Bayesian notebooks (multi-chain NUTS) benefit from rendering on a GPU
-node; the rest can be rendered in two CPU-resource buckets. See
-`scripts/render_*.slurm` and `docs/design/GPU_RENDERING_PROTOCOL.md`.
+Notebooks render in two CPU-resource buckets via `scripts/render_*.slurm`
+(light/serial vs. embarrassingly-parallel).
+GPU rendering of the Bayesian
+notebooks was benchmarked and found 1.6×--8× *slower* than CPU on every
+config tested, so they render on CPU too; see
+`docs/design/GPU_RENDERING_PROTOCOL.md`.
