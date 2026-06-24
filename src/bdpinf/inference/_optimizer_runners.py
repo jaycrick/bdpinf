@@ -4,6 +4,7 @@ Extracted from fitting.py to keep that module below 1000 lines.
 Depends only on _fit_types, stdlib, JAX, scipy, and optax.
 """
 
+import dataclasses
 import logging
 import time
 from collections.abc import Callable
@@ -15,16 +16,51 @@ import optax
 import scipy.optimize
 
 from inf_bp_texts.inference._fit_types import (
+    PATIENCE_GRADIENT_MULTIPLIER,
     ConvergenceConfig,
     OptimizerStrategy,
 )
 
 logger = logging.getLogger(__name__)
 
+# Solver kwargs that the scipy L-BFGS-B path actually consumes.  Anything else
+# (e.g. ``lr``, ``line_search_fn`` — leftovers from the PyTorch LBFGS era) is
+# silently ignored, so we log it at debug level rather than failing.
+_LBFGS_RECOGNIZED_KWARGS = frozenset(
+    {"record_every", "tolerance_grad", "tolerance_change"},
+)
+
 
 def _grad_norm(grads: jax.Array) -> float:
     """Return L2 norm of a gradient array as a Python float."""
     return float(jnp.sqrt(jnp.sum(grads**2)))
+
+
+def _rel_tol(absolute_tolerance: float, reference: float) -> float:
+    """Scale an absolute NLL tolerance to a relative one.
+
+    Returns ``absolute_tolerance * (1 + |reference|)`` so that the convergence
+    thresholds are invariant to the magnitude of the negative log-likelihood
+    (which grows with the number of observations).
+    """
+    return absolute_tolerance * (1.0 + abs(reference))
+
+
+def _scaled_config(  # pyright: ignore[reportUnusedFunction]
+    convergence_config: ConvergenceConfig,
+    n_observations: int,
+) -> ConvergenceConfig:
+    """Scale the gradient threshold by the observation count.
+
+    The objective is a *sum* over observations, so its gradient norm grows with
+    ``n_observations``.  Scaling the threshold makes the gradient stopping
+    criterion sample-size invariant (a per-observation gradient threshold).
+    """
+    factor = float(max(1, n_observations))
+    return dataclasses.replace(
+        convergence_config,
+        gradient_threshold=convergence_config.gradient_threshold * factor,
+    )
 
 
 def _check_convergence_criteria(
@@ -35,7 +71,12 @@ def _check_convergence_criteria(
     convergence_config: ConvergenceConfig | None = None,
     iterations_without_improvement: int | None = None,
 ) -> bool:
-    """Check if optimizer meets convergence criteria."""
+    """Check if optimizer meets convergence criteria.
+
+    ``convergence_config.gradient_threshold`` is expected to already be scaled
+    for the observation count (see :func:`_scaled_config`).  The NLL-change test
+    is relative to the current NLL magnitude (see :func:`_rel_tol`).
+    """
     if convergence_config is None:
         convergence_config = ConvergenceConfig.default()
 
@@ -47,14 +88,26 @@ def _check_convergence_criteria(
     if optimizer_name.lower() == "lbfgs":
         if nll_history is None or len(nll_history) < min_nll_history_len:
             return False
-        # Converged when improvement from previous step fell below threshold
-        # (nll[-2] - nll[-1] is positive when NLL decreasing, small at plateau).
-        return nll_history[-2] - nll_history[-1] < convergence_config.absolute_tolerance
+        # Converged when improvement from previous step fell below a relative
+        # threshold (nll[-2] - nll[-1] is positive when NLL decreasing, small at
+        # plateau).  Relative scaling avoids rejecting valid convergence on
+        # large-NLL problems.
+        return nll_history[-2] - nll_history[-1] < _rel_tol(
+            convergence_config.absolute_tolerance, nll_history[-1]
+        )
 
     if iterations_without_improvement is None:
         return False
 
-    return iterations_without_improvement >= convergence_config.patience
+    # Patience (no-improvement) path: require the gradient to also be small, so a
+    # noisy first-order plateau far from a stationary point is not mistaken for
+    # convergence.
+    if iterations_without_improvement < convergence_config.patience:
+        return False
+    patience_grad_ceiling = (
+        PATIENCE_GRADIENT_MULTIPLIER * convergence_config.gradient_threshold
+    )
+    return grad_norm is not None and grad_norm <= patience_grad_ceiling
 
 
 def run_lbfgs_optimizer(
@@ -83,6 +136,14 @@ def run_lbfgs_optimizer(
 
     """
     start_time = time.perf_counter()
+    unrecognized = set(strategy.solver_kwargs) - _LBFGS_RECOGNIZED_KWARGS
+    if unrecognized:
+        logger.debug(
+            "Ignoring unrecognized LBFGS solver_kwargs %s "
+            "(scipy L-BFGS-B only consults %s)",
+            sorted(unrecognized),
+            sorted(_LBFGS_RECOGNIZED_KWARGS),
+        )
     record_every = int(strategy.solver_kwargs.get("record_every", 1))
     best_nll = float("inf")
     best_log_params: jax.Array | None = None
@@ -132,7 +193,9 @@ def run_lbfgs_optimizer(
 
             nll_history.append(nll_val)
 
-            if nll_val < first_nll - convergence_config.absolute_tolerance:
+            if nll_val < first_nll - _rel_tol(
+                convergence_config.absolute_tolerance, first_nll
+            ):
                 improved_once = True
 
             if nll_val < best_nll:
@@ -165,11 +228,27 @@ def run_lbfgs_optimizer(
         iterations = iteration_count[0]
 
         x_final = jnp.array(opt_result.x, dtype=jnp.float64)
-        _, grads_final = val_and_grad(x_final)
+        nll_final_jax, grads_final = val_and_grad(x_final)
         gn_final = _grad_norm(grads_final)
-        nll_final = float(val_and_grad(x_final)[0])
+        nll_final = float(nll_final_jax)
 
-        if nll_final < first_nll - convergence_config.absolute_tolerance:
+        # scipy's reported optimum (opt_result.x) need not coincide with the
+        # last callback iterate — append it explicitly so nll_history/best_nll
+        # and the plateau check reflect the actual optimum, not just the last
+        # callback point.
+        if not nll_history or nll_history[-1] != nll_final:
+            nll_history.append(nll_final)
+            grad_norms.append(gn_final)
+            param_history.append(opt_result.x.tolist())
+            timestamps.append(time.perf_counter() - start_time)
+
+        if nll_final < best_nll:
+            best_nll = nll_final
+            best_log_params = x_final
+
+        if nll_final < first_nll - _rel_tol(
+            convergence_config.absolute_tolerance, first_nll
+        ):
             improved_once = True
 
         # Primary convergence check — gradient criterion takes priority.
@@ -262,6 +341,30 @@ def run_first_order_optimizer(
     iterations = 0
     start_time = time.perf_counter()
 
+    # Already-converged guard (mirrors the LBFGS early-return): if the initial
+    # point already satisfies the gradient criterion, there is nothing to
+    # optimize and the "no improvement" exception below would otherwise fire
+    # spuriously on an already-optimal start.  This check is side-effect free
+    # (no history append) so it does not duplicate the loop's own first record.
+    init_nll_jax, init_grads = val_and_grad(params)
+    init_nll_val = float(init_nll_jax)
+    if not np.isfinite(init_nll_val):
+        return (
+            False,
+            RuntimeError(
+                f"Non-finite objective encountered during optimization"
+                f" with {strategy.name}."
+            ),
+            None,
+            0,
+        )
+    if _grad_norm(init_grads) <= convergence_config.gradient_threshold:
+        nll_history.append(init_nll_val)
+        grad_norms.append(_grad_norm(init_grads))
+        param_history.append(np.array(params).tolist())
+        timestamps.append(0.0)
+        return True, None, jnp.asarray(params, dtype=jnp.float64), 0
+
     for iteration in range(max_iters):
         iterations = iteration + 1
 
@@ -293,7 +396,9 @@ def run_first_order_optimizer(
 
         if first_nll is None:
             first_nll = nll_val
-        elif nll_val < first_nll - convergence_config.absolute_tolerance:
+        elif nll_val < first_nll - _rel_tol(
+            convergence_config.absolute_tolerance, first_nll
+        ):
             improved_once = True
 
         if nll_val >= best_nll:
@@ -302,7 +407,8 @@ def run_first_order_optimizer(
             improvement = best_nll - nll_val
             iterations_without_improvement = (
                 0
-                if improvement >= convergence_config.absolute_tolerance
+                if improvement
+                >= _rel_tol(convergence_config.absolute_tolerance, best_nll)
                 else iterations_without_improvement + 1
             )
             best_nll = nll_val

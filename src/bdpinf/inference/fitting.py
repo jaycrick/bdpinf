@@ -3,6 +3,7 @@
 import dataclasses
 import logging
 import math
+import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, TypedDict, Unpack
@@ -27,11 +28,12 @@ from ._fit_types import (
     OptimizerStrategy,
 )
 from ._optimizer_runners import (
+    _scaled_config,  # pyright: ignore[reportPrivateUsage]
     run_first_order_optimizer,
     run_lbfgs_optimizer,
 )
-from .likelihood import _log_likelihood_jit_core  # pyright: ignore[reportPrivateUsage]
 from .likelihood import (
+    _log_likelihood_jit_core,  # pyright: ignore[reportPrivateUsage]
     negative_log_likelihood,
 )
 from .uncertainty import estimate_mle_covariance
@@ -405,6 +407,14 @@ def fit_birth_death_processes(
     }
 
     if estimate_uncertainty:
+        if not converged:
+            warnings.warn(
+                "Estimating uncertainty from a fit that did not converge; the "
+                "Hessian is evaluated at a possibly non-stationary point, so "
+                "the resulting covariance/standard errors may not be valid.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         def full_log_params_fn(theta_free: jax.Array) -> jax.Array:
             return jnp.log(
@@ -627,9 +637,27 @@ def _run_optimizer_strategies(
 
     val_and_grad_fn = jax.jit(jax.value_and_grad(_jittable_nll))
 
+    # The objective sums a term per observed age, so its gradient norm scales
+    # with the number of observations; scale the gradient-threshold portion of
+    # the convergence criteria accordingly (see _optimizer_runners._scaled_config
+    # for why) so the stopping rule is sample-size invariant.
+    n_observations = len(_jit_non_spine) + (
+        len(_jit_spine) if _jit_spine is not None else 0
+    )
+    scaled_convergence_config = _scaled_config(convergence_config, n_observations)
+
     converged = False
     selected_attempt_index: int | None = None
     attempts: list[OptimizerAttemptResult] = []
+
+    # Warm-start each subsequent optimizer from the running best parameters
+    # (not the original initial guess) so a sequence like ("LBFGS", "Adam")
+    # actually refines LBFGS's result with Adam, matching the documented
+    # LBFGS-then-Adam workflow instead of running two independent fits.
+    log_params = log_params_initial
+    best_overall_nll = float("inf")
+    best_overall_log_params: jax.Array | None = None
+    best_overall_attempt_index: int | None = None
 
     for idx, key in enumerate(requested_keys):
         strategy = strategies_map[key]
@@ -637,8 +665,8 @@ def _run_optimizer_strategies(
         attempt, best_log_params = _run_single_optimizer(
             strategy=strategy,
             attempt_index=idx,
-            log_params=log_params_initial,
-            convergence_config=convergence_config,
+            log_params=log_params,
+            convergence_config=scaled_convergence_config,
             val_and_grad_fn=val_and_grad_fn,
         )
         attempts.append(attempt)
@@ -646,12 +674,32 @@ def _run_optimizer_strategies(
         if best_log_params is not None:
             log_params = best_log_params
 
+        attempt_best_nll = min(attempt.nll_history) if attempt.nll_history else None
+        if (
+            attempt_best_nll is not None
+            and math.isfinite(attempt_best_nll)
+            and best_log_params is not None
+            and attempt_best_nll < best_overall_nll
+        ):
+            best_overall_nll = attempt_best_nll
+            best_overall_log_params = best_log_params
+            best_overall_attempt_index = idx
+
         if attempt.converged:
             converged = True
-            selected_attempt_index = idx
             break
 
-    if not converged and attempts:
+    # Return parameters from the globally-best attempt (lowest NLL across all
+    # attempts actually run), not merely the last attempt run, and report that
+    # attempt's index so the returned rates, `selected_attempt_index`, and
+    # `best_attempt_index` (computed from the same nll_history data in
+    # _build_optimization_result_payload) all agree.  When an attempt converges
+    # we stop immediately (as before), and that attempt is necessarily the
+    # best one seen so far, so this also covers the converged path.
+    if best_overall_log_params is not None:
+        log_params = best_overall_log_params
+        selected_attempt_index = best_overall_attempt_index
+    elif attempts:
         selected_attempt_index = 0
 
     return OptimizerRunResult(
@@ -796,8 +844,14 @@ def get_crude_parameter_estimates(
         )
         raise ValueError(msg)
 
-    est_birth_rates = est_birth_rates + (est_death_rates - est_birth_rates) / 4
-    est_death_rates = est_death_rates - (est_death_rates - est_birth_rates) / 4
+    # Pull birth and death rates a quarter of the way toward each other.
+    # Both updates must use the *original* (pre-shrink) values: computing
+    # est_death_rates from the already-updated est_birth_rates would make the
+    # pull asymmetric (birth moves a quarter of the original gap, death moves
+    # a quarter of the now-smaller gap).
+    rate_gap = est_death_rates - est_birth_rates
+    est_birth_rates = est_birth_rates + rate_gap / 4
+    est_death_rates = est_death_rates - rate_gap / 4
 
     return (est_birth_rates, est_death_rates)
 

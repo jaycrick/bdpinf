@@ -136,10 +136,10 @@ Numerical derivatives used during optimization (Hessian/Jacobian for the MLE cov
 ### Inference layer: `inference/`
 
 `fitting.py` is the main entry point:
-- `fit_birth_death_processes()` --- MLE via PyTorch optimizers (LBFGS, Adam); supports initial perturbation for robustness and convergence detection with multi-restart
+- `fit_birth_death_processes()` --- MLE via JAX-backed optimizers: scipy's L-BFGS-B (gradients from `jax.value_and_grad`) and optax's Adam/SGD; optimizers run sequentially (e.g. LBFGS then Adam) and each warm-starts from the previous attempt's best parameters, stopping at the first convergence. Supports initial perturbation (`perturb_initial_params_std`) for robustness to bad initial guesses.
 - `ParameterConstraints` dataclass --- fixed parameters (index → value) and equality groups (lists of indices forced equal); validated before optimization to reduce parameter space
 - `estimate_mle_covariance()` --- covariance via numerical Hessian inversion
-- Optimizer internals are split across `_fit_types.py` (shared dataclasses: `ConvergenceConfig`, `OptimizerStrategy`, etc.) and `_optimizer_runners.py` (`_run_lbfgs_optimizer`, `_run_first_order_optimizer`).
+- Optimizer internals are split across `_fit_types.py` (shared dataclasses: `ConvergenceConfig`, `OptimizerStrategy`, etc.) and `_optimizer_runners.py` (`run_lbfgs_optimizer`, `run_first_order_optimizer`).
 `ConvergenceConfig` is exported from `inference/__init__.py`.
 
 `likelihood.py` --- `log_likelihood()` / `negative_log_likelihood()` wrappers that handle log-scale vs. positive-scale parameters and marginalize over unknown spine positions.

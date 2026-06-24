@@ -1,6 +1,7 @@
 """Uncertainty estimation helpers for birth-death process MLEs."""
 
 import math
+import warnings
 from collections.abc import Callable
 
 import jax
@@ -10,23 +11,51 @@ import jax.scipy.special
 from .likelihood import negative_log_likelihood
 
 
+def _is_positive_definite(matrix: jax.Array) -> bool:
+    """Return True if ``matrix`` admits a Cholesky factorization (no NaNs)."""
+    chol = jnp.linalg.cholesky(matrix)
+    return not bool(jnp.any(jnp.isnan(chol)))
+
+
 def _invert_observed_fisher(
     observed_fisher: jax.Array,
 ) -> jax.Array:
-    """Invert the observed Fisher information with NaN-checked jitter fallbacks."""
+    """Invert the observed Fisher information with PD-checked jitter fallbacks.
+
+    A non-positive-definite Hessian (e.g. at a saddle point, or when the
+    optimizer stopped short of a true stationary point) can still invert
+    cleanly while producing negative "variances" on the diagonal. We therefore
+    require the Hessian (and each jittered variant) to be positive definite
+    --- verified via Cholesky --- not merely NaN-free, before trusting its
+    inverse. If no jitter level recovers positive-definiteness, fall back to
+    the pseudo-inverse and warn, since the resulting covariance should not be
+    treated as valid.
+    """
     if observed_fisher.size == 0:
         return observed_fisher
 
-    result = jnp.linalg.inv(observed_fisher)
-    if not bool(jnp.any(jnp.isnan(result))):
-        return result
-
-    identity = jnp.eye(observed_fisher.shape[0], dtype=observed_fisher.dtype)
-    for jitter in (1e-10, 1e-8, 1e-6, 1e-4):
-        result = jnp.linalg.inv(observed_fisher + jitter * identity)
+    if _is_positive_definite(observed_fisher):
+        result = jnp.linalg.inv(observed_fisher)
         if not bool(jnp.any(jnp.isnan(result))):
             return result
 
+    identity = jnp.eye(observed_fisher.shape[0], dtype=observed_fisher.dtype)
+    for jitter in (1e-10, 1e-8, 1e-6, 1e-4):
+        jittered = observed_fisher + jitter * identity
+        if not _is_positive_definite(jittered):
+            continue
+        result = jnp.linalg.inv(jittered)
+        if not bool(jnp.any(jnp.isnan(result))):
+            return result
+
+    warnings.warn(
+        "Observed Fisher information is not positive definite even after "
+        "jitter; the fit may not be at a true stationary point. Falling back "
+        "to the pseudo-inverse, but the resulting covariance/standard errors "
+        "should not be treated as valid.",
+        UserWarning,
+        stacklevel=2,
+    )
     return jnp.linalg.pinv(observed_fisher)
 
 

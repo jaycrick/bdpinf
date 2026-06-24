@@ -89,6 +89,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `inference.fitting`/`inference._optimizer_runners` --- multi-optimizer fits
+  (e.g. the default `("LBFGS", "Adam")`) now warm-start each subsequent
+  optimizer from the running best parameters instead of the original initial
+  guess, and `fit_birth_death_processes()` returns the globally best-NLL
+  attempt's parameters (with `selected_attempt_index` reported consistently)
+  instead of whichever attempt happened to run last.
+- `inference._optimizer_runners` --- convergence thresholds are now
+  sample-size invariant: the gradient-norm threshold scales with the number of
+  observations and the NLL-improvement checks (LBFGS plateau, Adam/SGD
+  patience) use a relative tolerance instead of a fixed absolute one. The
+  patience (no-improvement) criterion for Adam/SGD now also requires a small
+  gradient norm, and the first-order optimizer gained an "already converged at
+  the initial point" guard (mirroring LBFGS) so an already-optimal start no
+  longer raises a spurious "did not improve" error.
+- `inference.uncertainty._invert_observed_fisher` --- a non-positive-definite
+  observed Fisher information (e.g. at a saddle point) could invert cleanly
+  and silently yield negative variances; positive-definiteness is now checked
+  via Cholesky before trusting an inversion, with a warning when none of the
+  jitter fallbacks recover it. `fit_birth_death_processes()` also warns when
+  uncertainty is estimated for a fit that did not converge.
+- `inference.fitting.get_crude_parameter_estimates` --- the birth/death-rate
+  "shrink toward each other" step computed the death-rate update from the
+  already-shrunk birth rate, making the pull asymmetric; both updates now use
+  the original (pre-shrink) values.
 - `inference._optimizer_runners` --- L-BFGS-B `ftol` was divided by `1e-8`,
   causing scipy to stop after one iteration and report false convergence
   failures on large-NLL (e.g. six-epoch) problems.

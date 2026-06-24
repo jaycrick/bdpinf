@@ -16,6 +16,12 @@ DEFAULT_PATIENCE = 5
 DEFAULT_ITERATIONS = 10000
 MIN_EQUALITY_GROUP_SIZE = 2
 
+# When the patience (no-improvement) criterion fires, the gradient must also be
+# within this multiple of the (sample-size-scaled) gradient threshold before we
+# accept convergence.  This prevents a noisy first-order plateau far from a
+# stationary point from being mistaken for convergence.
+PATIENCE_GRADIENT_MULTIPLIER = 100.0
+
 
 @dataclass(frozen=True)
 class OptimizerStrategy:
