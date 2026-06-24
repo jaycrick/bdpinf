@@ -48,7 +48,7 @@ from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference.fitting import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.utils import format_table_dataframe
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL, display_png
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL, display_svg
 ```
 
 ## Simulate One Dataset
@@ -258,7 +258,7 @@ for r in results:
                 # (and again below for grad norms/params); interactive
                 # display(...) inlines each NLL history's data, and the
                 # cumulative total chokes pandoc's markdown reader on render.
-                display_png(fig_nll)
+                display_svg(fig_nll)
             except Exception:
                 pass
 
@@ -296,7 +296,7 @@ for r in results:
             out_html.parent.mkdir(parents=True, exist_ok=True)
             fig_g.save(str(out_html))
             try:
-                display_png(fig_g)
+                display_svg(fig_g)
             except Exception:
                 pass
 
@@ -344,7 +344,7 @@ for r in results:
                     out_html.parent.mkdir(parents=True, exist_ok=True)
                     fig_p.save(str(out_html))
                     try:
-                        display_png(fig_p)
+                        display_svg(fig_p)
                     except Exception:
                         pass
             except Exception as _exc:

@@ -115,7 +115,7 @@ from inf_bp_texts.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
 )
-from inf_bp_texts.visualization import display_png, save_chart
+from inf_bp_texts.visualization import display_svg, save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 
 birth_rates_true = np.array(
@@ -348,7 +348,7 @@ if (
     # Static PNG: inlines ~num_sims raw scatter points; an interactive
     # display(...) here ships that whole dataset in the Vega-Lite spec, which
     # chokes pandoc's markdown reader on render.
-    display_png(fig_rates_vs_pop, width=500, height=350)
+    display_svg(fig_rates_vs_pop, width=500, height=350)
     save_chart(
         fig_rates_vs_pop,
         "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_population_size",
@@ -429,7 +429,7 @@ if (
     )
     # Static PNG: same pandoc-choking inline-scatter-data issue as the
     # rates-vs-population-size chart above.
-    display_png(fig_rates_vs_mean_age, width=500, height=350)
+    display_svg(fig_rates_vs_mean_age, width=500, height=350)
     save_chart(
         fig_rates_vs_mean_age,
         "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_mean_population_age",

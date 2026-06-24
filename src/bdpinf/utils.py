@@ -74,20 +74,17 @@ def ensure_1d_tensors(*values: object) -> tuple[jax.Array, ...]:
     return tuple(ensure_1d_tensor(v) for v in values)
 
 
-def require_tensors(**named: object) -> None:
-    """No-op kept for API compatibility.
-
-    In the JAX backend all inputs are normalised at the module boundary;
-    this guard is no longer needed but is retained so call sites that pass
-    ``_skip_normalization=True`` do not have to change.
-    """
-
-
 def json_safe(value: object) -> object:
-    """Convert common numpy/JAX/pandas types to JSON-serializable Python types."""
-    if isinstance(value, (np.integer, int)):
+    """Convert numpy/JAX/pandas types not natively JSON-serializable to plain Python.
+
+    Intended as a ``json.dumps(..., default=json_safe)`` hook: ``json`` already
+    serializes native ``int``/``float``/``None``/etc. without calling ``default``,
+    so only the numpy/JAX/pandas types below need explicit handling here.
+    Anything else is returned unchanged.
+    """
+    if isinstance(value, np.integer):
         return int(value)
-    if isinstance(value, (np.floating, float)):
+    if isinstance(value, np.floating):
         return float(value)
     if isinstance(value, np.ndarray):
         return value.tolist()
@@ -96,8 +93,6 @@ def json_safe(value: object) -> object:
         return np.array(value).tolist()  # type: ignore[arg-type]
     if isinstance(value, pd.Timestamp):
         return value.isoformat()
-    if value is None:
-        return None
     return value
 
 

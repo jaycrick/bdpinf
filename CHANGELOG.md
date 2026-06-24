@@ -26,7 +26,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   first step of an in-progress Plotly→Altair migration (most helpers and 18/19
   notebooks now use Altair; see `docs/design/PLOTLY_TO_ALTAIR_IMPLEMENTATION_PLAN.md`
   for the one remaining notebook and the final dependency removal).
-- `visualization.altair_theme.display_png` --- renders a chart to a static PNG
+- `visualization.altair_theme.display_svg` --- renders a chart to static SVG
   (via the same vl-convert path as `save_chart`) instead of an interactive
   `display(...)`. Data-heavy charts (per-iteration optimizer histories, bulk
   simulation scatters) now use it in `optimizer_comparison.qmd` and the
@@ -34,8 +34,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   inlining their full Vega-Lite data as a multi-MB single line was choking
   pandoc's markdown reader during render.
 - `inference.bayesian` --- per-family prior loc/scale on `BayesianPriorConfig`,
-  in-model parameter constraints and GPU/CUDA backend selection on
-  `BayesianModelConfig`, and `mle_init_log_rates()` for MLE-warm-started NUTS.
+  in-model parameter constraints on `BayesianModelConfig`, and
+  `mle_init_log_rates()` for MLE-warm-started NUTS.
 - `qmd_scripts/core_analysis/04_bayesian/` --- four Bayesian inference notebooks
   (Kashouh FamilyK, Kashouh single-epoch, NTVMR single-epoch, NTVMR six-epoch)
   and an optional `gpu` dependency group for ad-hoc CPU-vs-GPU benchmarking
@@ -48,7 +48,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `utils.derive_worker_seeds()` (JAX-based independent seeding for joblib
   workers) and `utils.format_ordinal()`; `schemas` module (Pydantic v2 input
   validation); `_paths.get_project_root()` for robust path resolution in
-  notebooks; `require_tensors` decorator for uniform array-type validation.
+  notebooks.
 - CI lint job (ruff + type-check) added to GitHub Actions; `CITATION.cff`,
   `CHANGELOG.md`, `CONTRIBUTING.md` provenance files.
 - NTVMR single-/multi-epoch notebooks now run six dataset subsets (was one)
@@ -93,6 +93,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   too.
   Use the new `scripts/render_*.slurm` (see Added) to render large
   batches efficiently on HPC instead of a full site render on a laptop.
+- `inference.bayesian` --- removed the no-op `BayesianModelConfig.device` and
+  `BayesianMCMCConfig.jit_compile` fields (JAX/NumPyro always control the
+  backend/JIT themselves); use the `JAX_PLATFORMS` environment variable
+  instead. `BayesianPriorConfig.resolve_tensors()` dropped its unused
+  `device` parameter to match.
+- `inference.likelihood` --- the JIT-compiled MLE-hot-path core
+  (`_log_likelihood_jit_core`) and the validating `log_likelihood()` front-end
+  no longer duplicate the population/age-marginal math; `log_likelihood()` now
+  delegates to the same shared core (renamed `_log_likelihood_core`), with
+  validation/spine-auto-detection staying in the front-end only.
 
 ### Fixed
 

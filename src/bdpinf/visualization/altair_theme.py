@@ -233,21 +233,20 @@ def save_chart(
     return file_path
 
 
-def display_png(
+def display_svg(
     chart: alt.TopLevelMixin,
     *,
     width: int | None = None,
     height: int | None = None,
-    scale: float = 2,
 ) -> None:
-    """Render an Altair chart to a static PNG and display it inline.
+    """Render an Altair chart to static SVG and display it inline.
 
     Charts that inline large datasets (long per-iteration histories across many
     series, thousands of scatter points) emit their full Vega-Lite data spec
     as JSON when displayed interactively via ``IPython.display.display``. In a
     rendered Quarto notebook this lands as a single multi-megabyte line in the
     intermediate markdown, which pandoc's reader parses pathologically slowly.
-    A PNG is one bounded image node instead, so pandoc sees ordinary markdown.
+    An SVG is one bounded image node instead, so pandoc sees ordinary markdown.
 
     Use this in place of ``display(chart)`` for data-heavy charts; keep using
     plain ``display`` for small/aggregated charts where interactivity is cheap
@@ -260,13 +259,10 @@ def display_png(
         Any Altair chart (single, layered, faceted, or concatenated).
     width, height : int | None
         Optional overrides for the chart's view dimensions in pixels.
-    scale : float
-        Pixel-density multiplier passed to vl-convert (``scale_factor``), so
-        the embedded PNG stays crisp at typical notebook display sizes.
     """
     import io  # noqa: PLC0415
 
-    from IPython.display import Image, display  # noqa: PLC0415
+    from IPython.display import SVG, display  # noqa: PLC0415
 
     register_export_fonts()
 
@@ -280,8 +276,8 @@ def display_png(
         sized = chart.properties(**size_props)
 
     buf = io.BytesIO()
-    sized.save(buf, format="png", engine="vl-convert", scale_factor=scale)
-    display(Image(buf.getvalue()))
+    sized.save(buf, format="svg", engine="vl-convert")
+    display(SVG(buf.getvalue()))
 
 
 __all__ = [
@@ -292,7 +288,7 @@ __all__ = [
     "PTOLQUAL",
     "THEME_NAME",
     "TITLE_FONT_SIZE",
-    "display_png",
+    "display_svg",
     "inf_bp_texts_theme",
     "register_export_fonts",
     "save_chart",

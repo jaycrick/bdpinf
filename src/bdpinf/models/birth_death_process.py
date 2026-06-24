@@ -88,8 +88,6 @@ class BirthDeathProcess:
                     ... )
                     >>> proc.spine_ages
                     Array([10.,  5.], dtype=float64)
-                    >>> proc['spine']  # legacy indexing
-                    [10.0, 5.0]
 
             Construct from a manuscript record table and access death times::
 

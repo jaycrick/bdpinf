@@ -50,7 +50,7 @@ from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference.fitting import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.utils import derive_worker_seeds
-from inf_bp_texts.visualization import display_png, save_chart
+from inf_bp_texts.visualization import display_svg, save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
 
@@ -365,7 +365,7 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
     # Static PNG: inlines ~num_sims raw scatter points; an interactive
     # display(...) here ships that whole dataset in the Vega-Lite spec, which
     # chokes pandoc's markdown reader on render.
-    display_png(fig_rates_vs_pop, width=500, height=350)
+    display_svg(fig_rates_vs_pop, width=500, height=350)
     save_chart(
         fig_rates_vs_pop,
         "methods_validation_bulk_inference_rates_vs_population_size",
@@ -427,7 +427,7 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
     )
     # Static PNG: same pandoc-choking inline-scatter-data issue as the
     # rates-vs-population-size chart above.
-    display_png(fig_rates_vs_mean_age, width=500, height=350)
+    display_svg(fig_rates_vs_mean_age, width=500, height=350)
     save_chart(
         fig_rates_vs_mean_age,
         "methods_validation_bulk_inference_rates_vs_mean_population_age",

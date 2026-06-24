@@ -15,9 +15,6 @@ Key design choices
   that differ between birth and death rates or between epochs.
 * Multi-chain inference uses ``chain_method="vectorized"`` (JAX vmap over
   chains) which is safe on both CPU and GPU without subprocess overhead.
-* The ``device`` field of ``BayesianModelConfig`` is accepted for API
-  compatibility but ignored: JAX uses its default backend (set via
-  ``JAX_PLATFORMS`` or ``jax.default_backend()``).
 * Data tensors in ``BayesianModelData`` are stored as **NumPy arrays** so that
   they remain concrete (not abstract tracers) inside NumPyro's JIT-compiled
   ``lax.while_loop``.  The model function converts them to JAX at the boundary
@@ -32,7 +29,6 @@ from __future__ import annotations
 
 import logging
 import math
-import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, TypedDict, Unpack
@@ -112,7 +108,6 @@ class BayesianPriorConfig:
     def resolve_tensors(
         self,
         n_epochs: int,
-        device: str = "cpu",  # noqa: ARG002 — kept for API compatibility
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Return ``(loc_array, scale_array)`` of shape ``[2 * n_epochs]``.
 
@@ -123,8 +118,6 @@ class BayesianPriorConfig:
         ----------
         n_epochs : int
             Number of epochs in the model.
-        device : str
-            Ignored (JAX uses its default backend).  Kept for API compatibility.
 
         Returns
         -------
@@ -178,8 +171,6 @@ class BayesianMCMCConfig:
         NUTS dual-averaging target acceptance probability.
     max_tree_depth : int
         Maximum leapfrog tree depth per step.
-    jit_compile : bool
-        Unused (NumPyro always JIT-compiles the model).  Kept for API compat.
     disable_progressbar : bool
         Suppress the per-step progress display.
 
@@ -190,7 +181,6 @@ class BayesianMCMCConfig:
     num_chains: int = 1
     target_accept_prob: float = 0.7
     max_tree_depth: int = 10
-    jit_compile: bool = False  # noqa: ARG002 — NumPyro always JIT-compiles
     disable_progressbar: bool = True
 
 
@@ -218,9 +208,6 @@ class BayesianModelConfig:
         Fixed parameters and equality groups.  When provided, only the free
         parameters are sampled; constraints are applied *inside* the NumPyro
         model (not post-hoc).
-    device : str
-        Ignored.  JAX uses its default backend (set via ``JAX_PLATFORMS``).
-        Kept for API compatibility with notebooks that pass ``device="cuda"``.
     init_log_rates : jax.Array | NDArray | None
         Starting values for the ``free_log_rates`` sample site (shape
         ``[n_free]``).  When provided, NUTS warmup begins at this point
@@ -236,7 +223,6 @@ class BayesianModelConfig:
     unbias: bool = True
     rng_seed: int | None = None
     constraints: ParameterConstraints | None = None
-    device: str = "cpu"  # kept for API compat; ignored by JAX backend
     init_log_rates: jax.Array | NDArray[np.float64] | None = None
 
 
@@ -720,7 +706,7 @@ def fit_birth_death_processes_bayesian(
         Observation time(s) — one value per epoch.
     model_config : BayesianModelConfig | None
         Model options: ordered inputs, spine ages, population sizes, initial
-        population, unbias, constraints, RNG seed, and device.  Defaults to
+        population, unbias, constraints, and RNG seed.  Defaults to
         ``BayesianModelConfig()``.
     mcmc_config : BayesianMCMCConfig | None
         NUTS/MCMC configuration.  Defaults to ``BayesianMCMCConfig()``.
@@ -776,15 +762,6 @@ def fit_birth_death_processes_bayesian(
     model_config = model_config or BayesianModelConfig()
     mcmc_config = mcmc_config or BayesianMCMCConfig()
     prior_config = prior_config or BayesianPriorConfig()
-
-    if model_config.device not in ("cpu", ""):
-        warnings.warn(
-            f"BayesianModelConfig(device='{model_config.device}'): the JAX/NumPyro "
-            "backend uses its default platform (set via JAX_PLATFORMS). The device "
-            "parameter is accepted for API compatibility but has no effect.",
-            UserWarning,
-            stacklevel=2,
-        )
 
     if model_config.initial_population <= 0:
         msg = "initial_population must be a positive integer"

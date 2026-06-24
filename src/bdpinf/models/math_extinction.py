@@ -10,8 +10,10 @@ implementation are resolved as follows:
 - ``torch.diff(prepend=...)`` → ``jnp.concatenate([jnp.zeros((1,)), arr])``.
 
 All inputs are assumed float64 (``jax_enable_x64`` is set in __init__.py).
-The ``_skip_normalization`` kwarg is accepted for API compatibility but ignored
-— JAX functions always expect pre-normalised float64 arrays.
+The ``_skip_normalization`` kwarg lets callers that have already validated
+and normalised their inputs (e.g. the JIT-compiled MLE hot path, the NumPyro
+model) skip the redundant ``normalize_and_validate_inputs`` call, which uses
+Python-level ``float()``/``bool()`` calls that are unsafe under ``jax.jit``.
 """
 
 import jax

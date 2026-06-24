@@ -197,22 +197,6 @@ def log_likelihood(
     ):
         return _ninf
 
-    log_P_n_T = calculate_populations_log_lik(
-        birth_rates=birth_rates,
-        death_rates=death_rates,
-        times=times,
-        ns=ns_arr,
-        initial_population=initial_population,
-        unbias=unbias,
-    )
-
-    if not bool(jnp.isfinite(log_P_n_T)):
-        return _ninf
-    if total_pop_size == 0:
-        return log_P_n_T
-
-    ages_log_lik = jnp.float64(0.0)
-
     if spine_ages is None and not is_ordered and len(ages) > 0:
         # Host-side boundary detection (data-dependent, not traced)
         at_final_time = np.isclose(np.array(ages, dtype=np.float64), float(times[-1]))
@@ -232,59 +216,29 @@ def log_likelihood(
 
     use_unknown_spine_marginal = (not is_ordered) and (spine_ages is None)
 
-    if use_unknown_spine_marginal and len(ages) > 0:
-        n_ages = len(ages)
-        non_spine_log_liks = calculate_non_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times=times,
-            return_array=True,
-        )
-        spine_log_liks = calculate_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages=ages,
-            times=times,
-            return_array=True,
-        )
+    if is_ordered:
+        spine_ages = ages[:1]
+        ages = ages[1:]
 
-        sum_log_f = non_spine_log_liks.sum()
-        a = spine_log_liks - non_spine_log_liks
-        log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a.max()))) + a.max()
-        ages_log_lik = sum_log_f - jnp.log(jnp.float64(n_ages)) + log_sum_exp
-    elif is_ordered or (spine_ages is not None):
-        if is_ordered:
-            spine_ages = ages[:1]
-            ages = ages[1:]
-        if spine_ages is not None:
-            ages_log_lik = ages_log_lik + calculate_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                ages=spine_ages,
-                times=times,
-            )
-
-    if len(ages) > 0 and not use_unknown_spine_marginal:
-        ages_log_lik = ages_log_lik + calculate_non_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times=times,
-        )
-
-    if not bool(jnp.isfinite(ages_log_lik)):
-        return _ninf
-
-    total_log_likelihood = log_P_n_T + ages_log_lik
-
-    if not bool(jnp.isfinite(total_log_likelihood)):
-        return _ninf
-
-    return total_log_likelihood
+    # Delegate the population + age-likelihood math to the shared core (see
+    # _log_likelihood_core).  skip_normalization=False because this function
+    # is never traced under jax.jit, so the math kernels' own
+    # normalize_and_validate_inputs call is safe to run.
+    return _log_likelihood_core(
+        birth_rates,
+        death_rates,
+        non_spine_ages=ages,
+        spine_ages=spine_ages,
+        times=times,
+        ns=ns_arr,
+        initial_population=initial_population,
+        unbias=unbias,
+        use_unknown_spine_marginal=use_unknown_spine_marginal,
+        skip_normalization=False,
+    )
 
 
-def _log_likelihood_jit_core(  # pyright: ignore[reportUnusedFunction]
+def _log_likelihood_core(
     birth_rates: jnp.ndarray,
     death_rates: jnp.ndarray,
     non_spine_ages: jnp.ndarray,
@@ -295,19 +249,23 @@ def _log_likelihood_jit_core(  # pyright: ignore[reportUnusedFunction]
     initial_population: int = 1,
     unbias: bool = False,
     use_unknown_spine_marginal: bool = True,
+    skip_normalization: bool = True,
 ) -> jnp.ndarray:
-    """Jittable log-likelihood core for the MLE optimizer hot path.
+    """Shared log-likelihood core, used by both ``log_likelihood`` and the MLE hot path.
 
-    Unlike ``log_likelihood``, this function contains no host-side hazards
-    (``bool(traced)``, ``np.isclose(traced)``, dynamic mask slicing).  All
-    host-side validation and spine auto-detection must be completed by the
-    caller before invoking this function.
+    All host-side validation and spine auto-detection (auto-detecting an
+    unknown spine, splitting ``is_ordered`` inputs, etc.) must be completed by
+    the caller before invoking this function — this function itself contains
+    no host-side hazards (``bool(traced)``, ``np.isclose(traced)``, dynamic
+    mask slicing).
 
     All JAX-branching on ``use_unknown_spine_marginal``, ``spine_ages is not
     None``, and array lengths uses Python-level conditionals that resolve at
-    XLA trace time because these flags and shapes are static closure constants.
-    Non-finite outputs are handled with ``jnp.where`` instead of early
-    ``bool()``-guarded returns.
+    XLA trace time because these flags and shapes are static closure constants
+    whenever this function is called under ``jax.jit`` (the MLE hot path, via
+    ``_jittable_nll``).  Non-finite outputs are handled with ``jnp.where``
+    instead of early ``bool()``-guarded returns, so the function is safe to
+    call both inside and outside ``jax.jit``.
 
     Parameters
     ----------
@@ -332,6 +290,13 @@ def _log_likelihood_jit_core(  # pyright: ignore[reportUnusedFunction]
         If True, ``non_spine_ages`` contains all ages and the spine position
         is marginalized via logsumexp.  Static Python bool resolved at trace
         time.
+    skip_normalization : bool
+        Forwarded as ``_skip_normalization`` to the math kernels.  ``True``
+        (the MLE hot path) skips ``normalize_and_validate_inputs``, which uses
+        Python-level ``float()``/``bool()`` calls that are unsafe under
+        ``jax.jit`` — the caller is responsible for having already validated
+        and normalized its inputs.  ``False`` (``log_likelihood``, never
+        traced) lets the math kernels re-validate.
 
     Returns
     -------
@@ -348,26 +313,26 @@ def _log_likelihood_jit_core(  # pyright: ignore[reportUnusedFunction]
         ns=ns,
         initial_population=initial_population,
         unbias=unbias,
-        _skip_normalization=True,
+        _skip_normalization=skip_normalization,
     )
 
-    # NOTE: do NOT call int(float(ns.sum())) here — closure JAX arrays are
-    # abstract tracers inside jax.jit.  The n_non_spine == 0 guard below
-    # makes the early-return redundant: when there are no ages, ages_log_lik
+    # NOTE: do NOT call int(float(ns.sum())) here — under jax.jit, closure
+    # JAX arrays are abstract tracers.  The n_non_spine == 0 guard below
+    # makes an early-return redundant: when there are no ages, ages_log_lik
     # stays 0.0 and the final jnp.where handles any -inf from log_P_n_T.
     ages_log_lik = jnp.float64(0.0)
     n_non_spine = len(non_spine_ages)  # static shape
 
     if use_unknown_spine_marginal and n_non_spine > 0:
         # Unknown-spine marginal: all ages are spine candidates; integrate out
-        # the spine position via logsumexp (mirrors log_likelihood lines 237-255).
+        # the spine position via logsumexp.
         non_spine_ll = calculate_non_spine_ages_log_lik(
             birth_rates,
             death_rates,
             non_spine_ages,
             times=times,
             return_array=True,
-            _skip_normalization=True,
+            _skip_normalization=skip_normalization,
         )
         spine_ll = calculate_spine_ages_log_lik(
             birth_rates,
@@ -375,7 +340,7 @@ def _log_likelihood_jit_core(  # pyright: ignore[reportUnusedFunction]
             ages=non_spine_ages,
             times=times,
             return_array=True,
-            _skip_normalization=True,
+            _skip_normalization=skip_normalization,
         )
         a = spine_ll - non_spine_ll
         log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a.max()))) + a.max()
@@ -390,7 +355,7 @@ def _log_likelihood_jit_core(  # pyright: ignore[reportUnusedFunction]
                 death_rates,
                 ages=spine_ages,
                 times=times,
-                _skip_normalization=True,
+                _skip_normalization=skip_normalization,
             )
         if n_non_spine > 0:
             ages_log_lik = ages_log_lik + calculate_non_spine_ages_log_lik(
@@ -398,7 +363,7 @@ def _log_likelihood_jit_core(  # pyright: ignore[reportUnusedFunction]
                 death_rates,
                 non_spine_ages,
                 times=times,
-                _skip_normalization=True,
+                _skip_normalization=skip_normalization,
             )
 
     total = log_P_n_T + ages_log_lik

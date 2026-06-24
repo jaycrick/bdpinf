@@ -33,7 +33,7 @@ from ._optimizer_runners import (
     run_lbfgs_optimizer,
 )
 from .likelihood import (
-    _log_likelihood_jit_core,  # pyright: ignore[reportPrivateUsage]
+    _log_likelihood_core,  # pyright: ignore[reportPrivateUsage]
     negative_log_likelihood,
 )
 from .uncertainty import estimate_mle_covariance
@@ -623,7 +623,7 @@ def _run_optimizer_strategies(
         )
         birth_rates = full_params[:n_epochs]
         death_rates = full_params[n_epochs:]
-        return -_log_likelihood_jit_core(
+        return -_log_likelihood_core(
             birth_rates=birth_rates,
             death_rates=death_rates,
             non_spine_ages=_jit_non_spine,
@@ -633,6 +633,7 @@ def _run_optimizer_strategies(
             initial_population=initial_population,
             unbias=unbias,
             use_unknown_spine_marginal=_use_unknown_spine,
+            skip_normalization=True,
         )
 
     val_and_grad_fn = jax.jit(jax.value_and_grad(_jittable_nll))
