@@ -136,6 +136,7 @@ def fit_replicate(
         optimizers=fit_config.fit_optimizers,
         optimizer_kwargs=fit_config.fit_optimizer_kwargs,
         convergence_config=fit_config.convergence_config,
+        estimate_uncertainty=False,
     )
 
     if not fit_result.get("success", False):
