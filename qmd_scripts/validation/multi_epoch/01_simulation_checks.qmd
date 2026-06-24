@@ -29,7 +29,7 @@ birth and death rates are identical in each epoch.
 # ruff: noqa: E402
 # inf_bp_texts must be imported before jax so its JAX_PLATFORMS=cpu default
 # (see src/inf_bp_texts/__init__.py) takes effect before jax reads the env var.
-import inf_bp_texts  # noqa: F401
+import inf_bp_texts  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
 from typing import Any
 
 import altair as alt
@@ -362,10 +362,14 @@ non_spine_grid_three, non_spine_kde_three = boundary_corrected_kde_on_support(
     non_spine_age_samples_three,
     support_upper=time_span,
 )
-non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
-    lambda age: calculate_non_spine_ages_log_lik(  # pyright: ignore[reportUnknownLambdaType]
+def _non_spine_log_lik(age: float) -> float:
+    return calculate_non_spine_ages_log_lik(
         birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
-    ),
+    )
+
+
+non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
+    _non_spine_log_lik,
     time_span,
     proportion_not_at_upper=non_spine_prop_not_at_max,
 )
@@ -377,10 +381,14 @@ spine_grid_three, spine_kde_three = boundary_corrected_kde_on_support(
     spine_age_samples_three,
     support_upper=time_span,
 )
-spine_theory_x, spine_theory_y = theoretical_age_density(
-    lambda age: calculate_spine_ages_log_lik(  # pyright: ignore[reportUnknownLambdaType]
+def _spine_log_lik(age: float) -> float:
+    return calculate_spine_ages_log_lik(
         birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
-    ),
+    )
+
+
+spine_theory_x, spine_theory_y = theoretical_age_density(
+    _spine_log_lik,
     time_span,
     include_endpoint=False,
     proportion_not_at_upper=spine_prop_not_at_max,

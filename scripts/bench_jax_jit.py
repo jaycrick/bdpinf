@@ -16,8 +16,6 @@ Usage
     uv run python scripts/bench_jax_jit.py --n-repeats 20
 """
 
-# ruff: noqa: E402
-
 import json
 import os
 import time
@@ -227,7 +225,7 @@ def _speedup_summary(
 
 
 N_REPEATS_OPT = typer.Option(10, help="Warm repeats per measurement.")
-OUTPUT_OPT: Path | None = typer.Option(None, help="Output JSON path.")  # pyright: ignore[reportAssignmentType]
+OUTPUT_OPT: Path | None = typer.Option(None, help="Output JSON path.")
 
 
 @app.command()
@@ -366,7 +364,7 @@ def main(
 
 
 N_REPEATS_FITTER_OPT = typer.Option(5, help="Warm repeats per fitter cell.")
-OUTPUT_FITTER_OPT: Path | None = typer.Option(None, help="Output JSON path.")  # pyright: ignore[reportAssignmentType]
+OUTPUT_FITTER_OPT: Path | None = typer.Option(None, help="Output JSON path.")
 
 
 @app.command()

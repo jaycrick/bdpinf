@@ -866,7 +866,7 @@ def fit_birth_death_processes_bayesian(
     # ---- Summary (rate-space, for diagnostics) ------------------------------
 
     # diagnostics.summary requires shape [n_chains, n_samples, ...] for ESS/R-hat
-    posterior_summary = numpyro.diagnostics.summary(  # type: ignore[no-any-return]
+    posterior_summary = numpyro.diagnostics.summary(
         {"birth_rates": birth_by_chain, "death_rates": death_by_chain},
         prob=0.9,
     )

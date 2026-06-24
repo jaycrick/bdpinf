@@ -53,7 +53,7 @@ def create_kde_density_plot(
         msg = "At least two rates are required to build a KDE plot"
         raise ValueError(msg)
 
-    from inf_bp_texts.analysis.validation_helpers import (  # noqa: PLC0415
+    from inf_bp_texts.analysis.validation_helpers import (
         boundary_corrected_kde_at_zero,
     )
 

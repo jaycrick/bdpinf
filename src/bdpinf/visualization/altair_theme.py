@@ -163,18 +163,18 @@ def register_export_fonts() -> None:
     failure to register a directory logs a debug message rather than raising,
     because a font fallback degrades quality but should never break an export.
     """
-    global _fonts_registered  # noqa: PLW0603
+    global _fonts_registered
     if _fonts_registered:
         return
 
-    import vl_convert as vlc  # noqa: PLC0415
+    import vl_convert as vlc
 
     for candidate in _FONT_DIR_CANDIDATES:
         if not candidate.is_dir():
             continue
         try:
             vlc.register_font_directory(str(candidate))
-        except Exception as exc:  # noqa: BLE001 - font registration is best-effort
+        except Exception as exc:  # font registration is best-effort
             logger.debug("Could not register font directory %s: %s", candidate, exc)
     _fonts_registered = True
 
@@ -260,9 +260,9 @@ def display_svg(
     width, height : int | None
         Optional overrides for the chart's view dimensions in pixels.
     """
-    import io  # noqa: PLC0415
+    import io
 
-    from IPython.display import SVG, display  # noqa: PLC0415
+    from IPython.display import SVG, display
 
     register_export_fonts()
 

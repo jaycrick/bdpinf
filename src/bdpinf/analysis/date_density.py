@@ -121,7 +121,7 @@ def manuscript_date_density(
 
     """
     # Import here to avoid a circular dependency in the analysis sub-package.
-    from inf_bp_texts.analysis.validation_helpers import (  # noqa: PLC0415
+    from inf_bp_texts.analysis.validation_helpers import (
         boundary_corrected_kde_on_support,
     )
 

@@ -137,7 +137,7 @@ for dr in DEATH_RATES:
     regime_grids.append(lvl)
     first_inc = float(lvl[1]) - float(lvl[0])
     # R = ceil(1 / pr_ext) for the first increment
-    from inf_bp_texts.simulation.splitting import (  # noqa: PLC0415
+    from inf_bp_texts.simulation.splitting import (
         _calculate_extinction_probability,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -372,7 +372,7 @@ for rd in regime_data:
 
     spine_x, spine_y = theoretical_age_density(
         lambda age, br=BIRTH_RATE, dr=dr_val, t=TERMINAL_TIME: (
-            calculate_spine_ages_log_lik(  # type: ignore[misc]
+            calculate_spine_ages_log_lik(
                 birth_rates=br, death_rates=dr, ages=age, times=t
             )
         ),
@@ -382,7 +382,7 @@ for rd in regime_data:
     )
     ns_x, ns_y = theoretical_age_density(
         lambda age, br=BIRTH_RATE, dr=dr_val, t=TERMINAL_TIME: (
-            calculate_non_spine_ages_log_lik(  # type: ignore[misc]
+            calculate_non_spine_ages_log_lik(
                 birth_rates=br, death_rates=dr, ages=age, times=t
             )
         ),
@@ -413,7 +413,7 @@ for rd in regime_data:
     )
 
     # Y domains from both methods combined
-    from inf_bp_texts.analysis import robust_y_max  # noqa: PLC0415
+    from inf_bp_texts.analysis import robust_y_max
 
     ns_y_max = robust_y_max([c_ns_kde, s_ns_kde, ns_y])
     sp_y_max = robust_y_max([c_sp_kde, s_sp_kde, spine_y])

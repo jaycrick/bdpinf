@@ -570,7 +570,9 @@ def _run_optimizer_strategies(
     n_total_params = 2 * n_epochs
 
     free_initial_params = _reduce_to_free_params(
-        initial_params, param_constraints, n_total_params
+        initial_params,
+        param_constraints,
+        n_total_params,
     )
     log_params_initial = jnp.log(free_initial_params)
     log_params = log_params_initial
@@ -590,7 +592,8 @@ def _run_optimizer_strategies(
         n_terminal = int(at_final.sum())
         if n_terminal == 1:
             _jit_spine: jax.Array | None = jnp.array(
-                ages_np[at_final], dtype=jnp.float64
+                ages_np[at_final],
+                dtype=jnp.float64,
             )
             _jit_non_spine = jnp.array(ages_np[~at_final], dtype=jnp.float64)
             _use_unknown_spine = False
@@ -966,6 +969,11 @@ def _apply_param_perturbation(
     return initial_params * noise
 
 
+def _lbfgs_solver_factory(**_: object) -> None:
+    """Return None; LBFGS runs via scipy and has no optax solver object."""
+    return
+
+
 def _build_optimizer_strategies(
     optimizer_kwargs: dict[str, dict[str, Any]] | None,
     convergence_config: ConvergenceConfig,
@@ -980,7 +988,7 @@ def _build_optimizer_strategies(
         ),
         "lbfgs": OptimizerStrategy(
             name="LBFGS",
-            solver_factory=lambda **_: None,  # pyright: ignore[reportUnknownLambdaType]
+            solver_factory=_lbfgs_solver_factory,
             max_iters=DEFAULT_ITERATIONS // 20,
             solver_kwargs={
                 "tolerance_grad": convergence_config.gradient_threshold,

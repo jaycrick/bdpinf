@@ -120,7 +120,7 @@ def build_manuscript_subsets(
         Six subsets in canonical order (non-lectionary, lectionary,
         section_e, section_a, section_p, section_r).
     """
-    from inf_bp_texts.data.data_cleaning import (  # noqa: PLC0415
+    from inf_bp_texts.data.data_cleaning import (
         add_resampled_year_column,
     )
 
@@ -222,11 +222,11 @@ def fit_manuscript_subset(
         empty.  The result never raises — all exceptions are caught and
         logged as warnings.
     """
-    from inf_bp_texts.inference import (  # noqa: PLC0415
+    from inf_bp_texts.inference import (
         confidence_intervals_from_log_covariance,
         fit_birth_death_processes,
     )
-    from inf_bp_texts.models import BirthDeathProcess  # noqa: PLC0415
+    from inf_bp_texts.models import BirthDeathProcess
 
     frame = subset.frame
     n_total = len(frame)
@@ -354,7 +354,7 @@ def fit_manuscript_subset(
             rate_jac = np.diag(np.concatenate([birth_rates_arr, death_rates_arr]))
             covariance_rates = rate_jac @ covariance_log @ rate_jac.T
             rate_ses = np.sqrt(np.clip(np.diag(covariance_rates), 0.0, None))
-            import jax.numpy as jnp  # noqa: PLC0415
+            import jax.numpy as jnp
 
             rate_cis = np.asarray(
                 confidence_intervals_from_log_covariance(

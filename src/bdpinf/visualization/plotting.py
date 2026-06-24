@@ -160,7 +160,7 @@ def compute_consistency_bands(
         ``mean``/``median``/``variance``), ``estimate``, ``lower``, ``upper``,
         and ``true_value`` (NaN for ``variance``, which has no reference line).
     """
-    from inf_bp_texts.analysis.spike_detection import seed_from_parts  # noqa: PLC0415
+    from inf_bp_texts.analysis.spike_detection import seed_from_parts
 
     regime_order = [regime_config["name"] for regime_config in regime_configs]
     regime_lookup = {cfg["name"]: cfg for cfg in regime_configs}
@@ -481,7 +481,7 @@ def save_multi_epoch_convergence_figure(
         Directory for saved figures. Defaults to ``Path("figures")``.
 
     """
-    from inf_bp_texts.analysis.validation_helpers import (  # noqa: PLC0415
+    from inf_bp_texts.analysis.validation_helpers import (
         get_selected_attempt,
     )
 
@@ -539,10 +539,10 @@ def save_multi_epoch_birth_time_figure(
         Directory for saved figures. Defaults to ``Path("figures")``.
 
     """
-    from inf_bp_texts.inference.likelihood import (  # noqa: PLC0415
+    from inf_bp_texts.inference.likelihood import (
         calculate_unknown_spine_mixture_birth_density,
     )
-    from inf_bp_texts.visualization.age_fit_plot import (  # noqa: PLC0415
+    from inf_bp_texts.visualization.age_fit_plot import (
         creation_year_fit_chart,
     )
 
@@ -572,7 +572,7 @@ def save_multi_epoch_birth_time_figure(
             ),
             dtype=np.float64,
         )
-    except Exception as exc:  # noqa: BLE001 - overlay is optional; skip on failure
+    except Exception as exc:  # overlay is optional; skip on failure
         logger.warning(
             "Could not generate theoretical overlay for %s: %s", case_name, exc
         )

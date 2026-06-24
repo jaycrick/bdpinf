@@ -732,7 +732,7 @@ class TestConvergenceFlags:
         strategies_map = {
             opt_key: OptimizerStrategy(
                 name=opt_key.upper(),
-                solver_factory=solver_factory,  # type: ignore[arg-type]
+                solver_factory=solver_factory,
                 max_iters=100,
                 solver_kwargs=solver_kwargs,
             ),

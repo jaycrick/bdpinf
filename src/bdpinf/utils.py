@@ -90,7 +90,7 @@ def json_safe(value: object) -> object:
         return value.tolist()
     # JAX arrays
     if hasattr(value, "tolist") and hasattr(value, "device"):
-        return np.array(value).tolist()  # type: ignore[arg-type]
+        return np.array(value).tolist()
     if isinstance(value, pd.Timestamp):
         return value.isoformat()
     return value

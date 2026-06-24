@@ -1,7 +1,5 @@
 """Tests for single-epoch analysis helper utilities."""
 
-# mypy: disable-error-code=import-untyped
-
 from typing import Any
 
 import numpy as np

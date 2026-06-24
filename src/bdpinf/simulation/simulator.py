@@ -78,7 +78,7 @@ class _NonSpineSamplingContext(NamedTuple):
 
 def _as_scalar_float(value: object, *, name: str) -> float:
     try:
-        scalar_value = float(value)  # type: ignore[arg-type]
+        scalar_value = float(value)
     except (TypeError, ValueError) as exc:
         msg = f"{name} must be convertible to a scalar float"
         raise ValueError(msg) from exc

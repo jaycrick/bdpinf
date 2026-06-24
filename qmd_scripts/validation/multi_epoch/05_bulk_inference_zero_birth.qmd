@@ -444,7 +444,7 @@ if (
 ```{python}
 birth_bins = build_hist_bins(
     non_boundary_plotting_data["birth_rate"],
-    boundary_plotting_data["birth_rate"],  # type: ignore[arg-type]
+    boundary_plotting_data["birth_rate"],
 )
 _birth_step = float(birth_bins.get("size", 0.01))
 _hist_color = alt.Scale(
@@ -497,7 +497,7 @@ print("Saved birth-rate histogram figure")
 
 death_bins = build_hist_bins(
     non_boundary_plotting_data["death_rate"],
-    boundary_plotting_data["death_rate"],  # type: ignore[arg-type]
+    boundary_plotting_data["death_rate"],
 )
 _death_step = float(death_bins.get("size", 0.005))
 _dh_df = pd.concat(

@@ -151,7 +151,7 @@ def plot_creation_year_fit(
     nbins : int
         Number of histogram bins (default 30).
     """
-    from inf_bp_texts.inference import (  # noqa: PLC0415
+    from inf_bp_texts.inference import (
         calculate_unknown_spine_mixture_birth_density,
     )
 
@@ -185,7 +185,7 @@ def plot_creation_year_fit(
                 ),
                 dtype=np.float64,
             )
-        except Exception as exc:  # noqa: BLE001 - overlay is optional; skip on failure
+        except Exception as exc:  # overlay is optional; skip on failure
             logger.warning("Could not compute theoretical overlay: %s", exc)
             density_years = None
             density_values = None

@@ -23,7 +23,7 @@ class TestPlotCreationYearFit:
         )
 
         assert isinstance(chart, alt.LayerChart)
-        assert len(chart.layer) == 2  # noqa: PLR2004 - histogram + density layers
+        assert len(chart.layer) == 2  # histogram + density layers
 
     def test_excludes_point_mass_when_oldest_age_is_full_duration(self) -> None:
         """The spine's age is deterministically the full duration (a point mass).
