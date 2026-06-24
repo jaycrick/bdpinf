@@ -18,7 +18,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem-per-cpu=1G
-#SBATCH --time=04:00:00
+#SBATCH --time=10:00:00
 #SBATCH --output=_output/slurm-cpu-parallel-%j.log
 
 set -euo pipefail
@@ -30,15 +30,8 @@ uv sync
 
 NOTEBOOKS=(
   qmd_scripts/core_analysis/03_multi_epoch/optimizer_comparison.qmd
-  qmd_scripts/validation/single_epoch/01_simulation_checks.qmd
-  qmd_scripts/validation/single_epoch/05_simulator_comparison.qmd
-  qmd_scripts/validation/single_epoch/06_bulk_inference.qmd
-  qmd_scripts/validation/single_epoch/07_asymptotic_consistency.qmd
-  qmd_scripts/validation/multi_epoch/01_simulation_checks.qmd
-  qmd_scripts/validation/multi_epoch/03_bulk_inference.qmd
-  qmd_scripts/validation/multi_epoch/04_bulk_inference_single_rate.qmd
-  qmd_scripts/validation/multi_epoch/05_bulk_inference_zero_birth.qmd
-  qmd_scripts/validation/multi_epoch/06_sensitivity_benchmark.qmd
+  qmd_scripts/validation/single_epoch/
+  qmd_scripts/validation/multi_epoch/
 )
 
 for notebook in "${NOTEBOOKS[@]}"; do
