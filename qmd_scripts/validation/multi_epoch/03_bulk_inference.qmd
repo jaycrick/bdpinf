@@ -39,7 +39,7 @@ from inf_bp_texts.analysis.validation_helpers import (
 )
 from inf_bp_texts.simulation import simulate_birth_death_process
 from inf_bp_texts.utils import derive_worker_seeds
-from inf_bp_texts.visualization import save_chart
+from inf_bp_texts.visualization import display_png, save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 ```
 
@@ -254,7 +254,10 @@ if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
         .properties(width=200, height=200)
         .repeat(row=_col_names, column=_col_names)
     )
-    display(fig_pairs)
+    # Static PNG: this scatter matrix inlines every successful simulation
+    # (num_sims rows) per panel; an interactive display(...) ships that whole
+    # dataset as Vega-Lite JSON, which chokes pandoc's markdown reader.
+    display_png(fig_pairs)
     save_chart(
         fig_pairs,
         "methods_validation_multi_epoch_bulk_inference_scenario_3_parameter_pairs_scatter_matrix",

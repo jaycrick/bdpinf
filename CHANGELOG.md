@@ -26,6 +26,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   first step of an in-progress Plotly→Altair migration (most helpers and 18/19
   notebooks now use Altair; see `docs/design/PLOTLY_TO_ALTAIR_IMPLEMENTATION_PLAN.md`
   for the one remaining notebook and the final dependency removal).
+- `visualization.altair_theme.display_png` --- renders a chart to a static PNG
+  (via the same vl-convert path as `save_chart`) instead of an interactive
+  `display(...)`. Data-heavy charts (per-iteration optimizer histories, bulk
+  simulation scatters) now use it in `optimizer_comparison.qmd` and the
+  `bulk_inference*`/`03_optimisation_framework` validation notebooks, since
+  inlining their full Vega-Lite data as a multi-MB single line was choking
+  pandoc's markdown reader during render.
 - `inference.bayesian` --- per-family prior loc/scale on `BayesianPriorConfig`,
   in-model parameter constraints and GPU/CUDA backend selection on
   `BayesianModelConfig`, and `mle_init_log_rates()` for MLE-warm-started NUTS.

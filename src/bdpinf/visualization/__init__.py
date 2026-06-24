@@ -8,6 +8,7 @@ from .age_fit_plot import plot_creation_year_fit
 from .altair_theme import (
     PTOLQUAL,
     THEME_NAME,
+    display_png,
     register_export_fonts,
     save_chart,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "BoxPlotStyle",
     "KdePlotConfig",
     "convergence_chart",
+    "display_png",
     "plot_creation_year_fit",
     "plot_date_range_kde_comparison",
     "register_export_fonts",

@@ -42,14 +42,13 @@ from typing import Any, cast
 import altair as alt
 import numpy as np
 import pandas as pd
-from IPython.display import display
 from itables import show as show_table
 
 from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference.fitting import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
 from inf_bp_texts.utils import format_table_dataframe
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL, display_png
 ```
 
 ## Simulate One Dataset
@@ -255,7 +254,11 @@ for r in results:
             out_html.parent.mkdir(parents=True, exist_ok=True)
             fig_nll.save(str(out_html))
             try:
-                display(fig_nll)
+                # Static PNG: this loop emits one chart per optimizer attempt
+                # (and again below for grad norms/params); interactive
+                # display(...) inlines each NLL history's data, and the
+                # cumulative total chokes pandoc's markdown reader on render.
+                display_png(fig_nll)
             except Exception:
                 pass
 
@@ -293,7 +296,7 @@ for r in results:
             out_html.parent.mkdir(parents=True, exist_ok=True)
             fig_g.save(str(out_html))
             try:
-                display(fig_g)
+                display_png(fig_g)
             except Exception:
                 pass
 
@@ -341,7 +344,7 @@ for r in results:
                     out_html.parent.mkdir(parents=True, exist_ok=True)
                     fig_p.save(str(out_html))
                     try:
-                        display(fig_p)
+                        display_png(fig_p)
                     except Exception:
                         pass
             except Exception as _exc:
