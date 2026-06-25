@@ -28,7 +28,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   for the one remaining notebook and the final dependency removal).
 - `visualization.altair_theme.display_svg` --- renders a chart to static SVG
   (via the same vl-convert path as `save_chart`) instead of an interactive
-  `display(...)`. Data-heavy charts (per-iteration optimizer histories, bulk
+  `display(...)`.
+  Data-heavy charts (per-iteration optimizer histories, bulk
   simulation scatters) now use it in `optimizer_comparison.qmd` and the
   `bulk_inference*`/`03_optimisation_framework` validation notebooks, since
   inlining their full Vega-Lite data as a multi-MB single line was choking
@@ -96,7 +97,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `inference.bayesian` --- removed the no-op `BayesianModelConfig.device` and
   `BayesianMCMCConfig.jit_compile` fields (JAX/NumPyro always control the
   backend/JIT themselves); use the `JAX_PLATFORMS` environment variable
-  instead. `BayesianPriorConfig.resolve_tensors()` dropped its unused
+  instead.
+  `BayesianPriorConfig.resolve_tensors()` dropped its unused
   `device` parameter to match.
 - `inference.likelihood` --- the JIT-compiled MLE-hot-path core
   (`_log_likelihood_jit_core`) and the validating `log_likelihood()` front-end
@@ -112,10 +114,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   guess, and `fit_birth_death_processes()` returns the globally best-NLL
   attempt's parameters (with `selected_attempt_index` reported consistently)
   instead of whichever attempt happened to run last.
+- `visualization.altair_theme.display_svg` --- fixed a `TypeError` raised on
+  every call (`a bytes-like object is required, not 'str'`): vl-convert
+  returns the SVG mimebundle entry as `str`, but the function buffered it into
+  an `io.BytesIO`; switched to `io.StringIO` to match.
 - `inference._optimizer_runners` --- convergence thresholds are now
   sample-size invariant: the gradient-norm threshold scales with the number of
   observations and the NLL-improvement checks (LBFGS plateau, Adam/SGD
-  patience) use a relative tolerance instead of a fixed absolute one. The
+  patience) use a relative tolerance instead of a fixed absolute one.
+  The
   patience (no-improvement) criterion for Adam/SGD now also requires a small
   gradient norm, and the first-order optimizer gained an "already converged at
   the initial point" guard (mirroring LBFGS) so an already-optimal start no
@@ -124,7 +131,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   observed Fisher information (e.g. at a saddle point) could invert cleanly
   and silently yield negative variances; positive-definiteness is now checked
   via Cholesky before trusting an inversion, with a warning when none of the
-  jitter fallbacks recover it. `fit_birth_death_processes()` also warns when
+  jitter fallbacks recover it.
+  `fit_birth_death_processes()` also warns when
   uncertainty is estimated for a fit that did not converge.
 - `inference.fitting.get_crude_parameter_estimates` --- the birth/death-rate
   "shrink toward each other" step computed the death-rate update from the

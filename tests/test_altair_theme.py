@@ -10,6 +10,7 @@ from inf_bp_texts.visualization.altair_theme import (
     BACKGROUND,
     PTOLQUAL,
     THEME_NAME,
+    display_svg,
     save_chart,
 )
 
@@ -58,3 +59,10 @@ class TestAltairTheme:
     def test_save_chart_fails_loudly_on_unknown_format(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="format|fmt|nope|extension"):
             save_chart(_sample_chart(), "out", output_dir=tmp_path, fmt="nope")
+
+    def test_display_svg_renders_without_raising(self) -> None:
+        # vl-convert returns the SVG mimebundle entry as str, not bytes; this
+        # regression-tests that display_svg writes it into a text buffer
+        # (io.StringIO), not a bytes buffer, which previously raised
+        # "TypeError: a bytes-like object is required, not 'str'".
+        display_svg(_sample_chart(), width=400, height=300)

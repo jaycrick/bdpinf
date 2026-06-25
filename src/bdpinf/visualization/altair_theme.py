@@ -275,7 +275,7 @@ def display_svg(
             size_props["height"] = height
         sized = chart.properties(**size_props)
 
-    buf = io.BytesIO()
+    buf = io.StringIO()
     sized.save(buf, format="svg", engine="vl-convert")
     display(SVG(buf.getvalue()))
 
