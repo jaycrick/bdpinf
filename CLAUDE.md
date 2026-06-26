@@ -136,7 +136,8 @@ Numerical derivatives used during optimization (Hessian/Jacobian for the MLE cov
 ### Inference layer: `inference/`
 
 `fitting.py` is the main entry point:
-- `fit_birth_death_processes()` --- MLE via JAX-backed optimizers: scipy's L-BFGS-B (gradients from `jax.value_and_grad`) and optax's Adam/SGD; optimizers run sequentially (e.g. LBFGS then Adam) and each warm-starts from the previous attempt's best parameters, stopping at the first convergence. Supports initial perturbation (`perturb_initial_params_std`) for robustness to bad initial guesses.
+- `fit_birth_death_processes()` --- MLE via JAX-backed optimizers: scipy's L-BFGS-B (gradients from `jax.value_and_grad`) and optax's Adam/SGD; optimizers run sequentially (e.g. LBFGS then Adam) and each warm-starts from the previous attempt's best parameters, stopping at the first convergence.
+Supports initial perturbation (`perturb_initial_params_std`) for robustness to bad initial guesses.
 - `ParameterConstraints` dataclass --- fixed parameters (index → value) and equality groups (lists of indices forced equal); validated before optimization to reduce parameter space
 - `estimate_mle_covariance()` --- covariance via numerical Hessian inversion
 - Optimizer internals are split across `_fit_types.py` (shared dataclasses: `ConvergenceConfig`, `OptimizerStrategy`, etc.) and `_optimizer_runners.py` (`run_lbfgs_optimizer`, `run_first_order_optimizer`).
@@ -155,11 +156,25 @@ Plotting functions for splitting results live in `visualization/splitting_plots.
 
 ### Visualization layer: `visualization/`
 
-`plotting.py` --- core Plotly helpers: `save_figure`, `save_multi_epoch_*_figure`, `apply_professional_styling`, `apply_tufte_axes`, `plot_parameter_consistency`.
+All charts are built with Altair; there is no Plotly dependency.
+
+`altair_theme.py` --- the house-style chokepoint: importing it registers and enables the project's Altair theme (palette, fonts, Tufte axes) process-wide, and it owns the single export path, `save_chart()` (PDF/SVG/PNG via vl-convert) and `display_svg()` (inline static SVG for data-heavy charts in Quarto).
+
+`plotting.py` --- `convergence_chart`, `save_multi_epoch_*_figure`, `plot_parameter_consistency`.
+
+`bayesian_plots.py` --- reusable builders for the recurring Bayesian-notebook figures: `prior_posterior_chart`, `posterior_rates_chart`, `trace_chart`, `ppc_chart`.
+
+`age_fit_plot.py` --- `plot_creation_year_fit`, `creation_year_fit_chart` (observed-vs-fitted creation-year overlay).
+
+`date_distribution_plots.py` --- `plot_date_range_kde_comparison`.
 
 `splitting_plots.py` --- `plot_conditioned_trajectories`, `plot_empirical_population_mean`, `plot_level_survival_probabilities` (re-exported from `simulation`).
 
 `parameter_plots.py` --- `KdePlotConfig`, `BoxPlotStyle`, `create_kde_density_plot`, `compute_boxplot_summary`, `create_parameter_box_plot` (re-exported from `analysis`).
+
+`genealogy.py` --- `plot_genealogy_tree`, `genealogy_dfs_order` (consumed by `models.birth_death_process`, not re-exported from the package root).
+
+This module set is intentionally the boundary between reusable, tested chart logic and notebook-local composition: named builders that are reused across notebooks or coupled to model internals live here; one-off diagnostic charts are built inline in notebooks with `alt.Chart(...)` plus the shared `PTOLQUAL` palette and `save_chart`/`display_svg`.
 
 ### Data pipeline: `data/`
 

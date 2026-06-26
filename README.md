@@ -30,12 +30,6 @@ For development (includes testing and documentation tools):
 uv sync --all-groups
 ```
 
-For static image generation with Plotly, install the Chrome dependency:
-
-```sh
-uv run plotly_get_chrome
-```
-
 ## Quick Start
 
 Download and analyze manuscripts (the `inf-bp-texts` console script is installed by `uv sync`):

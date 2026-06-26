@@ -5,25 +5,23 @@ description = "A Python platform for New Testament manuscript data and running q
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "altair>=6.0.0",
-    "beartype>=0.19.0",
-    "itables>=2.7.0",
-    "jax>=0.4.38",
-    "jaxtyping>=0.2.38",
-    "joblib>=1.5.3",
-    "jupyter>=1.1.1",
-    "kaleido>=1.2.0",
-    "lxml>=6.0.2",
-    "numpy>=2.4.2",
-    "numpyro>=0.16.0",
-    "optax>=0.2.4",
-    "optimistix>=0.0.9",
-    "pandas>=3.0.0",
-    "plotly>=6.5.2",
-    "pydantic>=2.12.5",
-    "scipy>=1.17.0",
-    "typer>=0.24.1",
-    "vl-convert-python>=1.9.0.post1",
+  "altair>=6.0.0",
+  "beartype>=0.19.0",
+  "itables>=2.7.0",
+  "jax>=0.4.38",
+  "jaxtyping>=0.2.38",
+  "joblib>=1.5.3",
+  "jupyter>=1.1.1",
+  "lxml>=6.0.2",
+  "numpy>=2.4.2",
+  "numpyro>=0.16.0",
+  "optax>=0.2.4",
+  "optimistix>=0.0.9",
+  "pandas>=3.0.0",
+  "pydantic>=2.12.5",
+  "scipy>=1.17.0",
+  "typer>=0.24.1",
+  "vl-convert-python>=1.9.0.post1"
 ]
 
 [project.scripts]
@@ -31,28 +29,27 @@ inf-bp-texts = "inf_bp_texts.cli:main"
 
 [dependency-groups]
 gpu = [
-    "jax[cuda12]>=0.4.38; sys_platform == 'linux'",
-    "nvidia-cudnn-cu12<9.10; sys_platform == 'linux'",
+  "jax[cuda12]>=0.4.38; sys_platform == 'linux'",
+  "nvidia-cudnn-cu12<9.10; sys_platform == 'linux'"
 ]
 dev = [
-    "basedpyright>=1.22.0",
-    "great-docs>=0.14.0",
-    "isort>=8.0.0",
-    "joblib-stubs>=1.5.3.1.20260117",
-    "jupyter-cache>=1.0.1",
-    "lintquarto>=0.13.1",
-    "lxml-stubs>=0.5.1",
-    "panache-cli>=2.56.0",
-    "pandas-stubs>=3.0.0.260204",
-    "plotly-stubs>=0.1.2",
-    "pre-commit>=4.5.1",
-    "pytest>=9.0.2",
-    "pytest-cov>=7.0.0",
-    "quarto>=0.1.0",
-    "ruff>=0.15.1",
-    "scipy-stubs>=1.17.0.2",
-    "toml-sort>=0.24.3",
-    "typing-extensions>=4.15.0",
+  "basedpyright>=1.22.0",
+  "great-docs>=0.14.0",
+  "isort>=8.0.0",
+  "joblib-stubs>=1.5.3.1.20260117",
+  "jupyter-cache>=1.0.1",
+  "lintquarto>=0.13.1",
+  "lxml-stubs>=0.5.1",
+  "panache-cli>=2.56.0",
+  "pandas-stubs>=3.0.0.260204",
+  "pre-commit>=4.5.1",
+  "pytest-cov>=7.0.0",
+  "pytest>=9.0.2",
+  "quarto>=0.1.0",
+  "ruff>=0.15.1",
+  "scipy-stubs>=1.17.0.2",
+  "toml-sort>=0.24.3",
+  "typing-extensions>=4.15.0"
 ]
 
 [tool.isort]
@@ -89,7 +86,7 @@ reportDuplicateImport = "none"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "W", "D"]
+select = ["B", "D", "E", "F", "I", "UP", "W"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
@@ -102,30 +99,30 @@ convention = "numpy"
 # intentional (float64 must be enabled before any jax array is created).
 "src/**/__init__.py" = ["E402"]
 "tests/*" = [
-    "S101", # asserts are the mechanism of the tests
-    "D101", # test classes are self-documenting via their names
-    "D102", # test methods are self-documenting via their names
-    "E501", # test strings and fixture data are allowed to be long
+  "D101", # test classes are self-documenting via their names
+  "D102", # test methods are self-documenting via their names
+  "E501", # test strings and fixture data are allowed to be long
+  "S101" # asserts are the mechanism of the tests
 ]
 # lintquarto extracts qmd cells to temporary .py files in the same directory.
 # These rules are false positives or impractical to enforce in notebook code:
 "qmd_scripts/**" = [
-    "D100", # notebooks have no module-level docstring
-    "D101", # notebook TypedDict/dataclasses don't need class docstrings
-    "D103", # notebook helper functions don't need docstrings
-    "B018", # bare last-line expressions are intentional display outputs
-    "B905", # zip() strict= is impractical to require in analysis notebooks
-    "E501", # analysis cells routinely have long lines
-    "I001", # import ordering across cells is flexible by design
+  "B018", # bare last-line expressions are intentional display outputs
+  "B905", # zip() strict= is impractical to require in analysis notebooks
+  "D100", # notebooks have no module-level docstring
+  "D101", # notebook TypedDict/dataclasses don't need class docstrings
+  "D103", # notebook helper functions don't need docstrings
+  "E501", # analysis cells routinely have long lines
+  "I001" # import ordering across cells is flexible by design
 ]
 "docs/**" = [
-    "D100",
-    "D101",
-    "D103",
-    "B018",
-    "B905",
-    "E501",
-    "I001",
+  "B018",
+  "B905",
+  "D100",
+  "D101",
+  "D103",
+  "E501",
+  "I001"
 ]
 
 [tool.toml-sort]
@@ -141,9 +138,9 @@ sort_table_keys = true
 [tool.pytest.ini_options]
 addopts = "-m \"not slow\" --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml --cov-fail-under=80"
 markers = [
-    "slow: long-running tests that are skipped in regular runs",
-    "regression: golden-value tests guarding against numerical drift",
-    "recovery: simulate-then-fit parameter recovery tests (implies slow)",
+  "recovery: simulate-then-fit parameter recovery tests (implies slow)",
+  "regression: golden-value tests guarding against numerical drift",
+  "slow: long-running tests that are skipped in regular runs"
 ]
 python_classes = ["Test*"]
 python_files = ["test_*.py"]
@@ -156,10 +153,10 @@ source = ["src"]
 [tool.coverage.report]
 precision = 2
 
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
-
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["inf_bp_texts*"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

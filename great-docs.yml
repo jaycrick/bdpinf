@@ -109,9 +109,11 @@ reference:
       - simulation.splitting.select_level_times_for_band
 
   - title: Visualization
-    desc: Plotly rendering utilities for model results and diagnostics.
+    desc: Altair rendering utilities for model results and diagnostics.
     contents:
-      - visualization.plotting.save_figure
+      - visualization.altair_theme.save_chart
+      - visualization.altair_theme.display_svg
+      - visualization.bayesian_plots
       - visualization.splitting_plots
       - visualization.parameter_plots
 

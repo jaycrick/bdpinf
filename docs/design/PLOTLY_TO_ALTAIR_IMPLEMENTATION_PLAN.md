@@ -1,34 +1,43 @@
-# Plotly → Altair Migration: Remaining Work
+# Plotly → Altair Migration: Completed (Historical)
 
-**Status:** in progress · **Last updated:** 2026-06-22
+**Status:** complete · **Completed:** 2026-06-25
 
-Phases 0--4 (spike, theme/export chokepoint, easy/moderate/hard helper
-migration) and Phase 5 (18 of 19 notebooks) are done.
-Altair is the house
-plotting library; Plotly survives only in the two locations below.
+This document tracked the migration of the visualization layer from Plotly to
+Altair.
+All phases are now done: Altair is the only charting library used by
+`src/inf_bp_texts/visualization/` and by every notebook under `qmd_scripts/`.
 
-## What remains
+## What changed in the final phase
 
-1. **Last Plotly notebook** --- `04_bayesian/kashouh_family_k_bayesian_inference.qmd`:
-   4 figures (`prior_posterior` 2×2 KDE, `posterior_rates` bar, `trace_plots`
-   2×2 line, `ppc` line+band), all currently `make_subplots` + `go.Scatter`.
-   Slow (multi-chain NUTS, rendered on CPU via `scripts/render_cpu_light.slurm`
-   --- GPU benchmarked slower, see `docs/design/GPU_RENDERING_PROTOCOL.md`);
-   convert using the same Altair theme chokepoint
-   (`visualization/altair_theme.py`) and helpers used by the other
-   `04_bayesian` notebooks.
+The original record of this plan understated the remaining work: it listed
+only one un-migrated notebook (`kashouh_family_k_bayesian_inference.qmd`), but
+all four notebooks under `qmd_scripts/core_analysis/04_bayesian/` were still
+pure Plotly (`go.Figure`/`make_subplots`, `fig.show()`,
+`save_figure`/`apply_professional_styling`/`apply_tufte_axes`).
 
-2. **Phase 6 --- remove Plotly**, once (1) is done and the remaining Plotly
-   references are gone:
-   - Drop remaining Plotly usage in `src/inf_bp_texts/visualization/plotting.py`
-     and `tests/test_plotting.py`.
-   - Drop `plotly>=6.5.2`, `kaleido>=1.2.0`, `plotly-stubs>=0.1.2` from
-     `pyproject.toml`; promote `altair`/`vl-convert-python` from the dev group
-     to `[project]` dependencies; `uv sync`.
-   - Gate: `grep -rn "plotly\|kaleido" src tests qmd_scripts pyproject.toml`
-     must be empty, then `uv run pre-commit run --all-files` and
-     `uv run pytest` (coverage ≥80%).
+The four recurring Bayesian figure archetypes (prior-vs-posterior, posterior
+rates with credible intervals, MCMC trace plots, posterior predictive checks)
+were extracted into tested Altair builders in
+`src/inf_bp_texts/visualization/bayesian_plots.py`
+(`prior_posterior_chart`, `posterior_rates_chart`, `trace_chart`, `ppc_chart`,
+covered by `tests/test_bayesian_plots.py`), and all four notebooks were
+migrated to call them via the existing `save_chart`/`display_svg` chokepoint
+in `altair_theme.py`.
 
-**Rollback:** the migration is additive until Phase 6 --- any earlier phase can
-be reverted independently.
-Phase 6 is the point of no easy return.
+Phase 6 (removing Plotly entirely) followed:
+
+- Dropped the dead Plotly-shaped helpers from
+  `src/inf_bp_texts/visualization/plotting.py`
+  (`apply_professional_styling`, `apply_tufte_axes`, `save_figure`) and
+  rewrote `tests/test_plotting.py` to cover the surviving Altair builders
+  (`convergence_chart`, the `save_multi_epoch_*` savers) instead.
+- Dropped `plotly`, `kaleido`, `plotly-stubs` from `pyproject.toml` (`altair`
+  and `vl-convert-python` were already `[project]` dependencies, not dev-group
+  ones as an earlier draft of this plan assumed).
+- Scrubbed remaining Plotly references from comments/docstrings across
+  `visualization/`, `analysis/validation_helpers.py`, `CLAUDE.md`,
+  `great-docs.yml`, and `README.md`.
+
+Gate passed: `grep -rn "plotly\|kaleido" src tests qmd_scripts pyproject.toml`
+returns nothing outside historical artifacts (`.jupyter_cache/`, this
+document).

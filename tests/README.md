@@ -62,7 +62,7 @@ Cross-file fixtures live in `conftest.py`.
   | `test_single_epoch_analysis.py`         | Single-epoch analysis helpers                                                                   |
   | `test_integration.py`                   | End-to-end workflows (simulation → fitting)                                                     |
   | `test_cli.py`                           | CLI entry points                                                                                |
-  | `test_plotting.py`                      | Visualization / Plotly utilities                                                                |
+  | `test_plotting.py`                      | Visualization utilities — convergence chart, multi-epoch figure savers                          |
   | `test_validation_helpers.py`            | Validation helper functions                                                                     |
   | `test_spike_detection.py`               | Spike detection utilities                                                                       |
   | `test_reports.py`                       | Report generation helpers                                                                       |

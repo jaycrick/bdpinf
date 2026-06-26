@@ -11,7 +11,7 @@ import pandas as pd
 
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 
-# Map a Plotly-style dash keyword onto a Vega-Lite strokeDash array.
+# Map a named dash style onto a Vega-Lite strokeDash array.
 _DASH_ARRAYS: dict[str, list[int]] = {"dot": [2, 2], "dash": [6, 4], "solid": []}
 
 
@@ -257,8 +257,8 @@ def plot_genealogy_tree(
         _genealogy_category(survived=bool(s), is_spine=bool(sp))
         for s, sp in zip(frame["survived"], frame["is_spine"], strict=True)
     ]
-    # Ordinal y domain: manuscript ids in DFS order, so the root (index 0) is on
-    # top, matching the previous reversed-axis Plotly rendering.
+    # Ordinal y domain: manuscript ids in DFS order, so the root (index 0) is
+    # on top.
     order = [
         str(mid) for mid in frame.sort_values("dfs_index")["manuscript_id"].tolist()
     ]

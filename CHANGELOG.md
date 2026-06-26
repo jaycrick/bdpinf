@@ -23,9 +23,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   duplicated inline plotting code across notebooks.
 - `visualization.altair_theme` --- registers the house Altair theme (ptolqual
   palette, Tufte axes) and `save_chart`, the vl-convert export chokepoint;
-  first step of an in-progress Plotly→Altair migration (most helpers and 18/19
-  notebooks now use Altair; see `docs/design/PLOTLY_TO_ALTAIR_IMPLEMENTATION_PLAN.md`
-  for the one remaining notebook and the final dependency removal).
+  Altair is now the only charting library used by the package and every
+  notebook (see `docs/design/PLOTLY_TO_ALTAIR_IMPLEMENTATION_PLAN.md`).
+- `visualization.bayesian_plots` --- `prior_posterior_chart`,
+  `posterior_rates_chart`, `trace_chart`, `ppc_chart`: tested Altair builders
+  for the figure archetypes repeated across the four `04_bayesian/` notebooks,
+  completing the Plotly→Altair migration for those notebooks.
 - `visualization.altair_theme.display_svg` --- renders a chart to static SVG
   (via the same vl-convert path as `save_chart`) instead of an interactive
   `display(...)`.
@@ -177,5 +180,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `model_config=BayesianModelConfig(unbias=...)` instead.
 - Dead code in `visualization.plotting` (`layout_config`, unused colour
   constants, never-called `apply_tufte_legend`), superseded by the Altair theme.
+- `plotly`, `kaleido`, `plotly-stubs` dependencies and the remaining Plotly
+  helpers in `visualization.plotting` (`apply_professional_styling`,
+  `apply_tufte_axes`, `save_figure`) --- the Plotly→Altair migration is
+  complete; use `visualization.altair_theme.save_chart`/`display_svg` instead.
 
 ## [0.1.0] --- initial release

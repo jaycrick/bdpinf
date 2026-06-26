@@ -401,7 +401,7 @@ def build_hist_bins(
     secondary_values: Any,
     bins: int = 30,
 ) -> dict[str, float]:
-    """Compute Plotly histogram bin parameters from two value arrays.
+    """Compute shared histogram bin parameters from two value arrays.
 
     Parameters
     ----------
@@ -415,8 +415,9 @@ def build_hist_bins(
     Returns
     -------
     dict[str, float]
-        Dictionary with keys ``"start"``, ``"end"``, and ``"size"`` suitable
-        for passing as ``xbins`` to ``go.Histogram``.
+        Dictionary with keys ``"start"``, ``"end"``, and ``"size"``; ``"size"``
+        is the bin step suitable for ``alt.Bin(step=...)`` so two series can
+        share identical bin edges.
 
     """
     combined = np.concatenate(

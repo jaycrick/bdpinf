@@ -43,9 +43,9 @@ def create_kde_density_plot(
 ) -> alt.LayerChart:
     """Create a 1D KDE plot with a dashed true-value reference line and label.
 
-    Vega-Lite has no arrow-annotation primitive, so the Plotly arrow pointing at
-    the true value is reproduced as a dashed ``mark_rule`` plus a ``mark_text``
-    label above it (a documented fidelity compromise of the Altair migration).
+    Vega-Lite has no arrow-annotation primitive, so an arrow pointing at the
+    true value is reproduced as a dashed ``mark_rule`` plus a ``mark_text``
+    label above it.
     """
     values = np.asarray(rates, dtype=np.float64)
     values = values[np.isfinite(values)]
@@ -162,9 +162,8 @@ def create_parameter_box_plot(
     """Create a two-parameter box plot with true and mean overlays.
 
     The median is already drawn as the box's centre line, so only true-value and
-    mean markers are overlaid. The Plotly ``boxmean=True`` mean line (which
-    ``mark_boxplot`` has no equivalent for) is reproduced by the explicit mean
-    marker.
+    mean markers are overlaid; ``mark_boxplot`` has no built-in mean indicator,
+    so the mean is reproduced by an explicit marker instead.
     """
     birth = np.asarray(birth_rates, dtype=np.float64)
     death = np.asarray(death_rates, dtype=np.float64)
