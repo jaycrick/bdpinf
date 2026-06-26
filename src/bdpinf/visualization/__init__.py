@@ -11,6 +11,7 @@ from .altair_theme import (
     display_svg,
     register_export_fonts,
     save_chart,
+    save_chart_html,
 )
 from .bayesian_plots import (
     PriorPosteriorPanel,
@@ -22,6 +23,7 @@ from .bayesian_plots import (
     trace_chart,
 )
 from .date_distribution_plots import plot_date_range_kde_comparison
+from .era_shading import era_band_chart, year_to_century_coord
 from .parameter_plots import (
     BoxPlotStyle,
     KdePlotConfig,
@@ -51,6 +53,7 @@ __all__ = [
     "TracePanel",
     "convergence_chart",
     "display_svg",
+    "era_band_chart",
     "plot_creation_year_fit",
     "plot_date_range_kde_comparison",
     "ppc_chart",
@@ -58,7 +61,9 @@ __all__ = [
     "prior_posterior_chart",
     "register_export_fonts",
     "save_chart",
+    "save_chart_html",
     "trace_chart",
+    "year_to_century_coord",
     "compute_boxplot_summary",
     "create_kde_density_plot",
     "create_parameter_box_plot",

@@ -262,6 +262,53 @@ def save_chart(
     return file_path
 
 
+def save_chart_html(
+    chart: alt.TopLevelMixin,
+    filename: str,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    output_dir: str | Path = "figures",
+) -> Path:
+    """Export an Altair chart to a self-contained interactive HTML file.
+
+    Uses Altair's built-in HTML serialiser, which embeds the Vega-Lite
+    specification together with the Vega, Vega-Lite, and vega-embed JavaScript
+    libraries.  The resulting file opens in any modern browser with no server
+    required and preserves all interactivity (legend-filter, brush, tooltips,
+    pan/zoom).
+
+    Mirrors :func:`save_chart` in signature and directory handling, but writes
+    ``.html`` instead of a vector format and does not call
+    :func:`register_export_fonts` (font rendering is left to the browser).
+
+    Parameters
+    ----------
+    chart : alt.TopLevelMixin
+        Any Altair chart (single, layered, faceted, or concatenated).
+    filename : str
+        Output filename stem (without extension).
+    width, height : int | None
+        Optional overrides for the chart's view dimensions in pixels. When
+        ``None`` the chart's own sizing (or the theme default) is used.
+    output_dir : str | Path
+        Directory to write into; created if absent. Defaults to ``"figures"``.
+
+    Returns
+    -------
+    Path
+        Path to the written file.
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    sized = _sized(chart, width, height)
+
+    file_path = output_path / f"{filename}.html"
+    sized.save(str(file_path))
+    return file_path
+
+
 def display_svg(
     chart: alt.TopLevelMixin,
     *,
@@ -314,4 +361,5 @@ __all__ = [
     "inf_bp_texts_theme",
     "register_export_fonts",
     "save_chart",
+    "save_chart_html",
 ]
