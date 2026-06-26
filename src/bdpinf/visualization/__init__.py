@@ -33,6 +33,7 @@ from .parameter_plots import (
 )
 from .plotting import (
     convergence_chart,
+    rate_ci_panel,
     save_multi_epoch_birth_time_figure,
     save_multi_epoch_convergence_figure,
     save_multi_epoch_fit_figure,
@@ -52,6 +53,7 @@ __all__ = [
     "RatePanel",
     "TracePanel",
     "convergence_chart",
+    "rate_ci_panel",
     "display_svg",
     "era_band_chart",
     "plot_creation_year_fit",

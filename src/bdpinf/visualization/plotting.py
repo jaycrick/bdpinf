@@ -395,6 +395,85 @@ def save_multi_epoch_birth_time_figure(
     )
 
 
+def rate_ci_panel(
+    frame: pd.DataFrame,
+    category_col: str,
+    rate_col: str,
+    lower_col: str,
+    upper_col: str,
+    *,
+    color: "str | alt.Color",
+    title: str = "",
+    rate_title: str = "",
+    category_title: str = "",
+    orient: str = "h",
+    offset: "alt.XOffset | None" = None,
+    width: int = 380,
+    height: int = 320,
+) -> alt.LayerChart:
+    """Dot-and-whisker panel showing an MLE with a 95% CI error bar.
+
+    Parameters
+    ----------
+    frame : pd.DataFrame
+        Must contain columns named ``category_col``, ``rate_col``,
+        ``lower_col``, and ``upper_col``.  NaN in the lower/upper columns
+        suppresses the whisker for that row.
+    category_col : str
+        Column name for the grouping axis (e.g. ``"Subset"``, ``"Period"``).
+    rate_col : str
+        Column name for the MLE dot position.
+    lower_col, upper_col : str
+        Column names for the CI lower and upper bounds.
+    color : str | alt.Color
+        Fixed hex/name string for single-colour charts; ``alt.Color(...)``
+        for data-driven colouring (e.g. grouped panels).
+    title : str
+        Panel title.
+    rate_title : str
+        Axis title on the rate (quantitative) axis.
+    category_title : str
+        Axis title on the category axis.
+    orient : str
+        ``"h"`` places categories on the y-axis (horizontal dot plot);
+        ``"v"`` places them on the x-axis (vertical dot plot).
+    offset : alt.XOffset | None
+        Pass ``alt.XOffset("Col:N")`` for side-by-side grouped layouts.
+    width, height : int
+        Chart dimensions in pixels.
+
+    """
+    _c: dict[str, Any] = {"color": color} if isinstance(color, str) else {}
+    base_enc: dict[str, Any] = {}
+    if not isinstance(color, str):
+        base_enc["color"] = color
+    if offset is not None:
+        base_enc["xOffset"] = offset
+
+    if orient == "h":
+        base_enc["y"] = alt.Y(f"{category_col}:N", sort=None, title=category_title)
+        base = alt.Chart(frame).encode(**base_enc)
+        points = base.mark_point(filled=True, **_c).encode(
+            x=alt.X(f"{rate_col}:Q", title=rate_title)
+        )
+        rule = base.mark_rule(strokeWidth=1, **_c).encode(
+            x=alt.X(f"{lower_col}:Q", title=rate_title),
+            x2=f"{upper_col}:Q",
+        )
+    else:
+        base_enc["x"] = alt.X(f"{category_col}:N", sort=None, title=category_title)
+        base = alt.Chart(frame).encode(**base_enc)
+        points = base.mark_point(filled=True, **_c).encode(
+            y=alt.Y(f"{rate_col}:Q", title=rate_title)
+        )
+        rule = base.mark_rule(strokeWidth=1, **_c).encode(
+            y=alt.Y(f"{lower_col}:Q", title=rate_title),
+            y2=f"{upper_col}:Q",
+        )
+
+    return (points + rule).properties(title=title, width=width, height=height)
+
+
 def save_multi_epoch_fit_figure(
     case_name: str,
     result: dict[str, Any],
