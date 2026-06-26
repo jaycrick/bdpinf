@@ -1,8 +1,8 @@
 """Altair theme and export chokepoint for birth-death process figures.
 
-This module is the single source of truth for the project's figure house style
-under Altair, replacing the scattered Plotly ``apply_professional_styling`` /
-``apply_tufte_axes`` helpers and the per-figure ``go.Figure`` layout blocks.
+This module is the single source of truth for the project's figure house
+style: every per-figure layout block (palette, fonts, axis styling) is
+centralized here instead of scattered across plotting functions.
 
 Importing this module **registers and enables** the ``inf_bp_texts`` Altair theme
 process-wide, so every chart created afterwards inherits the palette
@@ -10,10 +10,9 @@ process-wide, so every chart created afterwards inherits the palette
 minimalist Tufte axes (no gridlines, thin domain lines, small outward muted
 ticks). Titles and labels use a normal (non-bold) weight by design.
 
-:func:`save_chart` is the export chokepoint: it renders a chart to PDF (or SVG/PNG)
-via vl-convert — a pure-Rust converter requiring no Chromium — and, unlike the old
-Plotly ``save_figure``, it does **not** swallow export errors and does **not**
-mutate display state.
+:func:`save_chart` is the export chokepoint: it renders a chart to PDF (or
+SVG/PNG) via vl-convert — a pure-Rust converter requiring no Chromium — and it
+does **not** swallow export errors and does **not** mutate display state.
 """
 
 from __future__ import annotations
@@ -25,8 +24,7 @@ import altair as alt
 
 logger = logging.getLogger(__name__)
 
-# House style constants (ported verbatim from the Plotly ``plotting`` module so
-# migrated figures match the existing site palette exactly).
+# House style constants shared by every figure builder in this package.
 FONT: str = "Libertinus Serif, Latin Modern Roman, Times New Roman, Times, serif"
 FONT_SIZE: int = 13
 LABEL_FONT_SIZE: int = 11
@@ -156,6 +154,45 @@ _FONT_DIR_CANDIDATES: tuple[Path, ...] = (
 )
 
 
+def _sized(
+    chart: alt.TopLevelMixin, width: int | None, height: int | None
+) -> alt.TopLevelMixin:
+    """Apply width/height overrides, honouring concat-family charts.
+
+    ``HConcatChart``/``VConcatChart``/``ConcatChart`` have no top-level
+    ``width``/``height`` parameter — Vega-Lite sizes each child view
+    independently — so ``chart.properties(width=..., height=...)`` only fails
+    validation when the chart is finally serialized, not when called. The
+    override is applied to every child instead for those wrapper types.
+    """
+    if width is None and height is None:
+        return chart
+
+    size_props: dict[str, int] = {}
+    if width is not None:
+        size_props["width"] = width
+    if height is not None:
+        size_props["height"] = height
+
+    if isinstance(chart, alt.HConcatChart | alt.VConcatChart | alt.ConcatChart):
+        sized_chart = chart.copy()
+        children_attr = (
+            "hconcat"
+            if isinstance(chart, alt.HConcatChart)
+            else "vconcat"
+            if isinstance(chart, alt.VConcatChart)
+            else "concat"
+        )
+        setattr(
+            sized_chart,
+            children_attr,
+            [child.properties(**size_props) for child in getattr(chart, children_attr)],
+        )
+        return sized_chart
+
+    return chart.properties(**size_props)
+
+
 def register_export_fonts() -> None:
     """Register local font directories with vl-convert for serif PDF export.
 
@@ -190,10 +227,9 @@ def save_chart(
 ) -> Path:
     """Export an Altair chart to ``output_dir/filename.fmt`` via vl-convert.
 
-    The export chokepoint that replaces the Plotly ``save_figure``. Unlike the
-    old helper it is **pure** (it does not mutate display state) and it **fails
-    loudly** — an export error propagates with the target filename rather than
-    being swallowed and returning ``None``.
+    This is the project's single export chokepoint: it is **pure** (it does not
+    mutate display state) and it **fails loudly** — an export error propagates
+    with the target filename rather than being swallowed and returning ``None``.
 
     Parameters
     ----------
@@ -219,14 +255,7 @@ def save_chart(
     output_path.mkdir(parents=True, exist_ok=True)
     register_export_fonts()
 
-    sized = chart
-    if width is not None or height is not None:
-        size_props: dict[str, int] = {}
-        if width is not None:
-            size_props["width"] = width
-        if height is not None:
-            size_props["height"] = height
-        sized = chart.properties(**size_props)
+    sized = _sized(chart, width, height)
 
     file_path = output_path / f"{filename}.{fmt}"
     sized.save(str(file_path), engine="vl-convert")
@@ -266,14 +295,7 @@ def display_svg(
 
     register_export_fonts()
 
-    sized = chart
-    if width is not None or height is not None:
-        size_props: dict[str, int] = {}
-        if width is not None:
-            size_props["width"] = width
-        if height is not None:
-            size_props["height"] = height
-        sized = chart.properties(**size_props)
+    sized = _sized(chart, width, height)
 
     buf = io.StringIO()
     sized.save(buf, format="svg", engine="vl-convert")

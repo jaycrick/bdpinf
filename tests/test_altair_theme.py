@@ -25,6 +25,14 @@ def _sample_chart() -> alt.Chart:
     )
 
 
+def _hconcat_chart() -> alt.HConcatChart:
+    return alt.hconcat(_sample_chart(), _sample_chart())
+
+
+def _concat_chart() -> alt.ConcatChart:
+    return alt.concat(_sample_chart(), _sample_chart(), columns=2)
+
+
 class TestAltairTheme:
     """Test theme registration and the save_chart export chokepoint."""
 
@@ -66,3 +74,38 @@ class TestAltairTheme:
         # (io.StringIO), not a bytes buffer, which previously raised
         # "TypeError: a bytes-like object is required, not 'str'".
         display_svg(_sample_chart(), width=400, height=300)
+
+    def test_save_chart_sizes_hconcat_children_not_wrapper(
+        self, tmp_path: Path
+    ) -> None:
+        # HConcatChart has no top-level width/height parameter (Vega-Lite sizes
+        # each child view independently); chart.properties(width=...) on the
+        # wrapper only fails validation at save time. This regression-tests
+        # that save_chart applies the override per child instead.
+        saved = save_chart(
+            _hconcat_chart(), "out", width=400, height=300, output_dir=tmp_path
+        )
+
+        assert saved.exists()
+        assert saved.stat().st_size > 0
+
+    def test_save_chart_sizes_concat_children_not_wrapper(self, tmp_path: Path) -> None:
+        saved = save_chart(
+            _concat_chart(), "out", width=400, height=300, output_dir=tmp_path
+        )
+
+        assert saved.exists()
+        assert saved.stat().st_size > 0
+
+    def test_display_svg_sizes_hconcat_children_not_wrapper(self) -> None:
+        display_svg(_hconcat_chart(), width=400, height=300)
+
+    def test_save_chart_hconcat_without_size_override_is_unaffected(
+        self, tmp_path: Path
+    ) -> None:
+        # No width/height passed -> _sized must short-circuit and return the
+        # chart object unchanged, not attempt the per-child rewrite.
+        saved = save_chart(_hconcat_chart(), "out", output_dir=tmp_path)
+
+        assert saved.exists()
+        assert saved.stat().st_size > 0
