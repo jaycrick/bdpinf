@@ -306,12 +306,12 @@ class TestSimulation:
         monkeypatch.setattr(
             simulator_module,
             "_sample_spine_ages",
-            lambda **kwargs: [1.23],
+            lambda *args, **kwargs: [1.23],
         )
         monkeypatch.setattr(
             simulator_module,
             "_sample_non_spine_ages",
-            lambda **kwargs: [4.56],
+            lambda *args, **kwargs: [4.56],
         )
 
         sampled = simulate_bdp_ages_from_distributions(
