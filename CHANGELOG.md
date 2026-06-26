@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `constants.TEXT_UND_TEXTWERT_PAUL` — authoritative *Text und Textwert* Pauline
+  apparatus manuscript list (Gregory-Aland IDs) stored as an immutable constant;
+  used to validate the pipeline's XML-derived `section_p` classification in
+  `manuscript_data_exploration.qmd`.
 - `analysis.subset_inference` --- `build_manuscript_subsets`/`fit_manuscript_subset`
   split the cleaned NTVMR data into six canonical subsets (non-lectionaries
   combined, lectionaries, and four per-section non-lectionary analyses) and fit
