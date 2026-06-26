@@ -5,6 +5,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `visualization.bayesian_plots.posterior_rates_chart` now renders overlapping
+  ridgeline (joyplot) plots — one boundary-corrected KDE density ridge per
+  category — with the posterior median as a `mark_point` and the equal-tailed
+  95% credible interval as a ticked `mark_errorbar` along each row's baseline;
+  `RatePanel` now carries raw posterior `samples` (shape `n_draws × n_categories`)
+  instead of pre-computed `values`/`ci_lower`/`ci_upper` summary arrays.
+  All four `04_bayesian/` notebooks updated accordingly.
+
 ### Added
 
 - `visualization.era_shading` --- `era_band_chart` and `year_to_century_coord`:

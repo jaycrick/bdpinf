@@ -2,6 +2,7 @@
 
 import altair as alt
 import numpy as np
+import pytest
 
 from inf_bp_texts.visualization.bayesian_plots import (
     PriorPosteriorPanel,
@@ -64,57 +65,97 @@ class TestPriorPosteriorChart:
 
 
 class TestPosteriorRatesChart:
-    """Test the posterior-rate bar-with-credible-interval chart."""
+    """Test the posterior-rate ridgeline chart."""
 
-    def test_returns_hconcat_with_one_panel_per_input(self) -> None:
+    def test_returns_facet_chart_with_three_layers(self) -> None:
+        rng = np.random.default_rng(0)
         panels = [
             RatePanel(
                 label="Birth Rate",
                 categories=["Epoch 1", "Epoch 2"],
-                values=np.array([0.01, 0.02]),
-                ci_lower=np.array([0.005, 0.015]),
-                ci_upper=np.array([0.015, 0.025]),
+                samples=rng.lognormal(size=(300, 2)),
                 color="#4477AA",
             ),
             RatePanel(
                 label="Death Rate",
                 categories=["Epoch 1", "Epoch 2"],
-                values=np.array([0.03, 0.04]),
-                ci_lower=np.array([0.025, 0.035]),
-                ci_upper=np.array([0.035, 0.045]),
+                samples=rng.lognormal(size=(300, 2)),
                 color="#EE6677",
             ),
         ]
 
         chart = posterior_rates_chart(panels, title="Posterior Rates")
 
-        assert isinstance(chart, alt.HConcatChart)
-        assert len(chart.hconcat) == 2
-        first_panel = chart.hconcat[0]
-        assert isinstance(first_panel, alt.LayerChart)
-        datasets = chart.to_dict()["datasets"]
-        first_panel_rows = next(iter(datasets.values()))
-        assert [row["category"] for row in first_panel_rows] == ["Epoch 1", "Epoch 2"]
+        assert isinstance(chart, alt.FacetChart)
+        spec = chart.to_dict()
+        assert len(spec["spec"]["layer"]) == 3  # area + median_point + ci_bar
 
-    def test_generalizes_beyond_two_categories(self) -> None:
-        """N-way comparisons (e.g. families, subsets) must work, not just 2 epochs."""
-        categories = ["Subset A", "Subset B", "Subset C"]
+    def test_facet_row_and_column_fields(self) -> None:
+        rng = np.random.default_rng(1)
         panels = [
             RatePanel(
                 label="Birth Rate",
-                categories=categories,
-                values=np.array([0.01, 0.02, 0.03]),
-                ci_lower=np.array([0.005, 0.015, 0.025]),
-                ci_upper=np.array([0.015, 0.025, 0.035]),
+                categories=["Epoch 1", "Epoch 2", "Epoch 3"],
+                samples=rng.lognormal(size=(200, 3)),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = posterior_rates_chart(panels, title="test", category_title="Epoch")
+
+        spec = chart.to_dict()
+        assert spec["facet"]["row"]["field"] == "category"
+        assert spec["facet"]["column"]["field"] == "panel"
+
+    def test_ci_bounds_are_95_quantile_interval(self) -> None:
+        """Summary rows carry the equal-tailed 95% credible interval."""
+        rng = np.random.default_rng(2)
+        col = rng.lognormal(size=1000)
+        panels = [
+            RatePanel(
+                label="Birth Rate",
+                categories=["Epoch 1"],
+                samples=col[:, np.newaxis],
                 color="#4477AA",
             ),
         ]
 
         chart = posterior_rates_chart(panels, title="test")
 
-        datasets = chart.to_dict()["datasets"]
-        panel_rows = next(iter(datasets.values()))
-        assert len(panel_rows) == 3
+        spec = chart.to_dict()
+        all_rows = [row for rows in spec["datasets"].values() for row in rows]
+        summary_rows = [r for r in all_rows if r.get("row_type") == "summary"]
+        assert len(summary_rows) == 1
+        row = summary_rows[0]
+        assert row["rate"] == pytest.approx(
+            float(np.median(col))
+        )  # rate=median for summary rows
+        assert row["ci_low"] == pytest.approx(float(np.quantile(col, 0.025)))
+        assert row["ci_high"] == pytest.approx(float(np.quantile(col, 0.975)))
+        assert row["density"] == pytest.approx(0.0)  # baseline y-position
+
+    def test_degenerate_column_skips_density_but_keeps_summary(self) -> None:
+        """A constant column has no KDE ridge but still gets median and CI markers."""
+        panels = [
+            RatePanel(
+                label="Birth Rate",
+                categories=["Constant"],
+                samples=np.full((100, 1), 0.5),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = posterior_rates_chart(panels, title="test")
+
+        spec = chart.to_dict()
+        all_rows = [row for rows in spec["datasets"].values() for row in rows]
+        density_rows = [r for r in all_rows if r.get("row_type") == "density"]
+        summary_rows = [r for r in all_rows if r.get("row_type") == "summary"]
+        assert len(density_rows) == 0  # no KDE for constant samples
+        assert len(summary_rows) == 1
+        assert summary_rows[0]["rate"] == pytest.approx(
+            0.5
+        )  # rate=median for summary rows
 
 
 class TestTraceChart:

@@ -33,6 +33,13 @@ def _concat_chart() -> alt.ConcatChart:
     return alt.concat(_sample_chart(), _sample_chart(), columns=2)
 
 
+def _facet_chart() -> alt.FacetChart:
+    df = pd.DataFrame(
+        {"x": [0, 1, 2, 3], "y": [1.0, 2.0, 1.5, 0.5], "cat": list("AABB")}
+    )
+    return alt.Chart(df).mark_line().encode(x="x:Q", y="y:Q").facet(row="cat:N")
+
+
 class TestAltairTheme:
     """Test theme registration and the save_chart export chokepoint."""
 
@@ -92,6 +99,18 @@ class TestAltairTheme:
     def test_save_chart_sizes_concat_children_not_wrapper(self, tmp_path: Path) -> None:
         saved = save_chart(
             _concat_chart(), "out", width=400, height=300, output_dir=tmp_path
+        )
+
+        assert saved.exists()
+        assert saved.stat().st_size > 0
+
+    def test_save_chart_sizes_facet_spec_not_wrapper(self, tmp_path: Path) -> None:
+        # FacetChart has no top-level width/height (Vega-Lite sizes the inner
+        # spec per cell); height is ignored for facets and only width is applied
+        # to the inner spec.  This regression-tests that save_chart does not
+        # raise SchemaValidationError when called with a FacetChart.
+        saved = save_chart(
+            _facet_chart(), "out", width=400, height=300, output_dir=tmp_path
         )
 
         assert saved.exists()

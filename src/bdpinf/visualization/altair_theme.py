@@ -157,13 +157,18 @@ _FONT_DIR_CANDIDATES: tuple[Path, ...] = (
 def _sized(
     chart: alt.TopLevelMixin, width: int | None, height: int | None
 ) -> alt.TopLevelMixin:
-    """Apply width/height overrides, honouring concat-family charts.
+    """Apply width/height overrides, honouring concat-family and facet charts.
 
     ``HConcatChart``/``VConcatChart``/``ConcatChart`` have no top-level
     ``width``/``height`` parameter — Vega-Lite sizes each child view
     independently — so ``chart.properties(width=..., height=...)`` only fails
     validation when the chart is finally serialized, not when called. The
     override is applied to every child instead for those wrapper types.
+
+    ``FacetChart`` similarly lacks top-level ``width``/``height``; width is
+    applied to the inner ``spec`` (each cell's view width) and height is
+    intentionally ignored because facet row heights are determined by the
+    y-scale range and the number of rows, not by a single pixel value.
     """
     if width is None and height is None:
         return chart
@@ -188,6 +193,15 @@ def _sized(
             children_attr,
             [child.properties(**size_props) for child in getattr(chart, children_attr)],
         )
+        return sized_chart
+
+    if isinstance(chart, alt.FacetChart):
+        if width is None:
+            return chart
+        sized_chart = chart.copy()
+        inner = getattr(chart, "spec", None)
+        if inner is not None:
+            sized_chart.spec = inner.properties(width=width)
         return sized_chart
 
     return chart.properties(**size_props)
