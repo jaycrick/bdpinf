@@ -16,7 +16,7 @@
 #SBATCH --job-name=render-cpu-parallel
 #SBATCH --account=punim1793
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=64
+#SBATCH --cpus-per-task=16
 #SBATCH --mem-per-cpu=2G
 #SBATCH --time=10:00:00
 #SBATCH --output=_output/slurm-cpu-parallel-%j.log
