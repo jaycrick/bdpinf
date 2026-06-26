@@ -362,6 +362,8 @@ non_spine_grid_three, non_spine_kde_three = boundary_corrected_kde_on_support(
     non_spine_age_samples_three,
     support_upper=time_span,
 )
+
+
 def _non_spine_log_lik(age: float) -> float:
     return calculate_non_spine_ages_log_lik(
         birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
@@ -381,6 +383,8 @@ spine_grid_three, spine_kde_three = boundary_corrected_kde_on_support(
     spine_age_samples_three,
     support_upper=time_span,
 )
+
+
 def _spine_log_lik(age: float) -> float:
     return calculate_spine_ages_log_lik(
         birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span

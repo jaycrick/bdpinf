@@ -146,7 +146,9 @@ def fit_constrained_model(
     try:
         result = fit_birth_death_processes(
             list_of_ages=[np.asarray(ages, dtype=np.float64)],
-            times=np.asarray(config.times, dtype=np.float64) if isinstance(config.times, np.ndarray) else config.times,
+            times=np.asarray(config.times, dtype=np.float64)
+            if isinstance(config.times, np.ndarray)
+            else config.times,
             is_ordered=config.is_ordered,
             perturb_initial_params_std=config.perturb_initial_params_std or 0.0,
             random_seed=config.random_seed,

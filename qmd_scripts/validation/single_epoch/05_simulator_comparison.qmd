@@ -274,9 +274,7 @@ for regime_idx, (dr, lvl, r) in enumerate(
     # independence guarantee per worker seed, unlike sequential-integer offsets.
     contour_seeds = derive_worker_seeds(SEED + regime_idx * 10_000, N_CONTOUR_TREES)
     contour_raw: list[tuple[float | None, np.ndarray]] = Parallel(n_jobs=-1)(
-        delayed(_run_contour_regime)(
-            contour_seeds[i], BIRTH_RATE, dr, TERMINAL_TIME
-        )
+        delayed(_run_contour_regime)(contour_seeds[i], BIRTH_RATE, dr, TERMINAL_TIME)
         for i in range(N_CONTOUR_TREES)
     )
     contour_spine_ages = np.asarray(
