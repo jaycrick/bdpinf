@@ -128,3 +128,14 @@ class TestAltairTheme:
 
         assert saved.exists()
         assert saved.stat().st_size > 0
+
+    def test_save_chart_sizes_vconcat_of_facets(self, tmp_path: Path) -> None:
+        # VConcatChart whose children are FacetCharts (e.g. vertical ridgeline
+        # output from posterior_rates_chart) must not raise SchemaValidationError
+        # when width/height are passed — FacetChart children need the inner-spec
+        # width path, not child.properties(width=..., height=...).
+        chart = alt.vconcat(_facet_chart(), _facet_chart())
+        saved = save_chart(chart, "out", width=400, height=300, output_dir=tmp_path)
+
+        assert saved.exists()
+        assert saved.stat().st_size > 0

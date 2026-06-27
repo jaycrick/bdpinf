@@ -23,9 +23,9 @@ _PANEL_WIDTH = 360
 _PANEL_HEIGHT = 300
 
 # Ridgeline (joyplot) layout constants
-_RIDGE_STEP = 40  # pixel height of each facet row
+_RIDGE_STEP = 20  # pixel height of each facet row
 _RIDGE_OVERLAP = 1  # fraction of _RIDGE_STEP that ridge peaks bleed into the row above
-_RIDGE_KDE_GRID = 200  # KDE evaluation grid points per category
+_RIDGE_MAXBINS = 30  # max bins for the in-spec Vega-Lite binned density
 
 
 @dataclass(frozen=True)
@@ -110,19 +110,115 @@ class RatePanel:
     ci_prob: float = 0.95
 
 
+def _panel_rows(panel: RatePanel) -> list[dict[str, object]]:
+    """Build combined draw + summary rows for one RatePanel."""
+    rows: list[dict[str, object]] = []
+    samp = np.asarray(panel.samples, dtype=np.float64)
+    tail = (1.0 - panel.ci_prob) / 2.0
+    for j, cat in enumerate(list(panel.categories)):
+        col = samp[:, j]
+        median = float(np.median(col))
+        ci_lo, ci_hi = (float(v) for v in np.quantile(col, [tail, 1.0 - tail]))
+        rows.append(
+            {
+                "panel": panel.label,
+                "category": cat,
+                "rate": median,
+                "value": 0.0,
+                "ci_low": ci_lo,
+                "ci_high": ci_hi,
+                "row_type": "summary",
+            }
+        )
+        rows.extend(
+            {
+                "panel": panel.label,
+                "category": cat,
+                "rate": float(draw),
+                "value": float("nan"),
+                "ci_low": float("nan"),
+                "ci_high": float("nan"),
+                "row_type": "draw",
+            }
+            for draw in col
+        )
+    return rows
+
+
+def _ridgeline_layers(
+    color_scale: alt.Scale,
+    y_scale: alt.Scale,
+    x_title: str,
+) -> tuple[alt.Chart, alt.Chart, alt.Chart]:
+    """Build the three ridgeline mark layers shared by both layout modes."""
+    area = (
+        alt.Chart()
+        .transform_filter("datum.row_type === 'draw'")
+        .transform_bin(
+            ["bin_max", "bin_min"],
+            field="rate",
+            bin=alt.Bin(maxbins=_RIDGE_MAXBINS),
+        )
+        .transform_aggregate(
+            value="count()",
+            groupby=["panel", "category", "bin_min", "bin_max"],
+        )
+        .transform_impute(
+            impute="value",
+            groupby=["panel", "category"],
+            key="bin_min",
+            value=0,
+        )
+        .mark_area(
+            interpolate="monotone",
+            fillOpacity=0.8,
+            stroke="lightgray",
+            strokeWidth=0.5,
+        )
+        .encode(
+            x=alt.X("bin_min:Q", bin="binned", title=x_title),
+            y=alt.Y("value:Q", axis=None, scale=y_scale),
+            fill=alt.Fill("panel:N", scale=color_scale, legend=None),
+        )
+    )
+    median_point = (
+        alt.Chart()
+        .transform_filter("datum.row_type === 'summary'")
+        .mark_point(filled=True, size=40, color="black")
+        .encode(
+            x=alt.X("rate:Q"),
+            y=alt.Y("value:Q", scale=y_scale),
+        )
+    )
+    ci_bar = (
+        alt.Chart()
+        .transform_filter("datum.row_type === 'summary'")
+        .mark_errorbar(ticks=True, color="black")
+        .encode(
+            x=alt.X("ci_low:Q"),
+            x2=alt.X2("ci_high:Q"),
+            y=alt.Y("value:Q", scale=y_scale),
+        )
+    )
+    return area, median_point, ci_bar
+
+
 def posterior_rates_chart(
     panels: Sequence[RatePanel],
     *,
     title: str,
     x_title: str = "Rate per year",
     category_title: str = "Category",
-) -> alt.FacetChart:
+    vertical: bool = False,
+) -> alt.FacetChart | alt.VConcatChart:
     """Ridgeline (joyplot) of per-category posterior rate distributions.
 
-    Each row facets one category; each column facets one parameter panel
-    (e.g. birth / death rate).  Within every cell a boundary-corrected KDE
-    area ridge is drawn, with the posterior median overlaid as a filled
-    ``mark_point`` and the equal-tailed credible interval as a ticked
+    Each row facets one category; columns facet parameter panels (birth vs.
+    death) when ``vertical=False`` (default), or panels are stacked as separate
+    facets when ``vertical=True``.  Within every cell a binned-count area ridge
+    is drawn via Vega-Lite's ``transform_bin`` / ``transform_aggregate`` /
+    ``transform_impute`` pipeline, with the posterior median overlaid as a
+    filled ``mark_point`` and the equal-tailed credible interval as a ticked
     ``mark_errorbar`` along the row baseline.
 
     Parameters
@@ -135,108 +231,53 @@ def posterior_rates_chart(
         Label for the rate (x) axis.
     category_title:
         Label for the category (row-facet) axis.
+    vertical:
+        When ``True``, stack panels vertically (one facet grid per panel)
+        instead of side-by-side columns.
     """
-    from inf_bp_texts.analysis.validation_helpers import boundary_corrected_kde_at_zero
+    y_scale = alt.Scale(range=[_RIDGE_STEP, -_RIDGE_STEP * _RIDGE_OVERLAP])
+    row_enc = alt.Row(
+        "category:N",
+        title=category_title,
+        header=alt.Header(labelAngle=0, labelAlign="left"),
+    )
 
+    if vertical:
+        # One FacetChart per panel (row-facet only), then vconcat.
+        # configure_* must be applied at the outermost level (vconcat), not on
+        # individual FacetCharts, because Altair only allows config at top level.
+        sub_charts: list[alt.FacetChart] = []
+        for panel in panels:
+            pscale = alt.Scale(domain=[panel.label], range=[panel.color])
+            area, median_point, ci_bar = _ridgeline_layers(pscale, y_scale, x_title)
+            sub_charts.append(
+                alt.layer(area, median_point, ci_bar)
+                .properties(height=_RIDGE_STEP)
+                .facet(row=row_enc, data=pd.DataFrame(_panel_rows(panel)))
+                .properties(title=panel.label, bounds="flush")
+            )
+        return (
+            alt.vconcat(*sub_charts)
+            .properties(title=title)
+            .configure_facet(spacing=0)
+            .configure_view(stroke=None)
+        )
+
+    # Default: column facet for panels, row facet for categories.
     color_scale = alt.Scale(
         domain=[p.label for p in panels],
         range=[p.color for p in panels],
     )
-
-    # Build one combined DataFrame so Altair can place a single data source at
-    # the facet top level (required by Altair when layers have no shared data).
-    # Summary rows carry the median/CI marker positions; density rows carry the
-    # KDE curve.  A "row_type" column lets each layer filter its own subset.
-    combined_rows: list[dict[str, object]] = []
-
-    for panel in panels:
-        categories = list(panel.categories)
-        samp = np.asarray(panel.samples, dtype=np.float64)
-        tail = (1.0 - panel.ci_prob) / 2.0
-        for j, cat in enumerate(categories):
-            col = samp[:, j]
-            median = float(np.median(col))
-            ci_lo, ci_hi = (float(v) for v in np.quantile(col, [tail, 1.0 - tail]))
-            # One summary row per (panel, category): rate=median for x-position.
-            combined_rows.append(
-                {
-                    "panel": panel.label,
-                    "category": cat,
-                    "rate": median,
-                    "density": 0.0,  # baseline y-position
-                    "ci_low": ci_lo,
-                    "ci_high": ci_hi,
-                    "row_type": "summary",
-                }
-            )
-            x_vals, y_vals = boundary_corrected_kde_at_zero(col, n_grid=_RIDGE_KDE_GRID)
-            if x_vals is None:
-                continue
-            for x, y in zip(x_vals, y_vals, strict=True):
-                combined_rows.append(
-                    {
-                        "panel": panel.label,
-                        "category": cat,
-                        "rate": float(x),
-                        "density": float(y),
-                        "ci_low": float("nan"),
-                        "ci_high": float("nan"),
-                        "row_type": "density",
-                    }
-                )
-
-    combined_df = pd.DataFrame(combined_rows)
-
-    y_scale = alt.Scale(range=[_RIDGE_STEP, -_RIDGE_STEP * _RIDGE_OVERLAP])
-
-    # Each layer uses alt.Chart() (no data) and inherits from the facet-level
-    # data; transform_filter selects the relevant subset per layer.
-    area = (
-        alt.Chart()
-        .transform_filter("datum.row_type === 'density'")
-        .mark_area(
-            interpolate="monotone",
-            fillOpacity=0.8,
-            stroke="lightgray",
-            strokeWidth=0.5,
-        )
-        .encode(
-            x=alt.X("rate:Q", title=x_title),
-            y=alt.Y("density:Q", axis=None, scale=y_scale),
-            fill=alt.Fill("panel:N", scale=color_scale, legend=None),
-        )
-    )
-    median_point = (
-        alt.Chart()
-        .transform_filter("datum.row_type === 'summary'")
-        .mark_point(filled=True, size=40, color="black")
-        .encode(
-            x=alt.X("rate:Q"),  # rate=median for summary rows; shares x scale with area
-            y=alt.Y("density:Q", scale=y_scale),
-        )
-    )
-    ci_bar = (
-        alt.Chart()
-        .transform_filter("datum.row_type === 'summary'")
-        .mark_errorbar(ticks=True, color="black")
-        .encode(
-            x=alt.X("ci_low:Q"),
-            x2=alt.X2("ci_high:Q"),
-            y=alt.Y("density:Q", scale=y_scale),
-        )
-    )
+    area, median_point, ci_bar = _ridgeline_layers(color_scale, y_scale, x_title)
+    combined_df = pd.DataFrame([r for panel in panels for r in _panel_rows(panel)])
     return (
         alt.layer(area, median_point, ci_bar)
+        .properties(height=_RIDGE_STEP)
         .facet(
-            row=alt.Row(
-                "category:N",
-                title=category_title,
-                header=alt.Header(labelAngle=0, labelAlign="left"),
-            ),
+            row=row_enc,
             column=alt.Column("panel:N", title=None),
             data=combined_df,
         )
-        .resolve_scale(y="independent")
         .properties(title=title, bounds="flush")
         .configure_facet(spacing=0)
         .configure_view(stroke=None)

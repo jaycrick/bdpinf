@@ -154,8 +154,34 @@ _FONT_DIR_CANDIDATES: tuple[Path, ...] = (
 )
 
 
+def _size_one(
+    child: alt.TopLevelMixin,
+    size_props: dict[str, int],
+    width: int | None,
+) -> alt.TopLevelMixin:
+    """Apply size overrides to a single chart, handling FacetChart children.
+
+    When a child inside a concat/vconcat is itself a ``FacetChart``, the usual
+    ``child.properties(width=..., height=...)`` path fails at schema validation
+    because ``FacetChart`` accepts neither at its top level.  Mirror the same
+    special-case used in :func:`_sized` for top-level facets: apply ``width``
+    only, to the inner ``spec``.
+    """
+    if isinstance(child, alt.FacetChart):
+        if width is None:
+            return child
+        sized = child.copy()
+        inner = getattr(child, "spec", None)
+        if inner is not None:
+            sized.spec = inner.properties(width=width)
+        return sized
+    return child.properties(**size_props)
+
+
 def _sized(
-    chart: alt.TopLevelMixin, width: int | None, height: int | None
+    chart: alt.TopLevelMixin,
+    width: int | None,
+    height: int | None,
 ) -> alt.TopLevelMixin:
     """Apply width/height overrides, honouring concat-family and facet charts.
 
@@ -163,7 +189,9 @@ def _sized(
     ``width``/``height`` parameter — Vega-Lite sizes each child view
     independently — so ``chart.properties(width=..., height=...)`` only fails
     validation when the chart is finally serialized, not when called. The
-    override is applied to every child instead for those wrapper types.
+    override is applied to every child instead for those wrapper types.  When a
+    child is itself a ``FacetChart`` (e.g. a vconcat of ridgeline facets),
+    :func:`_size_one` handles it with the same facet-specific logic below.
 
     ``FacetChart`` similarly lacks top-level ``width``/``height``; width is
     applied to the inner ``spec`` (each cell's view width) and height is
@@ -191,7 +219,10 @@ def _sized(
         setattr(
             sized_chart,
             children_attr,
-            [child.properties(**size_props) for child in getattr(chart, children_attr)],
+            [
+                _size_one(child, size_props, width)
+                for child in getattr(chart, children_attr)
+            ],
         )
         return sized_chart
 

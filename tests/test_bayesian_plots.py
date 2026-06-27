@@ -132,10 +132,15 @@ class TestPosteriorRatesChart:
         )  # rate=median for summary rows
         assert row["ci_low"] == pytest.approx(float(np.quantile(col, 0.025)))
         assert row["ci_high"] == pytest.approx(float(np.quantile(col, 0.975)))
-        assert row["density"] == pytest.approx(0.0)  # baseline y-position
+        assert row["value"] == pytest.approx(0.0)  # baseline y-position
 
-    def test_degenerate_column_skips_density_but_keeps_summary(self) -> None:
-        """A constant column has no KDE ridge but still gets median and CI markers."""
+    def test_constant_column_keeps_summary_and_draw_rows(self) -> None:
+        """A constant column still emits draw rows and a summary marker.
+
+        Binning of constant draws happens in-spec (Vega-Lite), so all 100 draw
+        rows are passed through to the spec unchanged.  The summary row carries
+        the median (0.5) and the CI errorbar.
+        """
         panels = [
             RatePanel(
                 label="Birth Rate",
@@ -149,9 +154,9 @@ class TestPosteriorRatesChart:
 
         spec = chart.to_dict()
         all_rows = [row for rows in spec["datasets"].values() for row in rows]
-        density_rows = [r for r in all_rows if r.get("row_type") == "density"]
+        draw_rows = [r for r in all_rows if r.get("row_type") == "draw"]
         summary_rows = [r for r in all_rows if r.get("row_type") == "summary"]
-        assert len(density_rows) == 0  # no KDE for constant samples
+        assert len(draw_rows) == 100  # all draws passed through to Vega-Lite
         assert len(summary_rows) == 1
         assert summary_rows[0]["rate"] == pytest.approx(
             0.5
