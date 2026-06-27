@@ -8,14 +8,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - `visualization.bayesian_plots.posterior_rates_chart` now renders overlapping
-  ridgeline (joyplot) plots — one boundary-corrected KDE density ridge per
-  category — with the posterior median as a `mark_point` and the equal-tailed
-  95% credible interval as a ticked `mark_errorbar` along each row's baseline;
-  `RatePanel` now carries raw posterior `samples` (shape `n_draws × n_categories`)
-  instead of pre-computed `values`/`ci_lower`/`ci_upper` summary arrays.
-  All four `04_bayesian/` notebooks updated accordingly.
+  ridgeline (joyplot) plots with correct per-cell height (`step = 20` px) and
+  in-spec Vega-Lite binned density (`transform_bin` → `transform_aggregate` →
+  `transform_impute`) replacing the Python-side boundary-corrected KDE; the
+  posterior median is shown as a `mark_point` and the equal-tailed 95% credible
+  interval as a ticked `mark_errorbar` along each row's baseline; `RatePanel`
+  carries raw posterior `samples` (shape `n_draws × n_categories`) instead of
+  pre-computed summary arrays. All four `04_bayesian/` notebooks updated.
 
 ### Added
+
+- `data.ntvmr.download_all_manuscripts` now runs a fast connectivity preflight
+  via `check_ntvmr_reachable()` before starting the download loop; if the server
+  is unreachable it returns immediately with `stats["preflight_failed"] = 1` instead
+  of grinding out 200 silent connection failures. Error stats now include
+  `connection_errors` (network/exception) and `error_responses` (server returned
+  `<error>` XML) sub-counts alongside the existing `errors` total. `NTVMR_GET_URL`
+  constant replaces the two duplicated inline f-strings.
+- `cli ntvmr download-all` gains `--verbose`/`-v` and `--log-file PATH` options;
+  `--log-file` attaches a `FileHandler` to the `inf_bp_texts` package logger so all
+  progress and error detail is persisted to a file. The summary line now shows the
+  error sub-counts, and a human-readable "server appears unreachable" hint is printed
+  when `preflight_failed` is set.
 
 - `visualization.era_shading` --- `era_band_chart` and `year_to_century_coord`:
   reusable helpers that build alternating era background-band and label layers
