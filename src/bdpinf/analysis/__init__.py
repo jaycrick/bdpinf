@@ -25,11 +25,26 @@ from .spike_detection import (
     select_extreme_replicates,
     select_max_ci_times,
 )
+from .latex_tables import (
+    BAYESIAN_COLUMNS,
+    MLE_COLUMNS,
+    LatexColumn,
+    LatexParamGroup,
+    LatexRateRow,
+    bayesian_results_latex_by_epoch,
+    bayesian_results_latex_by_subset,
+    rates_latex_table,
+    subset_fits_latex_by_epoch,
+    subset_fits_latex_by_subset,
+)
 from .subset_inference import (
+    BayesianSubsetConfig,
     ManuscriptSubset,
     SubsetFitResult,
     build_manuscript_subsets,
     fit_manuscript_subset,
+    fit_manuscript_subset_bayesian,
+    fit_manuscript_subsets_bayesian,
 )
 from .validation_helpers import (
     FitModelConfig,
@@ -48,13 +63,26 @@ from .validation_helpers import (
 )
 
 __all__ = [
+    "BAYESIAN_COLUMNS",
+    "MLE_COLUMNS",
     "BoxPlotStyle",
+    "BayesianSubsetConfig",
     "FitModelConfig",
     "KdePlotConfig",
+    "LatexColumn",
+    "LatexParamGroup",
+    "LatexRateRow",
     "ManuscriptSubset",
     "SubsetFitResult",
+    "bayesian_results_latex_by_epoch",
+    "bayesian_results_latex_by_subset",
     "build_manuscript_subsets",
     "fit_manuscript_subset",
+    "fit_manuscript_subset_bayesian",
+    "fit_manuscript_subsets_bayesian",
+    "rates_latex_table",
+    "subset_fits_latex_by_epoch",
+    "subset_fits_latex_by_subset",
     "bootstrap_percentile_ci",
     "boundary_corrected_kde_at_zero",
     "boundary_corrected_kde_on_support",

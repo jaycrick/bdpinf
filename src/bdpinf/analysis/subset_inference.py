@@ -14,18 +14,29 @@ The six subsets, in canonical order:
 4. ``section_a`` — non-lectionaries with ``section_a == 1`` (Acts + Catholic Epistles)
 5. ``section_p`` — non-lectionaries with ``section_p == 1`` (Pauline Epistles)
 6. ``section_r`` — non-lectionaries with ``section_r == 1`` (Revelation)
+
+The Bayesian parallel driver (:func:`fit_manuscript_subsets_bayesian`) runs
+NumPyro NUTS fits across all subsets using ``joblib.Parallel(n_jobs=-1)``,
+mirroring the ``n_jobs=-1`` convention used in the validation notebooks.  Each
+worker subprocess inherits ``JAX_PLATFORMS=cpu`` (set at package import) so
+CUDA is not attempted in subprocesses.  NUTS chains remain
+``chain_method="vectorized"`` (JAX vmap) inside each worker.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from inf_bp_texts.inference.bayesian import BayesianMCMCConfig, BayesianPriorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -415,3 +426,272 @@ def fit_manuscript_subset(
         log_likelihood=log_lik,
         epoch_results=epoch_results,
     )
+
+
+# ---------------------------------------------------------------------------
+# Bayesian parallel driver
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BayesianSubsetConfig:
+    """Configuration bundle for a single Bayesian subset fit.
+
+    Passed to :func:`fit_manuscript_subset_bayesian` (the per-worker function)
+    and assembled by the notebook before calling
+    :func:`fit_manuscript_subsets_bayesian`.
+
+    Attributes
+    ----------
+    subset : ManuscriptSubset
+        Manuscript data (must already carry a ``resampledYear`` column).
+    epochs : tuple[tuple[int, int, str], ...]
+        Epoch definitions as ``(start, end, name)`` triples.  The lectionary
+        subset uses a 5-epoch set starting at 380 CE; all others use the full
+        six-era set.
+    start_time : int
+        Epoch start year matching ``epochs[0][0]``.
+    prior_config : BayesianPriorConfig
+        NumPyro prior configuration for this subset.
+    """
+
+    subset: ManuscriptSubset
+    epochs: tuple[tuple[int, int, str], ...]
+    start_time: int
+    prior_config: BayesianPriorConfig
+
+
+def fit_manuscript_subset_bayesian(
+    config: BayesianSubsetConfig,
+    *,
+    mcmc_config: BayesianMCMCConfig,
+    model_seed: int,
+    mle_perturb_std: float = 0.1,
+) -> dict[str, Any]:
+    """Fit a Bayesian birth-death model to one manuscript subset.
+
+    This is the **per-worker function** executed inside each ``joblib``
+    subprocess.  It must be a module-level function (not a closure) to be
+    picklable by the ``loky`` backend.
+
+    Reproduces the notebook pattern:
+
+    1. Build :class:`~inf_bp_texts.models.BirthDeathProcess` from
+       ``config.subset.frame["resampledYear"]``.
+    2. Run an MLE reference fit via L-BFGS.
+    3. Initialise log-rates from the MLE result.
+    4. Run NumPyro NUTS via
+       :func:`~inf_bp_texts.inference.fit_birth_death_processes_bayesian`.
+    5. Convert all JAX arrays to plain NumPy before returning so the result
+       crosses the process boundary cleanly.
+
+    Parameters
+    ----------
+    config : BayesianSubsetConfig
+        Subset data + epoch definitions + prior.
+    mcmc_config : BayesianMCMCConfig
+        NUTS/MCMC settings (chains, samples, warmup, …).
+    model_seed : int
+        RNG seed for both the MLE perturbation and the NumPyro sampler.
+    mle_perturb_std : float
+        Standard deviation of the initial-parameter perturbation passed to the
+        MLE reference fit (default 0.1).
+
+    Returns
+    -------
+    dict[str, Any]
+        NumPy-only result dict with keys: ``key``, ``label``,
+        ``n_manuscripts``, ``epoch_names``, ``n_epochs``, ``times``,
+        ``birth_rates``, ``death_rates``, ``posterior_samples``
+        (``{"birth_rates": ndarray, "death_rates": ndarray}``),
+        ``posterior_samples_by_chain``, ``posterior_log_samples_by_chain``,
+        ``diagnostics``, ``num_divergences``, ``mle_birth_rates``,
+        ``mle_death_rates``, ``mle_success``, ``elapsed``, ``success``.
+    """
+    from inf_bp_texts.inference import (
+        ConvergenceConfig,
+        fit_birth_death_processes,
+        fit_birth_death_processes_bayesian,
+        mle_init_log_rates,
+    )
+    from inf_bp_texts.inference.bayesian import BayesianModelConfig
+    from inf_bp_texts.models import BirthDeathProcess
+
+    subset = config.subset
+    epochs = config.epochs
+    start_time = config.start_time
+    n_epochs = len(epochs)
+    ep_names = [e[2] for e in epochs]
+
+    # Guard: insufficient data
+    if len(subset.frame) < 2 or "resampledYear" not in subset.frame.columns:
+        logger.warning(
+            "Bayesian fit skipped for %s: insufficient data (n=%d)",
+            subset.key,
+            len(subset.frame),
+        )
+        return {
+            "key": subset.key,
+            "label": subset.label,
+            "success": False,
+            "n_manuscripts": len(subset.frame),
+            "epoch_names": ep_names,
+        }
+
+    # Build BirthDeathProcess
+    try:
+        bdp = BirthDeathProcess(
+            creation_times=subset.frame["resampledYear"].astype(float).tolist(),
+            epoch_end_times=[int(e[1]) for e in epochs],
+            start_time=float(start_time),
+        )
+    except Exception as exc:
+        logger.warning(
+            "Bayesian fit skipped for %s: BDP construction failed: %s", subset.key, exc
+        )
+        return {
+            "key": subset.key,
+            "label": subset.label,
+            "success": False,
+            "n_manuscripts": len(subset.frame),
+            "epoch_names": ep_names,
+        }
+
+    all_ages_np: NDArray[np.float64] = np.asarray(bdp.manuscript_ages, dtype=np.float64)
+    times_np: NDArray[np.float64] = np.asarray(
+        bdp.adjusted_epoch_end_times, dtype=np.float64
+    )
+    all_ages_list = all_ages_np.tolist()
+
+    # MLE reference fit (for NUTS initialisation)
+    mle: dict[str, Any] = {}
+    try:
+        mle = fit_birth_death_processes(
+            list_of_ages=[all_ages_np],
+            times=times_np,
+            is_ordered=False,
+            optimizers="LBFGS",
+            optimizer_kwargs={"LBFGS": {"lr": 0.5, "max_iter": 80}},
+            convergence_config=ConvergenceConfig(
+                gradient_threshold=1e-4, absolute_tolerance=1e-6, patience=8
+            ),
+            perturb_initial_params_std=mle_perturb_std,
+            random_seed=model_seed,
+        )
+    except Exception as exc:
+        logger.warning("MLE reference fit failed for %s: %s", subset.key, exc)
+
+    init_lr = mle_init_log_rates(mle, constraints=None, n_epochs=n_epochs)
+
+    # NumPyro NUTS fit
+    t0 = time.perf_counter()
+    bay = fit_birth_death_processes_bayesian(
+        list_of_ages=[all_ages_list],
+        times=times_np,
+        model_config=BayesianModelConfig(
+            is_ordered=False,
+            initial_population=1,
+            rng_seed=model_seed,
+            init_log_rates=init_lr,
+        ),
+        mcmc_config=mcmc_config,
+        prior_config=config.prior_config,
+    )
+    elapsed = time.perf_counter() - t0
+
+    def _np(x: Any) -> NDArray[np.float64]:
+        """Convert a JAX/numpy array to a plain numpy float64 array."""
+        return np.asarray(x, dtype=np.float64)
+
+    mle_success = bool(mle.get("success", False))
+
+    return {
+        "key": subset.key,
+        "label": subset.label,
+        "success": True,
+        "n_manuscripts": len(subset.frame),
+        "epoch_names": ep_names,
+        "n_epochs": n_epochs,
+        "times": _np(times_np),
+        "birth_rates": _np(bay["birth_rates"]),
+        "death_rates": _np(bay["death_rates"]),
+        "posterior_samples": {
+            "birth_rates": _np(bay["posterior_samples"]["birth_rates"]),
+            "death_rates": _np(bay["posterior_samples"]["death_rates"]),
+        },
+        "posterior_samples_by_chain": {
+            "birth_rates": _np(bay["posterior_samples_by_chain"]["birth_rates"]),
+            "death_rates": _np(bay["posterior_samples_by_chain"]["death_rates"]),
+        },
+        "posterior_log_samples_by_chain": {
+            "birth_rates": _np(bay["posterior_log_samples_by_chain"]["birth_rates"]),
+            "death_rates": _np(bay["posterior_log_samples_by_chain"]["death_rates"]),
+        },
+        "diagnostics": bay["diagnostics"],
+        "num_divergences": int(bay["num_divergences"]),
+        "mle_birth_rates": _np(mle["birth_rates"]) if mle_success else None,
+        "mle_death_rates": _np(mle["death_rates"]) if mle_success else None,
+        "mle_success": mle_success,
+        "elapsed": elapsed,
+    }
+
+
+def fit_manuscript_subsets_bayesian(
+    configs: list[BayesianSubsetConfig],
+    *,
+    mcmc_config: BayesianMCMCConfig,
+    model_seed: int = 42,
+    n_jobs: int = -1,
+    mle_perturb_std: float = 0.1,
+) -> dict[str, dict[str, Any]]:
+    """Fit Bayesian birth-death models to multiple subsets in parallel.
+
+    Uses ``joblib.Parallel(n_jobs=n_jobs)`` with the ``loky`` backend
+    (process-level isolation).  Each worker calls
+    :func:`fit_manuscript_subset_bayesian` and returns a plain NumPy dict.
+
+    Following the convention in the validation notebooks
+    (e.g. ``qmd_scripts/validation/multi_epoch/03_bulk_inference.qmd``),
+    ``n_jobs=-1`` uses all available CPU cores.  Set ``n_jobs=1`` to disable
+    parallelism (useful for debugging or in environments with restricted fork
+    behaviour).
+
+    Parameters
+    ----------
+    configs : list[BayesianSubsetConfig]
+        One config per subset.  Subsets with fewer than 2 manuscripts or no
+        ``resampledYear`` column are skipped silently.
+    mcmc_config : BayesianMCMCConfig
+        Shared NUTS/MCMC settings for all subsets.
+    model_seed : int
+        RNG seed forwarded to all workers (default 42).
+    n_jobs : int
+        Number of parallel workers (``-1`` = all cores, default ``-1``).
+    mle_perturb_std : float
+        Standard deviation of the MLE initial-parameter perturbation.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Mapping ``{subset_key: result_dict}``.  Only successfully completed
+        fits are included (``success=True``).
+    """
+    from joblib import Parallel, delayed
+
+    valid = [
+        c
+        for c in configs
+        if len(c.subset.frame) >= 2 and "resampledYear" in c.subset.frame.columns
+    ]
+
+    results: list[dict[str, Any]] = Parallel(n_jobs=n_jobs)(  # type: ignore[assignment]
+        delayed(fit_manuscript_subset_bayesian)(
+            c,
+            mcmc_config=mcmc_config,
+            model_seed=model_seed,
+            mle_perturb_std=mle_perturb_std,
+        )
+        for c in valid
+    )
+
+    return {r["key"]: r for r in results if r.get("success", False)}

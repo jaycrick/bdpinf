@@ -18,6 +18,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `analysis.latex_tables`: new module providing a generic booktabs + siunitx
+  LaTeX table renderer (`rates_latex_table`) and four assembly helpers
+  (`subset_fits_latex_by_epoch`, `subset_fits_latex_by_subset`,
+  `bayesian_results_latex_by_epoch`, `bayesian_results_latex_by_subset`) that
+  emit ``\multirow`` parameter groups, ``S[table-format=…]`` numeric columns,
+  and ``\num{}``-bracketed CI/CrI columns. All names re-exported from
+  `inf_bp_texts.analysis`.
+
+- `analysis.subset_inference`: `BayesianSubsetConfig` frozen dataclass plus two
+  new functions — `fit_manuscript_subset_bayesian` (picklable per-worker
+  function running MLE→NUTS for one subset) and `fit_manuscript_subsets_bayesian`
+  (parallel driver using `joblib.Parallel(n_jobs=-1)`, mirroring the existing
+  validation-notebook convention).
+
+- `qmd_scripts/core_analysis/03_multi_epoch/ntvmr_birth_death_inference.qmd`:
+  added two Quarto tabset panels comparing rates — "Rates by Epoch (per
+  Tradition)" and "Rates by Tradition (per Epoch)" — plus a "LaTeX Tables"
+  section with copiable booktabs/siunitx code blocks in both slicings.
+
+- `qmd_scripts/core_analysis/04_bayesian/ntvmr_birth_death_bayesian.qmd`:
+  expanded to run all six subsets in parallel (`TRIAL_SUBSET = None`); added
+  tabset panels for posterior rates by tradition (per epoch) and by epoch (per
+  tradition); added trace-plot tabset (one tab per tradition); added per-subset
+  LaTeX table section with mean/median/95 % CrI columns; aligned lectionary
+  subset to 380 CE epoch start (matching the MLE notebook); fixed prose to
+  reflect actual config (`target_accept=0.8`, `max_tree_depth=8`, NumPyro).
+
+- `qmd_scripts/validation/single_epoch/06_bulk_inference.qmd`: reordered figure
+  flow (histograms → heatmaps → scatter); histograms and scatter plots now have
+  interactive legend toggles for boundary/non-boundary groups; two new λ-vs-μ
+  count heatmaps added (all fits and non-boundary only) with the true parameter
+  value marked by a cross; scatter plots now IQR-filtered before display so the
+  interactive Vega-Lite spec stays small; "Mean Fitted Rates vs Population Size"
+  section header corrected to "Fitted Rates vs Mean Population Age".
+
 - `data.ntvmr.download_all_manuscripts` now runs a fast connectivity preflight
   via `check_ntvmr_reachable()` before starting the download loop; if the server
   is unreachable it returns immediately with `stats["preflight_failed"] = 1` instead

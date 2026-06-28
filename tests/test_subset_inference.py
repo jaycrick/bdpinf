@@ -1,13 +1,19 @@
 """Tests for NTVMR subset-building and per-subset fit helpers."""
 
+import pickle
+
 import numpy as np
 import pandas as pd
+import pytest
 
 from inf_bp_texts.analysis.subset_inference import (
+    BayesianSubsetConfig,
     ManuscriptSubset,
     SubsetFitResult,
     build_manuscript_subsets,
     fit_manuscript_subset,
+    fit_manuscript_subset_bayesian,
+    fit_manuscript_subsets_bayesian,
 )
 
 
@@ -219,3 +225,201 @@ class TestFitManuscriptSubset:
                 random_seed=42,
             )
             assert fit.n_manuscripts == len(s.frame)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for Bayesian driver tests
+# ---------------------------------------------------------------------------
+
+
+def _make_minimal_config(subset: ManuscriptSubset) -> BayesianSubsetConfig:
+    """Return a BayesianSubsetConfig using a single epoch (fast)."""
+    from inf_bp_texts.inference.bayesian import BayesianPriorConfig
+
+    return BayesianSubsetConfig(
+        subset=subset,
+        epochs=((100, 2000, "100–2000 CE"),),
+        start_time=100,
+        prior_config=BayesianPriorConfig(
+            birth_loc=-6.0,
+            birth_scale=2.0,
+            death_loc=-6.0,
+            death_scale=2.0,
+        ),
+    )
+
+
+def _minimal_mcmc_config():  # type: ignore[return]
+    from inf_bp_texts.inference.bayesian import BayesianMCMCConfig
+
+    return BayesianMCMCConfig(
+        num_samples=10,
+        warmup_steps=10,
+        num_chains=1,
+        disable_progressbar=True,
+    )
+
+
+class TestBayesianSubsetConfig:
+    """Test BayesianSubsetConfig picklability and structure."""
+
+    def test_is_picklable(self) -> None:
+        subsets = build_manuscript_subsets(_make_test_df())
+        nl = next(s for s in subsets if s.key == "non_lectionary")
+        cfg = _make_minimal_config(nl)
+        blob = pickle.dumps(cfg)
+        restored = pickle.loads(blob)
+        assert restored.subset.key == "non_lectionary"
+        assert restored.epochs == ((100, 2000, "100–2000 CE"),)
+
+    def test_frozen_raises_on_assign(self) -> None:
+        subsets = build_manuscript_subsets(_make_test_df())
+        nl = next(s for s in subsets if s.key == "non_lectionary")
+        cfg = _make_minimal_config(nl)
+        with pytest.raises((AttributeError, TypeError)):
+            cfg.start_time = 999  # type: ignore[misc]
+
+
+class TestFitManuscriptSubsetBayesian:
+    """Test fit_manuscript_subset_bayesian (single-worker, slow)."""
+
+    @pytest.mark.slow
+    def test_returns_success_dict(self) -> None:
+        subsets = build_manuscript_subsets(_make_test_df())
+        nl = next(s for s in subsets if s.key == "non_lectionary")
+        cfg = _make_minimal_config(nl)
+        result = fit_manuscript_subset_bayesian(
+            cfg,
+            mcmc_config=_minimal_mcmc_config(),
+            model_seed=42,
+        )
+        assert result.get("success") is True
+        assert result["key"] == "non_lectionary"
+
+    @pytest.mark.slow
+    def test_result_contains_required_keys(self) -> None:
+        subsets = build_manuscript_subsets(_make_test_df())
+        nl = next(s for s in subsets if s.key == "non_lectionary")
+        cfg = _make_minimal_config(nl)
+        result = fit_manuscript_subset_bayesian(
+            cfg,
+            mcmc_config=_minimal_mcmc_config(),
+            model_seed=42,
+        )
+        required = {
+            "key",
+            "label",
+            "success",
+            "n_manuscripts",
+            "epoch_names",
+            "birth_rates",
+            "death_rates",
+            "posterior_samples",
+            "diagnostics",
+            "num_divergences",
+            "elapsed",
+        }
+        assert required <= result.keys()
+
+    @pytest.mark.slow
+    def test_all_arrays_are_numpy(self) -> None:
+        """No JAX arrays should cross the function boundary."""
+        subsets = build_manuscript_subsets(_make_test_df())
+        nl = next(s for s in subsets if s.key == "non_lectionary")
+        cfg = _make_minimal_config(nl)
+        result = fit_manuscript_subset_bayesian(
+            cfg,
+            mcmc_config=_minimal_mcmc_config(),
+            model_seed=42,
+        )
+        assert isinstance(result["birth_rates"], np.ndarray)
+        assert isinstance(result["death_rates"], np.ndarray)
+        assert isinstance(result["posterior_samples"]["birth_rates"], np.ndarray)
+
+    @pytest.mark.slow
+    def test_posterior_samples_shape(self) -> None:
+        subsets = build_manuscript_subsets(_make_test_df())
+        nl = next(s for s in subsets if s.key == "non_lectionary")
+        cfg = _make_minimal_config(nl)
+        mcmc_cfg = _minimal_mcmc_config()
+        result = fit_manuscript_subset_bayesian(
+            cfg,
+            mcmc_config=mcmc_cfg,
+            model_seed=42,
+        )
+        bs = result["posterior_samples"]["birth_rates"]
+        # shape: [n_samples, n_epochs]
+        assert bs.ndim == 2
+        assert bs.shape[1] == len(cfg.epochs)
+        assert bs.shape[0] == mcmc_cfg.num_samples
+
+    def test_insufficient_data_returns_failure(self) -> None:
+        """Subset with <2 rows should return success=False without raising."""
+        import pandas as pd
+
+        tiny = ManuscriptSubset(
+            key="tiny",
+            label="Tiny",
+            frame=pd.DataFrame({"earlyYear": [300.0], "lateYear": [400.0]}),
+        )
+        from inf_bp_texts.inference.bayesian import BayesianPriorConfig
+
+        cfg = BayesianSubsetConfig(
+            subset=tiny,
+            epochs=((100, 2000, "100–2000 CE"),),
+            start_time=100,
+            prior_config=BayesianPriorConfig(),
+        )
+        result = fit_manuscript_subset_bayesian(
+            cfg,
+            mcmc_config=_minimal_mcmc_config(),
+            model_seed=42,
+        )
+        assert result["success"] is False
+
+
+class TestFitManuscriptSubsetsBayesian:
+    """Test fit_manuscript_subsets_bayesian (parallel driver, slow)."""
+
+    @pytest.mark.slow
+    def test_returns_dict_keyed_by_subset_key_n_jobs_1(self) -> None:
+        subsets = build_manuscript_subsets(_make_test_df())
+        # Use only the two largest subsets to keep the test fast
+        selected = [s for s in subsets if s.key in {"non_lectionary", "section_e"}]
+        configs = [_make_minimal_config(s) for s in selected]
+        results = fit_manuscript_subsets_bayesian(
+            configs,
+            mcmc_config=_minimal_mcmc_config(),
+            model_seed=42,
+            n_jobs=1,
+        )
+        assert set(results.keys()) == {"non_lectionary", "section_e"}
+
+    @pytest.mark.slow
+    def test_parallel_n_jobs_2_matches_n_jobs_1_keys(self) -> None:
+        subsets = build_manuscript_subsets(_make_test_df())
+        selected = [s for s in subsets if s.key in {"non_lectionary", "section_e"}]
+        configs = [_make_minimal_config(s) for s in selected]
+        r1 = fit_manuscript_subsets_bayesian(
+            configs,
+            mcmc_config=_minimal_mcmc_config(),
+            model_seed=42,
+            n_jobs=1,
+        )
+        r2 = fit_manuscript_subsets_bayesian(
+            configs,
+            mcmc_config=_minimal_mcmc_config(),
+            model_seed=42,
+            n_jobs=2,
+        )
+        assert set(r1.keys()) == set(r2.keys())
+
+    @pytest.mark.slow
+    def test_empty_config_list_returns_empty_dict(self) -> None:
+        results = fit_manuscript_subsets_bayesian(
+            [],
+            mcmc_config=_minimal_mcmc_config(),
+            model_seed=42,
+            n_jobs=1,
+        )
+        assert results == {}
