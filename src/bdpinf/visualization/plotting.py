@@ -408,6 +408,7 @@ def rate_ci_panel(
     category_title: str = "",
     orient: str = "h",
     offset: "alt.XOffset | None" = None,
+    log_scale: bool = False,
     width: int = 380,
     height: int = 320,
 ) -> alt.LayerChart:
@@ -439,6 +440,9 @@ def rate_ci_panel(
         ``"v"`` places them on the x-axis (vertical dot plot).
     offset : alt.XOffset | None
         Pass ``alt.XOffset("Col:N")`` for side-by-side grouped layouts.
+    log_scale : bool
+        When ``True``, place the rate axis on a log scale.  Use for death
+        rates, which span several orders of magnitude across epochs.
     width, height : int
         Chart dimensions in pixels.
 
@@ -450,24 +454,26 @@ def rate_ci_panel(
     if offset is not None:
         base_enc["xOffset"] = offset
 
+    _rate_scale = alt.Scale(type="log") if log_scale else alt.Undefined
+
     if orient == "h":
         base_enc["y"] = alt.Y(f"{category_col}:N", sort=None, title=category_title)
         base = alt.Chart(frame).encode(**base_enc)
         points = base.mark_point(filled=True, **_c).encode(
-            x=alt.X(f"{rate_col}:Q", title=rate_title)
+            x=alt.X(f"{rate_col}:Q", title=rate_title, scale=_rate_scale)
         )
         rule = base.mark_rule(strokeWidth=1, **_c).encode(
-            x=alt.X(f"{lower_col}:Q", title=rate_title),
+            x=alt.X(f"{lower_col}:Q", title=rate_title, scale=_rate_scale),
             x2=f"{upper_col}:Q",
         )
     else:
         base_enc["x"] = alt.X(f"{category_col}:N", sort=None, title=category_title)
         base = alt.Chart(frame).encode(**base_enc)
         points = base.mark_point(filled=True, **_c).encode(
-            y=alt.Y(f"{rate_col}:Q", title=rate_title)
+            y=alt.Y(f"{rate_col}:Q", title=rate_title, scale=_rate_scale)
         )
         rule = base.mark_rule(strokeWidth=1, **_c).encode(
-            y=alt.Y(f"{lower_col}:Q", title=rate_title),
+            y=alt.Y(f"{lower_col}:Q", title=rate_title, scale=_rate_scale),
             y2=f"{upper_col}:Q",
         )
 
