@@ -354,8 +354,8 @@ if (
     save_chart(
         fig_rates_vs_pop,
         "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_population_size",
-        width=500,
-        height=350,
+        width=300,
+        height=200,
     )
     print("Saved rates-vs-population figure")
 ```
@@ -435,8 +435,8 @@ if (
     save_chart(
         fig_rates_vs_mean_age,
         "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_mean_population_age",
-        width=500,
-        height=350,
+        width=300,
+        height=200,
     )
     print("Saved rates-vs-mean-age figure")
 ```
@@ -492,8 +492,8 @@ display(fig_birth_hist)
 save_chart(
     fig_birth_hist,
     "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_birth_rate_histograms",
-    width=400,
-    height=300,
+    width=300,
+    height=200,
 )
 print("Saved birth-rate histogram figure")
 
@@ -542,7 +542,7 @@ display(fig_death_hist)
 save_chart(
     fig_death_hist,
     "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_death_rate_histograms",
-    width=400,
+    width=300,
     height=300,
 )
 print("Saved death-rate histogram figure")

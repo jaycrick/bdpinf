@@ -302,7 +302,7 @@ fig_population = (_pop_bars + _theory_line).properties(
 )
 display(fig_population)
 save_chart(
-    fig_population, "methods_validation_population_distribution", width=600, height=350
+    fig_population, "methods_validation_population_distribution", width=300, height=200
 )
 print("Saved population figure")
 ```
