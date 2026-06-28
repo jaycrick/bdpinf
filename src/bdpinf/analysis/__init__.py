@@ -13,18 +13,6 @@ from .date_density import (
     manuscript_date_density,
     quantile_resample_dates,
 )
-from .single_epoch import (
-    compute_parameter_summary,
-    extract_alive_ages,
-    extract_rate_arrays,
-    summarize_fit_success,
-)
-from .spike_detection import (
-    bootstrap_percentile_ci,
-    compute_ci_width_table,
-    select_extreme_replicates,
-    select_max_ci_times,
-)
 from .latex_tables import (
     BAYESIAN_COLUMNS,
     MLE_COLUMNS,
@@ -37,7 +25,20 @@ from .latex_tables import (
     subset_fits_latex_by_epoch,
     subset_fits_latex_by_subset,
 )
+from .single_epoch import (
+    compute_parameter_summary,
+    extract_alive_ages,
+    extract_rate_arrays,
+    summarize_fit_success,
+)
+from .spike_detection import (
+    bootstrap_percentile_ci,
+    compute_ci_width_table,
+    select_extreme_replicates,
+    select_max_ci_times,
+)
 from .subset_inference import (
+    CANONICAL_SUBSET_KEYS,
     BayesianSubsetConfig,
     ManuscriptSubset,
     SubsetFitResult,
@@ -64,6 +65,7 @@ from .validation_helpers import (
 
 __all__ = [
     "BAYESIAN_COLUMNS",
+    "CANONICAL_SUBSET_KEYS",
     "MLE_COLUMNS",
     "BoxPlotStyle",
     "BayesianSubsetConfig",

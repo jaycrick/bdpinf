@@ -236,11 +236,9 @@ def posterior_rates_chart(
         instead of side-by-side columns.
     """
     y_scale = alt.Scale(range=[_RIDGE_STEP, -_RIDGE_STEP * _RIDGE_OVERLAP])
-    row_enc = alt.Row(
-        "category:N",
-        title=category_title,
-        header=alt.Header(labelAngle=0, labelAlign="left"),
-    )
+    # Build category sort from the first panel so the y-axis preserves the
+    # caller-provided order rather than defaulting to alphabetical.
+    _category_sort = list(panels[0].categories) if panels else None
 
     if vertical:
         # One FacetChart per panel (row-facet only), then vconcat.
@@ -250,10 +248,16 @@ def posterior_rates_chart(
         for panel in panels:
             pscale = alt.Scale(domain=[panel.label], range=[panel.color])
             area, median_point, ci_bar = _ridgeline_layers(pscale, y_scale, x_title)
+            row_enc_v = alt.Row(
+                "category:N",
+                title=category_title,
+                header=alt.Header(labelAngle=0, labelAlign="left"),
+                sort=list(panel.categories),
+            )
             sub_charts.append(
                 alt.layer(area, median_point, ci_bar)
                 .properties(height=_RIDGE_STEP)
-                .facet(row=row_enc, data=pd.DataFrame(_panel_rows(panel)))
+                .facet(row=row_enc_v, data=pd.DataFrame(_panel_rows(panel)))
                 .properties(title=panel.label, bounds="flush")
             )
         return (
@@ -270,6 +274,12 @@ def posterior_rates_chart(
     )
     area, median_point, ci_bar = _ridgeline_layers(color_scale, y_scale, x_title)
     combined_df = pd.DataFrame([r for panel in panels for r in _panel_rows(panel)])
+    row_enc = alt.Row(
+        "category:N",
+        title=category_title,
+        header=alt.Header(labelAngle=0, labelAlign="left"),
+        sort=_category_sort,
+    )
     return (
         alt.layer(area, median_point, ci_bar)
         .properties(height=_RIDGE_STEP)

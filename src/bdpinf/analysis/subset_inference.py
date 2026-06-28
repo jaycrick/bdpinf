@@ -40,6 +40,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+CANONICAL_SUBSET_KEYS: list[str] = [
+    "non_lectionary",
+    "lectionary",
+    "section_e",
+    "section_a",
+    "section_p",
+    "section_r",
+]
+"""Canonical display order for the six NTVMR analysis subsets.
+
+Gospels (section_e), Acts + Catholic Epistles (section_a), Pauline Epistles
+(section_p), and Revelation (section_r) follow the combined Non-Lectionary and
+Lectionary groups.  Use this to sort result dicts or loop over subsets in a
+consistent order across notebooks and visualisations.
+"""
+
 
 @dataclass
 class ManuscriptSubset:
