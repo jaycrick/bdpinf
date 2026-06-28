@@ -37,8 +37,12 @@ from inf_bp_texts.analysis import (
     iqr_plotting_subset,
     summarize_fit_success,
 )
+from inf_bp_texts import get_project_root
 from inf_bp_texts.visualization import display_svg, save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+
+figures_dir = get_project_root() / "figures" / "validation" / "multi_epoch"
+figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
 ## Simulate and Fit
@@ -252,7 +256,8 @@ if plotting_row_count > 0:
     display(fig_hist)
     save_chart(
         fig_hist,
-        "methods_validation_multi_epoch_bulk_inference_single_rate_parameter_histograms",
+        "vme04_parameter_histograms",
+        output_dir=figures_dir,
     )
     print("Saved parameter histogram figure")
 
@@ -280,7 +285,8 @@ if plotting_row_count > 0 and len(scatter_data) == len(parameter_specs):
     display_svg(fig_pairs)
     save_chart(
         fig_pairs,
-        "methods_validation_multi_epoch_bulk_inference_single_rate_parameter_pairs_scatter_matrix",
+        "vme04_parameter_pairs_scatter_matrix",
+        output_dir=figures_dir,
     )
     print("Saved pairs scatter matrix figure")
 ```

@@ -47,9 +47,13 @@ from inf_bp_texts.analysis import (
 from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference.fitting import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
+from inf_bp_texts import get_project_root
 from inf_bp_texts.utils import derive_worker_seeds
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+
+figures_dir = get_project_root() / "figures" / "validation" / "single_epoch"
+figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
 ## Simulate Data
@@ -367,9 +371,10 @@ fig_birth_hist = (_birth_bars + _birth_vline).properties(
 display(fig_birth_hist)
 save_chart(
     fig_birth_hist,
-    "methods_validation_bulk_inference_birth_rate_histograms",
+    "vse06_birth_rate_histograms",
     width=300,
     height=200,
+    output_dir=figures_dir,
 )
 print("Saved birth-rate histogram figure")
 
@@ -410,9 +415,10 @@ fig_death_hist = (_death_bars + _death_vline).properties(
 display(fig_death_hist)
 save_chart(
     fig_death_hist,
-    "methods_validation_bulk_inference_death_rate_histograms",
+    "vse06_death_rate_histograms",
     width=300,
     height=200,
+    output_dir=figures_dir,
 )
 print("Saved death-rate histogram figure")
 
@@ -457,6 +463,7 @@ def _fitted_heatmap(
     deaths: list[float],
     title: str,
     save_name: str,
+    output_dir: "Path | None" = None,
 ) -> None:
     """Display and save a binned λ-vs-μ count heatmap with the true value marked."""
     if not births or not deaths:
@@ -480,7 +487,7 @@ def _fitted_heatmap(
     )
     fig = (cells + truth).properties(title=title, width=400, height=350)
     display(fig)
-    save_chart(fig, save_name, width=300, height=200)
+    save_chart(fig, save_name, width=300, height=200, output_dir=output_dir)
     print(f"Saved {save_name}")
 
 
@@ -506,13 +513,15 @@ _fitted_heatmap(
     births=_heat_all_filt["lambda"].tolist(),
     deaths=_heat_all_filt["mu"].tolist(),
     title="Fitted λ vs μ — All fits, IQR subset (cross = true value)",
-    save_name="methods_validation_bulk_inference_rate_heatmap_all",
+    save_name="vse06_rate_heatmap_all",
+    output_dir=figures_dir,
 )
 _fitted_heatmap(
     births=_heat_nb_filt["lambda"].tolist(),
     deaths=_heat_nb_filt["mu"].tolist(),
     title="Fitted λ vs μ — Excluding boundary fits, IQR subset (cross = true value)",
-    save_name="methods_validation_bulk_inference_rate_heatmap_non_boundary",
+    save_name="vse06_rate_heatmap_non_boundary",
+    output_dir=figures_dir,
 )
 ```
 
@@ -605,9 +614,10 @@ if len(fit_populations) > 0 or len(fit_populations_boundary) > 0:
     display(fig_rates_vs_pop)
     save_chart(
         fig_rates_vs_pop,
-        "methods_validation_bulk_inference_rates_vs_population_size",
+        "vse06_rates_vs_population_size",
         width=300,
         height=200,
+        output_dir=figures_dir,
     )
     print("Saved rates-vs-population figure")
 ```
@@ -690,9 +700,10 @@ if len(fit_mean_ages) > 0 or len(fit_mean_ages_boundary) > 0:
     display(fig_rates_vs_mean_age)
     save_chart(
         fig_rates_vs_mean_age,
-        "methods_validation_bulk_inference_rates_vs_mean_population_age",
+        "vse06_rates_vs_mean_population_age",
         width=300,
         height=200,
+        output_dir=figures_dir,
     )
     print("Saved rates-vs-mean-age figure")
 ```

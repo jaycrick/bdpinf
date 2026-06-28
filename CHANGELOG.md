@@ -7,6 +7,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `visualization.altair_theme.save_chart` / `save_chart_html`: `output_dir` now
+  defaults to `get_project_root() / "figures"` (was cwd-relative `"figures"`), so
+  figures no longer scatter into per-notebook subdirectories when run via
+  `quarto preview` or individually.
+- All `qmd_scripts/` notebooks: `figures_dir` now resolves to a mirrored subpath
+  under the repo-root `figures/` tree (e.g. `figures/core_analysis/04_bayesian/`),
+  and all `save_chart` / `save_chart_html` / `save_multi_epoch_*` calls thread
+  `output_dir=figures_dir`.  Figure stems are shortened to a `<prefix>_<descriptive>`
+  pattern (e.g. `04b_prior_posterior.pdf`) with the prefix encoding the source
+  notebook; this resolves filename collisions that existed across sibling notebooks.
+
 - `visualization.bayesian_plots.posterior_rates_chart` now renders overlapping
   ridgeline (joyplot) plots with correct per-cell height (`step = 20` px) and
   in-spec Vega-Lite binned density (`transform_bin` → `transform_aggregate` →

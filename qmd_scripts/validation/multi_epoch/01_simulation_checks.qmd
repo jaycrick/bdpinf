@@ -52,9 +52,13 @@ from inf_bp_texts.models.math_ages import (
 from inf_bp_texts.models.math_extinction import calculate_extinction_pr
 from inf_bp_texts.models.math_populations import calculate_populations_log_pmf
 from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts import get_project_root
 from inf_bp_texts.utils import derive_worker_seeds
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+
+figures_dir = get_project_root() / "figures" / "validation" / "multi_epoch"
+figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
 ## Simulate Age Vectors
@@ -302,7 +306,7 @@ fig_population = (_pop_bars + _theory_line).properties(
 )
 display(fig_population)
 save_chart(
-    fig_population, "methods_validation_population_distribution", width=300, height=200
+    fig_population, "vme01_population_distribution", width=300, height=200, output_dir=figures_dir
 )
 print("Saved population figure")
 ```
@@ -494,7 +498,7 @@ fig_summary = alt.vconcat(
     ),
 ).properties(title="Age Densities by Generator (Single-Epoch vs Three-Epoch Process)")
 display(fig_summary)
-save_chart(fig_summary, "methods_validation_age_densities")
+save_chart(fig_summary, "vme01_age_densities", output_dir=figures_dir)
 print("Saved age-density figure")
 ```
 

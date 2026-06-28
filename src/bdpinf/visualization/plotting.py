@@ -276,7 +276,8 @@ def save_multi_epoch_convergence_figure(
     output_slug : str
         Filename stem passed to ``save_chart``.
     figures_dir : Path | None
-        Directory for saved figures. Defaults to ``Path("figures")``.
+        Directory for saved figures. Defaults to the project-root ``figures/``
+        directory via :func:`save_chart`.
 
     """
     from inf_bp_texts.analysis.validation_helpers import (
@@ -304,7 +305,7 @@ def save_multi_epoch_convergence_figure(
         output_slug,
         width=397,
         height=300,
-        output_dir=str(figures_dir or "figures"),
+        output_dir=figures_dir,
     )
 
 
@@ -334,7 +335,8 @@ def save_multi_epoch_birth_time_figure(
     output_slug : str
         Filename stem passed to ``save_chart``.
     figures_dir : Path | None
-        Directory for saved figures. Defaults to ``Path("figures")``.
+        Directory for saved figures. Defaults to the project-root ``figures/``
+        directory via :func:`save_chart`.
 
     """
     from inf_bp_texts.inference.likelihood import (
@@ -391,7 +393,7 @@ def save_multi_epoch_birth_time_figure(
         output_slug,
         width=397,
         height=300,
-        output_dir=str(figures_dir or "figures"),
+        output_dir=figures_dir,
     )
 
 
@@ -500,7 +502,8 @@ def save_multi_epoch_fit_figure(
     output_slug : str
         Filename stem passed to ``save_chart``.
     figures_dir : Path | None
-        Directory for saved figures. Defaults to ``Path("figures")``.
+        Directory for saved figures. Defaults to the project-root ``figures/``
+        directory via :func:`save_chart`.
 
     """
     if not result.get("success"):
@@ -530,5 +533,5 @@ def save_multi_epoch_fit_figure(
     save_chart(
         chart,
         output_slug,
-        output_dir=str(figures_dir or "figures"),
+        output_dir=figures_dir,
     )

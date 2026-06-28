@@ -115,8 +115,12 @@ from inf_bp_texts.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
 )
+from inf_bp_texts import get_project_root
 from inf_bp_texts.visualization import display_svg, save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+
+figures_dir = get_project_root() / "figures" / "validation" / "multi_epoch"
+figures_dir.mkdir(parents=True, exist_ok=True)
 
 birth_rates_true = np.array(
     [birth_rate_epoch_1_true, birth_rate_epoch_2_true], dtype=float
@@ -353,9 +357,10 @@ if (
     display_svg(fig_rates_vs_pop, width=500, height=350)
     save_chart(
         fig_rates_vs_pop,
-        "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_population_size",
+        "vme05_rates_vs_population_size",
         width=300,
         height=200,
+        output_dir=figures_dir,
     )
     print("Saved rates-vs-population figure")
 ```
@@ -434,9 +439,10 @@ if (
     display_svg(fig_rates_vs_mean_age, width=500, height=350)
     save_chart(
         fig_rates_vs_mean_age,
-        "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_rates_vs_mean_population_age",
+        "vme05_rates_vs_mean_population_age",
         width=300,
         height=200,
+        output_dir=figures_dir,
     )
     print("Saved rates-vs-mean-age figure")
 ```
@@ -491,9 +497,10 @@ fig_birth_hist = (_b_bars + _bh_vline).properties(
 display(fig_birth_hist)
 save_chart(
     fig_birth_hist,
-    "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_birth_rate_histograms",
+    "vme05_birth_rate_histograms",
     width=300,
     height=200,
+    output_dir=figures_dir,
 )
 print("Saved birth-rate histogram figure")
 
@@ -541,9 +548,10 @@ fig_death_hist = (_d_bars + _dh_vline).properties(
 display(fig_death_hist)
 save_chart(
     fig_death_hist,
-    "methods_validation_multi_epoch_bulk_inference_zero_birth_second_epoch_death_rate_histograms",
+    "vme05_death_rate_histograms",
     width=300,
     height=300,
+    output_dir=figures_dir,
 )
 print("Saved death-rate histogram figure")
 ```

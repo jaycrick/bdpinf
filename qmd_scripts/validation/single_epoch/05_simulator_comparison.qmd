@@ -73,9 +73,13 @@ from inf_bp_texts.simulation import (
     simulate_birth_death_process_from_contour_process,
     simulate_subcritical_survival_splitting,
 )
+from inf_bp_texts import get_project_root
 from inf_bp_texts.utils import derive_worker_seeds
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+
+figures_dir = get_project_root() / "figures" / "validation" / "single_epoch"
+figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
 ## Helper Functions
@@ -479,7 +483,7 @@ fig_ages = alt.vconcat(
     alt.hconcat(*[col[1] for col in regime_cols]),
 ).properties(title="Age Densities vs Theory: Three Regimes")
 display(fig_ages)
-save_chart(fig_ages, "methods_validation_simulator_comparison_age_densities")
+save_chart(fig_ages, "vse05_age_densities", output_dir=figures_dir)
 print("Saved age-density figure")
 ```
 

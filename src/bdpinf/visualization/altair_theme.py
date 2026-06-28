@@ -267,7 +267,7 @@ def save_chart(
     *,
     width: int | None = None,
     height: int | None = None,
-    output_dir: str | Path = "figures",
+    output_dir: str | Path | None = None,
     fmt: str = "pdf",
 ) -> Path:
     """Export an Altair chart to ``output_dir/filename.fmt`` via vl-convert.
@@ -285,8 +285,9 @@ def save_chart(
     width, height : int | None
         Optional overrides for the chart's view dimensions in pixels. When
         ``None`` the chart's own sizing (or the theme default) is used.
-    output_dir : str | Path
-        Directory to write into; created if absent. Defaults to ``"figures"``.
+    output_dir : str | Path | None
+        Directory to write into; created if absent. Defaults to
+        ``get_project_root() / "figures"`` (the single top-level figures tree).
     fmt : str
         Output format understood by vl-convert: ``"pdf"`` (default), ``"svg"``,
         or ``"png"``.
@@ -296,7 +297,12 @@ def save_chart(
     Path
         Path to the written file.
     """
-    output_path = Path(output_dir)
+    if output_dir is None:
+        from inf_bp_texts._paths import get_project_root
+
+        output_path = get_project_root() / "figures"
+    else:
+        output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     register_export_fonts()
 
@@ -313,7 +319,7 @@ def save_chart_html(
     *,
     width: int | None = None,
     height: int | None = None,
-    output_dir: str | Path = "figures",
+    output_dir: str | Path | None = None,
 ) -> Path:
     """Export an Altair chart to a self-contained interactive HTML file.
 
@@ -336,15 +342,21 @@ def save_chart_html(
     width, height : int | None
         Optional overrides for the chart's view dimensions in pixels. When
         ``None`` the chart's own sizing (or the theme default) is used.
-    output_dir : str | Path
-        Directory to write into; created if absent. Defaults to ``"figures"``.
+    output_dir : str | Path | None
+        Directory to write into; created if absent. Defaults to
+        ``get_project_root() / "figures"`` (the single top-level figures tree).
 
     Returns
     -------
     Path
         Path to the written file.
     """
-    output_path = Path(output_dir)
+    if output_dir is None:
+        from inf_bp_texts._paths import get_project_root
+
+        output_path = get_project_root() / "figures"
+    else:
+        output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     sized = _sized(chart, width, height)

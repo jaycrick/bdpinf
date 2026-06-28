@@ -264,6 +264,19 @@ Every executable notebook follows this structure:
 - **Cell options**: hash-pipe syntax inside code fences --- `# | label:`, `# | cache: false`, `# | echo: false`, `# | include: false`.
 - **Import noqa**: import cells open with `# ruff: noqa: E402` (imports are not at the top of the Python file, which ruff would flag).
 - **Keep logic in `src/`**: cells import from `inf_bp_texts`; heavy computation belongs in the package, not inline.
-- **Figures**: saved via `save_figure` from `inf_bp_texts.visualization` into `figures/`, resolved as `figures_dir = get_project_root() / "figures"` (import `get_project_root` from `inf_bp_texts`).
+- **Figures**: saved via `save_chart` / `save_chart_html` from `inf_bp_texts.visualization`.
+  All figures live under a single repo-root `figures/` tree that **mirrors** the `qmd_scripts/` layout:
+  ```
+  figures/
+    core_analysis/01_data_exploration/   # prefix 01a_ or 01b_
+    core_analysis/02_single_epoch/       # prefix 02a_ or 02b_
+    core_analysis/03_multi_epoch/        # prefix 03a_ … 03e_
+    core_analysis/04_bayesian/           # prefix 04a_ … 04d_
+    validation/single_epoch/             # prefix vse01_, vse05_, vse06_
+    validation/multi_epoch/              # prefix vme01_, vme03_, vme04_, vme05_
+  ```
+  In each notebook, set `figures_dir = get_project_root() / "figures" / "<mirror-subpath>"` and pass `output_dir=figures_dir` to every `save_chart` / `save_chart_html` call.
+  Filenames follow the pattern `<prefix>_<descriptive>.pdf`, where the prefix is the submodule id (e.g. `04b`) assigned to each notebook.
+  `save_chart` defaults to `get_project_root() / "figures"` when `output_dir` is omitted, so notebooks that opt out of the mirrored layout still land at the repo root.
   Do not use hardcoded `Path("../../../figures")`.
 - **Design docs**: architecture/audit documents live in `docs/design/` (not the repo root).
