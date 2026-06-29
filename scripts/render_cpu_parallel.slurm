@@ -36,5 +36,5 @@ NOTEBOOKS=(
 
 for notebook in "${NOTEBOOKS[@]}"; do
   echo "=== Rendering ${notebook} ==="
-  uv run quarto render "${notebook}"
+  uv run quarto render "${notebook}" --cache-refresh
 done
