@@ -9,9 +9,13 @@ from inf_bp_texts.analysis.latex_tables import (
     MLE_COLUMNS,
     LatexParamGroup,
     LatexRateRow,
+    bayesian_results_halflife_latex_by_epoch,
+    bayesian_results_halflife_latex_by_subset,
     bayesian_results_latex_by_epoch,
     bayesian_results_latex_by_subset,
     rates_latex_table,
+    subset_fits_halflife_latex_by_epoch,
+    subset_fits_halflife_latex_by_subset,
     subset_fits_latex_by_epoch,
     subset_fits_latex_by_subset,
 )
@@ -414,5 +418,213 @@ class TestBayesianLatexHelpers:
         tables = bayesian_results_latex_by_epoch(
             self._results(), self._epoch_names(), cri_prob=0.89
         )
+        for t in tables.values():
+            assert "89" in t
+
+
+# ---------------------------------------------------------------------------
+# Half-life assembly helper tests
+# ---------------------------------------------------------------------------
+
+
+class TestHalflifeLatexHelpers:
+    """Test half-life LaTeX table assembly helpers."""
+
+    def _fits(self) -> list[SubsetFitResult]:
+        return [
+            _make_fit("nl", "Non-Lectionary"),
+            _make_fit("lect", "Lectionary"),
+        ]
+
+    def _epoch_names(self) -> list[str]:
+        return [e[0] for e in _EPOCHS]
+
+    def _bayes(self) -> dict[str, dict]:
+        return {
+            "nl": _make_bayesian_entry("nl", "Non-Lectionary"),
+            "lect": _make_bayesian_entry("lect", "Lectionary"),
+        }
+
+    # --- MLE by epoch ---
+
+    def test_mle_by_epoch_returns_dict_keyed_by_epoch(self) -> None:
+        tables = subset_fits_halflife_latex_by_epoch(self._fits(), self._epoch_names())
+        assert set(tables.keys()) == set(self._epoch_names())
+
+    def test_mle_by_epoch_values_are_strings(self) -> None:
+        tables = subset_fits_halflife_latex_by_epoch(self._fits(), self._epoch_names())
+        for v in tables.values():
+            assert isinstance(v, str)
+
+    def test_mle_by_epoch_contains_halflife_symbol(self) -> None:
+        tables = subset_fits_halflife_latex_by_epoch(self._fits(), self._epoch_names())
+        for t in tables.values():
+            assert r"t_{1/2}" in t
+
+    def test_mle_by_epoch_caption_mentions_years(self) -> None:
+        tables = subset_fits_halflife_latex_by_epoch(self._fits(), self._epoch_names())
+        for t in tables.values():
+            assert "year" in t
+
+    def test_mle_by_epoch_skips_failed_fits(self) -> None:
+        fits = [_make_fit("fail", "Failed", success=False)]
+        tables = subset_fits_halflife_latex_by_epoch(fits, self._epoch_names())
+        assert len(tables) == 0
+
+    def test_mle_by_epoch_missing_se_ci_renders_dash(self) -> None:
+        fits = [_make_fit("nl", "Non-Lectionary", include_se_ci=False)]
+        tables = subset_fits_halflife_latex_by_epoch(fits, self._epoch_names())
+        for t in tables.values():
+            assert r"{--}" in t
+
+    def test_mle_by_epoch_ci_inversion_sanity(self) -> None:
+        """Half-life CI lower bound = ln(2)/death_upper."""
+        # Epoch 0: death_rates = 0.000001, death_rate_ci = (0.0000009, 0.0000011)
+        # ln(2)/0.0000011 ≈ 630168 years → rendered as 630168 (precision=0)
+        expected_lo = round(math.log(2) / 0.0000011)
+        tables = subset_fits_halflife_latex_by_epoch(self._fits(), self._epoch_names())
+        ante_nicaea = tables["Ante Nicaea"]
+        assert str(expected_lo) in ante_nicaea
+
+    def test_mle_by_epoch_estimate_value(self) -> None:
+        """Half-life estimate = ln(2)/death_rate, rounded to whole years."""
+        # Epoch 0: death_rates = 0.000001 → half_life = ln(2)/0.000001 ≈ 693147
+        expected = round(math.log(2) / 0.000001)
+        tables = subset_fits_halflife_latex_by_epoch(self._fits(), self._epoch_names())
+        assert str(expected) in tables["Ante Nicaea"]
+
+    # --- MLE by subset ---
+
+    def test_mle_by_subset_returns_dict_keyed_by_label(self) -> None:
+        tables = subset_fits_halflife_latex_by_subset(self._fits())
+        assert set(tables.keys()) == {"Non-Lectionary", "Lectionary"}
+
+    def test_mle_by_subset_values_are_strings(self) -> None:
+        tables = subset_fits_halflife_latex_by_subset(self._fits())
+        for v in tables.values():
+            assert isinstance(v, str)
+
+    def test_mle_by_subset_contains_halflife_symbol(self) -> None:
+        tables = subset_fits_halflife_latex_by_subset(self._fits())
+        for t in tables.values():
+            assert r"t_{1/2}" in t
+
+    def test_mle_by_subset_caption_mentions_years(self) -> None:
+        tables = subset_fits_halflife_latex_by_subset(self._fits())
+        for t in tables.values():
+            assert "year" in t
+
+    def test_mle_by_subset_skips_failed_fits(self) -> None:
+        tables = subset_fits_halflife_latex_by_subset(
+            [_make_fit("fail", "Failed", success=False)]
+        )
+        assert len(tables) == 0
+
+    def test_mle_by_subset_contains_epoch_names(self) -> None:
+        tables = subset_fits_halflife_latex_by_subset(self._fits())
+        for t in tables.values():
+            assert "Ante Nicaea" in t
+
+    def test_mle_by_subset_row_header_epoch(self) -> None:
+        tables = subset_fits_halflife_latex_by_subset(self._fits())
+        for t in tables.values():
+            assert "Epoch" in t
+
+    # --- Bayesian by epoch ---
+
+    def test_bayes_by_epoch_returns_dict_keyed_by_epoch(self) -> None:
+        tables = bayesian_results_halflife_latex_by_epoch(
+            self._bayes(), self._epoch_names()
+        )
+        assert set(tables.keys()) == set(self._epoch_names())
+
+    def test_bayes_by_epoch_values_are_strings(self) -> None:
+        tables = bayesian_results_halflife_latex_by_epoch(
+            self._bayes(), self._epoch_names()
+        )
+        for v in tables.values():
+            assert isinstance(v, str)
+
+    def test_bayes_by_epoch_contains_halflife_symbol(self) -> None:
+        tables = bayesian_results_halflife_latex_by_epoch(
+            self._bayes(), self._epoch_names()
+        )
+        for t in tables.values():
+            assert r"t_{1/2}" in t
+
+    def test_bayes_by_epoch_caption_mentions_years(self) -> None:
+        tables = bayesian_results_halflife_latex_by_epoch(
+            self._bayes(), self._epoch_names()
+        )
+        for t in tables.values():
+            assert "year" in t
+
+    def test_bayes_by_epoch_cri_prob_in_caption(self) -> None:
+        tables = bayesian_results_halflife_latex_by_epoch(
+            self._bayes(), self._epoch_names(), cri_prob=0.89
+        )
+        for t in tables.values():
+            assert "89" in t
+
+    def test_bayes_by_epoch_skips_missing_epoch(self) -> None:
+        results = {
+            "lect": {
+                **_make_bayesian_entry("lect", "Lectionary"),
+                "epoch_names": ["Post Nicaea"],
+                "posterior_samples": {
+                    "birth_rates": np.random.default_rng(0).lognormal(-7, 0.3, (50, 1)),
+                    "death_rates": np.random.default_rng(1).lognormal(
+                        -14, 0.3, (50, 1)
+                    ),
+                },
+            }
+        }
+        tables = bayesian_results_halflife_latex_by_epoch(
+            results, ["Ante Nicaea", "Post Nicaea"]
+        )
+        assert "Ante Nicaea" not in tables
+        assert "Post Nicaea" in tables
+
+    def test_bayes_by_epoch_uses_bayesian_columns(self) -> None:
+        tables = bayesian_results_halflife_latex_by_epoch(
+            self._bayes(), self._epoch_names()
+        )
+        for t in tables.values():
+            assert "Mean" in t
+            assert "Median" in t
+
+    # --- Bayesian by subset ---
+
+    def test_bayes_by_subset_returns_dict_keyed_by_label(self) -> None:
+        tables = bayesian_results_halflife_latex_by_subset(self._bayes())
+        assert set(tables.keys()) == {"Non-Lectionary", "Lectionary"}
+
+    def test_bayes_by_subset_values_are_strings(self) -> None:
+        tables = bayesian_results_halflife_latex_by_subset(self._bayes())
+        for v in tables.values():
+            assert isinstance(v, str)
+
+    def test_bayes_by_subset_contains_halflife_symbol(self) -> None:
+        tables = bayesian_results_halflife_latex_by_subset(self._bayes())
+        for t in tables.values():
+            assert r"t_{1/2}" in t
+
+    def test_bayes_by_subset_caption_mentions_years(self) -> None:
+        tables = bayesian_results_halflife_latex_by_subset(self._bayes())
+        for t in tables.values():
+            assert "year" in t
+
+    def test_bayes_by_subset_contains_epoch_names(self) -> None:
+        tables = bayesian_results_halflife_latex_by_subset(self._bayes())
+        for t in tables.values():
+            assert "Ante Nicaea" in t
+
+    def test_bayes_by_subset_row_header_epoch(self) -> None:
+        tables = bayesian_results_halflife_latex_by_subset(self._bayes())
+        for t in tables.values():
+            assert "Epoch" in t
+
+    def test_bayes_by_subset_cri_prob_in_caption(self) -> None:
+        tables = bayesian_results_halflife_latex_by_subset(self._bayes(), cri_prob=0.89)
         for t in tables.values():
             assert "89" in t

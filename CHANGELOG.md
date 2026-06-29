@@ -7,6 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `qmd_scripts/core_analysis/03_multi_epoch/ntvmr_birth_death_inference.qmd`:
+  death-rate axis title corrected from `μ (loss probability/year)` to `μ` (a
+  birth-death rate is not bounded by 1 and is not a probability per year).
+
+- `visualization.bayesian_plots.posterior_rates_chart`: gains a `log_scale` keyword
+  argument; when ``True``, draws are binned in log10 space and both the area ridge
+  and the median/CI overlays are rendered on a log-scale x-axis.  All existing call
+  sites default to ``log_scale=False`` so behaviour is unchanged.
+
 - `visualization.altair_theme.save_chart` / `save_chart_html`: `output_dir` now
   defaults to `get_project_root() / "figures"` (was cwd-relative `"figures"`), so
   figures no longer scatter into per-notebook subdirectories when run via
@@ -43,6 +52,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   emit ``\multirow`` parameter groups, ``S[table-format=…]`` numeric columns,
   and ``\num{}``-bracketed CI/CrI columns. All names re-exported from
   `inf_bp_texts.analysis`.
+
+- `analysis.latex_tables`: four new half-life table helpers
+  (`subset_fits_halflife_latex_by_epoch`, `subset_fits_halflife_latex_by_subset`,
+  `bayesian_results_halflife_latex_by_epoch`, `bayesian_results_halflife_latex_by_subset`)
+  that append a second $t_{1/2} = \ln 2 / \mu$ table (in whole years) alongside
+  each rates table.  MLE uncertainty uses the delta method and CI inversion;
+  Bayesian uncertainty is derived directly from the death-rate posterior samples.
+  Both multi-epoch notebooks (`03_multi_epoch`, `04_bayesian`) updated to emit
+  the half-life table within each LaTeX tab.
+
+- Half-life companion figures added to both multi-epoch notebooks alongside every
+  death-rate figure: MLE notebook uses `rate_ci_panel` (dot-and-whisker, log scale)
+  for the per-tradition and per-epoch tabsets plus a line chart for the cross-subset
+  comparison; Bayesian notebook uses a `posterior_rates_chart` ridgeline (log scale)
+  for both tabsets.  Half-lives are `ln 2 / μ` with CI derived from inverting the
+  death-rate CI (MLE) or transforming posterior samples directly (Bayesian).
 
 - `analysis.subset_inference`: `BayesianSubsetConfig` frozen dataclass plus two
   new functions — `fit_manuscript_subset_bayesian` (picklable per-worker

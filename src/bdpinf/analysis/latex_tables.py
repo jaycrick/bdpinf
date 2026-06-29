@@ -519,6 +519,301 @@ def bayesian_results_latex_by_epoch(
     return tables
 
 
+def _halflife_mle_values(
+    ep: dict[str, Any],
+) -> dict[str, float | tuple[float, float] | None]:
+    """Derive half-life Est./SE/95% CI values from one MLE epoch result dict.
+
+    Parameters
+    ----------
+    ep : dict
+        One entry from
+        :attr:`~inf_bp_texts.analysis.subset_inference.SubsetFitResult.epoch_results`.
+        Expected keys: ``"half_life"``, optionally ``"death_rate_se"``,
+        ``"death_rates"``, ``"death_rate_ci"``.
+
+    Returns
+    -------
+    dict
+        Keys ``"estimate"``, ``"se"``, ``"ci"`` ready for :class:`LatexRateRow`.
+        ``None`` is returned for any component that cannot be computed.
+    """
+    hl = ep.get("half_life")
+    estimate: float | None
+    if hl is None or (isinstance(hl, float) and (math.isinf(hl) or math.isnan(hl))):
+        estimate = None
+    else:
+        estimate = float(hl)
+
+    # SE via delta method: SE_t = (ln2 / μ²) · SE_μ
+    se: float | None = None
+    mu = float(ep.get("death_rates", 0.0))
+    se_mu = ep.get("death_rate_se")
+    if se_mu is not None and mu > 0.0:
+        se = float(math.log(2) / (mu**2)) * float(se_mu)
+
+    # CI: invert and swap the μ CI bounds → (ln2/hi_μ, ln2/lo_μ)
+    ci: tuple[float, float] | None = None
+    raw_ci = ep.get("death_rate_ci")
+    if raw_ci is not None:
+        lo_mu, hi_mu = float(raw_ci[0]), float(raw_ci[1])
+        if lo_mu > 0.0 and hi_mu > 0.0:
+            ci = (math.log(2) / hi_mu, math.log(2) / lo_mu)
+
+    return {"estimate": estimate, "se": se, "ci": ci}
+
+
+def subset_fits_halflife_latex_by_epoch(
+    subset_fits: list[SubsetFitResult],
+    epoch_names: Sequence[str],
+    *,
+    num_format: str = "5.0",
+    num_precision: int = 0,
+) -> dict[str, str]:
+    r"""Return ``{epoch_name: latex_table}`` for per-epoch MLE half-life tables.
+
+    Each table has one :class:`LatexParamGroup` (symbol ``t_{1/2}``) with rows
+    = manuscript traditions and columns Est. / SE / 95 % CI.  The half-life
+    estimate is ``ln(2)/μ`` (years); SE comes from the delta method and CI from
+    inverting and swapping the death-rate confidence-interval bounds.  A
+    tradition is omitted for a given epoch when it has zero manuscripts in that
+    epoch.
+
+    Parameters
+    ----------
+    subset_fits : list[SubsetFitResult]
+        Converged or not-converged MLE fits from
+        :func:`~inf_bp_texts.analysis.subset_inference.fit_manuscript_subset`.
+    epoch_names : Sequence[str]
+        Canonical epoch names in display order.
+    num_format : str
+        ``table-format`` value for ``S`` columns (default ``"5.0"`` for
+        whole-year values).
+    num_precision : int
+        Decimal places for numeric cells and ``\\num{}`` arguments
+        (default ``0``).
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping from epoch name to LaTeX table string.
+    """
+    tables: dict[str, str] = {}
+    for epoch_name in epoch_names:
+        rows: list[LatexRateRow] = []
+        for fit in subset_fits:
+            if not fit.success or not fit.epoch_results:
+                continue
+            ep = next((r for r in fit.epoch_results if r["period"] == epoch_name), None)
+            if ep is None or ep.get("n_manuscripts", 0) == 0:
+                continue
+            rows.append(LatexRateRow(label=fit.label, values=_halflife_mle_values(ep)))
+
+        if not rows:
+            continue
+
+        safe_name = epoch_name.lower().replace(" ", "-")
+        tables[epoch_name] = rates_latex_table(
+            [LatexParamGroup(symbol=r"t_{1/2}", rows=rows)],
+            MLE_COLUMNS,
+            caption=(
+                f"MLE manuscript half-lives (years) with 95\\% confidence"
+                f" intervals --- {epoch_name}"
+            ),
+            label=f"mle-halflife-{safe_name}",
+            row_header="Tradition",
+            num_format=num_format,
+            num_precision=num_precision,
+        )
+    return tables
+
+
+def subset_fits_halflife_latex_by_subset(
+    subset_fits: list[SubsetFitResult],
+    *,
+    num_format: str = "5.0",
+    num_precision: int = 0,
+) -> dict[str, str]:
+    r"""Return ``{subset_label: latex_table}`` for per-tradition MLE half-life tables.
+
+    Each table has one :class:`LatexParamGroup` (symbol ``t_{1/2}``) with rows
+    = epochs and columns Est. / SE / 95 % CI.  Epochs with zero manuscripts are
+    omitted.
+
+    Parameters
+    ----------
+    subset_fits : list[SubsetFitResult]
+        Converged MLE fits.
+    num_format : str
+        ``table-format`` value for ``S`` columns (default ``"5.0"``).
+    num_precision : int
+        Decimal places for numeric cells and ``\\num{}`` arguments
+        (default ``0``).
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping from tradition label to LaTeX table string.
+    """
+    tables: dict[str, str] = {}
+    for fit in subset_fits:
+        if not fit.success or not fit.epoch_results:
+            continue
+        rows = [
+            LatexRateRow(label=ep["period"], values=_halflife_mle_values(ep))
+            for ep in fit.epoch_results
+            if ep.get("n_manuscripts", 0) > 0
+        ]
+        if not rows:
+            continue
+
+        tables[fit.label] = rates_latex_table(
+            [LatexParamGroup(symbol=r"t_{1/2}", rows=rows)],
+            MLE_COLUMNS,
+            caption=(
+                f"MLE manuscript half-lives (years) with 95\\% confidence"
+                f" intervals --- {fit.label}"
+            ),
+            label=f"mle-halflife-{fit.key}",
+            row_header="Epoch",
+            num_format=num_format,
+            num_precision=num_precision,
+        )
+    return tables
+
+
+def bayesian_results_halflife_latex_by_epoch(
+    bayesian_results: dict[str, dict[str, Any]],
+    epoch_names: Sequence[str],
+    *,
+    num_format: str = "5.0",
+    num_precision: int = 0,
+    cri_prob: float = 0.95,
+) -> dict[str, str]:
+    r"""Return ``{epoch_name: latex_table}`` for per-epoch Bayesian half-life tables.
+
+    Half-lives are computed by transforming the death-rate posterior samples
+    element-wise (``t = ln(2) / μ``); mean, median, and CrI are then derived
+    directly from the transformed samples via :func:`_posterior_stats`.
+
+    Parameters
+    ----------
+    bayesian_results : dict[str, dict]
+        Output of
+        :func:`~inf_bp_texts.analysis.subset_inference.fit_manuscript_subsets_bayesian`.
+        Each entry must contain ``"label"``, ``"epoch_names"``, and
+        ``"posterior_samples"`` with key ``"death_rates"`` (``ndarray``).
+    epoch_names : Sequence[str]
+        Canonical epoch names in display order.
+    num_format : str
+        ``table-format`` value for ``S`` columns (default ``"5.0"``).
+    num_precision : int
+        Decimal places for numeric cells and ``\\num{}`` arguments
+        (default ``0``).
+    cri_prob : float
+        Credible interval probability (default 0.95).
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping from epoch name to LaTeX table string.
+    """
+    tables: dict[str, str] = {}
+    for epoch_name in epoch_names:
+        rows: list[LatexRateRow] = []
+        for entry in bayesian_results.values():
+            ep_names: list[str] = entry["epoch_names"]
+            if epoch_name not in ep_names:
+                continue
+            i = ep_names.index(epoch_name)
+            ds = np.asarray(entry["posterior_samples"]["death_rates"])
+            hl_samples = np.log(2) / ds
+            rows.append(
+                LatexRateRow(
+                    label=entry["label"],
+                    values=_posterior_stats(hl_samples, i, cri_prob),
+                )
+            )
+
+        if not rows:
+            continue
+
+        safe_name = epoch_name.lower().replace(" ", "-")
+        tables[epoch_name] = rates_latex_table(
+            [LatexParamGroup(symbol=r"t_{1/2}", rows=rows)],
+            BAYESIAN_COLUMNS,
+            caption=(
+                f"Posterior manuscript half-lives (years)"
+                f" (mean, median, {int(cri_prob * 100)}\\% CrI) --- {epoch_name}"
+            ),
+            label=f"bayes-halflife-{safe_name}",
+            row_header="Tradition",
+            num_format=num_format,
+            num_precision=num_precision,
+        )
+    return tables
+
+
+def bayesian_results_halflife_latex_by_subset(
+    bayesian_results: dict[str, dict[str, Any]],
+    *,
+    num_format: str = "5.0",
+    num_precision: int = 0,
+    cri_prob: float = 0.95,
+) -> dict[str, str]:
+    r"""Return ``{label: latex_table}`` for per-tradition Bayesian half-life tables.
+
+    Each table has one :class:`LatexParamGroup` (symbol ``t_{1/2}``) with rows
+    = epochs.  Half-lives are derived from the posterior death-rate samples via
+    an element-wise ``ln(2)/μ`` transform.
+
+    Parameters
+    ----------
+    bayesian_results : dict[str, dict]
+        Output of
+        :func:`~inf_bp_texts.analysis.subset_inference.fit_manuscript_subsets_bayesian`.
+    num_format : str
+        ``table-format`` value for ``S`` columns (default ``"5.0"``).
+    num_precision : int
+        Decimal places for numeric cells and ``\\num{}`` arguments
+        (default ``0``).
+    cri_prob : float
+        Credible interval probability (default 0.95).
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping from tradition label to LaTeX table string.
+    """
+    tables: dict[str, str] = {}
+    for subset_key, entry in bayesian_results.items():
+        ep_names: list[str] = entry["epoch_names"]
+        ds = np.asarray(entry["posterior_samples"]["death_rates"])
+        hl_samples = np.log(2) / ds
+
+        rows = [
+            LatexRateRow(label=ep, values=_posterior_stats(hl_samples, i, cri_prob))
+            for i, ep in enumerate(ep_names)
+        ]
+        if not rows:
+            continue
+
+        label_str: str = entry["label"]
+        tables[label_str] = rates_latex_table(
+            [LatexParamGroup(symbol=r"t_{1/2}", rows=rows)],
+            BAYESIAN_COLUMNS,
+            caption=(
+                f"Posterior manuscript half-lives (years)"
+                f" (mean, median, {int(cri_prob * 100)}\\% CrI) --- {label_str}"
+            ),
+            label=f"bayes-halflife-{subset_key}",
+            row_header="Epoch",
+            num_format=num_format,
+            num_precision=num_precision,
+        )
+    return tables
+
+
 def bayesian_results_latex_by_subset(
     bayesian_results: dict[str, dict[str, Any]],
     *,

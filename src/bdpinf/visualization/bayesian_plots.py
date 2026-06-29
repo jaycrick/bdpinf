@@ -149,44 +149,109 @@ def _ridgeline_layers(
     color_scale: alt.Scale,
     y_scale: alt.Scale,
     x_title: str,
+    log_scale: bool = False,
 ) -> tuple[alt.Chart, alt.Chart, alt.Chart]:
-    """Build the three ridgeline mark layers shared by both layout modes."""
-    area = (
-        alt.Chart()
-        .transform_filter("datum.row_type === 'draw'")
-        .transform_bin(
-            ["bin_max", "bin_min"],
-            field="rate",
-            bin=alt.Bin(maxbins=_RIDGE_MAXBINS),
+    """Build the three ridgeline mark layers shared by both layout modes.
+
+    Parameters
+    ----------
+    color_scale :
+        Fill colour scale for the area layer.
+    y_scale :
+        Shared vertical scale (controls ridge row height/overlap).
+    x_title :
+        Label for the quantitative x-axis.
+    log_scale :
+        When ``True``, bin draws in log10 space and render the x-axis on a
+        log scale.  Use for quantities that span orders of magnitude (e.g.
+        half-lives).  The median and CI overlays also use a log-scale x-axis
+        so they stay aligned with the binned-area ridge.
+    """
+    _x_scale = alt.Scale(type="log") if log_scale else alt.Undefined
+
+    if log_scale:
+        # Bin in log10 space so bins are equal-width on the log axis.
+        # The calculate → bin → aggregate → impute pipeline mirrors the linear
+        # path but operates on log10(rate) rather than rate directly.
+        area = (
+            alt.Chart()
+            .transform_filter("datum.row_type === 'draw'")
+            .transform_calculate(log_rate="log(datum.rate) / log(10)")
+            .transform_bin(
+                ["bin_max", "bin_min"],
+                field="log_rate",
+                bin=alt.Bin(maxbins=_RIDGE_MAXBINS),
+            )
+            .transform_aggregate(
+                value="count()",
+                groupby=["panel", "category", "bin_min", "bin_max"],
+            )
+            .transform_impute(
+                impute="value",
+                groupby=["panel", "category"],
+                key="bin_min",
+                value=0,
+            )
+            .transform_calculate(
+                rate_min="pow(10, datum.bin_min)",
+                rate_max="pow(10, datum.bin_max)",
+            )
+            .mark_area(
+                interpolate="monotone",
+                fillOpacity=0.8,
+                stroke="lightgray",
+                strokeWidth=0.5,
+            )
+            .encode(
+                x=alt.X(
+                    "rate_min:Q",
+                    bin="binned",
+                    title=x_title,
+                    scale=_x_scale,
+                ),
+                x2=alt.X2("rate_max:Q"),
+                y=alt.Y("value:Q", axis=None, scale=y_scale),
+                fill=alt.Fill("panel:N", scale=color_scale, legend=None),
+            )
         )
-        .transform_aggregate(
-            value="count()",
-            groupby=["panel", "category", "bin_min", "bin_max"],
+    else:
+        area = (
+            alt.Chart()
+            .transform_filter("datum.row_type === 'draw'")
+            .transform_bin(
+                ["bin_max", "bin_min"],
+                field="rate",
+                bin=alt.Bin(maxbins=_RIDGE_MAXBINS),
+            )
+            .transform_aggregate(
+                value="count()",
+                groupby=["panel", "category", "bin_min", "bin_max"],
+            )
+            .transform_impute(
+                impute="value",
+                groupby=["panel", "category"],
+                key="bin_min",
+                value=0,
+            )
+            .mark_area(
+                interpolate="monotone",
+                fillOpacity=0.8,
+                stroke="lightgray",
+                strokeWidth=0.5,
+            )
+            .encode(
+                x=alt.X("bin_min:Q", bin="binned", title=x_title),
+                y=alt.Y("value:Q", axis=None, scale=y_scale),
+                fill=alt.Fill("panel:N", scale=color_scale, legend=None),
+            )
         )
-        .transform_impute(
-            impute="value",
-            groupby=["panel", "category"],
-            key="bin_min",
-            value=0,
-        )
-        .mark_area(
-            interpolate="monotone",
-            fillOpacity=0.8,
-            stroke="lightgray",
-            strokeWidth=0.5,
-        )
-        .encode(
-            x=alt.X("bin_min:Q", bin="binned", title=x_title),
-            y=alt.Y("value:Q", axis=None, scale=y_scale),
-            fill=alt.Fill("panel:N", scale=color_scale, legend=None),
-        )
-    )
+
     median_point = (
         alt.Chart()
         .transform_filter("datum.row_type === 'summary'")
         .mark_point(filled=True, size=40, color="black")
         .encode(
-            x=alt.X("rate:Q"),
+            x=alt.X("rate:Q", scale=_x_scale),
             y=alt.Y("value:Q", scale=y_scale),
         )
     )
@@ -195,7 +260,7 @@ def _ridgeline_layers(
         .transform_filter("datum.row_type === 'summary'")
         .mark_errorbar(ticks=True, color="black")
         .encode(
-            x=alt.X("ci_low:Q"),
+            x=alt.X("ci_low:Q", scale=_x_scale),
             x2=alt.X2("ci_high:Q"),
             y=alt.Y("value:Q", scale=y_scale),
         )
@@ -210,6 +275,7 @@ def posterior_rates_chart(
     x_title: str = "Rate per year",
     category_title: str = "Category",
     vertical: bool = False,
+    log_scale: bool = False,
 ) -> alt.FacetChart | alt.VConcatChart:
     """Ridgeline (joyplot) of per-category posterior rate distributions.
 
@@ -234,6 +300,10 @@ def posterior_rates_chart(
     vertical:
         When ``True``, stack panels vertically (one facet grid per panel)
         instead of side-by-side columns.
+    log_scale:
+        When ``True``, render the x-axis on a log scale and bin draws in
+        log10 space so bins are equal-width on the axis.  Use for
+        quantities that span several orders of magnitude (e.g. half-lives).
     """
     y_scale = alt.Scale(range=[_RIDGE_STEP, -_RIDGE_STEP * _RIDGE_OVERLAP])
     # Build category sort from the first panel so the y-axis preserves the
@@ -247,7 +317,9 @@ def posterior_rates_chart(
         sub_charts: list[alt.FacetChart] = []
         for panel in panels:
             pscale = alt.Scale(domain=[panel.label], range=[panel.color])
-            area, median_point, ci_bar = _ridgeline_layers(pscale, y_scale, x_title)
+            area, median_point, ci_bar = _ridgeline_layers(
+                pscale, y_scale, x_title, log_scale
+            )
             row_enc_v = alt.Row(
                 "category:N",
                 title=category_title,
@@ -272,7 +344,9 @@ def posterior_rates_chart(
         domain=[p.label for p in panels],
         range=[p.color for p in panels],
     )
-    area, median_point, ci_bar = _ridgeline_layers(color_scale, y_scale, x_title)
+    area, median_point, ci_bar = _ridgeline_layers(
+        color_scale, y_scale, x_title, log_scale
+    )
     combined_df = pd.DataFrame([r for panel in panels for r in _panel_rows(panel)])
     row_enc = alt.Row(
         "category:N",

@@ -162,6 +162,50 @@ class TestPosteriorRatesChart:
             0.5
         )  # rate=median for summary rows
 
+    def test_log_scale_produces_valid_spec(self) -> None:
+        """log_scale=True builds a chart and the first x-encoding uses log scale."""
+        rng = np.random.default_rng(3)
+        panels = [
+            RatePanel(
+                label="Half-life",
+                categories=["Epoch 1", "Epoch 2"],
+                samples=rng.lognormal(mean=5, sigma=1, size=(200, 2)),
+                color="#228833",
+            ),
+        ]
+
+        chart = posterior_rates_chart(
+            panels, title="Half-life", vertical=True, log_scale=True
+        )
+
+        spec = chart.to_dict()
+        # vconcat → first FacetChart → layer[1] is median_point; its x encoding
+        # should carry a log scale.
+        layer = spec["vconcat"][0]["spec"]["layer"]
+        # layer[1] is the median_point mark_point layer
+        median_x = layer[1]["encoding"]["x"]
+        assert median_x.get("scale", {}).get("type") == "log"
+
+    def test_default_no_log_scale(self) -> None:
+        """Default (log_scale=False) path leaves no log-scale in x encoding."""
+        rng = np.random.default_rng(4)
+        panels = [
+            RatePanel(
+                label="Birth Rate",
+                categories=["Epoch 1"],
+                samples=rng.lognormal(size=(100, 1)),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = posterior_rates_chart(panels, title="test")
+
+        spec = chart.to_dict()
+        layer = spec["spec"]["layer"]
+        median_x = layer[1]["encoding"]["x"]
+        # No scale key at all, or type is not "log"
+        assert median_x.get("scale", {}).get("type") != "log"
+
 
 class TestTraceChart:
     """Test the MCMC trace-plot grid."""
