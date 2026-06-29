@@ -305,13 +305,19 @@ class TracePanel:
 def trace_chart(
     panels: Sequence[TracePanel],
     *,
-    title: str,
-    columns: int = 2,
     y_title: str = "log(Rate)",
-) -> alt.ConcatChart:
-    """Grid of per-chain trace lines, one panel per parameter/epoch shown."""
+) -> list[alt.Chart]:
+    """Per-chain trace lines, one independent chart per panel.
+
+    Returns a plain list so callers can arrange charts with Quarto's
+    ``# | layout-ncol:`` cell option (or the equivalent fenced-div syntax
+    inside ``output: asis`` loops) rather than relying on Altair concatenation.
+
+    The y-axis is fitted to the sampled range (``zero=False``) so trace
+    variation is visible at full resolution without zero-anchored whitespace.
+    """
     charts = []
-    for index, panel in enumerate(panels):
+    for panel in panels:
         chains = np.asarray(panel.chains, dtype=np.float64)
         n_chains, n_draws = chains.shape
         draws = np.arange(1, n_draws + 1)
@@ -328,20 +334,25 @@ def trace_chart(
             ],
             ignore_index=True,
         )
-        # Only the first panel carries a legend; the colour-per-chain mapping is
-        # identical across panels (same categorical values, shared theme range).
-        legend = alt.Legend(title=None) if index == 0 else None
         charts.append(
             alt.Chart(frame)
             .mark_line(strokeWidth=1)
             .encode(
                 x=alt.X("Draw:Q", title="Draw"),
-                y=alt.Y("value:Q", title=y_title),
-                color=alt.Color("Chain:N", legend=legend),
+                # zero=False: log-rates are meaningful relative to themselves,
+                # not to 0; matches the convention in plotting.py (log-likelihood
+                # axis).  Without this the default zero=True wastes most of the
+                # panel height on empty space below the sampled range.
+                y=alt.Y(
+                    "value:Q",
+                    title=y_title,
+                    scale=alt.Scale(zero=False),
+                ),
+                color=alt.Color("Chain:N", legend=alt.Legend(title=None)),
             )
             .properties(title=panel.label, width=_PANEL_WIDTH, height=250)
         )
-    return alt.concat(*charts, columns=columns).properties(title=title)
+    return charts
 
 
 def ppc_chart(

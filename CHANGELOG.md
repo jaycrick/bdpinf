@@ -27,6 +27,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carries raw posterior `samples` (shape `n_draws × n_categories`) instead of
   pre-computed summary arrays. All four `04_bayesian/` notebooks updated.
 
+- `visualization.bayesian_plots.trace_chart` now returns `list[alt.Chart]`
+  (one independent chart per `TracePanel`) instead of a single `alt.ConcatChart`
+  grid; the y-axis no longer anchors at zero (`scale=alt.Scale(zero=False)`)
+  so trace variation fills the panel. All four `04_bayesian/` notebooks updated
+  to loop over the list and arrange panels via Quarto `# | layout-ncol: 2`
+  (simple cells) or `::: {layout-ncol=2}` fenced divs (panel-tabset loops).
+
 ### Added
 
 - `analysis.latex_tables`: new module providing a generic booktabs + siunitx

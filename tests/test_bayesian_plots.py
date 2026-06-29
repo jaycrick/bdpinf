@@ -166,27 +166,29 @@ class TestPosteriorRatesChart:
 class TestTraceChart:
     """Test the MCMC trace-plot grid."""
 
-    def test_returns_concat_grid_with_legend_on_first_panel_only(self) -> None:
+    def test_returns_list_of_charts_with_zero_false_scale(self) -> None:
         rng = np.random.default_rng(0)
         panels = [
             TracePanel(label="log lambda epoch 0", chains=rng.normal(size=(3, 50))),
             TracePanel(label="log mu epoch 0", chains=rng.normal(size=(3, 50))),
         ]
 
-        chart = trace_chart(panels, title="Traces", columns=2)
+        charts = trace_chart(panels)
 
-        assert isinstance(chart, alt.ConcatChart)
-        assert len(chart.concat) == 2
-        panel_specs = chart.to_dict()["concat"]
-        assert panel_specs[0]["encoding"]["color"]["legend"] == {"title": None}
-        assert panel_specs[1]["encoding"]["color"]["legend"] is None
+        assert isinstance(charts, list)
+        assert len(charts) == 2
+        for chart in charts:
+            assert isinstance(chart, alt.Chart)
+            spec = chart.to_dict()
+            assert spec["encoding"]["y"]["scale"] == {"zero": False}
+            assert spec["encoding"]["color"]["legend"] == {"title": None}
 
     def test_long_frame_has_one_row_per_chain_per_draw(self) -> None:
         panels = [TracePanel(label="param", chains=np.zeros((4, 25)))]
 
-        chart = trace_chart(panels, title="test")
+        charts = trace_chart(panels)
 
-        datasets = chart.to_dict()["datasets"]
+        datasets = charts[0].to_dict()["datasets"]
         panel_rows = next(iter(datasets.values()))
         assert len(panel_rows) == 4 * 25
 
