@@ -63,7 +63,7 @@ def creation_year_fit_chart(
         domain=[observed_label, density_label],
         range=[PTOLQUAL[0], PTOLQUAL[1]],
     )
-    legend = alt.Legend(title=None)
+    legend = alt.Legend(title=None, orient="top")
 
     histogram = (
         alt.Chart(pd.DataFrame({x_title: observed, "series": observed_label}))
@@ -103,8 +103,8 @@ def creation_year_fit_chart(
                             x_title: np.asarray(density_years, dtype=np.float64),
                             "Frequency": scaled,
                             "series": density_label,
-                        }
-                    )
+                        },
+                    ),
                 )
                 .mark_line(strokeWidth=3)
                 .encode(
