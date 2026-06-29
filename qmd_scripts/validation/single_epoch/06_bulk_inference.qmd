@@ -59,7 +59,7 @@ figures_dir.mkdir(parents=True, exist_ok=True)
 ## Simulate Data
 
 ```{python}
-num_sims = 2000
+num_sims = 4000
 birth_rate = 0.5
 death_rate = birth_rate - 0.4
 time_span = 15.0
@@ -351,7 +351,7 @@ _birth_bars = (
     alt.Chart(_birth_hist_df)
     .mark_bar(opacity=0.75)
     .encode(
-        x=alt.X("rate:Q", bin=alt.Bin(step=_birth_step), title="Rate"),
+        x=alt.X("rate:Q", bin=alt.Bin(step=_birth_step, anchor=birth_rate - _birth_step / 2), title="Rate"),
         y=alt.Y("count():Q", stack=True, title="Count"),
         color=alt.Color(
             "group:N", scale=_hist_color, legend=alt.Legend(title=None, orient="top")
@@ -395,7 +395,7 @@ _death_bars = (
     alt.Chart(_death_hist_df)
     .mark_bar(opacity=0.75)
     .encode(
-        x=alt.X("rate:Q", bin=alt.Bin(step=_death_step), title="Rate"),
+        x=alt.X("rate:Q", bin=alt.Bin(step=_death_step, anchor=death_rate - _death_step / 2), title="Rate"),
         y=alt.Y("count():Q", stack=True, title="Count"),
         color=alt.Color(
             "group:N", scale=_hist_color, legend=alt.Legend(title=None, orient="top")
@@ -421,6 +421,49 @@ save_chart(
     output_dir=figures_dir,
 )
 print("Saved death-rate histogram figure")
+
+# Non-boundary-only versions saved for comparison.
+_birth_nb_bars = (
+    alt.Chart(_birth_hist_df[_birth_hist_df["group"] == "non-boundary"])
+    .mark_bar(opacity=0.75, color=PTOLQUAL[0])
+    .encode(
+        x=alt.X("rate:Q", bin=alt.Bin(step=_birth_step, anchor=birth_rate - _birth_step / 2), title="Rate"),
+        y=alt.Y("count():Q", title="Count"),
+    )
+)
+fig_birth_hist_nb = (_birth_nb_bars + _birth_vline).properties(
+    title="Birth Rate Histogram (Non-Boundary)", width=400, height=300
+)
+display(fig_birth_hist_nb)
+save_chart(
+    fig_birth_hist_nb,
+    "vse06_birth_rate_histogram_non_boundary",
+    width=300,
+    height=200,
+    output_dir=figures_dir,
+)
+print("Saved non-boundary birth-rate histogram figure")
+
+_death_nb_bars = (
+    alt.Chart(_death_hist_df[_death_hist_df["group"] == "non-boundary"])
+    .mark_bar(opacity=0.75, color=PTOLQUAL[1])
+    .encode(
+        x=alt.X("rate:Q", bin=alt.Bin(step=_death_step, anchor=death_rate - _death_step / 2), title="Rate"),
+        y=alt.Y("count():Q", title="Count"),
+    )
+)
+fig_death_hist_nb = (_death_nb_bars + _death_vline).properties(
+    title="Death Rate Histogram (Non-Boundary)", width=400, height=300
+)
+display(fig_death_hist_nb)
+save_chart(
+    fig_death_hist_nb,
+    "vse06_death_rate_histogram_non_boundary",
+    width=300,
+    height=200,
+    output_dir=figures_dir,
+)
+print("Saved non-boundary death-rate histogram figure")
 
 
 def print_rate_summary(label: str, birth_values: Any, death_values: Any) -> None:
@@ -455,7 +498,15 @@ print_rate_summary(
 ## Joint Heatmaps of Fitted Rates
 
 ```{python}
-_heat_bin = alt.Bin(maxbins=25)
+def _anchored_bin(values: list[float], true_value: float, maxbins: int = 25) -> alt.Bin:
+    """Return an ``alt.Bin`` whose step is chosen for ``maxbins`` bins and whose
+    anchor is placed a half-step below ``true_value``, so one bin is centred on
+    the true value.
+    """
+    lo = min(min(values), true_value)
+    hi = max(max(values), true_value)
+    step = (hi - lo) / maxbins if hi > lo else 1.0
+    return alt.Bin(step=step, anchor=true_value - step / 2)
 
 
 def _fitted_heatmap(
@@ -474,8 +525,8 @@ def _fitted_heatmap(
         alt.Chart(df)
         .mark_rect()
         .encode(
-            x=alt.X("lambda:Q", bin=_heat_bin, title="Fitted λ"),
-            y=alt.Y("mu:Q", bin=_heat_bin, title="Fitted μ"),
+            x=alt.X("lambda:Q", bin=_anchored_bin(births, birth_rate), title="Fitted λ"),
+            y=alt.Y("mu:Q", bin=_anchored_bin(deaths, death_rate), title="Fitted μ"),
             color=alt.Color("count():Q", title="Count"),
         )
     )
