@@ -7,6 +7,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `manuscript_survival_proportion.qmd` rewritten to use a
+  **Horvitz-Thompson (HT) inverse-probability-weighting estimator** in place of
+  the multilevel-splitting conditioned sampler.  For each surviving manuscript
+  $i$ born at year $y_i$, the survival probability
+  $P_i = \exp(-\int_{y_i}^T \mu\,\mathrm{d}t)$ is computed analytically from
+  the posterior death-rate schedule; total manuscripts ever created is estimated
+  as $\hat N = \sum 1/P_i$ and the proportion alive as $n / \hat N$.  Posterior
+  uncertainty is propagated over all 4,000 NUTS draws; date uncertainty is
+  propagated over 2,000 bootstrap-resampled creation years.  Also fixes a data
+  loading bug: the subset filter now uses `group.isin([1,2,3])` (matching
+  `build_manuscript_subsets`) rather than `section_l != 1`.
+- `analysis.bootstrap_date_density.bootstrap_epoch_counts` /
+  `bootstrap_target_ranges`: bucket bootstrap resampled years into epochs and
+  return the 2.5th–97.5th percentile count interval as `[lo, hi]` windows
+  (last era always unconditioned); used by `docs/date_uncertainty.qmd`.
 - `analysis.bootstrap_date_density`: new module for bootstrap KDE-quantile
   date resampling.  Adds `bootstrap_quantile_resample_dates` (vectorized
   reimplementation of the weighted boundary-corrected KDE + Hazen-quantile
