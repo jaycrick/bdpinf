@@ -43,6 +43,8 @@ website:
             file: qmd_scripts/core_analysis/03_multi_epoch/single_vs_multi_epoch_comparison.qmd
           - text: "Optimizer"
             file: qmd_scripts/core_analysis/03_multi_epoch/optimizer_comparison.qmd
+          - text: "Manuscript Survival Proportion"
+            file: qmd_scripts/core_analysis/03_multi_epoch/manuscript_survival_proportion.qmd
       - text: "Bayesian Analysis"
         menu:
           - text: "Kashouh FamilyK Bayesian"

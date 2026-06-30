@@ -24,6 +24,7 @@ from .likelihood import (
     log_likelihood,
     negative_log_likelihood,
 )
+from .persistence import load_posterior_samples, save_posterior_samples
 from .uncertainty import (
     confidence_intervals_from_log_covariance,
     estimate_mle_covariance,
@@ -43,7 +44,9 @@ __all__ = [
     "fit_birth_death_processes_bayesian",
     "fit_birth_death_processes_bayesian_from_data_frame",
     "fit_from_data_frame",
+    "load_posterior_samples",
     "mle_init_log_rates",
     "log_likelihood",
     "negative_log_likelihood",
+    "save_posterior_samples",
 ]

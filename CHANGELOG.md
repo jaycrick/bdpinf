@@ -7,6 +7,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `simulation.survival_conditioning`: new module for conditioned survival
+  estimation via multilevel splitting. Adds `_simulate_era_core` (JIT-compiled
+  single-era event loop resumable from an arbitrary alive-population state),
+  `sample_conditioned_survival_process` (filter + clone + advance per era to
+  produce matched trajectories), `sample_conditioned_survival_per_posterior`
+  (one matched trajectory per Bayesian posterior draw, returns a tidy DataFrame),
+  `build_target_ranges` (observed survivor counts → inclusive per-era bounds with
+  optional tolerance), and result dataclasses `MatchedSurvivalSample` /
+  `ConditionedSurvivalResult` / `EraConditioningDiagnostic`.
+- `inference.persistence`: `save_posterior_samples` / `load_posterior_samples`
+  — thin `.npz` wrappers for persisting Bayesian posterior rate samples to disk
+  so downstream notebooks can skip MCMC re-runs.
+- `qmd_scripts/core_analysis/04_bayesian/ntvmr_birth_death_bayesian.qmd`: added
+  a "Save Posterior Samples" cell that writes each subset's posterior draws to
+  `posterior_samples/{subset}.npz` after the MCMC completes.
+- `qmd_scripts/core_analysis/03_multi_epoch/manuscript_survival_proportion.qmd`:
+  new notebook estimating the proportion of NT manuscripts currently alive vs
+  ever created, with per-era breakdown and posterior uncertainty; loads
+  `posterior_samples/{subset}.npz` and runs the conditioned sampler.
+
 - `simulation.simulate_birth_death_lifespans`: new JAX/JIT-compiled birth-death
   simulator using the lifespan-at-birth algorithm. Each individual's death time is
   pre-sampled at birth from a piecewise-exponential distribution; the event loop runs
