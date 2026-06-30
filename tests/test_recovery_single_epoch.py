@@ -28,7 +28,10 @@ from inf_bp_texts.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
 )
-from inf_bp_texts.simulation import simulate_birth_death_process
+from inf_bp_texts.simulation import (
+    simulate_birth_death_lifespans,
+    simulate_birth_death_process,
+)
 
 _MIN_SURVIVORS = 15
 _MAX_SEEDS = 20
@@ -251,3 +254,110 @@ class TestRecoverySingleEpoch:
         assert successes >= 4, (
             f"Only {successes}/{_MAX_SEEDS} replicates recovered critical rate within 25%"
         )
+
+
+def _simulate_lifespans_and_fit(
+    birth_rate: float,
+    death_rate: float,
+    T: float,
+    seed: int,
+    param_constraints: ParameterConstraints | None = None,
+    *,
+    ensure_non_extinct: bool = False,
+    max_retries: int = 100,
+) -> dict[str, Any] | None:
+    """Simulate via lifespan-at-birth and fit. Return fit dict or None."""
+    df = simulate_birth_death_lifespans(
+        birth_rates=birth_rate,
+        death_rates=death_rate,
+        times=T,
+        random_seed=seed,
+        ensure_non_extinct=ensure_non_extinct,
+        max_retries=max_retries,
+    )
+    surviving = df.surviving_manuscripts
+    if surviving is None or len(surviving) < _MIN_SURVIVORS:
+        return None
+    ages = surviving["age"].to_numpy(dtype=np.float64)
+    return fit_birth_death_processes(
+        [ages],
+        times=T,
+        param_constraints=param_constraints,
+        estimate_uncertainty=False,
+        random_seed=seed + 1000,
+    )
+
+
+def _lifespan_recovery_pass_rate(
+    birth_rate: float,
+    death_rate: float,
+    T: float,
+    param: str,
+    true_value: float,
+    rel_tol: float,
+    n_pass: int = 4,
+    param_constraints: ParameterConstraints | None = None,
+    *,
+    ensure_non_extinct: bool = False,
+    max_retries: int = 100,
+) -> int:
+    """Run up to _MAX_SEEDS replicates with lifespan sim; return passing count."""
+    successes = 0
+    for seed in range(_MAX_SEEDS):
+        if successes >= n_pass:
+            break
+        result = _simulate_lifespans_and_fit(
+            birth_rate,
+            death_rate,
+            T,
+            seed,
+            param_constraints,
+            ensure_non_extinct=ensure_non_extinct,
+            max_retries=max_retries,
+        )
+        if result is None or not result["success"]:
+            continue
+        fitted = float(np.atleast_1d(result[param])[0])
+        if abs(fitted - true_value) / true_value < rel_tol:
+            successes += 1
+    return successes
+
+
+@pytest.mark.slow
+@pytest.mark.recovery
+class TestRecoveryLifespanSingleEpoch:
+    """Parameter recovery tests using the lifespan-at-birth simulator."""
+
+    def test_recover_supercritical_birth_rate(self) -> None:
+        true_birth = 0.01
+        successes = _lifespan_recovery_pass_rate(
+            birth_rate=true_birth,
+            death_rate=0.003,
+            T=600.0,
+            param="birth_rates",
+            true_value=true_birth,
+            rel_tol=0.20,
+        )
+        assert successes >= 4, (
+            f"Only {successes}/{_MAX_SEEDS} replicates recovered birth rate within 20%"
+        )
+
+    def test_recover_rates_are_self_consistent(self) -> None:
+        df = simulate_birth_death_lifespans(
+            birth_rates=0.01, death_rates=0.003, times=600.0, random_seed=42
+        )
+        surviving = df.surviving_manuscripts
+        if surviving is None or len(surviving) < _MIN_SURVIVORS:
+            pytest.skip("insufficient survivors for this seed")
+        ages = surviving["age"].to_numpy(dtype=np.float64)
+        result = fit_birth_death_processes(
+            [ages], times=600.0, estimate_uncertainty=False
+        )
+        assert result["success"]
+        fitted_birth = float(np.atleast_1d(result["birth_rates"])[0])
+        fitted_death = float(np.atleast_1d(result["death_rates"])[0])
+        assert fitted_birth > 0
+        assert fitted_death > 0
+        assert np.isfinite(fitted_birth)
+        assert np.isfinite(fitted_death)
+        assert np.isfinite(float(result["log_likelihood"]))

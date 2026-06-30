@@ -11,7 +11,10 @@ from inf_bp_texts.visualization.splitting_plots import (
 )
 
 from .simulator import (
+    LifespanSimulationArrays,
     simulate_bdp_ages_from_distributions,
+    simulate_birth_death_lifespans,
+    simulate_birth_death_lifespans_arrays,
     simulate_birth_death_process,
     simulate_birth_death_process_from_contour_process,
 )
@@ -22,12 +25,15 @@ from .splitting import (
 )
 
 __all__ = [
+    "LifespanSimulationArrays",
     "SplittingConfig",
     "plot_conditioned_trajectories",
     "plot_empirical_population_mean",
     "plot_level_survival_probabilities",
     "select_level_times_for_band",
     "simulate_bdp_ages_from_distributions",
+    "simulate_birth_death_lifespans",
+    "simulate_birth_death_lifespans_arrays",
     "simulate_birth_death_process",
     "simulate_birth_death_process_from_contour_process",
     "simulate_subcritical_survival_splitting",

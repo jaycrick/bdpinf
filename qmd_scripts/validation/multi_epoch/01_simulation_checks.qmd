@@ -51,7 +51,12 @@ from inf_bp_texts.models.math_ages import (
 )
 from inf_bp_texts.models.math_extinction import calculate_extinction_pr
 from inf_bp_texts.models.math_populations import calculate_populations_log_pmf
-from inf_bp_texts.simulation import simulate_birth_death_process
+from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
+
+from inf_bp_texts.simulation import (
+    simulate_birth_death_lifespans,
+    simulate_birth_death_process,
+)
 from inf_bp_texts import get_project_root
 from inf_bp_texts.utils import derive_worker_seeds
 from inf_bp_texts.visualization import save_chart
@@ -136,12 +141,60 @@ list_of_ages_three_epoch = Parallel(n_jobs=-1)(
 )
 three_epoch_seconds = time.perf_counter() - three_epoch_start
 
+
+def sample_age_vector_lifespans(
+    br: np.ndarray | float,
+    dr: np.ndarray | float,
+    span: np.ndarray | float,
+    seed: int,
+) -> np.ndarray:
+    simulated_df = simulate_birth_death_lifespans(
+        birth_rates=br,
+        death_rates=dr,
+        times=span,
+        random_seed=seed,
+    )
+    survivors = simulated_df.surviving_manuscripts
+    assert survivors is not None
+    if survivors.empty:
+        return np.array([], dtype=np.float64)
+
+    spine_ages = survivors.loc[survivors["is_spine"], "age"].to_numpy(
+        dtype=np.float64,
+    )
+    non_spine_ages = survivors.loc[~survivors["is_spine"], "age"].to_numpy(
+        dtype=np.float64,
+    )
+
+    if spine_ages.size > 0:
+        return np.concatenate([spine_ages[:1], non_spine_ages]).astype(np.float64)
+    return non_spine_ages.astype(np.float64)
+
+
+lifespan_seeds = derive_worker_seeds(seed + 200_000, num_sims)
+
+lifespan_start = time.perf_counter()
+list_of_ages_lifespans = Parallel(n_jobs=-1)(
+    delayed(sample_age_vector_lifespans)(
+        br=three_epoch_birth_rates,
+        dr=three_epoch_death_rates,
+        span=three_epoch_times,
+        seed=lifespan_seeds[i],
+    )
+    for i in range(num_sims)
+)
+lifespan_seconds = time.perf_counter() - lifespan_start
+
 population_sizes_single_epoch = np.asarray(
     [len(ages) for ages in list_of_ages_single_epoch],
     dtype=np.int64,
 )
 population_sizes_three_epoch = np.asarray(
     [len(ages) for ages in list_of_ages_three_epoch],
+    dtype=np.int64,
+)
+population_sizes_lifespans = np.asarray(
+    [len(ages) for ages in list_of_ages_lifespans],
     dtype=np.int64,
 )
 
@@ -156,6 +209,11 @@ for method_name, ages_list, population_sizes in [
         "three-epoch process",
         list_of_ages_three_epoch,
         population_sizes_three_epoch,
+    ),
+    (
+        "lifespan-at-birth (3 epoch)",
+        list_of_ages_lifespans,
+        population_sizes_lifespans,
     ),
 ]:
     rows.append(
@@ -180,6 +238,7 @@ summary_df = pd.DataFrame(rows)
 print(f"Simulations per method: {num_sims}")
 print(f"Sampling time (single-epoch process): {single_epoch_seconds:.2f}s")
 print(f"Sampling time (three-epoch process): {three_epoch_seconds:.2f}s")
+print(f"Sampling time (lifespan-at-birth): {lifespan_seconds:.2f}s")
 print(
     f"Theoretical extinct fraction: {calculate_extinction_pr(birth_rate, death_rate, time_span):.3f}"
 )
@@ -191,10 +250,16 @@ print(
     f"Three-epoch spine ages count: {sum(1 for ages in list_of_ages_three_epoch if len(ages) > 0 and ages[0] < time_span)}"
 )
 print(
+    f"Lifespan spine ages count: {sum(1 for ages in list_of_ages_lifespans if len(ages) > 0 and ages[0] < time_span)}"
+)
+print(
     f"Single-epoch non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_single_epoch if len(ages) > 1)}"
 )
 print(
     f"Three-epoch non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_three_epoch if len(ages) > 1)}"
+)
+print(
+    f"Lifespan non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_lifespans if len(ages) > 1)}"
 )
 ```
 
@@ -205,6 +270,7 @@ population_max = int(
     max(
         population_sizes_single_epoch.max(),
         population_sizes_three_epoch.max(),
+        population_sizes_lifespans.max(),
         1,
     ),
 )
@@ -228,6 +294,10 @@ population_empirical_counts_three, _ = np.histogram(
     population_sizes_three_epoch,
     bins=population_bin_edges,
 )
+population_empirical_counts_lifespans, _ = np.histogram(
+    population_sizes_lifespans,
+    bins=population_bin_edges,
+)
 
 population_support = np.arange(0, population_max + 1, dtype=np.int64)
 population_pmf = np.asarray(
@@ -248,10 +318,11 @@ population_theoretical_counts, _ = np.histogram(
 )
 
 _pop_records: list[dict[str, Any]] = []
-for bc, cnt_s, cnt_t in zip(
+for bc, cnt_s, cnt_t, cnt_l in zip(
     population_bin_centers,
     population_empirical_counts_single,
     population_empirical_counts_three,
+    population_empirical_counts_lifespans,
 ):
     _pop_records += [
         {
@@ -264,6 +335,11 @@ for bc, cnt_s, cnt_t in zip(
             "count": int(cnt_t),
             "method": "Observed (three-epoch process)",
         },
+        {
+            "bin": float(bc),
+            "count": int(cnt_l),
+            "method": "Observed (lifespan-at-birth)",
+        },
     ]
 _pop_df = pd.DataFrame(_pop_records)
 _theory_df = pd.DataFrame(
@@ -274,8 +350,12 @@ _theory_df = pd.DataFrame(
 )
 
 _pop_color = alt.Scale(
-    domain=["Observed (single-epoch process)", "Observed (three-epoch process)"],
-    range=[PTOLQUAL[0], PTOLQUAL[2]],
+    domain=[
+        "Observed (single-epoch process)",
+        "Observed (three-epoch process)",
+        "Observed (lifespan-at-birth)",
+    ],
+    range=[PTOLQUAL[0], PTOLQUAL[2], PTOLQUAL[3]],
 )
 _pop_bars = (
     alt.Chart(_pop_df)
@@ -300,7 +380,7 @@ _theory_line = (
     .encode(x=alt.X("bin:Q"), y=alt.Y("count:Q"))
 )
 fig_population = (_pop_bars + _theory_line).properties(
-    title="Population Distribution: Single-Epoch Process vs Three-Epoch Process",
+    title="Population Distribution: Single-Epoch vs Three-Epoch vs Lifespan-at-birth",
     width=600,
     height=350,
 )
@@ -326,9 +406,14 @@ spine_age_samples_three = np.asarray(
     [arr[0] for arr in list_of_ages_three_epoch if len(arr) > 0 and arr[0] < time_span],
     dtype=np.float64,
 )
+spine_age_samples_lifespans = np.asarray(
+    [arr[0] for arr in list_of_ages_lifespans if len(arr) > 0 and arr[0] < time_span],
+    dtype=np.float64,
+)
 spine_age_samples_all = np.asarray(
     [arr[0] for arr in list_of_ages_single_epoch if len(arr) > 0]
-    + [arr[0] for arr in list_of_ages_three_epoch if len(arr) > 0],
+    + [arr[0] for arr in list_of_ages_three_epoch if len(arr) > 0]
+    + [arr[0] for arr in list_of_ages_lifespans if len(arr) > 0],
     dtype=np.float64,
 )
 spine_prop_not_at_max = proportion_not_at_upper(spine_age_samples_all, time_span)
@@ -343,14 +428,21 @@ non_spine_age_samples_three = (
     if any(len(arr) > 1 for arr in list_of_ages_three_epoch)
     else np.array([], dtype=np.float64)
 )
+non_spine_age_samples_lifespans = (
+    np.concatenate([arr[1:] for arr in list_of_ages_lifespans if len(arr) > 1])
+    if any(len(arr) > 1 for arr in list_of_ages_lifespans)
+    else np.array([], dtype=np.float64)
+)
 non_spine_age_samples_all = (
     np.concatenate(
         [arr[1:] for arr in list_of_ages_single_epoch if len(arr) > 1]
-        + [arr[1:] for arr in list_of_ages_three_epoch if len(arr) > 1],
+        + [arr[1:] for arr in list_of_ages_three_epoch if len(arr) > 1]
+        + [arr[1:] for arr in list_of_ages_lifespans if len(arr) > 1],
     )
     if (
         any(len(arr) > 1 for arr in list_of_ages_single_epoch)
         or any(len(arr) > 1 for arr in list_of_ages_three_epoch)
+        or any(len(arr) > 1 for arr in list_of_ages_lifespans)
     )
     else np.array([], dtype=np.float64)
 )
@@ -364,6 +456,10 @@ non_spine_grid_single, non_spine_kde_single = boundary_corrected_kde_on_support(
 )
 non_spine_grid_three, non_spine_kde_three = boundary_corrected_kde_on_support(
     non_spine_age_samples_three,
+    support_upper=time_span,
+)
+non_spine_grid_lifespans, non_spine_kde_lifespans = boundary_corrected_kde_on_support(
+    non_spine_age_samples_lifespans,
     support_upper=time_span,
 )
 
@@ -387,6 +483,10 @@ spine_grid_three, spine_kde_three = boundary_corrected_kde_on_support(
     spine_age_samples_three,
     support_upper=time_span,
 )
+spine_grid_lifespans, spine_kde_lifespans = boundary_corrected_kde_on_support(
+    spine_age_samples_lifespans,
+    support_upper=time_span,
+)
 
 
 def _spine_log_lik(age: float) -> float:
@@ -403,9 +503,16 @@ spine_theory_x, spine_theory_y = theoretical_age_density(
 )
 
 non_spine_y_max = robust_y_max(
-    [non_spine_kde_single, non_spine_kde_three, non_spine_theory_y]
+    [
+        non_spine_kde_single,
+        non_spine_kde_three,
+        non_spine_kde_lifespans,
+        non_spine_theory_y,
+    ]
 )
-spine_y_max = robust_y_max([spine_kde_single, spine_kde_three, spine_theory_y])
+spine_y_max = robust_y_max(
+    [spine_kde_single, spine_kde_three, spine_kde_lifespans, spine_theory_y]
+)
 
 
 def _kde_panel(
@@ -471,6 +578,17 @@ fig_summary = alt.vconcat(
             "",
             ns_dom,
         ),
+        _kde_panel(
+            non_spine_grid_lifespans,
+            non_spine_kde_lifespans,
+            non_spine_theory_x,
+            non_spine_theory_y,
+            PTOLQUAL[3],
+            "Lifespan-at-birth",
+            "Age (lifespan-at-birth)",
+            "",
+            ns_dom,
+        ),
     ),
     alt.hconcat(
         _kde_panel(
@@ -495,14 +613,167 @@ fig_summary = alt.vconcat(
             "",
             sp_dom,
         ),
+        _kde_panel(
+            spine_grid_lifespans,
+            spine_kde_lifespans,
+            spine_theory_x,
+            spine_theory_y,
+            PTOLQUAL[3],
+            "Lifespan-at-birth",
+            "Age (lifespan-at-birth)",
+            "",
+            sp_dom,
+        ),
     ),
-).properties(title="Age Densities by Generator (Single-Epoch vs Three-Epoch Process)")
+).properties(
+    title="Age Densities by Generator (Single-Epoch vs Three-Epoch vs Lifespan-at-birth)"
+)
 display(fig_summary)
 save_chart(fig_summary, "vme01_age_densities", output_dir=figures_dir)
 print("Saved age-density figure")
 ```
 
 The density of the spine age distribution does not include the point mass at the maximum time span.
+
+## Statistical Goodness-of-Fit Tests
+
+```{python}
+SIMULATION_SEED = 33943  # fixed seed for permutation test reproducibility
+
+ad_method = PermutationMethod(
+    n_resamples=1_111, batch=101, rng=np.random.default_rng(SIMULATION_SEED)
+)
+
+# Spine: single-epoch vs three-epoch (main consistency check)
+spine_ad_single_three = anderson_ksamp(
+    [spine_age_samples_single, spine_age_samples_three],
+    variant="midrank",
+    method=ad_method,
+)
+# Spine: single-epoch vs lifespan
+spine_ad_single_lifespan: Any = None
+if spine_age_samples_lifespans.size > 0:
+    spine_ad_single_lifespan = anderson_ksamp(
+        [spine_age_samples_single, spine_age_samples_lifespans],
+        variant="midrank",
+        method=PermutationMethod(
+            n_resamples=1_111,
+            batch=101,
+            rng=np.random.default_rng(SIMULATION_SEED + 1),
+        ),
+    )
+
+# Non-spine: asymptotic (large N makes permutation test redundant)
+non_spine_ad_single_three: Any = None
+if non_spine_age_samples_single.size > 0 and non_spine_age_samples_three.size > 0:
+    non_spine_ad_single_three = anderson_ksamp(
+        [non_spine_age_samples_single, non_spine_age_samples_three],
+        variant="midrank",
+    )
+non_spine_ad_single_lifespan: Any = None
+if non_spine_age_samples_single.size > 0 and non_spine_age_samples_lifespans.size > 0:
+    non_spine_ad_single_lifespan = anderson_ksamp(
+        [non_spine_age_samples_single, non_spine_age_samples_lifespans],
+        variant="midrank",
+    )
+
+# Population distributions
+pop_ad_single_three = anderson_ksamp(
+    [population_sizes_single_epoch, population_sizes_three_epoch],
+    variant="midrank",
+    method=PermutationMethod(
+        n_resamples=1_111, batch=101, rng=np.random.default_rng(SIMULATION_SEED + 2)
+    ),
+)
+pop_ad_single_lifespan = anderson_ksamp(
+    [population_sizes_single_epoch, population_sizes_lifespans],
+    variant="midrank",
+    method=PermutationMethod(
+        n_resamples=1_111, batch=101, rng=np.random.default_rng(SIMULATION_SEED + 3)
+    ),
+)
+
+# KS tests
+spine_ks_st, spine_ks_st_p = ks_2samp(spine_age_samples_single, spine_age_samples_three)
+spine_ks_sl, spine_ks_sl_p = (
+    ks_2samp(spine_age_samples_single, spine_age_samples_lifespans)
+    if spine_age_samples_lifespans.size > 0
+    else (None, None)
+)
+non_spine_ks_st = (
+    ks_2samp(non_spine_age_samples_single, non_spine_age_samples_three)
+    if (non_spine_age_samples_single.size > 0 and non_spine_age_samples_three.size > 0)
+    else (None, None)
+)
+non_spine_ks_sl = (
+    ks_2samp(non_spine_age_samples_single, non_spine_age_samples_lifespans)
+    if (
+        non_spine_age_samples_single.size > 0
+        and non_spine_age_samples_lifespans.size > 0
+    )
+    else (None, None)
+)
+pop_ks_st, pop_ks_st_p = ks_2samp(population_sizes_single_epoch, population_sizes_three_epoch)
+pop_ks_sl, pop_ks_sl_p = ks_2samp(population_sizes_single_epoch, population_sizes_lifespans)
+
+print("=" * 70)
+print("ANDERSON-DARLING TESTS (Single-Epoch vs Three-Epoch)")
+print("=" * 70)
+print("\nSpine Ages:")
+print(f"  AD statistic: {spine_ad_single_three.statistic:.6f}")
+print(f"  p-value: {spine_ad_single_three.pvalue:.6f}")
+if non_spine_ad_single_three is not None:
+    print("\nNon-Spine Ages:")
+    print(f"  AD statistic: {non_spine_ad_single_three.statistic:.6f}")
+    print(f"  p-value: {non_spine_ad_single_three.pvalue:.6f}")
+print("\nPopulation Distributions:")
+print(f"  AD statistic: {pop_ad_single_three.statistic:.6f}")
+print(f"  p-value: {pop_ad_single_three.pvalue:.6f}")
+
+print("\n" + "=" * 70)
+print("ANDERSON-DARLING TESTS (Single-Epoch vs Lifespan-at-birth)")
+print("=" * 70)
+if spine_ad_single_lifespan is not None:
+    print("\nSpine Ages:")
+    print(f"  AD statistic: {spine_ad_single_lifespan.statistic:.6f}")
+    print(f"  p-value: {spine_ad_single_lifespan.pvalue:.6f}")
+if non_spine_ad_single_lifespan is not None:
+    print("\nNon-Spine Ages:")
+    print(f"  AD statistic: {non_spine_ad_single_lifespan.statistic:.6f}")
+    print(f"  p-value: {non_spine_ad_single_lifespan.pvalue:.6f}")
+print("\nPopulation Distributions:")
+print(f"  AD statistic: {pop_ad_single_lifespan.statistic:.6f}")
+print(f"  p-value: {pop_ad_single_lifespan.pvalue:.6f}")
+
+print("\n" + "=" * 70)
+print("KOLMOGOROV-SMIRNOV TESTS")
+print("=" * 70)
+print("\nSpine Ages (single vs three):")
+print(f"  KS statistic: {spine_ks_st:.6f}")
+print(f"  p-value: {spine_ks_st_p:.6f}")
+if spine_ks_sl is not None:
+    print("\nSpine Ages (single vs lifespan):")
+    print(f"  KS statistic: {spine_ks_sl:.6f}")
+    print(f"  p-value: {spine_ks_sl_p:.6f}")
+if non_spine_ks_st[0] is not None:
+    print("\nNon-Spine Ages (single vs three):")
+    print(f"  KS statistic: {non_spine_ks_st[0]:.6f}")
+    print(f"  p-value: {non_spine_ks_st[1]:.6f}")
+if non_spine_ks_sl[0] is not None:
+    print("\nNon-Spine Ages (single vs lifespan):")
+    print(f"  KS statistic: {non_spine_ks_sl[0]:.6f}")
+    print(f"  p-value: {non_spine_ks_sl[1]:.6f}")
+print("\nPopulation Distributions (single vs three):")
+print(f"  KS statistic: {pop_ks_st:.6f}")
+print(f"  p-value: {pop_ks_st_p:.6f}")
+print("\nPopulation Distributions (single vs lifespan):")
+print(f"  KS statistic: {pop_ks_sl:.6f}")
+print(f"  p-value: {pop_ks_sl_p:.6f}")
+```
+
+All three generators (single-epoch process, three-epoch process with constant rates,
+lifespan-at-birth three-epoch) should be statistically indistinguishable under these
+tests when correctly implemented.
 
 ```{python}
 # | label: compile-time-report

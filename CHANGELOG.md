@@ -5,6 +5,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `simulation.simulate_birth_death_lifespans`: new JAX/JIT-compiled birth-death
+  simulator using the lifespan-at-birth algorithm. Each individual's death time is
+  pre-sampled at birth from a piecewise-exponential distribution; the event loop runs
+  inside `jax.lax.while_loop`. API mirrors `simulate_birth_death_process`; the
+  returned `BirthDeathProcess.manuscript_records` includes a `birth_epoch` column.
+- `simulation.simulate_birth_death_lifespans_arrays`: raw-array entry point (no
+  DataFrame overhead) that exposes per-individual `birth_times`, `death_times`,
+  `birth_epochs`, and `survived` flags — the hook needed by a future multilevel-splitting
+  estimator to count epoch-specific survivors.
+- `simulation.LifespanSimulationArrays`: `NamedTuple` returned by the above.
+- `qmd_scripts/validation/single_epoch/01_simulation_checks.qmd` and
+  `qmd_scripts/validation/multi_epoch/01_simulation_checks.qmd`: lifespan-at-birth
+  simulator added as a third comparator alongside direct sampling and the Gillespie
+  full-process; includes population histogram, spine/non-spine KDE panels, and
+  Anderson-Darling/KS goodness-of-fit tests against both existing methods.
+
 ### Changed
 
 - `qmd_scripts/core_analysis/03_multi_epoch/ntvmr_birth_death_inference.qmd`:

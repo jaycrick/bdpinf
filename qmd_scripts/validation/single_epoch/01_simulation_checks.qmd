@@ -53,6 +53,7 @@ from inf_bp_texts.models.math_extinction import calculate_extinction_pr
 from inf_bp_texts.models.math_populations import calculate_populations_log_pmf
 from inf_bp_texts.simulation import (
     simulate_bdp_ages_from_distributions,
+    simulate_birth_death_lifespans,
     simulate_birth_death_process,
 )
 from inf_bp_texts import get_project_root
@@ -147,6 +148,45 @@ list_of_ages_full_process = Parallel(n_jobs=-1)(
 )
 full_process_seconds = time.perf_counter() - full_process_start
 
+
+def sample_age_vector_lifespans(
+    seed: int, br: float, dr: float, span: float
+) -> np.ndarray:
+    simulated_df = simulate_birth_death_lifespans(
+        birth_rates=float(br),
+        death_rates=float(dr),
+        times=float(span),
+        random_seed=seed,
+    )
+    survivors = simulated_df.surviving_manuscripts
+    assert survivors is not None
+    if survivors.empty:
+        return np.array([], dtype=np.float64)
+
+    spine_ages = survivors.loc[survivors["is_spine"], "age"].to_numpy(dtype=np.float64)
+    non_spine_ages = survivors.loc[~survivors["is_spine"], "age"].to_numpy(
+        dtype=np.float64,
+    )
+
+    if spine_ages.size > 0:
+        return np.concatenate([spine_ages[:1], non_spine_ages]).astype(np.float64)
+    return non_spine_ages.astype(np.float64)
+
+
+lifespan_seeds = derive_worker_seeds(NOTEBOOK_SEED + 200_000, num_sims)
+
+lifespan_start = time.perf_counter()
+list_of_ages_lifespans = Parallel(n_jobs=-1)(
+    delayed(sample_age_vector_lifespans)(
+        seed=lifespan_seeds[i],
+        br=birth_rate,
+        dr=death_rate,
+        span=time_span,
+    )
+    for i in range(num_sims)
+)
+lifespan_seconds = time.perf_counter() - lifespan_start
+
 population_sizes_direct = np.asarray(
     [len(ages) for ages in list_of_ages_from_distribution],
     dtype=np.int64,
@@ -155,16 +195,25 @@ population_sizes_process = np.asarray(
     [len(ages) for ages in list_of_ages_full_process],
     dtype=np.int64,
 )
+population_sizes_lifespans = np.asarray(
+    [len(ages) for ages in list_of_ages_lifespans],
+    dtype=np.int64,
+)
 
 print(f"Simulations per method: {num_sims}")
 print(f"Sampling time (from distribution): {direct_sampling_seconds:.2f}s")
 print(f"Sampling time (full process): {full_process_seconds:.2f}s")
+print(f"Sampling time (lifespan-at-birth): {lifespan_seconds:.2f}s")
 print(f"Mean population (from distribution): {population_sizes_direct.mean():.2f}")
 print(f"Mean population (full process): {population_sizes_process.mean():.2f}")
+print(f"Mean population (lifespan-at-birth): {population_sizes_lifespans.mean():.2f}")
 print(
     f"Extinct fraction (from distribution): {(population_sizes_direct == 0).mean():.3f}"
 )
 print(f"Extinct fraction (full process): {(population_sizes_process == 0).mean():.3f}")
+print(
+    f"Extinct fraction (lifespan-at-birth): {(population_sizes_lifespans == 0).mean():.3f}"
+)
 print(
     f"Theoretical extinct fraction: {calculate_extinction_pr(birth_rate, death_rate, time_span):.3f}"
 )
@@ -175,10 +224,16 @@ print(
     f"Full process spine ages count: {sum(1 for ages in list_of_ages_full_process if len(ages) > 0 and ages[0] < time_span)}"
 )
 print(
+    f"Lifespan spine ages count: {sum(1 for ages in list_of_ages_lifespans if len(ages) > 0 and ages[0] < time_span)}"
+)
+print(
     f"From distribution non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_from_distribution if len(ages) > 1)}"
 )
 print(
     f"Full process non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_full_process if len(ages) > 1)}"
+)
+print(
+    f"Lifespan non-spine ages count: {sum(len(ages) - 1 for ages in list_of_ages_lifespans if len(ages) > 1)}"
 )
 ```
 
@@ -189,6 +244,7 @@ population_max = int(
     max(
         population_sizes_direct.max(),
         population_sizes_process.max(),
+        population_sizes_lifespans.max(),
         1,
     ),
 )
@@ -212,6 +268,10 @@ population_empirical_counts_process, _ = np.histogram(
     population_sizes_process,
     bins=population_bin_edges,
 )
+population_empirical_counts_lifespans, _ = np.histogram(
+    population_sizes_lifespans,
+    bins=population_bin_edges,
+)
 
 population_support = np.arange(0, population_max + 1, dtype=np.int64)
 population_pmf = np.asarray(
@@ -232,10 +292,11 @@ population_theoretical_counts, _ = np.histogram(
 )
 
 _pop_records: list[dict[str, Any]] = []
-for bc, cnt_d, cnt_p in zip(
+for bc, cnt_d, cnt_p, cnt_l in zip(
     population_bin_centers,
     population_empirical_counts_direct,
     population_empirical_counts_process,
+    population_empirical_counts_lifespans,
 ):
     _pop_records += [
         {
@@ -244,6 +305,11 @@ for bc, cnt_d, cnt_p in zip(
             "method": "Observed (from distribution)",
         },
         {"bin": float(bc), "count": int(cnt_p), "method": "Observed (full process)"},
+        {
+            "bin": float(bc),
+            "count": int(cnt_l),
+            "method": "Observed (lifespan-at-birth)",
+        },
     ]
 _pop_df = pd.DataFrame(_pop_records)
 _theory_df = pd.DataFrame(
@@ -254,8 +320,12 @@ _theory_df = pd.DataFrame(
 )
 
 _pop_color = alt.Scale(
-    domain=["Observed (from distribution)", "Observed (full process)"],
-    range=[PTOLQUAL[0], PTOLQUAL[2]],
+    domain=[
+        "Observed (from distribution)",
+        "Observed (full process)",
+        "Observed (lifespan-at-birth)",
+    ],
+    range=[PTOLQUAL[0], PTOLQUAL[2], PTOLQUAL[3]],
 )
 _pop_bars = (
     alt.Chart(_pop_df)
@@ -280,7 +350,7 @@ _theory_line = (
     .encode(x=alt.X("bin:Q"), y=alt.Y("count:Q"))
 )
 fig_population = (_pop_bars + _theory_line).properties(
-    title="Population Distribution: From Distribution vs Full Process",
+    title="Population Distribution: Three Methods vs Theory",
     width=600,
     height=350,
 )
@@ -310,9 +380,18 @@ spine_age_samples_process = np.asarray(
     ],
     dtype=np.float64,
 )
+spine_age_samples_lifespans = np.asarray(
+    [
+        arr[0]
+        for arr in list_of_ages_lifespans
+        if len(arr) > 0 and arr[0] < time_span
+    ],
+    dtype=np.float64,
+)
 spine_age_samples_all = np.asarray(
     [arr[0] for arr in list_of_ages_from_distribution if len(arr) > 0]
-    + [arr[0] for arr in list_of_ages_full_process if len(arr) > 0],
+    + [arr[0] for arr in list_of_ages_full_process if len(arr) > 0]
+    + [arr[0] for arr in list_of_ages_lifespans if len(arr) > 0],
     dtype=np.float64,
 )
 spine_prop_not_at_max = proportion_not_at_upper(spine_age_samples_all, time_span)
@@ -327,14 +406,21 @@ non_spine_age_samples_process = (
     if any(len(arr) > 1 for arr in list_of_ages_full_process)
     else np.array([], dtype=np.float64)
 )
+non_spine_age_samples_lifespans = (
+    np.concatenate([arr[1:] for arr in list_of_ages_lifespans if len(arr) > 1])
+    if any(len(arr) > 1 for arr in list_of_ages_lifespans)
+    else np.array([], dtype=np.float64)
+)
 non_spine_age_samples_all = (
     np.concatenate(
         [arr[1:] for arr in list_of_ages_from_distribution if len(arr) > 1]
-        + [arr[1:] for arr in list_of_ages_full_process if len(arr) > 1],
+        + [arr[1:] for arr in list_of_ages_full_process if len(arr) > 1]
+        + [arr[1:] for arr in list_of_ages_lifespans if len(arr) > 1],
     )
     if (
         any(len(arr) > 1 for arr in list_of_ages_from_distribution)
         or any(len(arr) > 1 for arr in list_of_ages_full_process)
+        or any(len(arr) > 1 for arr in list_of_ages_lifespans)
     )
     else np.array([], dtype=np.float64)
 )
@@ -348,6 +434,10 @@ spine_grid_process, spine_kde_process = boundary_corrected_kde_on_support(
 )
 spine_grid_direct, spine_kde_direct = boundary_corrected_kde_on_support(
     spine_age_samples_direct,
+    support_upper=time_span,
+)
+spine_grid_lifespans, spine_kde_lifespans = boundary_corrected_kde_on_support(
+    spine_age_samples_lifespans,
     support_upper=time_span,
 )
 
@@ -372,6 +462,10 @@ non_spine_grid_direct, non_spine_kde_direct = boundary_corrected_kde_on_support(
     non_spine_age_samples_direct,
     support_upper=time_span,
 )
+non_spine_grid_lifespans, non_spine_kde_lifespans = boundary_corrected_kde_on_support(
+    non_spine_age_samples_lifespans,
+    support_upper=time_span,
+)
 
 
 def _non_spine_log_lik(age: float) -> float:
@@ -386,9 +480,16 @@ non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
     proportion_not_at_upper=non_spine_prop_not_at_max,
 )
 
-spine_y_max = robust_y_max([spine_kde_process, spine_kde_direct, spine_theory_y])
+spine_y_max = robust_y_max(
+    [spine_kde_process, spine_kde_direct, spine_kde_lifespans, spine_theory_y]
+)
 non_spine_y_max = robust_y_max(
-    [non_spine_kde_process, non_spine_kde_direct, non_spine_theory_y]
+    [
+        non_spine_kde_process,
+        non_spine_kde_direct,
+        non_spine_kde_lifespans,
+        non_spine_theory_y,
+    ]
 )
 
 
@@ -455,6 +556,17 @@ fig_summary = alt.vconcat(
             "",
             ns_dom,
         ),
+        _kde_panel(
+            non_spine_grid_lifespans,
+            non_spine_kde_lifespans,
+            non_spine_theory_x,
+            non_spine_theory_y,
+            PTOLQUAL[3],
+            "Lifespan-at-birth",
+            "Age (lifespan-at-birth)",
+            "",
+            ns_dom,
+        ),
     ),
     alt.hconcat(
         _kde_panel(
@@ -479,8 +591,19 @@ fig_summary = alt.vconcat(
             "",
             sp_dom,
         ),
+        _kde_panel(
+            spine_grid_lifespans,
+            spine_kde_lifespans,
+            spine_theory_x,
+            spine_theory_y,
+            PTOLQUAL[3],
+            "Lifespan-at-birth",
+            "Age (lifespan-at-birth)",
+            "",
+            sp_dom,
+        ),
     ),
-).properties(title="Age Densities by Generator (Full Process vs From Distribution)")
+).properties(title="Age Densities by Generator (Full Process vs From Distribution vs Lifespan-at-birth)")
 display(fig_summary)
 save_chart(fig_summary, "vse01_age_densities", output_dir=figures_dir)
 print("Saved age-density figure")
@@ -491,19 +614,29 @@ The density of the spine age distribution does not include the point mass at the
 ## Statistical Goodness-of-Fit Tests
 
 ```{python}
-# Anderson-Darling test comparing direct vs full process methods
+# Anderson-Darling test comparing methods
 SIMULATION_SEED = 33943  # fixed seed for permutation test reproducibility
 
 ad_method = PermutationMethod(
     n_resamples=1_111, batch=101, rng=np.random.default_rng(SIMULATION_SEED)
 )
 
-# Spine age samples
+# Spine age samples: direct vs full process
 spine_ad_result = anderson_ksamp(
     [spine_age_samples_direct, spine_age_samples_process],
     variant="midrank",
     method=ad_method,
 )
+# Spine age samples: direct vs lifespan
+spine_ad_lifespan: Any = None
+if spine_age_samples_lifespans.size > 0:
+    spine_ad_lifespan = anderson_ksamp(
+        [spine_age_samples_direct, spine_age_samples_lifespans],
+        variant="midrank",
+        method=PermutationMethod(
+            n_resamples=1_111, batch=101, rng=np.random.default_rng(SIMULATION_SEED + 1)
+        ),
+    )
 
 # Non-spine age samples: each array holds ~2M points (num_sims simulations'
 # worth of survivors), so a 1,111-resample permutation test is both
@@ -515,8 +648,14 @@ if (non_spine_age_samples_direct.size > 0) and (non_spine_age_samples_process.si
         [non_spine_age_samples_direct, non_spine_age_samples_process],
         variant="midrank",
     )
-else:
-    non_spine_ad_result = None
+non_spine_ad_lifespan: Any = None
+if (non_spine_age_samples_direct.size > 0) and (
+    non_spine_age_samples_lifespans.size > 0
+):
+    non_spine_ad_lifespan = anderson_ksamp(
+        [non_spine_age_samples_direct, non_spine_age_samples_lifespans],
+        variant="midrank",
+    )
 
 # Population distributions
 pop_ad_result = anderson_ksamp(
@@ -524,10 +663,22 @@ pop_ad_result = anderson_ksamp(
     variant="midrank",
     method=ad_method,
 )
+pop_ad_lifespan = anderson_ksamp(
+    [population_sizes_direct, population_sizes_lifespans],
+    variant="midrank",
+    method=PermutationMethod(
+        n_resamples=1_111, batch=101, rng=np.random.default_rng(SIMULATION_SEED + 2)
+    ),
+)
 
 # Kolmogorov-Smirnov test comparing methods for age distributions
 spine_ks_statistic, spine_ks_pvalue = ks_2samp(
     spine_age_samples_direct, spine_age_samples_process
+)
+spine_ks_lifespan_stat, spine_ks_lifespan_pval = (
+    ks_2samp(spine_age_samples_direct, spine_age_samples_lifespans)
+    if spine_age_samples_lifespans.size > 0
+    else (None, None)
 )
 
 if (non_spine_age_samples_direct.size > 0) and (non_spine_age_samples_process.size > 0):
@@ -537,9 +688,21 @@ if (non_spine_age_samples_direct.size > 0) and (non_spine_age_samples_process.si
 else:
     non_spine_ks_statistic = None
     non_spine_ks_pvalue = None
+if (non_spine_age_samples_direct.size > 0) and (
+    non_spine_age_samples_lifespans.size > 0
+):
+    non_spine_ks_lifespan_stat, non_spine_ks_lifespan_pval = ks_2samp(
+        non_spine_age_samples_direct, non_spine_age_samples_lifespans
+    )
+else:
+    non_spine_ks_lifespan_stat = None
+    non_spine_ks_lifespan_pval = None
 
 pop_ks_statistic, pop_ks_pvalue = ks_2samp(
     population_sizes_direct, population_sizes_process
+)
+pop_ks_lifespan_stat, pop_ks_lifespan_pval = ks_2samp(
+    population_sizes_direct, population_sizes_lifespans
 )
 
 print("=" * 70)
@@ -564,6 +727,28 @@ print(f"  p-value: {pop_ad_result.pvalue:.6f}")
 print(f"  Samples: {len(population_sizes_direct)} each")
 
 print("\n" + "=" * 70)
+print("ANDERSON-DARLING TESTS (Direct vs Lifespan-at-birth)")
+print("=" * 70)
+if spine_ad_lifespan is not None:
+    print("\nSpine Ages:")
+    print(f"  Anderson-Darling statistic: {spine_ad_lifespan.statistic:.6f}")
+    print(f"  p-value: {spine_ad_lifespan.pvalue:.6f}")
+    print(f"  Samples (direct): {len(spine_age_samples_direct)}")
+    print(f"  Samples (lifespan): {len(spine_age_samples_lifespans)}")
+
+if non_spine_ad_lifespan is not None:
+    print("\nNon-Spine Ages:")
+    print(f"  Anderson-Darling statistic: {non_spine_ad_lifespan.statistic:.6f}")
+    print(f"  p-value: {non_spine_ad_lifespan.pvalue:.6f}")
+    print(f"  Samples (direct): {len(non_spine_age_samples_direct)}")
+    print(f"  Samples (lifespan): {len(non_spine_age_samples_lifespans)}")
+
+print("\nPopulation Distributions:")
+print(f"  Anderson-Darling statistic: {pop_ad_lifespan.statistic:.6f}")
+print(f"  p-value: {pop_ad_lifespan.pvalue:.6f}")
+print(f"  Samples: {len(population_sizes_direct)} each")
+
+print("\n" + "=" * 70)
 print("KOLMOGOROV-SMIRNOV TESTS (Direct vs Full Process)")
 print("=" * 70)
 print("\nSpine Ages:")
@@ -578,11 +763,30 @@ if non_spine_ks_statistic is not None:
 print("\nPopulation Distributions:")
 print(f"  KS statistic: {pop_ks_statistic:.6f}")
 print(f"  p-value: {pop_ks_pvalue:.6f}")
+
+print("\n" + "=" * 70)
+print("KOLMOGOROV-SMIRNOV TESTS (Direct vs Lifespan-at-birth)")
+print("=" * 70)
+if spine_ks_lifespan_stat is not None:
+    print("\nSpine Ages:")
+    print(f"  KS statistic: {spine_ks_lifespan_stat:.6f}")
+    print(f"  p-value: {spine_ks_lifespan_pval:.6f}")
+
+if non_spine_ks_lifespan_stat is not None:
+    print("\nNon-Spine Ages:")
+    print(f"  KS statistic: {non_spine_ks_lifespan_stat:.6f}")
+    print(f"  p-value: {non_spine_ks_lifespan_pval:.6f}")
+
+print("\nPopulation Distributions:")
+print(f"  KS statistic: {pop_ks_lifespan_stat:.6f}")
+print(f"  p-value: {pop_ks_lifespan_pval:.6f}")
 ```
 
 The Anderson-Darling test evaluates whether two samples come from the same distribution.
 Higher p-values (typically > 0.05) suggest the samples are from the same distribution,
-while lower p-values suggest significant differences between the direct sampling and full process methods.
+while lower p-values suggest significant differences between methods.
+All three generators (direct sampling, full process, lifespan-at-birth) should be
+statistically indistinguishable under this test when correctly implemented.
 
 ```{python}
 # | label: compile-time-report
