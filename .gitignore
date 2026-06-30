@@ -253,6 +253,10 @@ skills-lock.json
 # scripts/generate_bootstrap_kde_samples.py
 bootstrap_samples/
 
+# Posterior MCMC samples — large generated artifacts, regenerate via
+# the 04_bayesian notebooks (saved by save_posterior_samples)
+posterior_samples/
+
 # Great Docs build directory (ephemeral, do not commit)
 great-docs/
 
