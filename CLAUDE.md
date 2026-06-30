@@ -145,14 +145,45 @@ Supports initial perturbation (`perturb_initial_params_std`) for robustness to b
 
 `likelihood.py` --- `log_likelihood()` / `negative_log_likelihood()` wrappers that handle log-scale vs. positive-scale parameters and marginalize over unknown spine positions.
 
-`bayesian.py` --- Pyro-based posterior inference for uncertainty quantification.
+`bayesian.py` --- NumPyro/NUTS posterior inference for uncertainty quantification.
+
+`persistence.py` --- `save_posterior_samples()` / `load_posterior_samples()`: thin `.npz` round-trip wrappers so MCMC runs (birth/death-rate draws plus epoch metadata) are written once and reloaded in downstream notebooks without re-running MCMC.
+
+### Analysis layer: `analysis/`
+
+Post-inference and date-processing helpers used in notebooks.
+
+`date_density.py` --- `explode_date_ranges()`, `manuscript_date_density()`, `quantile_resample_dates()`: deterministic KDE-quantile pipeline that converts `[earlyYear, lateYear]` ranges to representative integer years via a weighted, boundary-corrected Gaussian KDE and Hazen plotting positions.
+Wired into data loading via `data_cleaning.add_resampled_year_column()`.
+
+`bootstrap_date_density.py` --- `bootstrap_quantile_resample_dates()`: vectorized reimplementation of the same pipeline, batched over 100,000 bootstrap draws without calling scipy in a loop.
+`save_bootstrap_samples()` / `load_bootstrap_samples()` persist `[n_bootstrap, n]` `uint16`/`int16` arrays to `bootstrap_samples/<subgroup>.npz`.
+The identity multiplicity exactly reproduces `quantile_resample_dates`.
+Full mathematical derivation in `docs/date_uncertainty.qmd`.
+
+`subset_inference.py` --- `build_manuscript_subsets()`, `fit_manuscript_subsets_bayesian()`, `ManuscriptSubset`, `SubsetFitResult`: batch MLE/Bayesian fitting across manuscript subgroups with a shared interface.
+
+`latex_tables.py` --- LaTeX table builders for MLE and Bayesian results: `rates_latex_table`, `subset_fits_latex_by_epoch`, `bayesian_results_latex_by_epoch`, etc.
+
+`validation_helpers.py` --- chart and model diagnostic helpers used in validation notebooks: `boundary_corrected_kde_on_support`, `boundary_corrected_kde_at_zero`, `FitModelConfig`, `fit_single_model`, `theoretical_age_density`, etc.
+
+`spike_detection.py` --- `bootstrap_percentile_ci()`, `compute_ci_width_table()`, `select_extreme_replicates()`, `seed_from_parts()`.
+
+`single_epoch.py` / `asymptotic_consistency.py` --- summary and consistency helpers for single-epoch fits.
 
 ### Simulation layer: `simulation/`
 
-`simulator.py` --- `simulate_birth_death_process()` runs a Gillespie algorithm with time-varying rates; `predict_manuscript_counts()` predicts future population given current observations via rejection sampling.
+`simulator.py` --- two simulation engines:
+- `simulate_birth_death_process()` runs a Gillespie algorithm with time-varying rates; `predict_manuscript_counts()` predicts future population via rejection sampling.
+- `simulate_birth_death_lifespans()` / `simulate_birth_death_lifespans_arrays()`: JAX/JIT-compiled lifespan-at-birth alternative where each individual's death time is pre-sampled at birth from a piecewise-exponential distribution; the event loop runs inside `jax.lax.while_loop` with fixed-shape preallocated buffers.
+  `LifespanSimulationArrays` exposes per-individual `birth_epoch` and `survived` flags for downstream splitting/conditioning.
 
 `splitting.py` --- Multilevel splitting for rare-event simulation (estimating small extinction probabilities).
 Plotting functions for splitting results live in `visualization/splitting_plots.py`.
+
+`survival_conditioning.py` --- estimates the proportion of ever-created manuscripts currently alive by conditioning forward lifespan simulations on observed per-era survivor counts via a filter/clone loop (sequential-ABC / multilevel-splitting scheme).
+Key functions: `build_target_ranges()` (observed counts → per-era `[lo, hi]` bounds), `sample_conditioned_survival_process()` (fixed rates → matched trajectories), `sample_conditioned_survival_per_posterior()` (one trajectory per posterior draw, returns a tidy `pd.DataFrame`).
+The JIT-compiled single-era core `_simulate_era_core` resumes the lifespan engine from an arbitrary alive-population state.
 
 ### Visualization layer: `visualization/`
 
