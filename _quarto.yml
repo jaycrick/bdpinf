@@ -101,6 +101,8 @@ website:
         menu:
           - text: "Likelihoods"
             file: docs/likelihoods.qmd
+          - text: "Date Uncertainty"
+            file: docs/date_uncertainty.qmd
 
 format:
   html:

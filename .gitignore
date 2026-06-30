@@ -249,6 +249,10 @@ docs/**/*.py
 data/skills/
 skills-lock.json
 
+# Bootstrap KDE samples — large generated artifacts, regenerate via
+# scripts/generate_bootstrap_kde_samples.py
+bootstrap_samples/
+
 # Great Docs build directory (ephemeral, do not commit)
 great-docs/
 

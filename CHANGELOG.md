@@ -20,6 +20,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `bootstrap_quantile_resample_dates` over the seven standard manuscript
   subgroups (full, non_lectionary, lectionary, section_e/a/p/r) and writes
   the results to `bootstrap_samples/<subgroup>.npz` at the project root.
+- `docs/date_uncertainty.qmd`: new documentation page covering the full
+  manuscript date uncertainty pipeline — year explosion, boundary-corrected
+  weighted KDE, Hazen-quantile inversion, and the bootstrap vectorized
+  reimplementation with mathematical derivations; added to the Docs navbar
+  in `_quarto.yml`.
+- README: new "Manuscript date uncertainty" section explaining the
+  deterministic KDE-quantile pipeline and bootstrap extension, with code
+  snippets for generation and loading.
+- `.gitignore`: `bootstrap_samples/` (large generated artifacts, regenerate
+  via the CLI script).
 
 - `simulation.survival_conditioning`: new module for conditioned survival
   estimation via multilevel splitting. Adds `_simulate_era_core` (JIT-compiled

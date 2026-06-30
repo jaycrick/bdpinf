@@ -62,6 +62,66 @@ uv run quarto render
 - Birth-death process modeling: MLE fitting (JAX, JIT-compiled) and Bayesian
   inference (NumPyro/NUTS) for single- and multi-epoch creation/death rates,
   with a Quarto research-notebook site of worked analyses and validation studies
+- Manuscript date uncertainty pipeline: KDE-quantile resampling of `[earlyYear,
+  lateYear]` intervals into representative integer years, with a 100,000-draw
+  bootstrap for downstream uncertainty quantification
+
+## Manuscript date uncertainty
+
+Every NTVMR manuscript is dated as an interval rather than a point.  The
+pipeline resolves this in two stages.
+
+### Deterministic KDE-quantile resampling
+
+`add_resampled_year_column(df)` (in `data/data_cleaning.py`) assigns one
+integer year to each manuscript via a boundary-corrected weighted Gaussian KDE:
+
+1. Each range `[earlyYear, lateYear]` is expanded into `n = late - early + 1`
+   pseudo-points with weight `1/n` (exact dates are unchanged).
+2. The pseudo-points feed a weighted `gaussian_kde` with Scott's-rule bandwidth
+   and boundary correction (reflection at age 0 and at the oldest manuscript).
+3. The CDF is inverted at Hazen positions `(k - 0.5) / N` to produce one
+   sorted resampled year per manuscript; years are assigned to manuscripts
+   sorted by `midYear`.
+
+The result is stored as `resampledYear` and used as the default age input to
+the birth-death models.
+
+See `docs/date_uncertainty.qmd` for the full mathematical derivation; see
+`analysis/date_density.py` and `analysis/validation_helpers.py` for the
+implementation.
+
+### Bootstrap uncertainty quantification
+
+To propagate date uncertainty through downstream inference, run:
+
+```sh
+uv run python scripts/generate_bootstrap_kde_samples.py
+```
+
+This generates `bootstrap_samples/<subgroup>.npz` for seven manuscript
+subgroups (`full`, `non_lectionary`, `lectionary`, `section_e`, `section_a`,
+`section_p`, `section_r`), each containing 100,000 alternative date
+assignments as aligned `uint16`/`int16` arrays of shape `[100_000, n]`.
+
+Each bootstrap draw resamples the manuscript collection with replacement and
+applies the identical KDE-quantile pipeline to the bootstrapped dataset.  The
+vectorized implementation avoids calling scipy in a loop by exploiting the
+fixed integer-year support: per-manuscript multiplicities are the only
+bootstrap-varying quantity, and all bandwidth and KDE computations reduce to
+batched matrix operations (`k @ A / N`, chunked einsum).
+
+Load samples for downstream use:
+
+```python
+from inf_bp_texts.analysis import load_bootstrap_samples
+
+result = load_bootstrap_samples("bootstrap_samples/full.npz")
+resampled_years = result["resampled_years"]  # int16 [100_000, 5833]
+```
+
+Regenerate via the script above; the `bootstrap_samples/` directory is
+`.gitignore`d (files are 50–200 MB each compressed).
 
 ## Development
 
