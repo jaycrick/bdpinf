@@ -7,6 +7,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `analysis.bootstrap_date_density`: new module for bootstrap KDE-quantile
+  date resampling.  Adds `bootstrap_quantile_resample_dates` (vectorized
+  reimplementation of the weighted boundary-corrected KDE + Hazen-quantile
+  pipeline from `quantile_resample_dates`, batched over 100,000 bootstrap
+  draws without calling scipy in a loop), `save_bootstrap_samples` /
+  `load_bootstrap_samples` (compressed `.npz` persistence of the
+  `[n_bootstrap, n]` `doc_id_samples` / `resampled_years` arrays), and the
+  internal `_build_weight_matrix` / `_resample_batch` helpers.  The identity
+  multiplicity exactly reproduces `quantile_resample_dates`.
+- `scripts/generate_bootstrap_kde_samples.py`: Typer CLI that runs
+  `bootstrap_quantile_resample_dates` over the seven standard manuscript
+  subgroups (full, non_lectionary, lectionary, section_e/a/p/r) and writes
+  the results to `bootstrap_samples/<subgroup>.npz` at the project root.
+
 - `simulation.survival_conditioning`: new module for conditioned survival
   estimation via multilevel splitting. Adds `_simulate_era_core` (JIT-compiled
   single-era event loop resumable from an arbitrary alive-population state),

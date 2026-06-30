@@ -8,6 +8,11 @@ from inf_bp_texts.visualization.parameter_plots import (
     create_parameter_box_plot,
 )
 
+from .bootstrap_date_density import (
+    bootstrap_quantile_resample_dates,
+    load_bootstrap_samples,
+    save_bootstrap_samples,
+)
 from .date_density import (
     explode_date_ranges,
     manuscript_date_density,
@@ -69,6 +74,9 @@ from .validation_helpers import (
 
 __all__ = [
     "BAYESIAN_COLUMNS",
+    "bootstrap_quantile_resample_dates",
+    "load_bootstrap_samples",
+    "save_bootstrap_samples",
     "CANONICAL_SUBSET_KEYS",
     "MLE_COLUMNS",
     "BoxPlotStyle",
