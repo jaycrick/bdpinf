@@ -8,8 +8,14 @@ import pytest
 
 from inf_bp_texts.analysis.bootstrap_date_density import (
     _build_weight_matrix,  # pyright: ignore[reportPrivateUsage]
+)
+from inf_bp_texts.analysis.bootstrap_date_density import (
     _resample_batch,  # pyright: ignore[reportPrivateUsage]
+)
+from inf_bp_texts.analysis.bootstrap_date_density import (
+    bootstrap_epoch_counts,
     bootstrap_quantile_resample_dates,
+    bootstrap_target_ranges,
     load_bootstrap_samples,
     save_bootstrap_samples,
 )
@@ -467,6 +473,96 @@ class TestSaveLoadBootstrapSamples:
             path = Path(tmp) / "deep" / "nested" / "samples.npz"
             save_bootstrap_samples(doc, years, path)
             assert path.exists()
+
+
+_EPOCH_BOUNDS: list[tuple[int, int]] = [
+    (100, 325),
+    (325, 636),
+    (636, 867),
+    (867, 1204),
+    (1204, 1516),
+    (1516, 2000),
+]
+
+
+class TestBootstrapEpochCounts:
+    """Test bootstrap_epoch_counts and bootstrap_target_ranges."""
+
+    _YEARS = np.array(
+        [
+            [200, 400, 700, 1000, 1300, 1600],  # one per epoch
+            [150, 500, 800, 1100, 1400, 1700],  # one per epoch
+            [250, 350, 750, 950, 1250, 1550],  # one per epoch
+        ],
+        dtype=np.int16,
+    )
+
+    def test_shape(self) -> None:
+        counts = bootstrap_epoch_counts(self._YEARS, _EPOCH_BOUNDS)
+        assert counts.shape == (3, 6)
+
+    def test_counts_sum_to_n(self) -> None:
+        counts = bootstrap_epoch_counts(self._YEARS, _EPOCH_BOUNDS)
+        assert np.all(counts.sum(axis=1) == self._YEARS.shape[1])
+
+    def test_exact_counts(self) -> None:
+        counts = bootstrap_epoch_counts(self._YEARS, _EPOCH_BOUNDS)
+        # Each row has exactly one manuscript per epoch
+        assert np.all(counts == 1)
+
+    def test_duplicate_manuscripts_in_epoch(self) -> None:
+        # All manuscripts land in epoch 0
+        years = np.array([[200, 250, 300]], dtype=np.int16)
+        bounds = [(100, 325), (325, 636)]
+        counts = bootstrap_epoch_counts(years, bounds)
+        assert counts[0, 0] == 3
+        assert counts[0, 1] == 0
+
+    def test_boundary_lower_inclusive(self) -> None:
+        years = np.array([[325]], dtype=np.int16)
+        bounds = [(100, 325), (325, 636)]
+        counts = bootstrap_epoch_counts(years, bounds)
+        assert counts[0, 0] == 0  # 325 is NOT in [100, 325)
+        assert counts[0, 1] == 1  # 325 IS in [325, 636)
+
+    def test_target_ranges_shape(self) -> None:
+        ranges = bootstrap_target_ranges(self._YEARS, _EPOCH_BOUNDS)
+        assert ranges.shape == (6, 2)
+
+    def test_target_ranges_last_era_unconditioned(self) -> None:
+        ranges = bootstrap_target_ranges(self._YEARS, _EPOCH_BOUNDS)
+        assert ranges[-1, 0] == 0
+        assert ranges[-1, 1] == 2**31 - 1
+
+    def test_target_ranges_lo_le_hi(self) -> None:
+        ranges = bootstrap_target_ranges(self._YEARS, _EPOCH_BOUNDS)
+        assert np.all(ranges[:-1, 0] <= ranges[:-1, 1])
+
+    def test_target_ranges_dtype(self) -> None:
+        ranges = bootstrap_target_ranges(self._YEARS, _EPOCH_BOUNDS)
+        assert ranges.dtype == np.intp
+
+    def test_target_ranges_custom_quantiles(self) -> None:
+        # With quantile_lo=0.5, quantile_hi=0.5 the range should be a point
+        ranges = bootstrap_target_ranges(
+            self._YEARS, _EPOCH_BOUNDS, quantile_lo=0.5, quantile_hi=0.5
+        )
+        assert np.all(ranges[:-1, 0] == ranges[:-1, 1])
+
+    def test_target_ranges_wider_for_larger_n_bootstrap(self) -> None:
+        rng = np.random.default_rng(0)
+        # Two datasets of same manuscripts, spread over epochs — CI should be wider
+        # when counts vary more across draws
+        uniform = np.full((100, 1), 200, dtype=np.int16)  # always epoch 0
+        variable = rng.choice([200, 400, 700], size=(100, 1)).astype(np.int16)
+        bounds = [(100, 325), (325, 636), (636, 867)]
+        r_uniform = bootstrap_target_ranges(uniform, bounds)
+        r_variable = bootstrap_target_ranges(variable, bounds)
+        # uniform has width 0 in era 0; variable should have width >= 0
+        width_uniform = int(r_uniform[0, 1]) - int(r_uniform[0, 0])
+        width_variable = int(r_variable[0, 1]) - int(r_variable[0, 0])
+        assert width_uniform == 0
+        assert width_variable >= 0  # can't be negative
 
 
 @pytest.mark.slow

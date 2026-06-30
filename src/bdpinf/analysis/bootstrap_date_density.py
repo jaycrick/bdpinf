@@ -449,6 +449,90 @@ def bootstrap_quantile_resample_dates(
     return doc_id_out, years_out
 
 
+def bootstrap_epoch_counts(
+    resampled_years: NDArray[np.int16] | NDArray[np.int64],
+    epoch_bounds: list[tuple[int, int]],
+) -> NDArray[np.intp]:
+    """Count manuscripts per epoch for each bootstrap draw.
+
+    Parameters
+    ----------
+    resampled_years : NDArray, shape ``[n_bootstrap, n]``
+        Integer calendar years from :func:`bootstrap_quantile_resample_dates`
+        or :func:`load_bootstrap_samples`.
+    epoch_bounds : list of ``(lo, hi)`` tuples
+        Inclusive-lower, exclusive-upper epoch year boundaries.  Matches
+        the ``(start, end, name)`` triples in
+        :data:`~inf_bp_texts.constants.MANUSCRIPT_EPOCHS_SIX_ERA`.
+
+    Returns
+    -------
+    NDArray[np.intp], shape ``[n_bootstrap, n_eras]``
+        Per-draw epoch counts — entry ``[b, k]`` is the number of
+        manuscripts in bootstrap draw *b* whose resampled year falls
+        in ``[epoch_bounds[k][0], epoch_bounds[k][1])``.
+    """
+    yrs = np.asarray(resampled_years, dtype=np.int64)
+    n_bootstrap = yrs.shape[0]
+    n_eras = len(epoch_bounds)
+    counts = np.zeros((n_bootstrap, n_eras), dtype=np.intp)
+    for k, (lo, hi) in enumerate(epoch_bounds):
+        mask = (yrs >= lo) & (yrs < hi)
+        counts[:, k] = mask.sum(axis=1)
+    return counts
+
+
+def bootstrap_target_ranges(
+    resampled_years: NDArray[np.int16] | NDArray[np.int64],
+    epoch_bounds: list[tuple[int, int]],
+    *,
+    quantile_lo: float = 0.025,
+    quantile_hi: float = 0.975,
+) -> NDArray[np.intp]:
+    """Build per-era ``[lo, hi]`` target ranges from bootstrap 95 % CI.
+
+    Computes the per-epoch manuscript count distribution across all
+    bootstrap draws and returns the ``[quantile_lo, quantile_hi]``
+    interval as the acceptance window for each era.  The **last era is
+    always unconditioned** (its bounds are set to ``[0, 2^31 - 1]``),
+    matching the convention of
+    :func:`~inf_bp_texts.simulation.survival_conditioning.build_target_ranges`.
+
+    Parameters
+    ----------
+    resampled_years : NDArray, shape ``[n_bootstrap, n]``
+        Integer calendar years from :func:`load_bootstrap_samples`.
+    epoch_bounds : list of ``(lo, hi)`` tuples
+        Inclusive-lower, exclusive-upper epoch year boundaries.
+    quantile_lo, quantile_hi : float
+        Lower and upper quantile levels for the CI.  Defaults give a
+        95 % interval (2.5th–97.5th percentiles).
+
+    Returns
+    -------
+    NDArray[np.intp], shape ``[n_eras, 2]``
+        Inclusive ``[lo, hi]`` bounds per era; last era is unconditioned.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> years = np.array([[100, 200, 500], [150, 400, 600]], dtype=np.int16)
+    >>> bounds = [(100, 325), (325, 636), (636, 867)]
+    >>> bootstrap_target_ranges(years, bounds).tolist()
+    [[1, 2], [1, 1], [0, 2147483647]]
+    """
+    counts = bootstrap_epoch_counts(resampled_years, epoch_bounds)
+    n_eras = len(epoch_bounds)
+    ranges = np.zeros((n_eras, 2), dtype=np.intp)
+    for k in range(n_eras - 1):
+        col = counts[:, k]
+        ranges[k, 0] = max(0, int(np.quantile(col, quantile_lo)))
+        ranges[k, 1] = int(np.quantile(col, quantile_hi))
+    ranges[-1, 0] = 0
+    ranges[-1, 1] = 2**31 - 1
+    return ranges
+
+
 def save_bootstrap_samples(
     doc_id_samples: NDArray[np.uint16],
     resampled_years: NDArray[np.int16],

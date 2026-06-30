@@ -9,7 +9,9 @@ from inf_bp_texts.visualization.parameter_plots import (
 )
 
 from .bootstrap_date_density import (
+    bootstrap_epoch_counts,
     bootstrap_quantile_resample_dates,
+    bootstrap_target_ranges,
     load_bootstrap_samples,
     save_bootstrap_samples,
 )
@@ -74,7 +76,9 @@ from .validation_helpers import (
 
 __all__ = [
     "BAYESIAN_COLUMNS",
+    "bootstrap_epoch_counts",
     "bootstrap_quantile_resample_dates",
+    "bootstrap_target_ranges",
     "load_bootstrap_samples",
     "save_bootstrap_samples",
     "CANONICAL_SUBSET_KEYS",
