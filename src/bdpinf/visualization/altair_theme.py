@@ -47,6 +47,24 @@ PTOLQUAL: list[str] = [
     "#BBBBBB",  # Gray
 ]
 
+# Colourblind-friendly diverging palette (IBM/ColorBrewer RdBu), ordered from
+# +1 (blue) through 0 (white) to -1 (red). The project's correlation-matrix
+# heatmaps use this as an explicit `range=` (reversed, since Vega-Lite scales
+# read low-to-high domain against low-to-high range) rather than a named Vega
+# scheme, matching the house convention of a shared Python colour-list
+# constant sliced/ordered per chart instead of `alt.Scale(scheme=...)`.
+DIVERGING_RDBU: list[str] = [
+    "#2166AC",  # +1  Blue
+    "#4393C3",
+    "#92C5DE",
+    "#D1E5F0",
+    "#F7F7F7",  # 0   White
+    "#FDDBC7",
+    "#F4A582",
+    "#D6604D",
+    "#B2182B",  # -1  Red
+]
+
 THEME_NAME: str = "inf_bp_texts"
 
 _NORMAL = "normal"
@@ -408,6 +426,7 @@ def display_svg(
 
 __all__ = [
     "BACKGROUND",
+    "DIVERGING_RDBU",
     "FONT",
     "FONT_SIZE",
     "LABEL_FONT_SIZE",

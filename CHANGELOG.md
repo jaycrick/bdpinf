@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `visualization.correlation_plots.posterior_rate_correlation` and
+  `correlation_heatmap_chart`: births-then-deaths correlation matrix of
+  per-epoch posterior draws, rendered as a diverging heatmap (colourblind-
+  friendly RdBu palette, `DIVERGING_RDBU` in `altair_theme`, centred at zero)
+  with the correlation value overlaid on each cell.  Wired into all four
+  `04_bayesian` notebooks; the pre-existing `01a_section_correlation_heatmap`
+  in `manuscript_data_exploration.qmd` now goes through the same builder for a
+  consistent house style instead of an inline Vega `redblue` scheme.
 - `visualization.bayesian_plots.prior_rates_chart` and
   `prior_rate_samples`: ridgeline (joyplot) of per-epoch prior rate
   distributions, in the same style as `posterior_rates_chart`.  Renders

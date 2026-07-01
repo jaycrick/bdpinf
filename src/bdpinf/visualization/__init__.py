@@ -6,6 +6,7 @@ process models and their results.
 
 from .age_fit_plot import plot_creation_year_fit
 from .altair_theme import (
+    DIVERGING_RDBU,
     PTOLQUAL,
     THEME_NAME,
     display_svg,
@@ -24,6 +25,7 @@ from .bayesian_plots import (
     prior_rates_chart,
     trace_chart,
 )
+from .correlation_plots import correlation_heatmap_chart, posterior_rate_correlation
 from .date_distribution_plots import plot_date_range_kde_comparison
 from .era_shading import era_band_chart, year_to_century_coord
 from .parameter_plots import (
@@ -47,6 +49,7 @@ from .splitting_plots import (
 )
 
 __all__ = [
+    "DIVERGING_RDBU",
     "PTOLQUAL",
     "THEME_NAME",
     "BoxPlotStyle",
@@ -56,10 +59,12 @@ __all__ = [
     "TracePanel",
     "convergence_chart",
     "rate_ci_panel",
+    "correlation_heatmap_chart",
     "display_svg",
     "era_band_chart",
     "plot_creation_year_fit",
     "plot_date_range_kde_comparison",
+    "posterior_rate_correlation",
     "ppc_chart",
     "posterior_rates_chart",
     "prior_posterior_chart",
