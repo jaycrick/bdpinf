@@ -385,6 +385,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   boolean masks; replaced with `.surviving_manuscripts`/`.extinct_manuscripts`.
 - `BirthDeathProcess.equals()` returned a tensor; callers now get/expect `bool`.
 - Simulator could produce ages slightly exceeding `T`; now filtered.
+- `data.ntvmr` --- NTVMR requests now send browser-like (Firefox) headers
+  instead of urllib's default `Python-urllib/x.y` `User-Agent`, which some
+  servers reject; added a `_download_url()` helper (using `Request`/`urlopen`)
+  since `urlretrieve` cannot carry custom headers.
 
 ### Removed
 
