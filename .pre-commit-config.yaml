@@ -23,12 +23,6 @@ repos:
       - id: ruff-format
         args: [--diff]
 
-  # isort import sorting
-  - repo: https://github.com/pycqa/isort
-    rev: 7.0.0
-    hooks:
-      - id: isort
-
   # basedpyright type checking (strict mode; local hook uses venv install)
   - repo: local
     hooks:

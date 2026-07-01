@@ -27,13 +27,13 @@ from ._fit_types import (
     OptimizerRunResult,
     OptimizerStrategy,
 )
-from ._optimizer_runners import _scaled_config  # pyright: ignore[reportPrivateUsage]
 from ._optimizer_runners import (
+    _scaled_config,  # pyright: ignore[reportPrivateUsage]
     run_first_order_optimizer,
     run_lbfgs_optimizer,
 )
-from .likelihood import _log_likelihood_core  # pyright: ignore[reportPrivateUsage]
 from .likelihood import (
+    _log_likelihood_core,  # pyright: ignore[reportPrivateUsage]
     negative_log_likelihood,
 )
 from .uncertainty import estimate_mle_covariance

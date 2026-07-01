@@ -8,11 +8,7 @@ import pytest
 
 from inf_bp_texts.analysis.bootstrap_date_density import (
     _build_weight_matrix,  # pyright: ignore[reportPrivateUsage]
-)
-from inf_bp_texts.analysis.bootstrap_date_density import (
     _resample_batch,  # pyright: ignore[reportPrivateUsage]
-)
-from inf_bp_texts.analysis.bootstrap_date_density import (
     bootstrap_epoch_counts,
     bootstrap_quantile_resample_dates,
     bootstrap_target_ranges,

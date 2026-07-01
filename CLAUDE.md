@@ -43,9 +43,16 @@ uv run pytest -k "test_name"                   # single test by name
 # Linting and formatting
 # Always run format and auto-fix first — let ruff correct what it can automatically
 # before checking compliance, rather than hand-editing formatting or style issues.
+# Import sorting for src/tests is handled by ruff's own "I" rules (see
+# [tool.ruff.lint] select in pyproject.toml) — do not also run standalone
+# `isort` over src/tests: isort splits any imported name that carries a
+# trailing inline comment (e.g. `# pyright: ignore[...]`) onto its own
+# import statement, which undoes ruff's merge and leaves files failing CI's
+# `ruff check src tests` (CI does not run isort). isort is still used by
+# panache to format Python chunks inside `.qmd` files (see panache.toml) —
+# that pipeline runs isort before ruff, so it stays self-consistent.
 uv run ruff format src tests
 uv run ruff check --fix src tests
-uv run isort src tests
 uv run basedpyright --project pyproject.toml src/  # strict mode; 0 errors enforced
 
 # Markdown/Quarto prose linting and formatting (config in panache.toml)
