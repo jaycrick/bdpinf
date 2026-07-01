@@ -10,6 +10,7 @@ from inf_bp_texts.visualization.altair_theme import (
     BACKGROUND,
     PTOLQUAL,
     THEME_NAME,
+    _untitled,
     display_svg,
     save_chart,
 )
@@ -139,3 +140,35 @@ class TestAltairTheme:
 
         assert saved.exists()
         assert saved.stat().st_size > 0
+
+    def test_untitled_clears_single_chart_title(self) -> None:
+        chart = _sample_chart()
+        assert "title" in chart.to_dict()
+
+        assert "title" not in _untitled(chart).to_dict()
+        # _untitled must not mutate the caller's chart object.
+        assert "title" in chart.to_dict()
+
+    def test_untitled_clears_hconcat_child_titles(self) -> None:
+        spec = _untitled(_hconcat_chart()).to_dict()
+
+        assert "title" not in spec
+        assert all("title" not in child for child in spec["hconcat"])
+
+    def test_untitled_clears_facet_chart_title(self) -> None:
+        chart = _facet_chart().properties(title="Facet Title")
+
+        assert "title" not in _untitled(chart).to_dict()
+
+    def test_save_chart_strips_title_by_default(self, tmp_path: Path) -> None:
+        # Saved PDFs are captioned separately in notebook prose; the title
+        # baked in for the interactive display() view should not leak into
+        # the exported spec.
+        saved = save_chart(_sample_chart(), "out", output_dir=tmp_path)
+
+        assert saved.exists()
+
+    def test_save_chart_keep_title_preserves_it(self, tmp_path: Path) -> None:
+        saved = save_chart(_sample_chart(), "out", output_dir=tmp_path, keep_title=True)
+
+        assert saved.exists()

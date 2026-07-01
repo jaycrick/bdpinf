@@ -1,11 +1,11 @@
-"""Observed-creation-year histogram with fitted birth-time density overlay.
+"""Observed-creation-year histogram with fitted expected-count overlay.
 
 This module provides the shared Altair builder :func:`creation_year_fit_chart`
-(observed-year histogram layered with a scaled theoretical density) and the
-notebook-facing :func:`plot_creation_year_fit`, which computes the density from
-MLE birth/death rates and delegates to the builder.  The same builder backs the
-multi-epoch ``save_multi_epoch_birth_time_figure`` saver, so the histogram +
-density-scaling logic lives in exactly one place.
+(observed-year histogram layered with an expected-count histogram derived from
+a fitted density) and the notebook-facing :func:`plot_creation_year_fit`, which
+computes the density from MLE birth/death rates and delegates to the builder.
+The same builder backs the multi-epoch ``save_multi_epoch_birth_time_figure``
+saver, so the histogram + expected-count logic lives in exactly one place.
 """
 
 from __future__ import annotations
@@ -22,23 +22,23 @@ from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 logger = logging.getLogger(__name__)
 
 
-def _scale_density_to_histogram(
-    density: NDArray[np.float64],
+def _expected_counts_per_bin(
+    bin_edges: NDArray[np.float64],
+    density_years: NDArray[np.float64],
+    density_values: NDArray[np.float64],
     n: int,
-    year_min: float,
-    year_max: float,
-    nbins: int,
-) -> NDArray[np.float64] | None:
-    """Scale a probability density to histogram-count units.
+) -> NDArray[np.float64]:
+    """Compute expected count per bin from a fitted density.
 
-    Returns ``None`` when all observations share one year (``year_max <=
-    year_min``): any ``bin_width`` guess would then mis-scale the overlay by
-    orders of magnitude, so the density curve should be omitted instead.
+    Approximates the density's integral over each bin as ``density(mid) *
+    bin_width * n`` — the density evaluated at the bin midpoint, treated as
+    locally constant across the bin. ``density_years`` must be sorted
+    ascending (the caller is responsible for sorting).
     """
-    if year_max <= year_min:
-        return None
-    bin_width = (year_max - year_min) / nbins
-    return np.asarray(density, dtype=np.float64) * n * bin_width
+    mids = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+    bin_width = float(bin_edges[1] - bin_edges[0])
+    density_at_mid = np.interp(mids, density_years, density_values, left=0.0, right=0.0)
+    return density_at_mid * bin_width * n
 
 
 def creation_year_fit_chart(
@@ -48,15 +48,18 @@ def creation_year_fit_chart(
     *,
     title: str,
     nbins: int = 30,
-    x_title: str = "Creation year (CE)",
-    observed_label: str = "Observed Creation Years",
-    density_label: str = "Fitted Creation-Year Distribution",
+    x_title: str = "Creation Year",
+    observed_label: str = "Observed",
+    density_label: str = "Expected",
 ) -> alt.LayerChart:
-    """Layer an observed-year histogram with an optional scaled density curve.
+    """Layer an observed-year histogram with an expected-count histogram.
 
-    The density curve (when supplied and scalable) is scaled into the same
-    frequency units as the histogram so both share one y-axis, and both series
-    share a colour legend.
+    The fitted density (when supplied) is converted to an expected count per
+    bin — density at the bin midpoint times bin width times the observed
+    sample size — so both series are true histograms sharing one set of bin
+    edges, one y-axis (``count``), and one colour legend. The shared x-domain
+    is extended to cover the fitted distribution's range, even where it
+    reaches beyond the observed years.
     """
     observed = np.asarray(observed_years, dtype=np.float64)
     color_scale = alt.Scale(
@@ -65,55 +68,84 @@ def creation_year_fit_chart(
     )
     legend = alt.Legend(title=None, orient="top")
 
-    histogram = (
-        alt.Chart(pd.DataFrame({x_title: observed, "series": observed_label}))
-        .mark_bar(opacity=0.6)
-        .encode(
-            x=alt.X(
-                f"{x_title}:Q",
-                bin=alt.Bin(maxbins=nbins),
-                title=x_title,
-                axis=alt.Axis(format="d"),
-            ),
-            y=alt.Y("count():Q", title="Frequency"),
-            color=alt.Color("series:N", scale=color_scale, legend=legend),
-        )
-    )
+    lo = float(observed.min()) if observed.size else 0.0
+    hi = float(observed.max()) if observed.size else 1.0
 
-    layers: list[alt.Chart] = [histogram]
-    if density_years is not None and density_values is not None and observed.size > 0:
-        scaled = _scale_density_to_histogram(
-            density_values,
-            observed.size,
-            float(observed.min()),
-            float(observed.max()),
-            nbins,
-        )
-        if scaled is None:
+    has_density = (
+        density_years is not None and density_values is not None and observed.size > 0
+    )
+    dy: NDArray[np.float64] | None = None
+    dv: NDArray[np.float64] | None = None
+    if has_density:
+        dy = np.asarray(density_years, dtype=np.float64)
+        dv = np.asarray(density_values, dtype=np.float64)
+        order = np.argsort(dy)
+        dy, dv = dy[order], dv[order]
+        lo = min(lo, float(dy.min()))
+        hi = max(hi, float(dy.max()))
+
+    if hi <= lo:
+        if has_density:
             logger.warning(
                 "Skipping theoretical overlay: all %d observations share the same"
                 " year.",
                 observed.size,
             )
-        else:
-            density_curve = (
-                alt.Chart(
-                    pd.DataFrame(
-                        {
-                            x_title: np.asarray(density_years, dtype=np.float64),
-                            "Frequency": scaled,
-                            "series": density_label,
-                        },
-                    ),
-                )
-                .mark_line(strokeWidth=3)
-                .encode(
-                    x=alt.X(f"{x_title}:Q"),
-                    y=alt.Y("Frequency:Q"),
-                    color=alt.Color("series:N", scale=color_scale, legend=legend),
+        has_density = False
+        hi = lo + 1.0  # degenerate range: keep the histogram itself renderable
+
+    x_scale = alt.Scale(domain=[lo, hi])
+    edges = np.linspace(lo, hi, nbins + 1)
+
+    observed_counts, _ = np.histogram(observed, bins=edges)
+    histogram = (
+        alt.Chart(
+            pd.DataFrame(
+                {
+                    "bin_start": edges[:-1],
+                    "bin_end": edges[1:],
+                    "count": observed_counts,
+                    "series": observed_label,
+                }
+            )
+        )
+        .mark_bar(opacity=0.6)
+        .encode(
+            x=alt.X(
+                "bin_start:Q",
+                title=x_title,
+                scale=x_scale,
+                axis=alt.Axis(format="d"),
+            ),
+            x2="bin_end:Q",
+            y=alt.Y("count:Q", title="count"),
+            color=alt.Color("series:N", scale=color_scale, legend=legend),
+        )
+    )
+
+    layers: list[alt.Chart] = [histogram]
+    if has_density and dy is not None and dv is not None:
+        expected_counts = _expected_counts_per_bin(edges, dy, dv, observed.size)
+        expected_bars = (
+            alt.Chart(
+                pd.DataFrame(
+                    {
+                        "bin_start": edges[:-1],
+                        "bin_end": edges[1:],
+                        "count": expected_counts,
+                        "series": density_label,
+                    }
                 )
             )
-            layers.append(density_curve)
+            .mark_bar(opacity=0.6)
+            .encode(
+                x=alt.X("bin_start:Q", scale=x_scale),
+                x2="bin_end:Q",
+                y=alt.Y("count:Q"),
+                color=alt.Color("series:N", scale=color_scale, legend=legend),
+            )
+        )
+        layers.append(expected_bars)
 
     return alt.layer(*layers).properties(title=title)
 

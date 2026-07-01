@@ -397,6 +397,27 @@ def save_multi_epoch_birth_time_figure(
     )
 
 
+def _rate_axis_config(values: NDArray[np.float64], *, log_scale: bool) -> alt.Axis:
+    """Build the rate-axis config: always gridded, power-of-10 ticks if log.
+
+    Plain Vega-Lite log-scale ticks tend to overlap or land at odd non-decade
+    values once the scale spans more than ~2 orders of magnitude (half-life
+    panels routinely do). Restricting ``values`` to exact powers of 10
+    spanning the data keeps labels legible and gives one gridline per decade;
+    linear panels get a plain gridded axis (no explicit ``values``).
+    """
+    if not log_scale:
+        return alt.Axis(grid=True)
+
+    positive = values[np.isfinite(values) & (values > 0)]
+    if positive.size == 0:
+        return alt.Axis(grid=True)
+    lo_exp = int(np.floor(np.log10(positive.min())))
+    hi_exp = int(np.ceil(np.log10(positive.max())))
+    tick_values = [10.0**exp for exp in range(lo_exp, hi_exp + 1)]
+    return alt.Axis(values=tick_values, grid=True)
+
+
 def rate_ci_panel(
     frame: pd.DataFrame,
     category_col: str,
@@ -457,25 +478,37 @@ def rate_ci_panel(
         base_enc["xOffset"] = offset
 
     _rate_scale = alt.Scale(type="log") if log_scale else alt.Undefined
+    _rate_values = pd.concat(
+        [frame[rate_col], frame[lower_col], frame[upper_col]]
+    ).to_numpy(dtype=float)
+    _rate_axis = _rate_axis_config(_rate_values, log_scale=log_scale)
 
     if orient == "h":
         base_enc["y"] = alt.Y(f"{category_col}:N", sort=None, title=category_title)
         base = alt.Chart(frame).encode(**base_enc)
         points = base.mark_point(filled=True, **_c).encode(
-            x=alt.X(f"{rate_col}:Q", title=rate_title, scale=_rate_scale)
+            x=alt.X(
+                f"{rate_col}:Q", title=rate_title, scale=_rate_scale, axis=_rate_axis
+            )
         )
         rule = base.mark_rule(strokeWidth=1, **_c).encode(
-            x=alt.X(f"{lower_col}:Q", title=rate_title, scale=_rate_scale),
+            x=alt.X(
+                f"{lower_col}:Q", title=rate_title, scale=_rate_scale, axis=_rate_axis
+            ),
             x2=f"{upper_col}:Q",
         )
     else:
         base_enc["x"] = alt.X(f"{category_col}:N", sort=None, title=category_title)
         base = alt.Chart(frame).encode(**base_enc)
         points = base.mark_point(filled=True, **_c).encode(
-            y=alt.Y(f"{rate_col}:Q", title=rate_title, scale=_rate_scale)
+            y=alt.Y(
+                f"{rate_col}:Q", title=rate_title, scale=_rate_scale, axis=_rate_axis
+            )
         )
         rule = base.mark_rule(strokeWidth=1, **_c).encode(
-            y=alt.Y(f"{lower_col}:Q", title=rate_title, scale=_rate_scale),
+            y=alt.Y(
+                f"{lower_col}:Q", title=rate_title, scale=_rate_scale, axis=_rate_axis
+            ),
             y2=f"{upper_col}:Q",
         )
 

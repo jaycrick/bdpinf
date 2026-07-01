@@ -3,7 +3,10 @@
 import altair as alt
 import numpy as np
 
-from inf_bp_texts.visualization.age_fit_plot import plot_creation_year_fit
+from inf_bp_texts.visualization.age_fit_plot import (
+    creation_year_fit_chart,
+    plot_creation_year_fit,
+)
 
 
 class TestPlotCreationYearFit:
@@ -23,13 +26,14 @@ class TestPlotCreationYearFit:
         )
 
         assert isinstance(chart, alt.LayerChart)
-        assert len(chart.layer) == 2  # histogram + density layers
+        assert len(chart.layer) == 2  # observed + expected-count histograms
 
     def test_excludes_point_mass_when_oldest_age_is_full_duration(self) -> None:
         """The spine's age is deterministically the full duration (a point mass).
 
         When the oldest observed manuscript's age equals that duration, the
-        density grid must not evaluate exactly there.
+        density grid must not evaluate exactly there, so the resulting
+        expected-count overlay stays finite.
         """
         process_duration = 100.0
         ages = np.array([process_duration, 50.0, 20.0])
@@ -44,9 +48,76 @@ class TestPlotCreationYearFit:
             title="test",
         )
 
-        density_layer = chart.layer[1]
-        birth_years = density_layer.data["Creation year (CE)"].to_numpy()
-        # The point-mass boundary (birth_year == start_time, i.e. age ==
-        # process_duration) must be excluded; the grid's nearest point should
-        # be nudged just inside the domain instead of landing exactly on it.
-        assert not np.any(birth_years == 0.0)
+        expected_layer = chart.layer[1]
+        counts = expected_layer.data["count"].to_numpy()
+        assert np.all(np.isfinite(counts))
+
+
+class TestCreationYearFitChart:
+    """Test the shared observed/expected layered-histogram builder."""
+
+    def test_default_labels_and_axis_titles(self) -> None:
+        observed = np.array([10.0, 20.0, 30.0, 40.0])
+        density_years = np.linspace(0.0, 50.0, 20)
+        density_values = np.full(20, 0.02)
+
+        chart = creation_year_fit_chart(
+            observed, density_years, density_values, title="test"
+        )
+
+        spec = chart.to_dict()
+        histogram_enc = spec["layer"][0]["encoding"]
+        assert histogram_enc["x"]["title"] == "Creation Year"
+        assert histogram_enc["y"]["title"] == "count"
+        assert histogram_enc["color"]["scale"]["domain"] == ["Observed", "Expected"]
+
+    def test_x_domain_extends_to_cover_fitted_range(self) -> None:
+        """The shared x-domain must reach the density grid even past observed data."""
+        observed = np.array([100.0, 110.0, 120.0])
+        density_years = np.linspace(0.0, 200.0, 50)
+        density_values = np.full(50, 0.01)
+
+        chart = creation_year_fit_chart(
+            observed, density_years, density_values, title="test"
+        )
+
+        domain = chart.to_dict()["layer"][0]["encoding"]["x"]["scale"]["domain"]
+        assert domain[0] <= 0.0
+        assert domain[1] >= 200.0
+
+    def test_both_layers_share_bin_edges_and_bin_count(self) -> None:
+        observed = np.array([0.0, 5.0, 10.0, 15.0, 20.0])
+        density_years = np.linspace(0.0, 20.0, 10)
+        density_values = np.full(10, 0.05)
+
+        chart = creation_year_fit_chart(
+            observed, density_years, density_values, title="test", nbins=10
+        )
+
+        observed_data = chart.layer[0].data
+        expected_data = chart.layer[1].data
+        assert len(observed_data) == 10
+        assert len(expected_data) == 10
+        np.testing.assert_array_equal(
+            observed_data["bin_start"].to_numpy(), expected_data["bin_start"].to_numpy()
+        )
+
+    def test_omits_expected_layer_for_degenerate_observed_years(self) -> None:
+        """A single repeated observed year has no bin width to scale against."""
+        chart = creation_year_fit_chart(np.full(5, 10.0), None, None, title="test")
+
+        assert len(chart.layer) == 1
+
+    def test_expected_counts_peak_near_true_value(self) -> None:
+        """A smooth density bump at a known year should peak in a nearby bin."""
+        observed = np.array([0.0, 100.0])
+        density_years = np.linspace(0.0, 100.0, 500)
+        density_values = np.exp(-0.5 * ((density_years - 50.0) / 5.0) ** 2)
+
+        chart = creation_year_fit_chart(
+            observed, density_years, density_values, title="test", nbins=10
+        )
+
+        expected_data = chart.layer[1].data
+        peak_row = expected_data.loc[expected_data["count"].idxmax()]
+        assert 40.0 <= peak_row["bin_start"] <= 60.0

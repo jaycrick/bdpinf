@@ -196,6 +196,55 @@ def _size_one(
     return child.properties(**size_props)
 
 
+def _untitled_one(child: alt.TopLevelMixin) -> alt.TopLevelMixin:
+    """Clear a single chart's ``title``, recursing into ``FacetChart.spec``.
+
+    ``.properties(title=alt.Undefined)`` does not work to *clear* a title —
+    Altair validates the passed value against the title schema even when it is
+    the ``Undefined`` sentinel, which raises. Setting the attribute directly on
+    a ``.copy()`` (the same trick :func:`_size_one` uses for facet ``spec``)
+    is the way to actually omit the key from the serialized spec.
+    """
+    untitled = child.copy()
+    if isinstance(untitled, alt.FacetChart):
+        inner = getattr(untitled, "spec", None)
+        if inner is not None:
+            untitled.spec = _untitled_one(inner)
+    untitled.title = alt.Undefined
+    return untitled
+
+
+def _untitled(chart: alt.TopLevelMixin) -> alt.TopLevelMixin:
+    """Strip the chart title (and any concat/facet child titles) for export.
+
+    Every figure builder in this package attaches its title via
+    ``.properties(title=...)`` so the *interactive* ``display()`` view stays
+    self-describing in a rendered notebook. Saved PDFs are meant to be
+    captioned separately in the surrounding prose, so :func:`save_chart` clears
+    the title by default. Mirrors the concat/facet walk in :func:`_sized`,
+    since ``HConcatChart``/``VConcatChart``/``ConcatChart`` carry titles on
+    each child rather than (only) at the top level.
+    """
+    if isinstance(chart, alt.HConcatChart | alt.VConcatChart | alt.ConcatChart):
+        untitled_chart = chart.copy()
+        children_attr = (
+            "hconcat"
+            if isinstance(chart, alt.HConcatChart)
+            else "vconcat"
+            if isinstance(chart, alt.VConcatChart)
+            else "concat"
+        )
+        setattr(
+            untitled_chart,
+            children_attr,
+            [_untitled_one(child) for child in getattr(chart, children_attr)],
+        )
+        untitled_chart.title = alt.Undefined
+        return untitled_chart
+
+    return _untitled_one(chart)
+
+
 def _sized(
     chart: alt.TopLevelMixin,
     width: int | None,
@@ -287,6 +336,7 @@ def save_chart(
     height: int | None = None,
     output_dir: str | Path | None = None,
     fmt: str = "pdf",
+    keep_title: bool = False,
 ) -> Path:
     """Export an Altair chart to ``output_dir/filename.fmt`` via vl-convert.
 
@@ -309,6 +359,11 @@ def save_chart(
     fmt : str
         Output format understood by vl-convert: ``"pdf"`` (default), ``"svg"``,
         or ``"png"``.
+    keep_title : bool
+        Saved figures are captioned separately in the surrounding notebook
+        prose, so by default the chart's ``title`` (baked in for the
+        interactive ``display()`` view) is stripped before export. Pass
+        ``True`` to keep it in the exported file.
 
     Returns
     -------
@@ -325,6 +380,8 @@ def save_chart(
     register_export_fonts()
 
     sized = _sized(chart, width, height)
+    if not keep_title:
+        sized = _untitled(sized)
 
     file_path = output_path / f"{filename}.{fmt}"
     sized.save(str(file_path), engine="vl-convert")

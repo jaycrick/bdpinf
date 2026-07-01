@@ -8,6 +8,7 @@ import pandas as pd
 
 from inf_bp_texts.visualization.plotting import (
     convergence_chart,
+    rate_ci_panel,
     save_multi_epoch_birth_time_figure,
     save_multi_epoch_convergence_figure,
     save_multi_epoch_fit_figure,
@@ -140,6 +141,60 @@ class TestSaveMultiEpochBirthTimeFigure:
         )
 
         assert not (tmp_path / "birth_time_slug.pdf").exists()
+
+
+class TestRateCiPanel:
+    """Test the dot-and-whisker rate/CI panel builder."""
+
+    def _frame(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "Period": ["Epoch 1", "Epoch 2", "Epoch 3"],
+                "rate": [0.001, 0.05, 0.5],
+                "lower": [0.0005, 0.02, 0.2],
+                "upper": [0.002, 0.08, 0.8],
+            }
+        )
+
+    def test_gridlines_enabled_on_linear_rate_axis(self) -> None:
+        chart = rate_ci_panel(
+            self._frame(), "Period", "rate", "lower", "upper", color="#4477AA"
+        )
+
+        spec = chart.to_dict()
+        assert spec["layer"][0]["encoding"]["x"]["axis"]["grid"] is True
+
+    def test_log_scale_ticks_are_powers_of_ten(self) -> None:
+        chart = rate_ci_panel(
+            self._frame(),
+            "Period",
+            "rate",
+            "lower",
+            "upper",
+            color="#4477AA",
+            log_scale=True,
+        )
+
+        spec = chart.to_dict()
+        axis = spec["layer"][0]["encoding"]["x"]["axis"]
+        assert axis["grid"] is True
+        # Data spans 0.0005 .. 0.8 -> decades 1e-4 .. 1e0.
+        assert axis["values"] == [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
+
+    def test_vertical_orient_places_rate_on_y_axis(self) -> None:
+        chart = rate_ci_panel(
+            self._frame(),
+            "Period",
+            "rate",
+            "lower",
+            "upper",
+            color="#4477AA",
+            orient="v",
+        )
+
+        spec = chart.to_dict()
+        assert spec["layer"][0]["encoding"]["y"]["field"] == "rate"
+        assert spec["layer"][0]["encoding"]["y"]["axis"]["grid"] is True
 
 
 class TestSaveMultiEpochFitFigure:

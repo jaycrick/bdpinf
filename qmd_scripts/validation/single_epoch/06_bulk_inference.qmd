@@ -36,6 +36,7 @@ import pandas as pd
 from IPython.display import display
 from joblib import Parallel, delayed
 
+from inf_bp_texts import get_project_root
 from inf_bp_texts.analysis import (
     FitModelConfig,
     build_hist_bins,
@@ -47,7 +48,6 @@ from inf_bp_texts.analysis import (
 from inf_bp_texts.inference import ConvergenceConfig
 from inf_bp_texts.inference.fitting import fit_birth_death_processes
 from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
-from inf_bp_texts import get_project_root
 from inf_bp_texts.utils import derive_worker_seeds
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
@@ -331,7 +331,9 @@ print(
 )
 
 
-birth_bins = build_hist_bins(fit_birth_values_iqr, fit_birth_values_boundary_iqr)
+birth_bins = build_hist_bins(
+    fit_birth_values_iqr, fit_birth_values_boundary_iqr, bins=60
+)
 _birth_step = float(birth_bins.get("size", 0.01))
 _birth_hist_df = pd.concat(
     [
@@ -351,7 +353,11 @@ _birth_bars = (
     alt.Chart(_birth_hist_df)
     .mark_bar(opacity=0.75)
     .encode(
-        x=alt.X("rate:Q", bin=alt.Bin(step=_birth_step, anchor=birth_rate - _birth_step / 2), title="Rate"),
+        x=alt.X(
+            "rate:Q",
+            bin=alt.Bin(step=_birth_step, anchor=birth_rate - _birth_step / 2),
+            title="Rate",
+        ),
         y=alt.Y("count():Q", stack=True, title="Count"),
         color=alt.Color(
             "group:N", scale=_hist_color, legend=alt.Legend(title=None, orient="top")
@@ -361,9 +367,16 @@ _birth_bars = (
     .add_params(_birth_hist_select)
 )
 _birth_vline = (
-    alt.Chart(pd.DataFrame({"x": [birth_rate]}))
-    .mark_rule(strokeDash=[4, 2], color="black")
-    .encode(x=alt.X("x:Q"))
+    alt.Chart(pd.DataFrame({"x": [birth_rate], "kind": ["λ"]}))
+    .mark_rule(strokeDash=[4, 2])
+    .encode(
+        x=alt.X("x:Q"),
+        color=alt.Color(
+            "kind:N",
+            scale=alt.Scale(domain=["λ"], range=["black"]),
+            legend=alt.Legend(title=None, orient="top"),
+        ),
+    )
 )
 fig_birth_hist = (_birth_bars + _birth_vline).properties(
     title="Birth Rate Histograms", width=400, height=300
@@ -378,7 +391,9 @@ save_chart(
 )
 print("Saved birth-rate histogram figure")
 
-death_bins = build_hist_bins(fit_death_values_iqr, fit_death_values_boundary_iqr)
+death_bins = build_hist_bins(
+    fit_death_values_iqr, fit_death_values_boundary_iqr, bins=60
+)
 _death_step = float(death_bins.get("size", 0.005))
 _death_hist_df = pd.concat(
     [
@@ -395,7 +410,11 @@ _death_bars = (
     alt.Chart(_death_hist_df)
     .mark_bar(opacity=0.75)
     .encode(
-        x=alt.X("rate:Q", bin=alt.Bin(step=_death_step, anchor=death_rate - _death_step / 2), title="Rate"),
+        x=alt.X(
+            "rate:Q",
+            bin=alt.Bin(step=_death_step, anchor=death_rate - _death_step / 2),
+            title="Rate",
+        ),
         y=alt.Y("count():Q", stack=True, title="Count"),
         color=alt.Color(
             "group:N", scale=_hist_color, legend=alt.Legend(title=None, orient="top")
@@ -405,9 +424,16 @@ _death_bars = (
     .add_params(_death_hist_select)
 )
 _death_vline = (
-    alt.Chart(pd.DataFrame({"x": [death_rate]}))
-    .mark_rule(strokeDash=[4, 2], color="black")
-    .encode(x=alt.X("x:Q"))
+    alt.Chart(pd.DataFrame({"x": [death_rate], "kind": ["μ"]}))
+    .mark_rule(strokeDash=[4, 2])
+    .encode(
+        x=alt.X("x:Q"),
+        color=alt.Color(
+            "kind:N",
+            scale=alt.Scale(domain=["μ"], range=["black"]),
+            legend=alt.Legend(title=None, orient="top"),
+        ),
+    )
 )
 fig_death_hist = (_death_bars + _death_vline).properties(
     title="Death Rate Histograms", width=400, height=300
@@ -427,7 +453,11 @@ _birth_nb_bars = (
     alt.Chart(_birth_hist_df[_birth_hist_df["group"] == "non-boundary"])
     .mark_bar(opacity=0.75, color=PTOLQUAL[0])
     .encode(
-        x=alt.X("rate:Q", bin=alt.Bin(step=_birth_step, anchor=birth_rate - _birth_step / 2), title="Rate"),
+        x=alt.X(
+            "rate:Q",
+            bin=alt.Bin(step=_birth_step, anchor=birth_rate - _birth_step / 2),
+            title="λ Estimate",
+        ),
         y=alt.Y("count():Q", title="Count"),
     )
 )
@@ -448,7 +478,15 @@ _death_nb_bars = (
     alt.Chart(_death_hist_df[_death_hist_df["group"] == "non-boundary"])
     .mark_bar(opacity=0.75, color=PTOLQUAL[1])
     .encode(
-        x=alt.X("rate:Q", bin=alt.Bin(step=_death_step, anchor=death_rate - _death_step / 2), title="Rate"),
+        x=alt.X(
+            "rate:Q",
+            bin=alt.Bin(step=_death_step, anchor=death_rate - _death_step / 2),
+            title="μ Estimate",
+            # Extend ticks/gridlines down to 0 rather than stopping at the
+            # lowest bin edge.
+            scale=alt.Scale(domain=[0, float(death_bins["end"])]),
+            axis=alt.Axis(grid=True),
+        ),
         y=alt.Y("count():Q", title="Count"),
     )
 )
@@ -509,6 +547,34 @@ def _anchored_bin(values: list[float], true_value: float, maxbins: int = 25) -> 
     return alt.Bin(step=step, anchor=true_value - step / 2)
 
 
+def _one_sided_upper_iqr_mask(
+    values: np.ndarray, whisker_width: float = 1.5
+) -> np.ndarray:
+    """Keep values below the upper IQR fence; never drop the lower tail.
+
+    μ fits legitimately cluster near 0, so the symmetric two-sided IQR filter
+    used for λ would wrongly cut off small-but-valid fits. Only values far
+    ABOVE the third quartile are treated as outliers here.
+    """
+    finite = np.isfinite(values)
+    if not finite.any():
+        return finite
+    q1, q3 = np.percentile(values[finite], [25.0, 75.0])
+    iqr = q3 - q1
+    if not np.isfinite(iqr) or iqr == 0.0:
+        return finite
+    upper_bound = q3 + whisker_width * iqr
+    return finite & (values <= upper_bound)
+
+
+def _heatmap_subset(births: np.ndarray, deaths: np.ndarray) -> dict[str, np.ndarray]:
+    """Joint λ/μ plotting subset: two-sided IQR for λ, upper-only for μ."""
+    _, lambda_mask = iqr_plotting_subset({"lambda": births})
+    mu_mask = _one_sided_upper_iqr_mask(deaths)
+    mask = lambda_mask & mu_mask
+    return {"lambda": births[mask], "mu": deaths[mask]}
+
+
 def _fitted_heatmap(
     births: list[float],
     deaths: list[float],
@@ -521,56 +587,79 @@ def _fitted_heatmap(
         print(f"No data for {title}")
         return
     df = pd.DataFrame({"lambda": births, "mu": deaths})
+    lambda_max = max(max(births), birth_rate)
+    mu_max = max(max(deaths), death_rate)
     cells = (
         alt.Chart(df)
         .mark_rect()
         .encode(
-            x=alt.X("lambda:Q", bin=_anchored_bin(births, birth_rate), title="Fitted λ"),
-            y=alt.Y("mu:Q", bin=_anchored_bin(deaths, death_rate), title="Fitted μ"),
+            x=alt.X(
+                "lambda:Q",
+                bin=_anchored_bin(births, birth_rate),
+                title="Fitted λ",
+                scale=alt.Scale(domain=[0, lambda_max]),
+                axis=alt.Axis(grid=True),
+            ),
+            y=alt.Y(
+                "mu:Q",
+                bin=_anchored_bin(deaths, death_rate),
+                title="Fitted μ",
+                scale=alt.Scale(domain=[0, mu_max]),
+                axis=alt.Axis(grid=True),
+            ),
             color=alt.Color("count():Q", title="Count"),
         )
     )
 
-    truth = (
-        alt.Chart(pd.DataFrame({"lambda": [birth_rate], "mu": [death_rate]}))
-        .mark_point(shape="cross", size=200, color="black", filled=True)
-        .encode(x="lambda:Q", y="mu:Q")
+    # Two perpendicular dotted lines mark the true λ/μ (clearer than a single
+    # cross marker at their intersection, and each line reads unambiguously
+    # against either axis). Both share one "true value" legend entry.
+    _truth_scale = alt.Scale(domain=["true value"], range=["black"])
+    _truth_legend = alt.Legend(title=None, orient="top")
+    truth_v = (
+        alt.Chart(pd.DataFrame({"lambda": [birth_rate], "kind": ["true value"]}))
+        .mark_rule(strokeDash=[4, 2])
+        .encode(
+            x="lambda:Q",
+            color=alt.Color("kind:N", scale=_truth_scale, legend=_truth_legend),
+        )
     )
-    fig = (cells + truth).properties(title=title, width=400, height=350)
+    truth_h = (
+        alt.Chart(pd.DataFrame({"mu": [death_rate], "kind": ["true value"]}))
+        .mark_rule(strokeDash=[4, 2])
+        .encode(
+            y="mu:Q",
+            color=alt.Color("kind:N", scale=_truth_scale, legend=_truth_legend),
+        )
+    )
+    fig = (cells + truth_v + truth_h).properties(title=title, width=400, height=350)
     display(fig)
     save_chart(fig, save_name, width=300, height=200, output_dir=output_dir)
     print(f"Saved {save_name}")
 
 
-# Joint IQR filter: rows that are outliers in either λ or μ are dropped together.
-_heat_all_filt, _ = iqr_plotting_subset(
-    {
-        "lambda": np.asarray(
-            fit_birth_values + fit_birth_values_boundary, dtype=np.float64
-        ),
-        "mu": np.asarray(
-            fit_death_values + fit_death_values_boundary, dtype=np.float64
-        ),
-    }
+# λ uses the standard two-sided IQR filter; μ only drops fits far above the
+# upper fence, so near-zero (but valid) μ fits are never excluded.
+_heat_all_filt = _heatmap_subset(
+    np.asarray(fit_birth_values + fit_birth_values_boundary, dtype=np.float64),
+    np.asarray(fit_death_values + fit_death_values_boundary, dtype=np.float64),
 )
-_heat_nb_filt, _ = iqr_plotting_subset(
-    {
-        "lambda": np.asarray(fit_birth_values, dtype=np.float64),
-        "mu": np.asarray(fit_death_values, dtype=np.float64),
-    }
+_heat_nb_filt = _heatmap_subset(
+    np.asarray(fit_birth_values, dtype=np.float64),
+    np.asarray(fit_death_values, dtype=np.float64),
 )
 
 _fitted_heatmap(
     births=_heat_all_filt["lambda"].tolist(),
     deaths=_heat_all_filt["mu"].tolist(),
-    title="Fitted λ vs μ — All fits, IQR subset (cross = true value)",
+    title="Fitted λ vs μ — All fits, IQR subset",
     save_name="vse06_rate_heatmap_all",
     output_dir=figures_dir,
 )
 _fitted_heatmap(
     births=_heat_nb_filt["lambda"].tolist(),
     deaths=_heat_nb_filt["mu"].tolist(),
-    title="Fitted λ vs μ — Excluding boundary fits, IQR subset (cross = true value)",
+    title="Fitted λ vs μ — Excluding boundary fits, IQR subset",
     save_name="vse06_rate_heatmap_non_boundary",
     output_dir=figures_dir,
 )

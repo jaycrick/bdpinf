@@ -6,11 +6,13 @@ import pytest
 
 from inf_bp_texts.visualization.bayesian_plots import (
     PriorPosteriorPanel,
+    PriorPosteriorRatePanel,
     RatePanel,
     TracePanel,
     posterior_rates_chart,
     ppc_chart,
     prior_posterior_chart,
+    prior_posterior_rates_chart,
     prior_rate_samples,
     prior_rates_chart,
     trace_chart,
@@ -208,6 +210,95 @@ class TestPosteriorRatesChart:
         # No scale key at all, or type is not "log"
         assert median_x.get("scale", {}).get("type") != "log"
 
+    def test_x_axis_title_has_no_stray_field_names(self) -> None:
+        """Regression test: layering used to comma-join distinct field titles.
+
+        Before the fix, the area's x title ("Rate per year") was joined with
+        the untitled median/CI-bar x-encodings' own field names ("rate",
+        "ci_low"), producing "Rate per year, rate, ci_low" in the exported
+        axis title.
+        """
+        rng = np.random.default_rng(5)
+        panels = [
+            RatePanel(
+                label="Birth Rate",
+                categories=["Epoch 1"],
+                samples=rng.lognormal(size=(100, 1)),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = posterior_rates_chart(panels, title="test", vertical=True)
+
+        spec = chart.to_dict()
+        layer = spec["vconcat"][0]["spec"]["layer"]
+        for encoded in (layer[0]["encoding"]["x"], layer[1]["encoding"]["x"]):
+            assert encoded["title"] == "Rate per year"
+        assert "ci_low" not in str(layer[2]["encoding"]["x"].get("title", ""))
+
+    def test_facet_row_height_targets_200px_total(self) -> None:
+        """Row height must scale so an n-category ridgeline nears 200px tall.
+
+        FacetChart height is ignored by save_chart's width/height override
+        (Vega-Lite derives it from row height * row count), so the only way
+        to land near the project's usual 300x200 export target is to size
+        the row height at chart-build time.
+        """
+        rng = np.random.default_rng(6)
+        panels = [
+            RatePanel(
+                label="Birth Rate",
+                categories=["Epoch 1", "Epoch 2", "Epoch 3", "Epoch 4"],
+                samples=rng.lognormal(size=(50, 4)),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = posterior_rates_chart(panels, title="test", vertical=True)
+
+        row_height = chart.to_dict()["vconcat"][0]["spec"]["height"]
+        assert row_height * 4 == pytest.approx(200.0)
+
+    def test_legend_entries_present_and_labelled(self) -> None:
+        rng = np.random.default_rng(7)
+        panels = [
+            RatePanel(
+                label="Birth Rate",
+                categories=["Epoch 1"],
+                samples=rng.lognormal(size=(100, 1)),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = posterior_rates_chart(panels, title="test", vertical=True)
+
+        layer = chart.to_dict()["vconcat"][0]["spec"]["layer"]
+        area_opacity = layer[0]["encoding"]["opacity"]
+        ci_opacity = layer[2]["encoding"]["opacity"]
+        assert area_opacity["scale"]["domain"] == ["Posterior distribution"]
+        assert ci_opacity["scale"]["domain"] == ["95% CrI"]
+
+    def test_distribution_label_override(self) -> None:
+        """prior_rates_chart overrides the label so its ridge doesn't say "Posterior"."""
+        rng = np.random.default_rng(8)
+        panels = [
+            RatePanel(
+                label="Prior Rate",
+                categories=["Epoch 1"],
+                samples=rng.lognormal(size=(100, 1)),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = posterior_rates_chart(
+            panels, title="test", vertical=True, distribution_label="Prior distribution"
+        )
+
+        layer = chart.to_dict()["vconcat"][0]["spec"]["layer"]
+        assert layer[0]["encoding"]["opacity"]["scale"]["domain"] == [
+            "Prior distribution"
+        ]
+
 
 class TestPriorRateSamples:
     """Test the raw deterministic prior-quantile-sample helper."""
@@ -290,6 +381,143 @@ class TestPriorRatesChart:
         assert np.median([r["rate"] for r in death_rows]) == pytest.approx(
             np.exp(-10.0), rel=0.05
         )
+
+
+class TestPriorPosteriorRatesChart:
+    """Test the prior-vs-posterior overlay ridgeline chart (same row per category)."""
+
+    def test_returns_vconcat_with_row_facet_only(self) -> None:
+        rng = np.random.default_rng(0)
+        panels = [
+            PriorPosteriorRatePanel(
+                label="Birth Rate",
+                categories=["Epoch 1", "Epoch 2"],
+                prior_samples=rng.lognormal(size=(4000, 2)),
+                posterior_samples=rng.lognormal(size=(1000, 2)),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = prior_posterior_rates_chart(panels, title="Comparison")
+
+        assert isinstance(chart, alt.VConcatChart)
+        spec = chart.to_dict()
+        assert len(spec["vconcat"]) == 1
+        facet = spec["vconcat"][0]["facet"]
+        assert facet["row"]["field"] == "category"
+        assert "column" not in facet  # no column facet: prior/posterior share one row
+
+    def test_four_layers_prior_outline_then_posterior_fill(self) -> None:
+        rng = np.random.default_rng(1)
+        panels = [
+            PriorPosteriorRatePanel(
+                label="Death Rate",
+                categories=["Epoch 1"],
+                prior_samples=rng.lognormal(size=(4000, 1)),
+                posterior_samples=rng.lognormal(size=(1000, 1)),
+                color="#EE6677",
+            ),
+        ]
+
+        chart = prior_posterior_rates_chart(panels, title="test")
+
+        layer = chart.to_dict()["vconcat"][0]["spec"]["layer"]
+        assert len(layer) == 4  # prior_area, posterior_area, median_point, ci_bar
+        prior_area, posterior_area = layer[0], layer[1]
+        assert prior_area["mark"]["fillOpacity"] == 0
+        assert prior_area["mark"]["strokeDash"] == [4, 4]
+        assert "strokeDash" not in posterior_area["mark"]
+        assert posterior_area["mark"]["fillOpacity"] == 0.8
+
+    def test_only_posterior_gets_summary_rows(self) -> None:
+        rng = np.random.default_rng(2)
+        panels = [
+            PriorPosteriorRatePanel(
+                label="Birth Rate",
+                categories=["Epoch 1", "Epoch 2"],
+                prior_samples=rng.lognormal(size=(4000, 2)),
+                posterior_samples=rng.lognormal(size=(1000, 2)),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = prior_posterior_rates_chart(panels, title="test")
+
+        spec = chart.to_dict()
+        all_rows = [row for rows in spec["datasets"].values() for row in rows]
+        prior_summary = [
+            r for r in all_rows if r["kind"] == "Prior" and r["row_type"] == "summary"
+        ]
+        posterior_summary = [
+            r
+            for r in all_rows
+            if r["kind"] == "Posterior" and r["row_type"] == "summary"
+        ]
+        assert len(prior_summary) == 0
+        assert len(posterior_summary) == 2  # one per category
+
+    def test_multi_panel_stacks_vertically(self) -> None:
+        rng = np.random.default_rng(3)
+        panels = [
+            PriorPosteriorRatePanel(
+                label="Birth Rate",
+                categories=["Epoch 1"],
+                prior_samples=rng.lognormal(size=(4000, 1)),
+                posterior_samples=rng.lognormal(size=(1000, 1)),
+                color="#4477AA",
+            ),
+            PriorPosteriorRatePanel(
+                label="Death Rate",
+                categories=["Epoch 1"],
+                prior_samples=rng.lognormal(size=(4000, 1)),
+                posterior_samples=rng.lognormal(size=(1000, 1)),
+                color="#EE6677",
+            ),
+        ]
+
+        chart = prior_posterior_rates_chart(panels, title="test")
+
+        spec = chart.to_dict()
+        assert len(spec["vconcat"]) == 2
+
+    def test_log_scale_applies_to_posterior_median_layer(self) -> None:
+        rng = np.random.default_rng(4)
+        panels = [
+            PriorPosteriorRatePanel(
+                label="Half-life",
+                categories=["Epoch 1"],
+                prior_samples=rng.lognormal(mean=5, sigma=1, size=(4000, 1)),
+                posterior_samples=rng.lognormal(mean=5, sigma=1, size=(1000, 1)),
+                color="#228833",
+            ),
+        ]
+
+        chart = prior_posterior_rates_chart(panels, title="test", log_scale=True)
+
+        layer = chart.to_dict()["vconcat"][0]["spec"]["layer"]
+        median_x = layer[2]["encoding"]["x"]  # layer[2] = median_point
+        assert median_x.get("scale", {}).get("type") == "log"
+
+    def test_x_axis_title_has_no_stray_field_names(self) -> None:
+        """Same ", ci_low" comma-join regression as posterior_rates_chart."""
+        rng = np.random.default_rng(9)
+        panels = [
+            PriorPosteriorRatePanel(
+                label="Birth Rate",
+                categories=["Epoch 1"],
+                prior_samples=rng.lognormal(size=(4000, 1)),
+                posterior_samples=rng.lognormal(size=(1000, 1)),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = prior_posterior_rates_chart(panels, title="test", x_title="Rate")
+
+        layer = chart.to_dict()["vconcat"][0]["spec"]["layer"]
+        median_x = layer[2]["encoding"]["x"]  # median_point
+        ci_x = layer[3]["encoding"]["x"]  # ci_bar
+        assert median_x["title"] == "Rate"
+        assert ci_x["title"] == "Rate"
 
 
 class TestTraceChart:
