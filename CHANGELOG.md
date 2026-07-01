@@ -7,6 +7,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `visualization.bayesian_plots.prior_rates_chart` and
+  `prior_rate_samples`: ridgeline (joyplot) of per-epoch prior rate
+  distributions, in the same style as `posterior_rates_chart`.  Renders
+  deterministic quantile samples (Hazen plotting positions) of the log-normal
+  birth/death priors rather than random draws; `prior_rate_samples` exposes
+  the raw birth/death sample arrays so callers can split birth, death, and
+  half-life into separate figures.  Wired into all four `04_bayesian`
+  notebooks (`ntvmr_birth_death_bayesian`, `ntvmr_single_epoch_bayesian`,
+  `kashouh_single_epoch_bayesian`, `kashouh_family_k_bayesian_inference`).
+  In `ntvmr_birth_death_bayesian.qmd`, both the prior-rate ridgelines and the
+  existing posterior rate ridgelines (by tradition and by epoch) are now
+  split into separate birth/death/half-life figures, matching the layout of
+  `ntvmr_birth_death_inference.qmd`'s MLE rate plots.
 - `manuscript_survival_proportion.qmd` rewritten to use a
   **Horvitz-Thompson (HT) inverse-probability-weighting estimator** in place of
   the multilevel-splitting conditioned sampler.  For each surviving manuscript

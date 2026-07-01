@@ -20,6 +20,8 @@ from .bayesian_plots import (
     posterior_rates_chart,
     ppc_chart,
     prior_posterior_chart,
+    prior_rate_samples,
+    prior_rates_chart,
     trace_chart,
 )
 from .date_distribution_plots import plot_date_range_kde_comparison
@@ -61,6 +63,8 @@ __all__ = [
     "ppc_chart",
     "posterior_rates_chart",
     "prior_posterior_chart",
+    "prior_rate_samples",
+    "prior_rates_chart",
     "register_export_fonts",
     "save_chart",
     "save_chart_html",

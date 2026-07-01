@@ -16,6 +16,7 @@ import altair as alt
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+from scipy.stats import norm
 
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 
@@ -365,6 +366,111 @@ def posterior_rates_chart(
         .properties(title=title, bounds="flush")
         .configure_facet(spacing=0)
         .configure_view(stroke=None)
+    )
+
+
+def prior_rate_samples(
+    locs: NDArray[np.float64],
+    scales: NDArray[np.float64],
+    n_categories: int,
+    n_quantiles: int = 4000,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Deterministic quantile samples of log-normal birth/death priors.
+
+    Rates are log-normal: ``rate = exp(Normal(loc, scale))``.  Rather than
+    drawing random samples, each category's ridge is built from a fixed set of
+    deterministic quantile points — standard-normal quantiles at Hazen
+    plotting positions ``(i - 0.5) / n_quantiles``, transformed through
+    ``exp(loc + scale * z)`` — so downstream charts are reproducible without
+    an RNG seed.  This mirrors the deterministic quantile-resampling idiom
+    used in :func:`~.analysis.date_density.quantile_resample_dates`.
+
+    Parameters
+    ----------
+    locs, scales :
+        Log-scale prior mean/std, shape ``[2 * n_categories]`` following the
+        birth-then-death convention of
+        :meth:`~inf_bp_texts.inference.bayesian.BayesianPriorConfig.resolve_tensors`
+        (index ``i < n_categories`` is birth category ``i``; ``i >=
+        n_categories`` is death category ``i - n_categories``).
+    n_categories :
+        Number of categories (epochs or subsets).
+    n_quantiles :
+        Number of deterministic quantile points per category ridge.
+
+    Returns
+    -------
+    tuple[NDArray, NDArray]
+        ``(birth_samples, death_samples)``, each shape
+        ``[n_quantiles, n_categories]`` — usable directly as a
+        :class:`RatePanel`'s ``samples``, including for splitting birth,
+        death, and half-life into separate charts.
+    """
+    n = n_categories
+    probs = (np.arange(1, n_quantiles + 1) - 0.5) / n_quantiles
+    z = norm.ppf(probs)
+    birth = np.exp(locs[:n][None, :] + scales[:n][None, :] * z[:, None])
+    death = np.exp(locs[n:][None, :] + scales[n:][None, :] * z[:, None])
+    return birth, death
+
+
+def prior_rates_chart(
+    locs: NDArray[np.float64],
+    scales: NDArray[np.float64],
+    categories: Sequence[str],
+    *,
+    title: str,
+    category_title: str = "Epoch",
+    n_quantiles: int = 4000,
+    log_scale: bool = True,
+    birth_color: str = PTOLQUAL[0],
+    death_color: str = PTOLQUAL[1],
+) -> alt.FacetChart | alt.VConcatChart:
+    """Ridgeline of per-category prior rate distributions.
+
+    Renders the priors in the same style as :func:`posterior_rates_chart`,
+    combining birth and death into one figure.  Use :func:`prior_rate_samples`
+    directly when birth, death, and half-life need separate figures.
+
+    Parameters
+    ----------
+    locs, scales :
+        Log-scale prior mean/std, shape ``[2 * n_categories]`` — see
+        :func:`prior_rate_samples` for the birth-then-death index convention.
+    categories :
+        Category (epoch or subset) labels, length ``n_categories``.
+    title :
+        Top-level figure title.
+    category_title :
+        Label for the category (row-facet) axis.
+    n_quantiles :
+        Number of deterministic quantile points per category ridge.
+    log_scale :
+        Render the x-axis on a log scale (default ``True``, matching the
+        log-normal prior support).
+    birth_color, death_color :
+        Fill colours for the birth-rate and death-rate panels.
+    """
+    birth, death = prior_rate_samples(locs, scales, len(categories), n_quantiles)
+    return posterior_rates_chart(
+        [
+            RatePanel(
+                label="Birth Rate λ (prior)",
+                categories=categories,
+                samples=birth,
+                color=birth_color,
+            ),
+            RatePanel(
+                label="Death Rate μ (prior)",
+                categories=categories,
+                samples=death,
+                color=death_color,
+            ),
+        ],
+        title=title,
+        category_title=category_title,
+        vertical=True,
+        log_scale=log_scale,
     )
 
 

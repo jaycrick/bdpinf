@@ -11,6 +11,8 @@ from inf_bp_texts.visualization.bayesian_plots import (
     posterior_rates_chart,
     ppc_chart,
     prior_posterior_chart,
+    prior_rate_samples,
+    prior_rates_chart,
     trace_chart,
 )
 
@@ -205,6 +207,89 @@ class TestPosteriorRatesChart:
         median_x = layer[1]["encoding"]["x"]
         # No scale key at all, or type is not "log"
         assert median_x.get("scale", {}).get("type") != "log"
+
+
+class TestPriorRateSamples:
+    """Test the raw deterministic prior-quantile-sample helper."""
+
+    def test_shapes_and_birth_death_split(self) -> None:
+        locs = np.array([-1.0, -1.0, -10.0, -10.0])
+        scales = np.array([0.1, 0.1, 0.1, 0.1])
+
+        birth, death = prior_rate_samples(locs, scales, n_categories=2, n_quantiles=500)
+
+        assert birth.shape == (500, 2)
+        assert death.shape == (500, 2)
+        assert np.median(birth) == pytest.approx(np.exp(-1.0), rel=0.05)
+        assert np.median(death) == pytest.approx(np.exp(-10.0), rel=0.05)
+
+    def test_deterministic_across_calls(self) -> None:
+        locs = np.array([-2.0, -5.6])
+        scales = np.array([0.6, 0.6])
+
+        birth_a, death_a = prior_rate_samples(locs, scales, n_categories=1)
+        birth_b, death_b = prior_rate_samples(locs, scales, n_categories=1)
+
+        np.testing.assert_array_equal(birth_a, birth_b)
+        np.testing.assert_array_equal(death_a, death_b)
+
+
+class TestPriorRatesChart:
+    """Test the prior-rate ridgeline chart."""
+
+    def test_returns_vconcat_with_birth_and_death_panels(self) -> None:
+        locs = np.array([-2.0, -2.0, -5.6, -5.6])
+        scales = np.array([0.6, 0.6, 0.6, 0.6])
+
+        chart = prior_rates_chart(locs, scales, ["Epoch 1", "Epoch 2"], title="Priors")
+
+        assert isinstance(chart, alt.VConcatChart)
+        spec = chart.to_dict()
+        assert len(spec["vconcat"]) == 2  # birth panel + death panel
+
+    def test_deterministic_across_calls(self) -> None:
+        """Quantile samples come from fixed Hazen positions, not an RNG draw."""
+        locs = np.array([-2.0, -5.6])
+        scales = np.array([0.6, 0.6])
+
+        chart_a = prior_rates_chart(locs, scales, ["Epoch 1"], title="test")
+        chart_b = prior_rates_chart(locs, scales, ["Epoch 1"], title="test")
+
+        assert chart_a.to_dict() == chart_b.to_dict()
+
+    def test_log_scale_default_true(self) -> None:
+        locs = np.array([-2.0, -5.6])
+        scales = np.array([0.6, 0.6])
+
+        chart = prior_rates_chart(locs, scales, ["Epoch 1"], title="test")
+
+        spec = chart.to_dict()
+        layer = spec["vconcat"][0]["spec"]["layer"]
+        median_x = layer[1]["encoding"]["x"]
+        assert median_x.get("scale", {}).get("type") == "log"
+
+    def test_birth_death_index_convention(self) -> None:
+        """First half of locs/scales is birth, second half is death."""
+        locs = np.array([-1.0, -10.0])  # birth loc=-1, death loc=-10
+        scales = np.array([0.1, 0.1])
+
+        chart = prior_rates_chart(locs, scales, ["Epoch 1"], title="test")
+
+        spec = chart.to_dict()
+        birth_name = spec["vconcat"][0]["data"]["name"]
+        death_name = spec["vconcat"][1]["data"]["name"]
+        birth_rows = [
+            r for r in spec["datasets"][birth_name] if r.get("row_type") == "draw"
+        ]
+        death_rows = [
+            r for r in spec["datasets"][death_name] if r.get("row_type") == "draw"
+        ]
+        assert np.median([r["rate"] for r in birth_rows]) == pytest.approx(
+            np.exp(-1.0), rel=0.05
+        )
+        assert np.median([r["rate"] for r in death_rows]) == pytest.approx(
+            np.exp(-10.0), rel=0.05
+        )
 
 
 class TestTraceChart:
