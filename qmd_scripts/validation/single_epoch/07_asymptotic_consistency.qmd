@@ -37,12 +37,10 @@ import numpy as np
 import pandas as pd
 from IPython.display import display
 from itables import show as show_table
-from joblib import Parallel, delayed
 
 from inf_bp_texts.analysis.asymptotic_consistency import (
     FittingRunConfig,
     reproduce_replicate,
-    run_single_replicate,
 )
 from inf_bp_texts.analysis.spike_detection import (
     compute_ci_width_table,
@@ -128,27 +126,28 @@ fit_run_config = FittingRunConfig(
 )
 ```
 
-## Run Simulations And Fits
+## Load Precomputed Simulations And Fits
+
+The 4 regimes x 15 observation times x 1,000 replicates below (60,000
+simulate-then-fit calls) are precomputed by
+`scripts/generate_recovery_studies.py --study single_epoch_asymptotic_consistency`
+--- see `inf_bp_texts.analysis.asymptotic_consistency.run_single_replicate` for
+the per-replicate logic --- and persisted to
+`recovery_samples/single_epoch_asymptotic_consistency.npz`.
+Everything below
+this cell (summary statistics, bootstrap CIs, spike selection, and debug
+reproduction) is cheap and still runs at render time.
 
 ```{python}
-# | label: run-simulations-and-fits
-replicate_rows: list[dict[str, object]] = []
+# | label: load-simulations-and-fits
+from inf_bp_texts import get_project_root
+from inf_bp_texts.inference import load_recovery_results
 
-for _regime_index, regime_config in enumerate(regime_configs):
-    for _time_index, observation_time in enumerate(time_grid):
-        replicate_rows.extend(
-            Parallel(n_jobs=-1)(
-                delayed(run_single_replicate)(
-                    regime_config=regime_config,
-                    observation_time=float(observation_time),
-                    simulation_index=simulation_index,
-                    fit_config=fit_run_config,
-                )
-                for simulation_index in range(num_simulations)
-            )
-        )
-
-results_df = pd.DataFrame(replicate_rows)
+recovery_samples_dir = get_project_root() / "recovery_samples"
+loaded = load_recovery_results(
+    recovery_samples_dir / "single_epoch_asymptotic_consistency.npz"
+)
+results_df = loaded["results"]
 summary_rows: list[dict[str, object]] = []
 
 for (regime, sampling, observation_time), group in results_df.groupby(

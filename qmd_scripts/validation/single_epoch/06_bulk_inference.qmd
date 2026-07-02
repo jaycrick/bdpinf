@@ -27,28 +27,16 @@ __compile_start = time.perf_counter()
 ## Setup
 
 ```{python}
-from collections import Counter
 from typing import Any
 
 import altair as alt
 import numpy as np
 import pandas as pd
 from IPython.display import display
-from joblib import Parallel, delayed
 
 from inf_bp_texts import get_project_root
-from inf_bp_texts.analysis import (
-    FitModelConfig,
-    build_hist_bins,
-    extract_rate_arrays,
-    first_failed_fits,
-    iqr_plotting_subset,
-    summarize_fit_success,
-)
-from inf_bp_texts.inference import ConvergenceConfig
-from inf_bp_texts.inference.fitting import fit_birth_death_processes
-from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
-from inf_bp_texts.utils import derive_worker_seeds
+from inf_bp_texts.analysis import build_hist_bins, iqr_plotting_subset
+from inf_bp_texts.inference import load_recovery_results
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 
@@ -56,47 +44,26 @@ figures_dir = get_project_root() / "figures" / "validation" / "single_epoch"
 figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
-## Simulate Data
+## Load Precomputed Recovery Results
+
+Simulation and fitting for this study (4000 replicates x two optimizers) are
+precomputed by `scripts/generate_recovery_studies.py` --- see
+`inf_bp_texts.analysis.single_epoch_recovery` for the per-replicate
+simulate+fit logic --- and persisted to
+`recovery_samples/single_epoch_bulk_inference.npz`.
+Re-run that script (with
+`--study single_epoch_bulk_inference`) to refresh this notebook's data.
 
 ```{python}
-num_sims = 4000
-birth_rate = 0.5
-death_rate = birth_rate - 0.4
-time_span = 15.0
-NOTEBOOK_SEED = (
-    42  # fixed seed for reproducibility; used as base for per-simulation seeds
-)
+recovery_samples_dir = get_project_root() / "recovery_samples"
+loaded = load_recovery_results(recovery_samples_dir / "single_epoch_bulk_inference.npz")
+results_df = loaded["results"]
+recovery_metadata = loaded["metadata"]
 
-
-def sample_age_vector(seed: int, br: float, dr: float, span: float) -> np.ndarray:
-    rng = np.random.default_rng(seed)
-    sampled = simulate_bdp_ages_from_distributions(
-        birth_rate=float(br),
-        death_rate=float(dr),
-        max_time=float(span),
-        rng=rng,
-    )
-    assert sampled.spine_ages is not None and sampled.non_spine_ages is not None
-    return np.asarray(
-        sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
-        dtype=np.float64,
-    )
-
-
-# jax.random.split gives an explicit independence guarantee per worker seed,
-# unlike sequential-integer seeding.
-sim_seeds = derive_worker_seeds(NOTEBOOK_SEED, num_sims)
-
-list_of_ages = Parallel(n_jobs=-1)(
-    delayed(sample_age_vector)(
-        seed=sim_seeds[i],
-        br=birth_rate,
-        dr=death_rate,
-        span=time_span,
-    )
-    for i in range(num_sims)
-)
-print(f"Simulations: {len(list_of_ages)}")
+birth_rate = float(recovery_metadata["birth_rate"])
+death_rate = float(recovery_metadata["death_rate"])
+time_span = float(recovery_metadata["time_span"])
+print(f"Simulations: {recovery_metadata['n_simulated']}")
 ```
 
 ## Mixed Distribution Likelihood (Unknown Spine)
@@ -149,152 +116,54 @@ $$
   + \ell_{\text{ages}}(\lambda,\mu).
 $$
 
-## Fit Remaining Models
+## Fit Summary
 
 ```{python}
-fit_config = FitModelConfig(
-    times=time_span,
-    is_ordered=True,
-    perturb_initial_params_std=0.0,
-    initial_birth_rates=np.array([birth_rate], dtype=float),
-    initial_death_rates=np.array([death_rate], dtype=float),
+total_models = len(results_df)
+successful = int(results_df["success"].sum())
+failed = total_models - successful
+success_rate = (successful / total_models * 100.0) if total_models > 0 else 0.0
+print(f"Successful fits: {successful}")
+print(f"Failed fits: {failed}")
+print(f"Success rate: {success_rate:.1f}%")
+
+successful_fits_by_optimizer = (
+    results_df.loc[results_df["success"], "optimizer"].value_counts().to_dict()
 )
-
-
-def fit_single_model_with_optimizers(
-    ages: np.ndarray, config: FitModelConfig
-) -> dict[str, Any] | None:
-    if len(ages) == 0:
-        return None
-
-    fit_kwargs: dict[str, Any] = {
-        "list_of_ages": [ages],
-        "times": config.times,
-        "is_ordered": config.is_ordered,
-        "unbias": config.unbias,
-        "optimizers": ["lbfgs", "adam"],
-        "optimizer_kwargs": {
-            "lbfgs": {
-                "lr": 1.0,
-                "line_search_fn": "strong_wolfe",
-                "min_iterations": 10,
-            },
-            "adam": {
-                "lr": 1e-3,
-            },
-        },
-        "convergence_config": ConvergenceConfig(
-            gradient_threshold=1e-6, absolute_tolerance=1e-10, patience=10
-        ),
-    }
-    if config.perturb_initial_params_std is not None:
-        fit_kwargs["perturb_initial_params_std"] = config.perturb_initial_params_std
-    if config.random_seed is not None:
-        fit_kwargs["random_seed"] = config.random_seed
-    if config.initial_birth_rates is not None:
-        fit_kwargs["initial_birth_rates"] = config.initial_birth_rates
-    if config.initial_death_rates is not None:
-        fit_kwargs["initial_death_rates"] = config.initial_death_rates
-
-    try:
-        return fit_birth_death_processes(**fit_kwargs)
-    except Exception:
-        return None
-
-
-remaining_ages = list_of_ages[1:]
-fitted_models = Parallel(n_jobs=-1)(
-    delayed(fit_single_model_with_optimizers)(ages, fit_config)
-    for ages in remaining_ages
-)
-
-fit_summary = summarize_fit_success(fitted_models, total_models=len(fitted_models))
-print(f"Successful fits: {fit_summary['successful']}")
-print(f"Failed fits: {fit_summary['failed']}")
-print(f"Success rate: {fit_summary['success_rate']:.1f}%")
-
-successful_fits_by_optimizer: Counter[str] = Counter()
-for model in fitted_models:
-    if model is None or not model.get("success", False):
-        continue
-
-    optimization_result = model.get("optimization_result")
-    if not isinstance(optimization_result, dict):
-        successful_fits_by_optimizer["unknown"] += 1
-        continue
-
-    attempts = optimization_result.get("attempts")
-    selected_attempt_index = optimization_result.get("selected_attempt_index")
-    selected_attempt = None
-
-    if isinstance(attempts, list) and attempts:
-        if isinstance(
-            selected_attempt_index, int
-        ) and 0 <= selected_attempt_index < len(attempts):
-            selected_attempt = attempts[selected_attempt_index]
-        else:
-            selected_attempt = attempts[0]
-
-    optimizer_name = "unknown"
-    if isinstance(selected_attempt, dict):
-        optimizer_name = str(selected_attempt.get("optimizer", "unknown"))
-
-    successful_fits_by_optimizer[optimizer_name] += 1
-
 print("Successful fits by optimizer type:")
 for optimizer_name, count in sorted(successful_fits_by_optimizer.items()):
     print(f"- {optimizer_name}: {count}")
 
-failed_cases = first_failed_fits(
-    fitted_models=fitted_models,
-    ages_by_fit=remaining_ages,
-    start_index=1,
-    max_items=3,
-)
-if failed_cases:
-    print("\nFirst failed simulations (up to 3):")
-    for failed in failed_cases:
-        print(
-            f"- Simulation {failed['simulation_index']}: "
-            f"population={failed['population']}, reason={failed['reason']}, "
-            f"ages={failed['ages'].tolist()}"
-        )
+# The "first N failed simulations" debug listing from the inline version
+# needed each failed replicate's raw age vector, which the persisted tidy
+# table doesn't retain (only scalar summary fields per replicate); rerun
+# scripts/generate_recovery_studies.py with a smaller replicate count and
+# inspect `analysis.single_epoch_recovery.run_single_epoch_recovery_replicate`
+# directly if a specific failure needs to be reproduced.
 ```
 
 ## Prepare Boundary-Aware Data for Visualization
 
 ```{python}
-birth_rates, death_rates = extract_rate_arrays(fitted_models)
-fit_populations = []
-fit_mean_ages = []
-fit_birth_values = []
-fit_death_values = []
-fit_growth_values = []
-fit_populations_boundary = []
-fit_mean_ages_boundary = []
-fit_birth_values_boundary = []
-fit_death_values_boundary = []
-fit_growth_values_boundary = []
-for model, ages in zip(fitted_models, remaining_ages, strict=False):
-    if model is None or not model.get("success", False):
-        continue
+successful_df = results_df[results_df["success"]]
+non_boundary_df = successful_df[~successful_df["has_boundary_age"]]
+boundary_df = successful_df[successful_df["has_boundary_age"]]
 
-    has_boundary_age = np.max(ages) == time_span
-    birth_val = float(np.atleast_1d(model["birth_rates"])[0])
-    death_val = float(np.atleast_1d(model["death_rates"])[0])
+fit_populations = non_boundary_df["population"].tolist()
+fit_mean_ages = non_boundary_df["mean_age"].tolist()
+fit_birth_values = non_boundary_df["birth_rate"].tolist()
+fit_death_values = non_boundary_df["death_rate"].tolist()
+fit_growth_values = (
+    non_boundary_df["birth_rate"] - non_boundary_df["death_rate"]
+).tolist()
 
-    if has_boundary_age:
-        fit_populations_boundary.append(len(ages))
-        fit_mean_ages_boundary.append(float(np.mean(ages)))
-        fit_birth_values_boundary.append(birth_val)
-        fit_death_values_boundary.append(death_val)
-        fit_growth_values_boundary.append(birth_val - death_val)
-    else:
-        fit_populations.append(len(ages))
-        fit_mean_ages.append(float(np.mean(ages)))
-        fit_birth_values.append(birth_val)
-        fit_death_values.append(death_val)
-        fit_growth_values.append(birth_val - death_val)
+fit_populations_boundary = boundary_df["population"].tolist()
+fit_mean_ages_boundary = boundary_df["mean_age"].tolist()
+fit_birth_values_boundary = boundary_df["birth_rate"].tolist()
+fit_death_values_boundary = boundary_df["death_rate"].tolist()
+fit_growth_values_boundary = (
+    boundary_df["birth_rate"] - boundary_df["death_rate"]
+).tolist()
 
 print(f"Non-boundary samples: {len(fit_populations)}")
 print(f"Boundary samples: {len(fit_populations_boundary)}")
@@ -867,8 +736,8 @@ print_rate_summary(
 # can exit cleanly.  Without this, the loky atexit handler tries to join workers
 # that may be blocked in JAX cleanup, hanging the process for hours after the
 # notebook finishes.
-from joblib.externals.loky import (  # pyright: ignore[reportMissingImports]
-    get_reusable_executor as _get_loky_executor,
+from joblib.externals.loky import (
+    get_reusable_executor as _get_loky_executor,  # pyright: ignore[reportMissingImports]
 )
 
 _get_loky_executor().shutdown(wait=False, kill_workers=True)

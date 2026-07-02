@@ -36,11 +36,23 @@ from .latex_tables import (
     subset_fits_latex_by_epoch,
     subset_fits_latex_by_subset,
 )
+from .multi_epoch_recovery import (
+    fit_zero_birth_replicate,
+    run_single_rate_replicate,
+    run_two_rate_replicate,
+    run_zero_birth_replicate,
+    simulate_zero_birth_second_epoch,
+)
 from .single_epoch import (
     compute_parameter_summary,
     extract_alive_ages,
     extract_rate_arrays,
     summarize_fit_success,
+)
+from .single_epoch_recovery import (
+    fit_single_epoch_replicate,
+    run_single_epoch_recovery_replicate,
+    sample_single_epoch_ages,
 )
 from .spike_detection import (
     bootstrap_percentile_ci,
@@ -119,7 +131,9 @@ __all__ = [
     "extract_epoch_parameter_arrays",
     "extract_rate_arrays",
     "first_failed_fits",
+    "fit_single_epoch_replicate",
     "fit_single_model",
+    "fit_zero_birth_replicate",
     "get_selected_attempt",
     "has_ages_in_each_epoch",
     "iqr_plotting_subset",
@@ -127,8 +141,14 @@ __all__ = [
     "proportion_not_at_upper",
     "quantile_resample_dates",
     "robust_y_max",
+    "run_single_epoch_recovery_replicate",
+    "run_single_rate_replicate",
+    "run_two_rate_replicate",
+    "run_zero_birth_replicate",
+    "sample_single_epoch_ages",
     "select_extreme_replicates",
     "select_max_ci_times",
+    "simulate_zero_birth_second_epoch",
     "summarize_fit_success",
     "theoretical_age_density",
 ]

@@ -1,4 +1,4 @@
-"""Posterior sample persistence utilities for birth-death inference results.
+"""Posterior sample and recovery-study persistence for birth-death inference.
 
 Thin save/load wrappers around ``numpy.savez_compressed`` so that posterior
 samples produced by :func:`fit_birth_death_processes_bayesian` (or the subset
@@ -25,6 +25,16 @@ File format
 
 All four keys are always present; ``epoch_end_times`` and ``epoch_names`` are
 set to empty arrays when the caller omits them.
+
+This module also holds :func:`save_recovery_results` /
+:func:`load_recovery_results`, a schema-agnostic ``.npz`` round-tripper for
+the tidy per-replicate DataFrames produced by simulate-then-fit validation
+studies (e.g. :mod:`~inf_bp_texts.analysis.single_epoch_recovery`,
+:mod:`~inf_bp_texts.analysis.multi_epoch_recovery`,
+:mod:`~inf_bp_texts.analysis.asymptotic_consistency`). Those studies are the
+most expensive cells in the ``qmd_scripts/validation`` notebooks; precomputing
+them once via ``scripts/generate_recovery_studies.py`` and loading the result
+here keeps the notebooks themselves fast to render.
 """
 
 from __future__ import annotations
@@ -33,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from numpy.typing import NDArray
 
 
@@ -144,3 +155,96 @@ def load_posterior_samples(path: str | Path) -> dict[str, Any]:
         "epoch_end_times": np.asarray(data["epoch_end_times"], dtype=np.float64),
         "epoch_names": np.asarray(data["epoch_names"], dtype=object),
     }
+
+
+def _column_array(series: pd.Series) -> NDArray[Any]:
+    """Convert one DataFrame column to an ``.npz``-friendly array.
+
+    Numeric and boolean columns keep their native NumPy dtype; everything
+    else (strings, mixed types) is stored as an object array so arbitrary
+    per-replicate metadata (regime names, optimizer labels, …) round-trips.
+    """
+    if pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series):
+        return series.to_numpy()
+    return np.asarray(series.tolist(), dtype=object)
+
+
+def save_recovery_results(
+    results_df: pd.DataFrame,
+    path: str | Path,
+    *,
+    metadata: dict[str, int | float | str] | None = None,
+) -> None:
+    """Persist a tidy per-replicate recovery-study DataFrame to ``.npz``.
+
+    Parameters
+    ----------
+    results_df : pd.DataFrame
+        One row per simulate-then-fit replicate. Column names and dtypes are
+        preserved verbatim; there is no fixed schema, so different studies
+        (single-epoch bulk inference, asymptotic consistency, multi-epoch
+        constrained fits, …) can each store whatever columns their
+        downstream notebook cells consume.
+    path : str or Path
+        Output file path. The ``.npz`` extension is appended by NumPy if
+        absent.
+    metadata : dict[str, int | float | str], optional
+        Small scalar metadata (e.g. ``n_simulated``, ``n_kept``) stored
+        alongside the table.
+    """
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    payload: dict[str, Any] = {
+        "_columns": np.asarray(list(results_df.columns), dtype=object),
+    }
+    for column in results_df.columns:
+        payload[f"col__{column}"] = _column_array(results_df[column])
+
+    meta = metadata or {}
+    payload["_metadata_keys"] = np.asarray(list(meta.keys()), dtype=object)
+    for key, value in meta.items():
+        payload[f"meta__{key}"] = np.asarray(value)
+
+    np.savez_compressed(out, **payload)
+
+
+def load_recovery_results(path: str | Path) -> dict[str, Any]:
+    """Load a recovery-study DataFrame written by :func:`save_recovery_results`.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to the ``.npz`` file (with or without the extension).
+
+    Returns
+    -------
+    dict[str, Any]
+        ``"results"``
+            The reconstructed ``pd.DataFrame``, column order preserved.
+        ``"metadata"``
+            Dict of scalar metadata stored at save time (empty if none).
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist.
+    """
+    p = Path(path)
+    if not p.exists() and not p.with_suffix(".npz").exists():
+        msg = f"Recovery results file not found: {p}"
+        raise FileNotFoundError(msg)
+
+    data = np.load(p if p.exists() else p.with_suffix(".npz"), allow_pickle=True)
+
+    columns = [str(c) for c in data["_columns"]]
+    results_df = pd.DataFrame({column: data[f"col__{column}"] for column in columns})
+
+    metadata: dict[str, Any] = {}
+    if "_metadata_keys" in data:
+        for key in data["_metadata_keys"]:
+            key = str(key)
+            value = data[f"meta__{key}"]
+            metadata[key] = value.item() if value.ndim == 0 else value
+
+    return {"results": results_df, "metadata": metadata}

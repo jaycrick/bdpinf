@@ -3,6 +3,15 @@
 # --- bulk simulate/fit and sensitivity-sweep notebooks that use
 # joblib.Parallel(n_jobs=-1) across CPU cores.
 #
+# Several of the heaviest notebooks under qmd_scripts/validation/ (the
+# single-/multi-epoch bulk-inference and asymptotic-consistency studies) no
+# longer simulate+fit inline --- they load recovery_samples/*.npz produced by
+# scripts/generate_recovery_studies.slurm, which must run first (see
+# render_all.sh). The remaining notebooks in these directories (e.g.
+# 01_simulation_checks.qmd, 06_sensitivity_benchmark.qmd,
+# 09_subcritical_splitting.qmd) still simulate/fit inline, so this job keeps a
+# generous time budget; retune --time after measuring the refactored renders.
+#
 # Usage (from the repo root, on an HPC login node):
 #   sbatch scripts/render_cpu_parallel.slurm
 #
@@ -18,7 +27,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem-per-cpu=2G
-#SBATCH --time=10:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=_output/slurm-cpu-parallel-%j.log
 
 set -euo pipefail

@@ -20,24 +20,14 @@ __compile_start = time.perf_counter()
 ## Setup
 
 ```{python}
-from collections import Counter
-
 import altair as alt
 import numpy as np
 import pandas as pd
 from IPython.display import display
-from joblib import Parallel, delayed
 
-from inf_bp_texts.analysis import (
-    FitModelConfig,
-    extract_epoch_parameter_arrays,
-    first_failed_fits,
-    fit_single_model,
-    has_ages_in_each_epoch,
-    iqr_plotting_subset,
-    summarize_fit_success,
-)
 from inf_bp_texts import get_project_root
+from inf_bp_texts.analysis import iqr_plotting_subset
+from inf_bp_texts.inference import load_recovery_results
 from inf_bp_texts.visualization import display_svg, save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
 
@@ -45,124 +35,37 @@ figures_dir = get_project_root() / "figures" / "validation" / "multi_epoch"
 figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
-## Simulate and Fit
+## Load Precomputed Recovery Results
 
 Only simulations that contain at least one observed age in each fitted epoch are kept.
 This prevents a two-epoch fit from being applied to samples that live entirely on one side of the epoch boundary.
 
+Simulation and fitting for this study (1000 replicates, single-rate
+generative data fit with a two-epoch model) are precomputed by
+`scripts/generate_recovery_studies.py --study multi_epoch_single_rate` --- see
+`inf_bp_texts.analysis.multi_epoch_recovery.run_single_rate_replicate` for the
+per-replicate simulate+fit logic --- and persisted to
+`recovery_samples/multi_epoch_single_rate.npz`.
+
 ```{python}
-# | label: simulate-sample
-# Simulation: sample age vectors using distribution sampler
-num_sims = 1000
+# | label: load-single-rate-fit
 birth_rate = 0.5
 death_rate = birth_rate - 0.4
-time_span = 15.0
-seed = 42
-
-from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
-from inf_bp_texts.utils import derive_worker_seeds
-
-
-def sample_age_vector(seed: int, br: float, dr: float, span: float) -> np.ndarray:
-    rng = np.random.default_rng(seed)
-    sampled = simulate_bdp_ages_from_distributions(
-        birth_rate=float(br),
-        death_rate=float(dr),
-        max_time=float(span),
-        rng=rng,
-    )
-    assert sampled.spine_ages is not None and sampled.non_spine_ages is not None
-    return np.asarray(
-        sampled.spine_ages.tolist() + sampled.non_spine_ages.tolist(),
-        dtype=np.float64,
-    )
-
-
-fit_times = np.array([time_span / 2.0, time_span], dtype=float)
-
-# jax.random.split gives an explicit independence guarantee per worker seed,
-# unlike sequential-integer seeding.
-sim_seeds = derive_worker_seeds(seed, num_sims)
-
-raw_list_of_ages = Parallel(n_jobs=-1)(
-    delayed(sample_age_vector)(
-        seed=sim_seeds[i],
-        br=birth_rate,
-        dr=death_rate,
-        span=time_span,
-    )
-    for i in range(num_sims)
-)
-list_of_ages = [
-    ages for ages in raw_list_of_ages if has_ages_in_each_epoch(ages, fit_times)
-]
-print(f"Simulations kept for fitting: {len(list_of_ages)} / {len(raw_list_of_ages)}")
 # True epoch-specific rates for plotting (same in both epochs for this generative scenario)
 birth_rates_true = np.array([birth_rate, birth_rate], dtype=float)
 death_rates_true = np.array([death_rate, death_rate], dtype=float)
-```
 
-```{python}
-# | label: fit-model
-# Fitting: configure and run model fits
-fit_config = FitModelConfig(
-    times=fit_times,
-    is_ordered=True,
-    perturb_initial_params_std=0.0,
-    random_seed=10925,
-    initial_birth_rates=birth_rates_true,
-    initial_death_rates=death_rates_true,
+recovery_samples_dir = get_project_root() / "recovery_samples"
+loaded = load_recovery_results(recovery_samples_dir / "multi_epoch_single_rate.npz")
+results_df = loaded["results"]
+recovery_metadata = loaded["metadata"]
+
+print(
+    "Simulations kept for fitting: "
+    f"{recovery_metadata['n_kept']} / {recovery_metadata['n_simulated']}"
 )
-fitted_results = Parallel(n_jobs=-1)(
-    delayed(fit_single_model)(ages, fit_config) for ages in list_of_ages
-)
-
-successful = [r for r in fitted_results if r is not None and r.get("success", False)]
-fit_summary = summarize_fit_success(fitted_results, total_models=len(fitted_results))
-print(f"Successful fits: {fit_summary['successful']}")
-print(f"Failed fits: {fit_summary['failed']}")
-print(f"Success rate: {fit_summary['success_rate']:.1f}%")
-
-successful_fits_by_optimizer: Counter[str] = Counter()
-for model in fitted_results:
-    if model is None or not model.get("success", False):
-        continue
-
-    optimization_result = model.get("optimization_result")
-    if not isinstance(optimization_result, dict):
-        successful_fits_by_optimizer["unknown"] += 1
-        continue
-
-    attempts = optimization_result.get("attempts")
-    selected_attempt_index = optimization_result.get("selected_attempt_index")
-    selected_attempt = None
-
-    if isinstance(attempts, list) and attempts:
-        if isinstance(
-            selected_attempt_index, int
-        ) and 0 <= selected_attempt_index < len(attempts):
-            selected_attempt = attempts[selected_attempt_index]
-        else:
-            selected_attempt = attempts[0]
-
-    optimizer_name = "unknown"
-    if isinstance(selected_attempt, dict):
-        optimizer_name = str(selected_attempt.get("optimizer", "unknown"))
-
-    successful_fits_by_optimizer[optimizer_name] += 1
-
-print("Successful fits by optimizer type:")
-for optimizer_name, count in sorted(successful_fits_by_optimizer.items()):
-    print(f"- {optimizer_name}: {count}")
-
-failed = first_failed_fits(fitted_results, list_of_ages, start_index=0, max_items=3)
-if failed:
-    print("\nFirst failed simulations (up to 3):")
-    for case in failed:
-        print(
-            f"- Simulation {case['simulation_index']}: population={case['population']}, "
-            f"reason={case['reason']}, ages={case['ages'].tolist()}"
-        )
+successful = results_df.to_dict("records")
+print(f"Successful fits: {len(successful)}")
 ```
 
 ## Epoch-Wise Rate Recovery
@@ -170,7 +73,12 @@ if failed:
 The figures below use a joint plotting subset with 1.5×IQR outliers removed across the plotted parameters.
 
 ```{python}
-epoch_parameter_arrays = extract_epoch_parameter_arrays(fitted_results)
+epoch_parameter_arrays = {
+    "epoch_1_birth": results_df["epoch_1_birth"].to_numpy(dtype=np.float64),
+    "epoch_1_death": results_df["epoch_1_death"].to_numpy(dtype=np.float64),
+    "epoch_2_birth": results_df["epoch_2_birth"].to_numpy(dtype=np.float64),
+    "epoch_2_death": results_df["epoch_2_death"].to_numpy(dtype=np.float64),
+}
 parameter_specs = [
     (
         r"$\hat{\lambda}_1$",

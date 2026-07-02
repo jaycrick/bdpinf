@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `inference.persistence.save_recovery_results`/`load_recovery_results`:
+  schema-agnostic `.npz` round-trip for tidy per-replicate recovery-study
+  tables, alongside the existing posterior-sample persistence.
+  New
+  `analysis.single_epoch_recovery` and `analysis.multi_epoch_recovery`
+  modules factor the simulate-then-fit replicate logic out of the five
+  heaviest `qmd_scripts/validation` notebooks, and
+  `scripts/generate_recovery_studies.py` (+ `scripts/generate_recovery_studies.slurm`)
+  precomputes them once instead of on every render --- see
+  `docs/design/RECOVERY_STUDY_DATA_PIPELINE.md`.
 - `visualization.altair_theme.save_chart` gains a `keep_title` keyword
   (default `False`): saved PDFs now have their title stripped by default via
   the new `_untitled()` helper, since figures are captioned separately in

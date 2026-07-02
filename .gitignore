@@ -257,6 +257,10 @@ bootstrap_samples/
 # the 04_bayesian notebooks (saved by save_posterior_samples)
 posterior_samples/
 
+# Recovery-study (simulate-then-fit validation) results — large generated
+# artifacts, regenerate via scripts/generate_recovery_studies.py
+recovery_samples/
+
 # Great Docs build directory (ephemeral, do not commit)
 great-docs/
 
