@@ -1,0 +1,549 @@
+---
+title: "Multi-Epoch Validation: Multilevel-Splitting Survival Estimator"
+subtitle: "Recovering the True Proportion Alive from Known Rates"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# ruff: noqa: E402
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+
+__compile_start = time.perf_counter()
+```
+
+## Overview
+
+`manuscript_survival_proportion.qmd` estimates the proportion of ever-created
+manuscripts still alive today via an analytic Horvitz–Thompson (HT) estimator. This
+repo also has a second, simulation-based estimator of the same quantity: the
+multilevel-splitting / sequential-ABC scheme in
+`inf_bp_texts.simulation.survival_conditioning`. It conditions forward lifespan
+simulations on the *observed per-epoch survivor counts* and reads the total
+population ever created off the matched trajectories, giving
+`proportion_alive = n_alive_present / n_born`.
+
+That estimator has never been validated against a case where the truth is known
+exactly. This notebook does a **self-consistency check**:
+
+1. Simulate a ground-truth birth-death process with **known** rates (so the true
+   `n_ever` and true proportion alive are known exactly).
+2. Hide everything except the per-epoch survivor counts.
+3. Run multilevel splitting **with the same known rates**, conditioning on those
+   counts, to recover a posterior-like distribution over `proportion_alive`.
+4. Confirm the recovered distribution brackets the truth.
+
+The timeframe in both scenarios is kept short enough that each epoch has fewer than
+ten survivors — the rare-event regime multilevel splitting is designed for. We start
+with two epochs, then repeat with three.
+
+## Setup
+
+```{python}
+# ruff: noqa: E402
+# inf_bp_texts must be imported before jax so its JAX_PLATFORMS=cpu default
+# (see src/inf_bp_texts/__init__.py) takes effect before jax reads the env var.
+import inf_bp_texts  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
+import altair as alt
+import numpy as np
+import pandas as pd
+
+from inf_bp_texts import get_project_root
+from inf_bp_texts.simulation import (
+    build_target_ranges,
+    sample_conditioned_survival_process,
+    simulate_birth_death_lifespans_arrays,
+)
+from inf_bp_texts.visualization import display_svg, save_chart
+from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+
+figures_dir = get_project_root() / "figures" / "validation" / "multi_epoch"
+figures_dir.mkdir(parents=True, exist_ok=True)
+
+# Toggle: also post-filter the (module-unconditioned) last epoch so *every*
+# epoch's survivor count is matched exactly, not just eras 0 … K-2.
+CONDITION_LAST_EPOCH = True
+# Toggle: overlay the analytic Horvitz-Thompson point estimate (computed from the
+# same known rates) as a cross-check alongside the splitting posterior.
+INCLUDE_HT = True
+
+MASTER_SEED = 42
+MAX_POPULATION = 2_000
+
+
+def find_ground_truth_realization(
+    birth_rates: np.ndarray,
+    death_rates: np.ndarray,
+    epoch_end_times: np.ndarray,
+    *,
+    master_seed: int,
+    min_survivors: int = 1,
+    max_survivors: int = 3,
+    max_attempts: int = 5_000,
+    max_population: int = MAX_POPULATION,
+):
+    """Rejection-sample a non-extinct, "typical" ground-truth realization.
+
+    Accepts the first draw whose *every* epoch has between ``min_survivors`` and
+    ``max_survivors`` individuals (born in that epoch) surviving to the terminal
+    time. Restricting to a modest per-epoch band (rather than merely requiring
+    "non-extinct") avoids picking a rare-outlier realization that the conditioned
+    sampler could then never plausibly reproduce.
+
+    Returns the ``LifespanSimulationArrays`` result, the per-epoch survivor counts,
+    the accepted seed, and the number of attempts taken.
+    """
+    rng = np.random.default_rng(master_seed)
+    n_eras = len(epoch_end_times)
+    for attempt in range(max_attempts):
+        seed = int(rng.integers(0, 2**31))
+        try:
+            result = simulate_birth_death_lifespans_arrays(
+                birth_rates,
+                death_rates,
+                epoch_end_times,
+                random_seed=seed,
+                max_population=max_population,
+            )
+        except RuntimeError:
+            continue
+        birth_epochs = np.asarray(result.birth_epochs)
+        survived = np.asarray(result.survived)
+        counts = np.array(
+            [int(np.sum((birth_epochs == k) & survived)) for k in range(n_eras)]
+        )
+        if np.all(counts >= min_survivors) and np.all(counts <= max_survivors):
+            return result, counts, seed, attempt + 1
+    msg = (
+        f"No qualifying ground-truth realization found in {max_attempts} attempts "
+        f"(bounds [{min_survivors}, {max_survivors}] per epoch)"
+    )
+    raise RuntimeError(msg)
+
+
+def horvitz_thompson_estimate(
+    birth_times: np.ndarray,
+    survived: np.ndarray,
+    death_rates: np.ndarray,
+    epoch_end_times: np.ndarray,
+) -> tuple[float, float]:
+    """Analytic HT estimate of N_ever and proportion alive, from *known* rates.
+
+    Mirrors the exposure-matrix construction in
+    ``manuscript_survival_proportion.qmd``'s ``ht-estimator`` cell, but keyed on
+    exact simulated birth times rather than resampled calendar years — a
+    ground-truth sanity check using the known rates rather than a posterior.
+    """
+    birth_times = np.asarray(birth_times)
+    survived = np.asarray(survived)
+    surviving_birth_times = birth_times[survived]
+    n_surviving = int(survived.sum())
+    boundaries = np.array([0.0, *list(epoch_end_times)])
+    n_eras = len(epoch_end_times)
+    exposure_matrix = np.zeros((n_eras, n_surviving))
+    for k in range(n_eras):
+        exposure_matrix[k] = np.maximum(
+            0.0, boundaries[k + 1] - np.maximum(boundaries[k], surviving_birth_times)
+        )
+    log_inv_p = np.asarray(death_rates) @ exposure_matrix
+    n_ever_ht = float(np.sum(np.exp(log_inv_p)))
+    proportion_ht = n_surviving / n_ever_ht if n_ever_ht > 0 else float("nan")
+    return n_ever_ht, proportion_ht
+
+
+def build_proportion_and_n_ever_charts(
+    *,
+    proportion_alive: np.ndarray,
+    n_born: np.ndarray,
+    true_proportion: float,
+    true_n_ever: int,
+    ht_proportion: float | None,
+    ht_n_ever: float | None,
+    title_prefix: str,
+) -> tuple[alt.Chart, alt.Chart]:
+    """Build the paired proportion-alive / N-ever histograms with truth rules."""
+    prop_labels = ["True proportion"]
+    prop_values = [true_proportion]
+    if INCLUDE_HT and ht_proportion is not None:
+        prop_labels.append("HT estimate")
+        prop_values.append(ht_proportion)
+    rule_colors = alt.Scale(domain=prop_labels, range=PTOLQUAL[1 : 1 + len(prop_labels)])
+
+    proportion_hist = (
+        alt.Chart(pd.DataFrame({"proportion_alive": proportion_alive}))
+        .mark_bar(opacity=0.85, color=PTOLQUAL[0])
+        .encode(
+            alt.X(
+                "proportion_alive:Q",
+                bin=alt.Bin(maxbins=40),
+                title="Proportion alive (splitting posterior)",
+            ),
+            alt.Y("count():Q", title="Count"),
+        )
+    )
+    proportion_rules = (
+        alt.Chart(pd.DataFrame({"label": prop_labels, "value": prop_values}))
+        .mark_rule(strokeWidth=2, strokeDash=[4, 2])
+        .encode(alt.X("value:Q"), alt.Color("label:N", title=None, scale=rule_colors))
+    )
+    proportion_chart = alt.layer(proportion_hist, proportion_rules).properties(
+        width=380, height=220, title=f"{title_prefix}: Proportion Alive"
+    )
+
+    n_ever_labels = ["True N ever"]
+    n_ever_values = [true_n_ever]
+    if INCLUDE_HT and ht_n_ever is not None:
+        n_ever_labels.append("HT estimate")
+        n_ever_values.append(ht_n_ever)
+    n_ever_colors = alt.Scale(
+        domain=n_ever_labels, range=PTOLQUAL[1 : 1 + len(n_ever_labels)]
+    )
+
+    n_ever_hist = (
+        alt.Chart(pd.DataFrame({"n_born": n_born}))
+        .mark_bar(opacity=0.85, color=PTOLQUAL[0])
+        .encode(
+            alt.X(
+                "n_born:Q", bin=alt.Bin(maxbins=40), title="N ever created (splitting posterior)"
+            ),
+            alt.Y("count():Q", title="Count"),
+        )
+    )
+    n_ever_rules = (
+        alt.Chart(pd.DataFrame({"label": n_ever_labels, "value": n_ever_values}))
+        .mark_rule(strokeWidth=2, strokeDash=[4, 2])
+        .encode(alt.X("value:Q"), alt.Color("label:N", title=None, scale=n_ever_colors))
+    )
+    n_ever_chart = alt.layer(n_ever_hist, n_ever_rules).properties(
+        width=380, height=220, title=f"{title_prefix}: N Ever Created"
+    )
+
+    return proportion_chart, n_ever_chart
+```
+
+## Two-Epoch Validation
+
+Rates are mildly subcritical (birth < death in each epoch) so the short time window
+yields only a handful of survivors per epoch — the rare-event regime where
+multilevel splitting matters.
+
+```{python}
+# | label: ground-truth-2epoch
+
+BIRTH_RATES_2 = np.array([0.08, 0.03])
+DEATH_RATES_2 = np.array([0.04, 0.04])
+EPOCH_END_TIMES_2 = np.array([15.0, 35.0])  # process time; last entry = terminal time
+
+result_2epoch, observed_counts_2epoch, ground_truth_seed_2epoch, n_attempts_2epoch = (
+    find_ground_truth_realization(
+        BIRTH_RATES_2,
+        DEATH_RATES_2,
+        EPOCH_END_TIMES_2,
+        master_seed=MASTER_SEED,
+        min_survivors=1,
+        max_survivors=3,
+    )
+)
+
+true_n_ever_2epoch = result_2epoch.n_born
+true_n_alive_2epoch = int(np.sum(np.asarray(result_2epoch.survived)))
+true_proportion_2epoch = true_n_alive_2epoch / true_n_ever_2epoch
+
+print("Two-epoch ground truth:")
+print(f"  Rates: birth={BIRTH_RATES_2.tolist()}  death={DEATH_RATES_2.tolist()}")
+print(f"  Epoch end times (process time): {EPOCH_END_TIMES_2.tolist()}")
+print(f"  Accepted after {n_attempts_2epoch} attempt(s), seed={ground_truth_seed_2epoch}")
+print(f"  Observed per-epoch survivors: {observed_counts_2epoch.tolist()}")
+print(f"  True N ever created: {true_n_ever_2epoch}")
+print(f"  True N alive today:  {true_n_alive_2epoch}")
+print(f"  True proportion alive: {true_proportion_2epoch:.4f}")
+```
+
+```{python}
+# | label: splitting-2epoch
+
+N_SAMPLES_2 = 500
+SPLIT_FACTOR_2 = 5
+N_INITIAL_2 = 60
+SPLITTING_SEED_2 = 2024
+
+target_ranges_2epoch = build_target_ranges(observed_counts_2epoch, tolerance=0)
+
+splitting_result_2epoch = sample_conditioned_survival_process(
+    BIRTH_RATES_2,
+    DEATH_RATES_2,
+    EPOCH_END_TIMES_2,
+    target_ranges_2epoch,
+    n_samples=N_SAMPLES_2,
+    split_factor=SPLIT_FACTOR_2,
+    n_initial=N_INITIAL_2,
+    random_seed=SPLITTING_SEED_2,
+    max_population=MAX_POPULATION,
+)
+
+last_era_2epoch = len(EPOCH_END_TIMES_2) - 1
+target_last_2epoch = int(observed_counts_2epoch[-1])
+samples_2epoch = (
+    [
+        s
+        for s in splitting_result_2epoch.samples
+        if int(s.per_era_survivors[last_era_2epoch]) == target_last_2epoch
+    ]
+    if CONDITION_LAST_EPOCH
+    else splitting_result_2epoch.samples
+)
+
+if not samples_2epoch:
+    msg = "No samples survived the last-epoch post-filter for the two-epoch case"
+    raise RuntimeError(msg)
+
+proportion_alive_2epoch = np.array([s.proportion_alive for s in samples_2epoch])
+n_born_2epoch = np.array([s.n_born for s in samples_2epoch])
+
+ht_n_ever_2epoch, ht_proportion_2epoch = horvitz_thompson_estimate(
+    result_2epoch.birth_times, result_2epoch.survived, DEATH_RATES_2, EPOCH_END_TIMES_2
+)
+
+print(f"Raw matched samples: {len(splitting_result_2epoch.samples)}")
+if CONDITION_LAST_EPOCH:
+    print(f"Samples after exact last-epoch match: {len(samples_2epoch)}")
+else:
+    print("Last-epoch post-filter disabled (module default: last era unconditioned)")
+print(
+    f"Splitting proportion alive: median={np.median(proportion_alive_2epoch):.4f}  "
+    f"95% CrI=[{np.percentile(proportion_alive_2epoch, 2.5):.4f}, "
+    f"{np.percentile(proportion_alive_2epoch, 97.5):.4f}]"
+)
+if INCLUDE_HT:
+    print(f"HT point estimate (known rates): {ht_proportion_2epoch:.4f}")
+```
+
+```{python}
+# | label: fig-2epoch
+
+proportion_chart_2epoch, n_ever_chart_2epoch = build_proportion_and_n_ever_charts(
+    proportion_alive=proportion_alive_2epoch,
+    n_born=n_born_2epoch,
+    true_proportion=true_proportion_2epoch,
+    true_n_ever=true_n_ever_2epoch,
+    ht_proportion=ht_proportion_2epoch if INCLUDE_HT else None,
+    ht_n_ever=ht_n_ever_2epoch if INCLUDE_HT else None,
+    title_prefix="Two-Epoch",
+)
+
+combined_2epoch = alt.hconcat(proportion_chart_2epoch, n_ever_chart_2epoch)
+display_svg(combined_2epoch, width=800, height=260)
+save_chart(proportion_chart_2epoch, "vme07_two_epoch_proportion", output_dir=figures_dir)
+save_chart(n_ever_chart_2epoch, "vme07_two_epoch_n_ever", output_dir=figures_dir)
+```
+
+```{python}
+# | label: diag-2epoch
+
+print("Per-era conditioning diagnostics (last outer-loop iteration):")
+for diag in splitting_result_2epoch.diagnostics:
+    print(
+        f"  era {diag.era_index}: entering={diag.n_entering}  "
+        f"passing={diag.n_passing_filter}  acceptance_rate={diag.acceptance_rate:.3f}"
+    )
+print(f"Outer-loop restarts: {splitting_result_2epoch.n_outer_iterations}")
+print(f"Total era-0 particles simulated: {splitting_result_2epoch.n_total_era0_particles}")
+
+prop_lo_2epoch = float(np.percentile(proportion_alive_2epoch, 2.5))
+prop_hi_2epoch = float(np.percentile(proportion_alive_2epoch, 97.5))
+truth_in_ci_2epoch = prop_lo_2epoch <= true_proportion_2epoch <= prop_hi_2epoch
+print(
+    f"\nTrue proportion {true_proportion_2epoch:.4f} within splitting 95% CrI "
+    f"[{prop_lo_2epoch:.4f}, {prop_hi_2epoch:.4f}]: {truth_in_ci_2epoch}"
+)
+```
+
+## Three-Epoch Validation
+
+Same setup, extended to three epochs with a third (even lower) birth rate so every
+epoch still has fewer than ten survivors.
+
+```{python}
+# | label: ground-truth-3epoch
+
+BIRTH_RATES_3 = np.array([0.06, 0.03, 0.015])
+DEATH_RATES_3 = np.array([0.03, 0.03, 0.03])
+EPOCH_END_TIMES_3 = np.array([15.0, 35.0, 60.0])  # process time; last entry = terminal time
+
+result_3epoch, observed_counts_3epoch, ground_truth_seed_3epoch, n_attempts_3epoch = (
+    find_ground_truth_realization(
+        BIRTH_RATES_3,
+        DEATH_RATES_3,
+        EPOCH_END_TIMES_3,
+        master_seed=MASTER_SEED,
+        min_survivors=1,
+        max_survivors=3,
+    )
+)
+
+true_n_ever_3epoch = result_3epoch.n_born
+true_n_alive_3epoch = int(np.sum(np.asarray(result_3epoch.survived)))
+true_proportion_3epoch = true_n_alive_3epoch / true_n_ever_3epoch
+
+print("Three-epoch ground truth:")
+print(f"  Rates: birth={BIRTH_RATES_3.tolist()}  death={DEATH_RATES_3.tolist()}")
+print(f"  Epoch end times (process time): {EPOCH_END_TIMES_3.tolist()}")
+print(f"  Accepted after {n_attempts_3epoch} attempt(s), seed={ground_truth_seed_3epoch}")
+print(f"  Observed per-epoch survivors: {observed_counts_3epoch.tolist()}")
+print(f"  True N ever created: {true_n_ever_3epoch}")
+print(f"  True N alive today:  {true_n_alive_3epoch}")
+print(f"  True proportion alive: {true_proportion_3epoch:.4f}")
+```
+
+```{python}
+# | label: splitting-3epoch
+
+N_SAMPLES_3 = 500
+SPLIT_FACTOR_3 = 5
+N_INITIAL_3 = 60
+SPLITTING_SEED_3 = 2024
+
+target_ranges_3epoch = build_target_ranges(observed_counts_3epoch, tolerance=0)
+
+splitting_result_3epoch = sample_conditioned_survival_process(
+    BIRTH_RATES_3,
+    DEATH_RATES_3,
+    EPOCH_END_TIMES_3,
+    target_ranges_3epoch,
+    n_samples=N_SAMPLES_3,
+    split_factor=SPLIT_FACTOR_3,
+    n_initial=N_INITIAL_3,
+    random_seed=SPLITTING_SEED_3,
+    max_population=MAX_POPULATION,
+)
+
+last_era_3epoch = len(EPOCH_END_TIMES_3) - 1
+target_last_3epoch = int(observed_counts_3epoch[-1])
+samples_3epoch = (
+    [
+        s
+        for s in splitting_result_3epoch.samples
+        if int(s.per_era_survivors[last_era_3epoch]) == target_last_3epoch
+    ]
+    if CONDITION_LAST_EPOCH
+    else splitting_result_3epoch.samples
+)
+
+if not samples_3epoch:
+    msg = "No samples survived the last-epoch post-filter for the three-epoch case"
+    raise RuntimeError(msg)
+
+proportion_alive_3epoch = np.array([s.proportion_alive for s in samples_3epoch])
+n_born_3epoch = np.array([s.n_born for s in samples_3epoch])
+
+ht_n_ever_3epoch, ht_proportion_3epoch = horvitz_thompson_estimate(
+    result_3epoch.birth_times, result_3epoch.survived, DEATH_RATES_3, EPOCH_END_TIMES_3
+)
+
+print(f"Raw matched samples: {len(splitting_result_3epoch.samples)}")
+if CONDITION_LAST_EPOCH:
+    print(f"Samples after exact last-epoch match: {len(samples_3epoch)}")
+else:
+    print("Last-epoch post-filter disabled (module default: last era unconditioned)")
+print(
+    f"Splitting proportion alive: median={np.median(proportion_alive_3epoch):.4f}  "
+    f"95% CrI=[{np.percentile(proportion_alive_3epoch, 2.5):.4f}, "
+    f"{np.percentile(proportion_alive_3epoch, 97.5):.4f}]"
+)
+if INCLUDE_HT:
+    print(f"HT point estimate (known rates): {ht_proportion_3epoch:.4f}")
+```
+
+```{python}
+# | label: fig-3epoch
+
+proportion_chart_3epoch, n_ever_chart_3epoch = build_proportion_and_n_ever_charts(
+    proportion_alive=proportion_alive_3epoch,
+    n_born=n_born_3epoch,
+    true_proportion=true_proportion_3epoch,
+    true_n_ever=true_n_ever_3epoch,
+    ht_proportion=ht_proportion_3epoch if INCLUDE_HT else None,
+    ht_n_ever=ht_n_ever_3epoch if INCLUDE_HT else None,
+    title_prefix="Three-Epoch",
+)
+
+combined_3epoch = alt.hconcat(proportion_chart_3epoch, n_ever_chart_3epoch)
+display_svg(combined_3epoch, width=800, height=260)
+save_chart(proportion_chart_3epoch, "vme07_three_epoch_proportion", output_dir=figures_dir)
+save_chart(n_ever_chart_3epoch, "vme07_three_epoch_n_ever", output_dir=figures_dir)
+```
+
+```{python}
+# | label: diag-3epoch
+
+print("Per-era conditioning diagnostics (last outer-loop iteration):")
+for diag in splitting_result_3epoch.diagnostics:
+    print(
+        f"  era {diag.era_index}: entering={diag.n_entering}  "
+        f"passing={diag.n_passing_filter}  acceptance_rate={diag.acceptance_rate:.3f}"
+    )
+print(f"Outer-loop restarts: {splitting_result_3epoch.n_outer_iterations}")
+print(f"Total era-0 particles simulated: {splitting_result_3epoch.n_total_era0_particles}")
+
+prop_lo_3epoch = float(np.percentile(proportion_alive_3epoch, 2.5))
+prop_hi_3epoch = float(np.percentile(proportion_alive_3epoch, 97.5))
+truth_in_ci_3epoch = prop_lo_3epoch <= true_proportion_3epoch <= prop_hi_3epoch
+print(
+    f"\nTrue proportion {true_proportion_3epoch:.4f} within splitting 95% CrI "
+    f"[{prop_lo_3epoch:.4f}, {prop_hi_3epoch:.4f}]: {truth_in_ci_3epoch}"
+)
+```
+
+## Discussion
+
+In both the two-epoch and three-epoch scenarios, conditioning the multilevel-splitting
+sampler on the observed per-epoch survivor counts — using the *same* rates that
+generated the ground truth — recovers a `proportion_alive` distribution whose 95%
+credible interval contains the true proportion. The analytic HT point estimate, built
+from the same known rates and the handful of surviving individuals' exact birth
+times, lands in the same neighbourhood but (as expected from a single point estimate
+with so few survivors) carries no uncertainty quantification of its own.
+
+The per-era acceptance-rate diagnostics show the conditioning filter is doing real
+work — passing only a fraction of particles at each era boundary — rather than
+degenerating to either "everything passes" or "nothing ever passes" (which would
+signal a misspecified target range or rates that place the true trajectory in the
+tails of the model's own predictions).
+
+```{python}
+# | echo: false
+print(f"Rendered at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+from pathlib import Path
+
+doc_name = "validation_multi_epoch_multilevel_splitting_survival.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

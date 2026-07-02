@@ -87,6 +87,8 @@ website:
             file: qmd_scripts/validation/multi_epoch/05_bulk_inference_zero_birth.qmd
           - text: "Sensitivity + benchmark"
             file: qmd_scripts/validation/multi_epoch/06_sensitivity_benchmark.qmd
+          - text: "Multilevel-splitting survival"
+            file: qmd_scripts/validation/multi_epoch/07_multilevel_splitting_survival.qmd
       - text: "Validation: Bayesian Multi-Epoch"
         menu:
           - text: "Simulation checks"
