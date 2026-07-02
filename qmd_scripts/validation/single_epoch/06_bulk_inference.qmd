@@ -317,6 +317,31 @@ save_chart(
 )
 print("Saved death-rate histogram figure")
 
+
+def _major_gridline_values(domain_max: float, target_count: int = 5) -> list[float]:
+    """Round-number gridline positions spanning ``[0, domain_max]``.
+
+    Vega-Lite draws one gridline per bin edge on a binned quantitative axis
+    by default (``tickCount``/``nice`` on the scale don't override this for
+    binned fields), which is far denser than useful here. Explicit
+    round-number ``axis.values`` (step chosen from ``{1, 2, 2.5, 5} x 10^k``,
+    the standard "nice number" ladder) is the only way to get sparse,
+    human-readable gridlines on a binned axis.
+    """
+    if domain_max <= 0:
+        return [0.0]
+    raw_step = domain_max / target_count
+    magnitude = 10 ** np.floor(np.log10(raw_step))
+    step = magnitude
+    for mult in (1, 2, 2.5, 5, 10):
+        step = mult * magnitude
+        if step >= raw_step:
+            break
+    return [
+        float(v) for v in np.arange(0.0, domain_max + step, step) if v <= domain_max
+    ]
+
+
 # Non-boundary-only versions saved for comparison.
 _birth_nb_bars = (
     alt.Chart(_birth_hist_df[_birth_hist_df["group"] == "non-boundary"])
@@ -326,6 +351,12 @@ _birth_nb_bars = (
             "rate:Q",
             bin=alt.Bin(step=_birth_step, anchor=birth_rate - _birth_step / 2),
             title="λ Estimate",
+            # Same round-number gridline treatment as the death-rate histogram.
+            scale=alt.Scale(domain=[0, float(birth_bins["end"])]),
+            axis=alt.Axis(
+                grid=True,
+                values=_major_gridline_values(float(birth_bins["end"])),
+            ),
         ),
         y=alt.Y("count():Q", title="Count"),
     )
@@ -352,9 +383,13 @@ _death_nb_bars = (
             bin=alt.Bin(step=_death_step, anchor=death_rate - _death_step / 2),
             title="μ Estimate",
             # Extend ticks/gridlines down to 0 rather than stopping at the
-            # lowest bin edge.
+            # lowest bin edge; round-number gridlines only (see
+            # _major_gridline_values) instead of one per bin edge.
             scale=alt.Scale(domain=[0, float(death_bins["end"])]),
-            axis=alt.Axis(grid=True),
+            axis=alt.Axis(
+                grid=True,
+                values=_major_gridline_values(float(death_bins["end"])),
+            ),
         ),
         y=alt.Y("count():Q", title="Count"),
     )
@@ -405,17 +440,6 @@ print_rate_summary(
 ## Joint Heatmaps of Fitted Rates
 
 ```{python}
-def _anchored_bin(values: list[float], true_value: float, maxbins: int = 25) -> alt.Bin:
-    """Return an ``alt.Bin`` whose step is chosen for ``maxbins`` bins and whose
-    anchor is placed a half-step below ``true_value``, so one bin is centred on
-    the true value.
-    """
-    lo = min(min(values), true_value)
-    hi = max(max(values), true_value)
-    step = (hi - lo) / maxbins if hi > lo else 1.0
-    return alt.Bin(step=step, anchor=true_value - step / 2)
-
-
 def _one_sided_upper_iqr_mask(
     values: np.ndarray, whisker_width: float = 1.5
 ) -> np.ndarray:
@@ -436,45 +460,48 @@ def _one_sided_upper_iqr_mask(
     return finite & (values <= upper_bound)
 
 
-def _heatmap_subset(births: np.ndarray, deaths: np.ndarray) -> dict[str, np.ndarray]:
+def _heatmap_subset(
+    births: np.ndarray, deaths: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
     """Joint λ/μ plotting subset: two-sided IQR for λ, upper-only for μ."""
     _, lambda_mask = iqr_plotting_subset({"lambda": births})
     mu_mask = _one_sided_upper_iqr_mask(deaths)
     mask = lambda_mask & mu_mask
-    return {"lambda": births[mask], "mu": deaths[mask]}
+    return births[mask], deaths[mask]
 
 
 def _fitted_heatmap(
-    births: list[float],
-    deaths: list[float],
+    births: np.ndarray,
+    deaths: np.ndarray,
     title: str,
     save_name: str,
     output_dir: "Path | None" = None,
 ) -> None:
     """Display and save a binned λ-vs-μ count heatmap with the true value marked."""
-    if not births or not deaths:
+    if births.size == 0 or deaths.size == 0:
         print(f"No data for {title}")
         return
     df = pd.DataFrame({"lambda": births, "mu": deaths})
-    lambda_max = max(max(births), birth_rate)
-    mu_max = max(max(deaths), death_rate)
+    lambda_min = min(float(births.min()), birth_rate)
+    lambda_max = max(float(births.max()), birth_rate)
+    mu_max = max(float(deaths.max()), death_rate)
     cells = (
         alt.Chart(df)
         .mark_rect()
         .encode(
+            # x starts at the filtered minimum (not 0) since λ never clusters
+            # near zero the way μ does; y stays anchored at 0 for μ.
             x=alt.X(
                 "lambda:Q",
-                bin=_anchored_bin(births, birth_rate),
+                bin=alt.Bin(maxbins=25),
                 title="Fitted λ",
-                scale=alt.Scale(domain=[0, lambda_max]),
-                axis=alt.Axis(grid=True),
+                scale=alt.Scale(domain=[lambda_min, lambda_max]),
             ),
             y=alt.Y(
                 "mu:Q",
-                bin=_anchored_bin(deaths, death_rate),
+                bin=alt.Bin(maxbins=25),
                 title="Fitted μ",
                 scale=alt.Scale(domain=[0, mu_max]),
-                axis=alt.Axis(grid=True),
             ),
             color=alt.Color("count():Q", title="Count"),
         )
@@ -509,29 +536,37 @@ def _fitted_heatmap(
 
 # λ uses the standard two-sided IQR filter; μ only drops fits far above the
 # upper fence, so near-zero (but valid) μ fits are never excluded.
-_heat_all_filt = _heatmap_subset(
+_heat_all_lambda, _heat_all_mu = _heatmap_subset(
     np.asarray(fit_birth_values + fit_birth_values_boundary, dtype=np.float64),
     np.asarray(fit_death_values + fit_death_values_boundary, dtype=np.float64),
 )
-_heat_nb_filt = _heatmap_subset(
+_heat_nb_lambda, _heat_nb_mu = _heatmap_subset(
     np.asarray(fit_birth_values, dtype=np.float64),
     np.asarray(fit_death_values, dtype=np.float64),
 )
 
-_fitted_heatmap(
-    births=_heat_all_filt["lambda"].tolist(),
-    deaths=_heat_all_filt["mu"].tolist(),
-    title="Fitted λ vs μ — All fits, IQR subset",
-    save_name="vse06_rate_heatmap_all",
-    output_dir=figures_dir,
-)
-_fitted_heatmap(
-    births=_heat_nb_filt["lambda"].tolist(),
-    deaths=_heat_nb_filt["mu"].tolist(),
-    title="Fitted λ vs μ — Excluding boundary fits, IQR subset",
-    save_name="vse06_rate_heatmap_non_boundary",
-    output_dir=figures_dir,
-)
+_heatmap_datasets = [
+    (
+        _heat_all_lambda,
+        _heat_all_mu,
+        "Fitted λ vs μ — All fits, IQR subset",
+        "vse06_rate_heatmap_all",
+    ),
+    (
+        _heat_nb_lambda,
+        _heat_nb_mu,
+        "Fitted λ vs μ — Excluding boundary fits, IQR subset",
+        "vse06_rate_heatmap_non_boundary",
+    ),
+]
+for _lambda_vals, _mu_vals, _heat_title, _heat_save_name in _heatmap_datasets:
+    _fitted_heatmap(
+        births=_lambda_vals,
+        deaths=_mu_vals,
+        title=_heat_title,
+        save_name=_heat_save_name,
+        output_dir=figures_dir,
+    )
 ```
 
 ## Fitted Rates vs Population Size

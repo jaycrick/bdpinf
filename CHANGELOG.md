@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `qmd_scripts/core_analysis/04_bayesian/ntvmr_birth_death_bayesian.qmd`:
+  new "All-Subsets Rate Comparison (Bayesian Medians)" section --- a
+  multi-series `mark_line(point=True)` chart (one line per subset, epoch on
+  the x-axis) following the posterior median at each epoch, mirroring the
+  non-Bayesian point-estimate comparison in the multi-epoch MLE notebook;
+  saved as `04a_subset_comparison_{birth,death,halflife}_median`.
 - `inference.persistence.save_recovery_results`/`load_recovery_results`:
   schema-agnostic `.npz` round-trip for tidy per-replicate recovery-study
   tables, alongside the existing posterior-sample persistence.
@@ -33,6 +39,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   honour directly).
 
 ### Fixed
+
+- `visualization.bayesian_plots._panel_rows`/`_ridgeline_layers` and
+  `_prior_posterior_rows`/`_prior_posterior_layers` --- ridge areas are now
+  binned and peak-normalized in numpy (`_histogram_ridge_rows`) instead of
+  via Vega-Lite's in-spec `transform_bin`/`transform_aggregate`/
+  `transform_impute` pipeline, so every ridge peaks at `1.0` regardless of
+  draw count or spread; the shared facet y-scale domain is fixed to
+  `[0, 1]`.
+  Fixes prior/posterior and cross-epoch/cross-subset ridge plots
+  rendering with wildly mismatched or flattened areas.
+
+- `visualization.bayesian_plots._ridgeline_layers` --- the "95% CrI" legend
+  entry rendered as a filled square (indistinguishable from the
+  distribution legend) because it shared the `opacity` channel with the
+  ridge area, and Vega-Lite merges same-channel legends across layers,
+  keeping only one symbol.
+  The median point and CI bar now use their own
+  `shape`/`color` channels respectively, so the distribution, median (filled
+  circle), and 95% CrI (black line) legends render as three distinct
+  entries.
+  Affects all `04a_rates_*`/`04a_halflife_*`/`04a_trad_*` figures
+  built via `posterior_rates_chart`.
+
+- `qmd_scripts/validation/single_epoch/06_bulk_inference.qmd` --- the joint
+  λ/μ rate heatmap (`vse06_rate_heatmap_*`) dropped its custom
+  `_anchored_bin()` helper in favour of Altair's `alt.Bin(maxbins=25)`,
+  `_heatmap_subset()` now returns arrays instead of a dict, and the x-axis
+  domain starts at the filtered minimum instead of 0 (y stays anchored at
+  0).
+  The death/birth-rate non-boundary histograms
+  (`vse06_{birth,death}_rate_histogram_non_boundary`) now show gridlines
+  only at round-number major ticks (`_major_gridline_values`) instead of one
+  per histogram bin.
+
+- `t₁/₂ (years)` / `t₁₂ (years)` half-life axis titles and panel labels
+  (multi-epoch MLE and Bayesian notebooks) replaced with the single Unicode
+  character `t½` for consistent, correctly-kerned rendering.
 
 - `visualization.bayesian_plots._ridgeline_layers`/`_prior_posterior_layers`
   --- the median-point and CI-bar x-encodings left `title` unset, so

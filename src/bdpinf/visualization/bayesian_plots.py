@@ -26,7 +26,7 @@ _PANEL_HEIGHT = 300
 # Ridgeline (joyplot) layout constants
 _RIDGE_STEP = 20  # pixel height of each facet row
 _RIDGE_OVERLAP = 1  # fraction of _RIDGE_STEP that ridge peaks bleed into the row above
-_RIDGE_MAXBINS = 30  # max bins for the in-spec Vega-Lite binned density
+_RIDGE_MAXBINS = 30  # max bins for the numpy-precomputed, peak-normalized ridge density
 
 
 @dataclass(frozen=True)
@@ -111,21 +111,61 @@ class RatePanel:
     ci_prob: float = 0.95
 
 
-def _panel_rows(
-    panel: RatePanel, *, distribution_label: str = "Posterior distribution"
-) -> list[dict[str, object]]:
-    """Build combined draw + summary rows for one RatePanel.
+def _histogram_ridge_rows(
+    values: NDArray[np.float64], *, log_scale: bool, maxbins: int = _RIDGE_MAXBINS
+) -> list[dict[str, float]]:
+    """Fixed-edge histogram of ``values``, normalized to its own peak.
 
-    ``legend_key``/``ci_legend_key`` are decorative fields (independent of
-    ``panel``/``color``) that drive the two top legends added in
-    :func:`_ridgeline_layers`: every draw row (feeding the ridge area)
-    carries ``legend_key=distribution_label``; every summary row (feeding the
-    CI bar) carries ``ci_legend_key="95% CrI"``. Separate field names keep
-    the area and CI-bar legends independent (rather than merged into one),
-    since Vega-Lite would otherwise pick a single symbol shape for a merged
-    legend and neither mark's true shape (filled area, ticked errorbar) would
-    show through. Because each field is constant per row-type it survives
-    ``transform_aggregate`` unchanged when added to ``groupby``.
+    Binning happens here in numpy (rather than in-spec via Vega-Lite's
+    ``transform_bin``/``transform_aggregate``/``transform_impute``) so each
+    ridge can be normalized independently: counts are divided by the tallest
+    bin's count, so every ridge peaks at ``1.0`` regardless of how many draws
+    or how spread-out the distribution is. Without this, ridges sharing one
+    facet y-scale are only comparable when their raw counts happen to be
+    similar — a category with fewer/more spread-out draws is squashed flat or
+    dominates, which is exactly the "areas aren't regularised across
+    epochs/subsets" failure this fixes.
+
+    When ``log_scale`` is True, edges are computed in log10 space (equal-width
+    bins on a log axis) and converted back to linear ``bin_min``/``bin_max``
+    for the caller — mirroring the old in-spec log10 calculate/bin pipeline.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    space = np.log10(values) if log_scale else values
+    finite = space[np.isfinite(space)]
+    if finite.size == 0:
+        return []
+    lo, hi = float(finite.min()), float(finite.max())
+    if lo == hi:
+        lo, hi = lo - 0.5, hi + 0.5
+    edges = np.histogram_bin_edges(finite, bins=maxbins, range=(lo, hi))
+    counts, edges = np.histogram(finite, bins=edges)
+    peak = counts.max()
+    if peak == 0:
+        return []
+    normalized = counts.astype(np.float64) / float(peak)
+    bin_min = np.power(10.0, edges[:-1]) if log_scale else edges[:-1]
+    bin_max = np.power(10.0, edges[1:]) if log_scale else edges[1:]
+    return [
+        {"bin_min": float(b0), "bin_max": float(b1), "value": float(v)}
+        for b0, b1, v in zip(bin_min, bin_max, normalized, strict=True)
+    ]
+
+
+def _panel_rows(
+    panel: RatePanel,
+    *,
+    distribution_label: str = "Posterior distribution",
+    log_scale: bool = False,
+) -> list[dict[str, object]]:
+    """Build combined bin + summary rows for one RatePanel.
+
+    Each category's draws are pre-binned and peak-normalized by
+    :func:`_histogram_ridge_rows` (see its docstring for why), so this
+    function does no in-spec Vega-Lite binning — it only emits rows.
+    ``legend_key``/``ci_legend_key``/``median_legend_key`` are decorative
+    fields (independent of ``panel``/``color``) that drive the legends added
+    in :func:`_ridgeline_layers`.
     """
     rows: list[dict[str, object]] = []
     samp = np.asarray(panel.samples, dtype=np.float64)
@@ -144,20 +184,20 @@ def _panel_rows(
                 "ci_high": ci_hi,
                 "row_type": "summary",
                 "ci_legend_key": "95% CrI",
+                "median_legend_key": "Median",
             }
         )
         rows.extend(
             {
                 "panel": panel.label,
                 "category": cat,
-                "rate": float(draw),
-                "value": float("nan"),
-                "ci_low": float("nan"),
-                "ci_high": float("nan"),
-                "row_type": "draw",
+                "bin_min": bin_row["bin_min"],
+                "bin_max": bin_row["bin_max"],
+                "value": bin_row["value"],
+                "row_type": "bin",
                 "legend_key": distribution_label,
             }
-            for draw in col
+            for bin_row in _histogram_ridge_rows(col, log_scale=log_scale)
         )
     return rows
 
@@ -176,14 +216,17 @@ def _ridgeline_layers(
     color_scale :
         Fill colour scale for the area layer.
     y_scale :
-        Shared vertical scale (controls ridge row height/overlap).
+        Shared vertical scale (controls ridge row height/overlap); its domain
+        is fixed to ``[0, 1]`` by the caller since :func:`_panel_rows`
+        peak-normalizes every ridge.
     x_title :
         Label for the quantitative x-axis.
     log_scale :
-        When ``True``, bin draws in log10 space and render the x-axis on a
-        log scale.  Use for quantities that span orders of magnitude (e.g.
-        half-lives).  The median and CI overlays also use a log-scale x-axis
-        so they stay aligned with the binned-area ridge.
+        When ``True``, render the x-axis on a log scale.  Draws were already
+        binned in log10 space by :func:`_histogram_ridge_rows`.  Use for
+        quantities that span orders of magnitude (e.g. half-lives).  The
+        median and CI overlays also use a log-scale x-axis so they stay
+        aligned with the binned-area ridge.
     distribution_label :
         Legend text for the ridge-area entry (e.g. ``"Prior distribution"``
         when called from :func:`prior_rates_chart`).
@@ -196,19 +239,21 @@ def _ridgeline_layers(
     title like ``"Rate per year, rate, ci_low"``. Both now repeat
     ``title=x_title`` so the merged axis title matches the area's.
 
-    The area and CI-bar layers each get one decorative, single-entry legend
-    (``legend_key``/``ci_legend_key`` fields, mapped through an ``opacity``
-    channel fixed at ``1.0`` so it is purely informational, not a real visual
-    encoding). Vega-Lite merges same-channel legends across layers by
-    default, which is what we want here — one combined top legend reading
-    "Posterior distribution" / "95% CrI" — but the merge keeps only one
-    layer's symbol config (the area's filled square), so the CI-bar entry's
-    intended ruled-line symbol does not survive; both entries render as
-    squares. This is a known Vega-Lite limitation for composite marks
-    (``mark_errorbar`` has no legend-symbol equivalent), not a bug: forcing
-    ``resolve_legend(opacity="independent")`` was tried and rejected because,
-    combined with the row facet, it duplicates the legend once per row
-    instead of showing it once for the whole figure.
+    The area, median, and CI-bar legends each live on a *different* Vega-Lite
+    encoding channel (``opacity``, ``shape``, ``color`` respectively).
+    Vega-Lite only merges legends that share both a channel and are present
+    in the same composed chart, so keeping each on its own channel avoids the
+    previous bug where the area and CI-bar shared the ``opacity`` channel:
+    Vega-Lite merged them into one legend and kept only the area's filled
+    square, discarding the CI-bar's intended ruled-line symbol (a known
+    limitation for composite marks like ``mark_errorbar``, which has no
+    legend-symbol equivalent of its own). Using distinct channels sidesteps
+    that merge entirely rather than trying to force one shared legend to
+    render two different symbol shapes. This still renders as one visual row
+    of legends (all ``orient="top"``) without duplicating per facet row,
+    since each field is constant across categories — the failure mode of the
+    previously-rejected ``resolve_legend(opacity="independent")`` only arises
+    from *independent* per-facet resolution, which we don't use here.
     """
     _x_scale = alt.Scale(type="log") if log_scale else alt.Undefined
     _swatch_color = color_scale.range[0] if color_scale.range else "black"  # type: ignore[index]
@@ -221,96 +266,26 @@ def _ridgeline_layers(
         symbolStrokeColor=None,
     )
     _area_legend_scale = alt.Scale(domain=[distribution_label], range=[1.0])
-    _ci_legend = alt.Legend(
-        orient="top",
-        title=None,
-        symbolType="stroke",
-        symbolStrokeColor="black",
-    )
-    _ci_legend_scale = alt.Scale(domain=["95% CrI"], range=[1.0])
 
-    if log_scale:
-        # Bin in log10 space so bins are equal-width on the log axis.
-        # The calculate → bin → aggregate → impute pipeline mirrors the linear
-        # path but operates on log10(rate) rather than rate directly.
-        area = (
-            alt.Chart()
-            .transform_filter("datum.row_type === 'draw'")
-            .transform_calculate(log_rate="log(datum.rate) / log(10)")
-            .transform_bin(
-                ["bin_max", "bin_min"],
-                field="log_rate",
-                bin=alt.Bin(maxbins=_RIDGE_MAXBINS),
-            )
-            .transform_aggregate(
-                value="count()",
-                groupby=["panel", "category", "bin_min", "bin_max", "legend_key"],
-            )
-            .transform_impute(
-                impute="value",
-                groupby=["panel", "category"],
-                key="bin_min",
-                value=0,
-            )
-            .transform_calculate(
-                rate_min="pow(10, datum.bin_min)",
-                rate_max="pow(10, datum.bin_max)",
-            )
-            .mark_area(
-                interpolate="monotone",
-                fillOpacity=0.8,
-                stroke="lightgray",
-                strokeWidth=0.5,
-            )
-            .encode(
-                x=alt.X(
-                    "rate_min:Q",
-                    bin="binned",
-                    title=x_title,
-                    scale=_x_scale,
-                ),
-                x2=alt.X2("rate_max:Q"),
-                y=alt.Y("value:Q", axis=None, scale=y_scale),
-                fill=alt.Fill("panel:N", scale=color_scale, legend=None),
-                opacity=alt.Opacity(
-                    "legend_key:N", scale=_area_legend_scale, legend=_area_legend
-                ),
-            )
+    area = (
+        alt.Chart()
+        .transform_filter("datum.row_type === 'bin'")
+        .mark_area(
+            interpolate="monotone",
+            fillOpacity=0.8,
+            stroke="lightgray",
+            strokeWidth=0.5,
         )
-    else:
-        area = (
-            alt.Chart()
-            .transform_filter("datum.row_type === 'draw'")
-            .transform_bin(
-                ["bin_max", "bin_min"],
-                field="rate",
-                bin=alt.Bin(maxbins=_RIDGE_MAXBINS),
-            )
-            .transform_aggregate(
-                value="count()",
-                groupby=["panel", "category", "bin_min", "bin_max", "legend_key"],
-            )
-            .transform_impute(
-                impute="value",
-                groupby=["panel", "category"],
-                key="bin_min",
-                value=0,
-            )
-            .mark_area(
-                interpolate="monotone",
-                fillOpacity=0.8,
-                stroke="lightgray",
-                strokeWidth=0.5,
-            )
-            .encode(
-                x=alt.X("bin_min:Q", bin="binned", title=x_title),
-                y=alt.Y("value:Q", axis=None, scale=y_scale),
-                fill=alt.Fill("panel:N", scale=color_scale, legend=None),
-                opacity=alt.Opacity(
-                    "legend_key:N", scale=_area_legend_scale, legend=_area_legend
-                ),
-            )
+        .encode(
+            x=alt.X("bin_min:Q", bin="binned", title=x_title, scale=_x_scale),
+            x2=alt.X2("bin_max:Q"),
+            y=alt.Y("value:Q", axis=None, scale=y_scale),
+            fill=alt.Fill("panel:N", scale=color_scale, legend=None),
+            opacity=alt.Opacity(
+                "legend_key:N", scale=_area_legend_scale, legend=_area_legend
+            ),
         )
+    )
 
     median_point = (
         alt.Chart()
@@ -319,18 +294,35 @@ def _ridgeline_layers(
         .encode(
             x=alt.X("rate:Q", scale=_x_scale, title=x_title),
             y=alt.Y("value:Q", scale=y_scale),
+            shape=alt.Shape(
+                "median_legend_key:N",
+                scale=alt.Scale(domain=["Median"], range=["circle"]),
+                legend=alt.Legend(
+                    orient="top",
+                    title=None,
+                    symbolFillColor="black",
+                    symbolStrokeColor="black",
+                ),
+            ),
         )
     )
     ci_bar = (
         alt.Chart()
         .transform_filter("datum.row_type === 'summary'")
-        .mark_errorbar(ticks=True, color="black")
+        .mark_errorbar(ticks=True)
         .encode(
             x=alt.X("ci_low:Q", scale=_x_scale, title=x_title),
             x2=alt.X2("ci_high:Q"),
             y=alt.Y("value:Q", scale=y_scale),
-            opacity=alt.Opacity(
-                "ci_legend_key:N", scale=_ci_legend_scale, legend=_ci_legend
+            color=alt.Color(
+                "ci_legend_key:N",
+                scale=alt.Scale(domain=["95% CrI"], range=["black"]),
+                legend=alt.Legend(
+                    orient="top",
+                    title=None,
+                    symbolType="stroke",
+                    symbolStrokeColor="black",
+                ),
             ),
         )
     )
@@ -365,11 +357,11 @@ def posterior_rates_chart(
 
     Each row facets one category; columns facet parameter panels (birth vs.
     death) when ``vertical=False`` (default), or panels are stacked as separate
-    facets when ``vertical=True``.  Within every cell a binned-count area ridge
-    is drawn via Vega-Lite's ``transform_bin`` / ``transform_aggregate`` /
-    ``transform_impute`` pipeline, with the posterior median overlaid as a
-    filled ``mark_point`` and the equal-tailed credible interval as a ticked
-    ``mark_errorbar`` along the row baseline.
+    facets when ``vertical=True``.  Within every cell a peak-normalized area
+    ridge (binned in numpy by :func:`_histogram_ridge_rows`, so every ridge
+    peaks at 1.0 regardless of draw count or spread) is drawn, with the
+    posterior median overlaid as a filled ``mark_point`` and the equal-tailed
+    credible interval as a ticked ``mark_errorbar`` along the row baseline.
 
     Parameters
     ----------
@@ -396,7 +388,9 @@ def posterior_rates_chart(
     # caller-provided order rather than defaulting to alphabetical.
     _category_sort = list(panels[0].categories) if panels else None
     row_step = _facet_row_height(len(_category_sort) if _category_sort else 0)
-    y_scale = alt.Scale(range=[row_step, -row_step * _RIDGE_OVERLAP])
+    # Domain fixed to [0, 1]: _panel_rows peak-normalizes every ridge, so all
+    # rows/facets share the same vertical scale regardless of raw draw counts.
+    y_scale = alt.Scale(domain=[0.0, 1.0], range=[row_step, -row_step * _RIDGE_OVERLAP])
 
     if vertical:
         # One FacetChart per panel (row-facet only), then vconcat.
@@ -420,7 +414,11 @@ def posterior_rates_chart(
                 .facet(
                     row=row_enc_v,
                     data=pd.DataFrame(
-                        _panel_rows(panel, distribution_label=distribution_label)
+                        _panel_rows(
+                            panel,
+                            distribution_label=distribution_label,
+                            log_scale=log_scale,
+                        )
                     ),
                 )
                 .properties(title=panel.label, bounds="flush")
@@ -444,7 +442,9 @@ def posterior_rates_chart(
         [
             r
             for panel in panels
-            for r in _panel_rows(panel, distribution_label=distribution_label)
+            for r in _panel_rows(
+                panel, distribution_label=distribution_label, log_scale=log_scale
+            )
         ]
     )
     row_enc = alt.Row(
@@ -593,8 +593,17 @@ class PriorPosteriorRatePanel:
     ci_prob: float = 0.95
 
 
-def _prior_posterior_rows(panel: PriorPosteriorRatePanel) -> list[dict[str, object]]:
-    """Build combined prior-draw + posterior-draw/summary rows for one panel.
+def _prior_posterior_rows(
+    panel: PriorPosteriorRatePanel, *, log_scale: bool = False
+) -> list[dict[str, object]]:
+    """Build combined prior-bin + posterior-bin/summary rows for one panel.
+
+    Prior and posterior are each binned and peak-normalized independently by
+    :func:`_histogram_ridge_rows`, so the dashed prior outline and filled
+    posterior ridge are directly comparable regardless of how many draws each
+    has (priors are a fixed 4000-quantile set; posteriors are MCMC draws) —
+    previously both were raw Vega-Lite bin counts sharing one y-scale, so a
+    much-larger prior draw count could dwarf or flatten the posterior ridge.
 
     Only the posterior gets a ``row_type == "summary"`` row (median + CI) —
     the prior is rendered as a dashed outline only, so a second, colliding
@@ -623,25 +632,23 @@ def _prior_posterior_rows(panel: PriorPosteriorRatePanel) -> list[dict[str, obje
             {
                 "category": cat,
                 "kind": "Posterior",
-                "rate": float(draw),
-                "value": float("nan"),
-                "ci_low": float("nan"),
-                "ci_high": float("nan"),
-                "row_type": "draw",
+                "bin_min": bin_row["bin_min"],
+                "bin_max": bin_row["bin_max"],
+                "value": bin_row["value"],
+                "row_type": "bin",
             }
-            for draw in post_col
+            for bin_row in _histogram_ridge_rows(post_col, log_scale=log_scale)
         )
         rows.extend(
             {
                 "category": cat,
                 "kind": "Prior",
-                "rate": float(draw),
-                "value": float("nan"),
-                "ci_low": float("nan"),
-                "ci_high": float("nan"),
-                "row_type": "draw",
+                "bin_min": bin_row["bin_min"],
+                "bin_max": bin_row["bin_max"],
+                "value": bin_row["value"],
+                "row_type": "bin",
             }
-            for draw in prior[:, j]
+            for bin_row in _histogram_ridge_rows(prior[:, j], log_scale=log_scale)
         )
     return rows
 
@@ -658,87 +665,40 @@ def _prior_posterior_layers(
     filled posterior ridge draws over the dashed prior outline, both sharing
     one row-facet cell per category (no column facet, unlike
     :func:`_ridgeline_layers`).  The prior is an unfilled, dashed-stroke
-    silhouette built from the same binned-count pipeline as the posterior
-    area, just pointed at the ``kind == "Prior"`` rows instead.
+    silhouette built from the same precomputed, peak-normalized bins as the
+    posterior area (see :func:`_prior_posterior_rows`), just pointed at the
+    ``kind == "Prior"`` rows instead.
     """
     _x_scale = alt.Scale(type="log") if log_scale else alt.Undefined
     kind_scale = alt.Scale(domain=["Posterior", "Prior"], range=[color, color])
-    legend = alt.Legend(title=None)
+    legend = alt.Legend(title=None, orient="top")
 
-    def _binned(kind: str, *, only_draws: bool = False) -> alt.Chart:
-        row_filter = f"datum.kind === '{kind}'"
-        if only_draws:
-            row_filter += " && datum.row_type === 'draw'"
-        chart = alt.Chart().transform_filter(row_filter)
-        if log_scale:
-            return (
-                chart.transform_calculate(log_rate="log(datum.rate) / log(10)")
-                .transform_bin(
-                    ["bin_max", "bin_min"],
-                    field="log_rate",
-                    bin=alt.Bin(maxbins=_RIDGE_MAXBINS),
-                )
-                .transform_aggregate(
-                    value="count()", groupby=["category", "bin_min", "bin_max"]
-                )
-                .transform_impute(
-                    impute="value", groupby=["category"], key="bin_min", value=0
-                )
-                .transform_calculate(
-                    rate_min="pow(10, datum.bin_min)", rate_max="pow(10, datum.bin_max)"
-                )
-            )
-        return (
-            chart.transform_bin(
-                ["bin_max", "bin_min"],
-                field="rate",
-                bin=alt.Bin(maxbins=_RIDGE_MAXBINS),
-            )
-            .transform_aggregate(
-                value="count()", groupby=["category", "bin_min", "bin_max"]
-            )
-            .transform_impute(
-                impute="value", groupby=["category"], key="bin_min", value=0
-            )
+    prior_area = (
+        alt.Chart()
+        .transform_filter("datum.kind === 'Prior' && datum.row_type === 'bin'")
+        .mark_area(
+            fillOpacity=0, strokeDash=[4, 4], strokeWidth=1.5, interpolate="monotone"
         )
-
-    if log_scale:
-        x_enc = alt.X("rate_min:Q", bin="binned", title=x_title, scale=_x_scale)
-        x2_enc = alt.X2("rate_max:Q")
-    else:
-        x_enc = alt.X("bin_min:Q", bin="binned", title=x_title)
-        x2_enc = None
-
-    prior_area = _binned("Prior").mark_area(
-        fillOpacity=0, strokeDash=[4, 4], strokeWidth=1.5, interpolate="monotone"
-    )
-    posterior_area = _binned("Posterior", only_draws=True).mark_area(
-        interpolate="monotone", fillOpacity=0.8, stroke="lightgray", strokeWidth=0.5
-    )
-    if x2_enc is not None:
-        prior_area = prior_area.encode(
-            x=x_enc,
-            x2=x2_enc,
+        .encode(
+            x=alt.X("bin_min:Q", bin="binned", title=x_title, scale=_x_scale),
+            x2=alt.X2("bin_max:Q"),
             y=alt.Y("value:Q", axis=None, scale=y_scale),
             stroke=alt.Stroke("kind:N", scale=kind_scale, legend=legend),
         )
-        posterior_area = posterior_area.encode(
-            x=x_enc,
-            x2=x2_enc,
+    )
+    posterior_area = (
+        alt.Chart()
+        .transform_filter("datum.kind === 'Posterior' && datum.row_type === 'bin'")
+        .mark_area(
+            interpolate="monotone", fillOpacity=0.8, stroke="lightgray", strokeWidth=0.5
+        )
+        .encode(
+            x=alt.X("bin_min:Q", bin="binned", title=x_title, scale=_x_scale),
+            x2=alt.X2("bin_max:Q"),
             y=alt.Y("value:Q", axis=None, scale=y_scale),
             fill=alt.Fill("kind:N", scale=kind_scale, legend=legend),
         )
-    else:
-        prior_area = prior_area.encode(
-            x=x_enc,
-            y=alt.Y("value:Q", axis=None, scale=y_scale),
-            stroke=alt.Stroke("kind:N", scale=kind_scale, legend=legend),
-        )
-        posterior_area = posterior_area.encode(
-            x=x_enc,
-            y=alt.Y("value:Q", axis=None, scale=y_scale),
-            fill=alt.Fill("kind:N", scale=kind_scale, legend=legend),
-        )
+    )
 
     median_point = (
         alt.Chart()
@@ -802,7 +762,11 @@ def prior_posterior_rates_chart(
         Render the x-axis on a log scale (bin in log10 space); use for
         quantities spanning orders of magnitude (e.g. half-lives).
     """
-    y_scale = alt.Scale(range=[_RIDGE_STEP, -_RIDGE_STEP * _RIDGE_OVERLAP])
+    # Domain fixed to [0, 1]: _prior_posterior_rows peak-normalizes both the
+    # prior and posterior ridge independently.
+    y_scale = alt.Scale(
+        domain=[0.0, 1.0], range=[_RIDGE_STEP, -_RIDGE_STEP * _RIDGE_OVERLAP]
+    )
     sub_charts: list[alt.FacetChart] = []
     for panel in panels:
         prior_area, posterior_area, median_point, ci_bar = _prior_posterior_layers(
@@ -817,7 +781,10 @@ def prior_posterior_rates_chart(
         sub_charts.append(
             alt.layer(prior_area, posterior_area, median_point, ci_bar)
             .properties(height=_RIDGE_STEP)
-            .facet(row=row_enc, data=pd.DataFrame(_prior_posterior_rows(panel)))
+            .facet(
+                row=row_enc,
+                data=pd.DataFrame(_prior_posterior_rows(panel, log_scale=log_scale)),
+            )
             .properties(title=panel.label, bounds="flush")
         )
     return (

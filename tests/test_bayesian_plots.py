@@ -9,6 +9,7 @@ from inf_bp_texts.visualization.bayesian_plots import (
     PriorPosteriorRatePanel,
     RatePanel,
     TracePanel,
+    _histogram_ridge_rows,
     posterior_rates_chart,
     ppc_chart,
     prior_posterior_chart,
@@ -138,11 +139,13 @@ class TestPosteriorRatesChart:
         assert row["ci_high"] == pytest.approx(float(np.quantile(col, 0.975)))
         assert row["value"] == pytest.approx(0.0)  # baseline y-position
 
-    def test_constant_column_keeps_summary_and_draw_rows(self) -> None:
-        """A constant column still emits draw rows and a summary marker.
+    def test_constant_column_produces_peak_normalized_bin_and_summary_row(self) -> None:
+        """A constant column still emits a peak-normalized bin ridge and a summary marker.
 
-        Binning of constant draws happens in-spec (Vega-Lite), so all 100 draw
-        rows are passed through to the spec unchanged.  The summary row carries
+        Binning happens in numpy (:func:`_histogram_ridge_rows`), so a
+        constant column produces up to ``_RIDGE_MAXBINS`` bin rows (all zero
+        except the single bin containing the constant, which normalizes to
+        1.0 — the tallest bin always peaks at 1.0). The summary row carries
         the median (0.5) and the CI errorbar.
         """
         panels = [
@@ -158,13 +161,48 @@ class TestPosteriorRatesChart:
 
         spec = chart.to_dict()
         all_rows = [row for rows in spec["datasets"].values() for row in rows]
-        draw_rows = [r for r in all_rows if r.get("row_type") == "draw"]
+        bin_rows = [r for r in all_rows if r.get("row_type") == "bin"]
         summary_rows = [r for r in all_rows if r.get("row_type") == "summary"]
-        assert len(draw_rows) == 100  # all draws passed through to Vega-Lite
+        assert len(bin_rows) > 0
+        assert max(r["value"] for r in bin_rows) == pytest.approx(1.0)
         assert len(summary_rows) == 1
         assert summary_rows[0]["rate"] == pytest.approx(
             0.5
         )  # rate=median for summary rows
+
+    def test_ridge_bins_are_peak_normalized_regardless_of_draw_count(self) -> None:
+        """Each ridge peaks at 1.0 regardless of draw count/spread.
+
+        Before the fix, ridges shared a raw-count y-scale, so a category with
+        fewer or more spread-out draws was squashed flat relative to others.
+        """
+        rng = np.random.default_rng(11)
+        few = rng.lognormal(size=20)
+        many = rng.lognormal(size=1000)
+
+        few_rows = _histogram_ridge_rows(few, log_scale=False)
+        many_rows = _histogram_ridge_rows(many, log_scale=False)
+
+        assert max(r["value"] for r in few_rows) == pytest.approx(1.0)
+        assert max(r["value"] for r in many_rows) == pytest.approx(1.0)
+
+    def test_ridge_y_scale_domain_fixed_to_unit_interval(self) -> None:
+        """The shared facet y-scale domain is [0, 1], matching peak normalization."""
+        rng = np.random.default_rng(12)
+        panels = [
+            RatePanel(
+                label="Birth Rate",
+                categories=["Epoch 1"],
+                samples=rng.lognormal(size=(100, 1)),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = posterior_rates_chart(panels, title="test", vertical=True)
+
+        layer = chart.to_dict()["vconcat"][0]["spec"]["layer"]
+        area_y = layer[0]["encoding"]["y"]
+        assert area_y["scale"]["domain"] == [0.0, 1.0]
 
     def test_log_scale_produces_valid_spec(self) -> None:
         """log_scale=True builds a chart and the first x-encoding uses log scale."""
@@ -260,6 +298,14 @@ class TestPosteriorRatesChart:
         assert row_height * 4 == pytest.approx(200.0)
 
     def test_legend_entries_present_and_labelled(self) -> None:
+        """Distribution, median, and CI legends each live on a distinct channel.
+
+        Regression test: the distribution (area) and CI (errorbar) legends
+        used to share the ``opacity`` channel, so Vega-Lite merged them into
+        one legend and discarded the errorbar's intended symbol. They must
+        now be on different channels (``opacity`` / ``shape`` / ``color``) so
+        each keeps its own symbol.
+        """
         rng = np.random.default_rng(7)
         panels = [
             RatePanel(
@@ -274,9 +320,11 @@ class TestPosteriorRatesChart:
 
         layer = chart.to_dict()["vconcat"][0]["spec"]["layer"]
         area_opacity = layer[0]["encoding"]["opacity"]
-        ci_opacity = layer[2]["encoding"]["opacity"]
+        median_shape = layer[1]["encoding"]["shape"]
+        ci_color = layer[2]["encoding"]["color"]
         assert area_opacity["scale"]["domain"] == ["Posterior distribution"]
-        assert ci_opacity["scale"]["domain"] == ["95% CrI"]
+        assert median_shape["scale"]["domain"] == ["Median"]
+        assert ci_color["scale"]["domain"] == ["95% CrI"]
 
     def test_distribution_label_override(self) -> None:
         """prior_rates_chart overrides the label so its ridge doesn't say "Posterior"."""
@@ -369,11 +417,12 @@ class TestPriorRatesChart:
         spec = chart.to_dict()
         birth_name = spec["vconcat"][0]["data"]["name"]
         death_name = spec["vconcat"][1]["data"]["name"]
+        # Summary rows carry the precomputed median directly under "rate".
         birth_rows = [
-            r for r in spec["datasets"][birth_name] if r.get("row_type") == "draw"
+            r for r in spec["datasets"][birth_name] if r.get("row_type") == "summary"
         ]
         death_rows = [
-            r for r in spec["datasets"][death_name] if r.get("row_type") == "draw"
+            r for r in spec["datasets"][death_name] if r.get("row_type") == "summary"
         ]
         assert np.median([r["rate"] for r in birth_rows]) == pytest.approx(
             np.exp(-1.0), rel=0.05
