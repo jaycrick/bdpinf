@@ -7,6 +7,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `inf_bp_texts.data.data_cleaning.run_cleaning_pipeline`: single canonical
+  entry point for producing `manuscript_analysis_cleaned.csv`, now the only
+  code path `inf-bp-texts ntvmr clean` uses. Composes a docID-based group
+  filter, explicit removal of "merged" manuscripts (both `earlyYear` and
+  `lateYear` are 0 --- see `identify_merged_manuscripts`, confirmed examples
+  P14/P58/P67/074/081), the existing XML-based date cleaning, manual
+  corrections loaded from the new version-controlled
+  `data/manual_corrections.yaml` (via `load_manual_corrections`, replacing
+  the two previously duplicated hardcoded correction dicts), and
+  `fill_orphaned_book_sections` (sets a manuscript's section flag when a book
+  from that section is present but the section itself is unmarked), and
+  `clear_lectionary_sections` (lectionaries, `group == 4`, never carry
+  `section_e`/`a`/`p`/`r` --- only `section_K`/`section_l` apply to them;
+  this corrects both raw content-overview mis-parses and any orphaned-book
+  fill that would otherwise apply to a lectionary's excerpted reading).
+  `manuscript_data_exploration.qmd` no longer computes or writes the cleaned
+  CSV; it is now a read-only review surface over the CLI's output.
 - `qmd_scripts/core_analysis/04_bayesian/ntvmr_birth_death_bayesian.qmd`:
   new "All-Subsets Rate Comparison (Bayesian Medians)" section --- a
   multi-series `mark_line(point=True)` chart (one line per subset, epoch on
