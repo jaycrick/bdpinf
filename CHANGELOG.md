@@ -9,7 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `inf_bp_texts.data.data_cleaning.run_cleaning_pipeline`: single canonical
   entry point for producing `manuscript_analysis_cleaned.csv`, now the only
-  code path `inf-bp-texts ntvmr clean` uses. Composes a docID-based group
+  code path `inf-bp-texts ntvmr clean` uses.
+  Composes a docID-based group
   filter, explicit removal of "merged" manuscripts (both `earlyYear` and
   `lateYear` are 0 --- see `identify_merged_manuscripts`, confirmed examples
   P14/P58/P67/074/081), the existing XML-based date cleaning, manual
@@ -30,6 +31,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the x-axis) following the posterior median at each epoch, mirroring the
   non-Bayesian point-estimate comparison in the multi-epoch MLE notebook;
   saved as `04a_subset_comparison_{birth,death,halflife}_median`.
+- `qmd_scripts/core_analysis/04_bayesian/ntvmr_birth_death_bayesian.qmd`:
+  "Rates by Epoch" birth-rate panels now also save a variant excluding the
+  Modern Era epoch (`04a_rates_<subset>_birth_no_modern`), so the
+  earlier-epoch spread isn't compressed by the widest posterior.
+  "Rates by Tradition (per epoch)" birth/death/half-life panels likewise
+  gain a genre-only variant excluding the Non-Lectionary and Lectionary
+  whole-corpus splits (`04a_trad_<epoch>_{birth,death,halflife}_no_corpus`),
+  so Gospels/Acts/Pauline/Revelation aren't dwarfed by the larger corpora.
+  The "All-Subsets Rate Comparison (Bayesian Medians)" birth/death line
+  charts gain the same genre-only variant
+  (`04a_subset_comparison_{birth,death}_median_no_corpus`).
 - `inference.persistence.save_recovery_results`/`load_recovery_results`:
   schema-agnostic `.npz` round-trip for tidy per-replicate recovery-study
   tables, alongside the existing posterior-sample persistence.
