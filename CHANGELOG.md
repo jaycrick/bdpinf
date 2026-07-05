@@ -123,6 +123,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Used by all `02a_age_fit_*`,
   `02b_*_ages`, and the multi-epoch birth-time saver.
 
+- `visualization.age_fit_plot.creation_year_fit_chart` --- both histogram
+  layers were missing `bin="binned"` on their `x` encoding, so Vega-Lite
+  rendered each bin as a small floating rectangle instead of a true bar
+  reaching the zero baseline; opacity dropped to `0.3` with `binSpacing=0`
+  to match the project's other overlaid-histogram figures.
+  Affects the
+  same `02a_age_fit_*`/`02b_*_ages`/birth-time figures as above.
+
 - `visualization.plotting.rate_ci_panel` --- the rate axis now always shows
   gridlines, and log-scale panels (death rates, half-lives) restrict ticks
   to clean powers of ten instead of Vega-Lite's default log ticks, which

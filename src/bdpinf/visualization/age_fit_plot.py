@@ -109,16 +109,17 @@ def creation_year_fit_chart(
                 }
             )
         )
-        .mark_bar(opacity=0.6)
+        .mark_bar(opacity=0.3, binSpacing=0)
         .encode(
             x=alt.X(
                 "bin_start:Q",
+                bin="binned",
                 title=x_title,
                 scale=x_scale,
                 axis=alt.Axis(format="d"),
             ),
             x2="bin_end:Q",
-            y=alt.Y("count:Q", title="count"),
+            y=alt.Y("count:Q", title="count", stack=None),
             color=alt.Color("series:N", scale=color_scale, legend=legend),
         )
     )
@@ -137,11 +138,11 @@ def creation_year_fit_chart(
                     }
                 )
             )
-            .mark_bar(opacity=0.6)
+            .mark_bar(opacity=0.3, binSpacing=0)
             .encode(
-                x=alt.X("bin_start:Q", scale=x_scale),
+                x=alt.X("bin_start:Q", bin="binned", scale=x_scale),
                 x2="bin_end:Q",
-                y=alt.Y("count:Q"),
+                y=alt.Y("count:Q", stack=None),
                 color=alt.Color("series:N", scale=color_scale, legend=legend),
             )
         )

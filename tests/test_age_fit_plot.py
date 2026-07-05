@@ -71,6 +71,20 @@ class TestCreationYearFitChart:
         assert histogram_enc["y"]["title"] == "count"
         assert histogram_enc["color"]["scale"]["domain"] == ["Observed", "Expected"]
 
+    def test_bars_use_binned_x_so_they_reach_the_zero_baseline(self) -> None:
+        """Without bin="binned", Vega-Lite renders floating bars that never reach zero."""
+        observed = np.array([10.0, 20.0, 30.0, 40.0])
+        density_years = np.linspace(0.0, 50.0, 20)
+        density_values = np.full(20, 0.02)
+
+        chart = creation_year_fit_chart(
+            observed, density_years, density_values, title="test"
+        )
+
+        spec = chart.to_dict()
+        for layer in spec["layer"]:
+            assert layer["encoding"]["x"]["bin"] == "binned"
+
     def test_x_domain_extends_to_cover_fitted_range(self) -> None:
         """The shared x-domain must reach the density grid even past observed data."""
         observed = np.array([100.0, 110.0, 120.0])
