@@ -12,6 +12,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `generate_bootstrap_kde_samples.slurm` at the specific subgroups it did not
   reach before a prior run timed out.
 
+### Changed
+
+- `constants.BIRTH_LOG_PRIOR_LOC`: updated from -2.0 to -3.0, the material-
+  informed Bayesian prior mean applied uniformly to all free birth-rate
+  parameters.
+
 ### Fixed
 
 - `scripts/generate_bootstrap_kde_samples.slurm`: raised `--time` from 2h to
