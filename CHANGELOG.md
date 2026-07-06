@@ -15,9 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - `scripts/generate_bootstrap_kde_samples.slurm`: raised `--time` from 2h to
-  5h (the job was timing out partway through the 7-subgroup sweep at ~2000s/
+  5h (the job was timing out partway through the 7-subgroup sweep at \~2000s/
   subgroup) and right-sized `--cpus-per-task`/`--mem-per-cpu` down to match
-  observed utilization (single-threaded, ~5.5 GB peak).
+  observed utilization (single-threaded, \~5.5 GB peak).
+
 - `scripts/generate_recovery_studies.slurm`, `scripts/render_cpu_light.slurm`,
   `scripts/render_cpu_parallel.slurm`: right-sized `--cpus-per-task`,
   `--mem-per-cpu`, and `--time` to match observed CPU/memory utilization from
@@ -41,12 +42,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fill that would otherwise apply to a lectionary's excerpted reading).
   `manuscript_data_exploration.qmd` no longer computes or writes the cleaned
   CSV; it is now a read-only review surface over the CLI's output.
+
 - `qmd_scripts/core_analysis/04_bayesian/ntvmr_birth_death_bayesian.qmd`:
   new "All-Subsets Rate Comparison (Bayesian Medians)" section --- a
   multi-series `mark_line(point=True)` chart (one line per subset, epoch on
   the x-axis) following the posterior median at each epoch, mirroring the
   non-Bayesian point-estimate comparison in the multi-epoch MLE notebook;
   saved as `04a_subset_comparison_{birth,death,halflife}_median`.
+
 - `qmd_scripts/core_analysis/04_bayesian/ntvmr_birth_death_bayesian.qmd`:
   "Rates by Epoch" birth-rate panels now also save a variant excluding the
   Modern Era epoch (`04a_rates_<subset>_birth_no_modern`), so the
@@ -55,9 +58,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   gain a genre-only variant excluding the Non-Lectionary and Lectionary
   whole-corpus splits (`04a_trad_<epoch>_{birth,death,halflife}_no_corpus`),
   so Gospels/Acts/Pauline/Revelation aren't dwarfed by the larger corpora.
-  The "All-Subsets Rate Comparison (Bayesian Medians)" birth/death line
-  charts gain the same genre-only variant
-  (`04a_subset_comparison_{birth,death}_median_no_corpus`).
+  The "All-Subsets Rate Comparison (Bayesian Medians)" birth/death/half-life
+  line charts gain the same genre-only variant
+  (`04a_subset_comparison_{birth,death,halflife}_median_no_corpus`), and all
+  six panels (full-subset and genre-only) now always show a legend, split
+  into two columns via `alt.Legend(columns=2)` so entries wrap onto multiple
+  rows instead of one long row.
+
 - `inference.persistence.save_recovery_results`/`load_recovery_results`:
   schema-agnostic `.npz` round-trip for tidy per-replicate recovery-study
   tables, alongside the existing posterior-sample persistence.
@@ -68,11 +75,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `scripts/generate_recovery_studies.py` (+ `scripts/generate_recovery_studies.slurm`)
   precomputes them once instead of on every render --- see
   `docs/design/RECOVERY_STUDY_DATA_PIPELINE.md`.
+
 - `visualization.altair_theme.save_chart` gains a `keep_title` keyword
   (default `False`): saved PDFs now have their title stripped by default via
   the new `_untitled()` helper, since figures are captioned separately in
   notebook prose; pass `keep_title=True` to preserve the baked-in title.
   Handles single, layered, concat, and facet charts.
+
 - `visualization.bayesian_plots.posterior_rates_chart` gains a
   `distribution_label` keyword (default `"Posterior distribution"`) and now
   attaches a top-oriented legend ("Posterior distribution" / "95% CrI") to
