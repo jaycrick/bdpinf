@@ -7,6 +7,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `scripts/resume_render_all.sh`: resumes the `render_all.sh` job chain when
+  `generate_recovery_studies.slurm` has already completed, and resumes
+  `generate_bootstrap_kde_samples.slurm` at the specific subgroups it did not
+  reach before a prior run timed out.
+
+### Fixed
+
+- `scripts/generate_bootstrap_kde_samples.slurm`: raised `--time` from 2h to
+  5h (the job was timing out partway through the 7-subgroup sweep at ~2000s/
+  subgroup) and right-sized `--cpus-per-task`/`--mem-per-cpu` down to match
+  observed utilization (single-threaded, ~5.5 GB peak).
+- `scripts/generate_recovery_studies.slurm`, `scripts/render_cpu_light.slurm`,
+  `scripts/render_cpu_parallel.slurm`: right-sized `--cpus-per-task`,
+  `--mem-per-cpu`, and `--time` to match observed CPU/memory utilization from
+  completed runs, freeing up shared cluster resources.
+
 - `inf_bp_texts.data.data_cleaning.run_cleaning_pipeline`: single canonical
   entry point for producing `manuscript_analysis_cleaned.csv`, now the only
   code path `inf-bp-texts ntvmr clean` uses.

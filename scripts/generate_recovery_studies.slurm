@@ -15,12 +15,17 @@
 #
 # Adjust --account/--partition for your allocation if different.
 #
+# Resource sizing (see job 26813050): 32 cpus / 64G / 30h completed in
+# 6:11:42 at 53.82% CPU efficiency (~17 cores average) and 56.16% memory
+# efficiency (35.94 GB peak). Right-sized to 24 cpus / 48G / 10h, leaving
+# ~40% headroom over both observed peaks rather than requesting 32 cores
+# the job never sustained.
 #SBATCH --job-name=generate-recovery-studies
 #SBATCH --account=punim1793
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=24
 #SBATCH --mem-per-cpu=2G
-#SBATCH --time=30:00:00
+#SBATCH --time=10:00:00
 #SBATCH --output=_output/slurm-generate-recovery-studies-%j.log
 
 set -euo pipefail

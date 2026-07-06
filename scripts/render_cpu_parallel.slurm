@@ -22,12 +22,17 @@
 # Project-rendered (in _quarto.yml's `render:` list): output lands in
 # `_output/` automatically, no --execute-dir/mv needed.
 #
+# Resource sizing (see job 26813064): 16 cpus / 32G / 6h completed in
+# 1:49:01 at 37.30% CPU efficiency (~6 cores average) and 61.90% memory
+# efficiency (19.81 GB peak). Right-sized to 8 cpus / 24G / 3h, leaving
+# headroom above both observed averages/peaks (mem-per-cpu raised from 2G to
+# 3G so the smaller cpu count doesn't undershoot the 19.81 GB peak).
 #SBATCH --job-name=render-cpu-parallel
 #SBATCH --account=punim1793
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem-per-cpu=2G
-#SBATCH --time=06:00:00
+#SBATCH --cpus-per-task=8
+#SBATCH --mem-per-cpu=3G
+#SBATCH --time=03:00:00
 #SBATCH --output=_output/slurm-cpu-parallel-%j.log
 
 set -euo pipefail
