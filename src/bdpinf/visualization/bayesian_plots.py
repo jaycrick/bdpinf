@@ -26,7 +26,7 @@ _PANEL_HEIGHT = 300
 # Ridgeline (joyplot) layout constants
 _RIDGE_STEP = 20  # pixel height of each facet row
 _RIDGE_OVERLAP = 1  # fraction of _RIDGE_STEP that ridge peaks bleed into the row above
-_RIDGE_MAXBINS = 30  # max bins for the numpy-precomputed, peak-normalized ridge density
+_RIDGE_MAXBINS = 30  # max bins for the numpy-precomputed, area-normalized ridge density
 
 
 @dataclass(frozen=True)
@@ -114,17 +114,21 @@ class RatePanel:
 def _histogram_ridge_rows(
     values: NDArray[np.float64], *, log_scale: bool, maxbins: int = _RIDGE_MAXBINS
 ) -> list[dict[str, float]]:
-    """Fixed-edge histogram of ``values``, normalized to its own peak.
+    """Fixed-edge histogram of ``values``, normalized to unit area.
 
     Binning happens here in numpy (rather than in-spec via Vega-Lite's
     ``transform_bin``/``transform_aggregate``/``transform_impute``) so each
-    ridge can be normalized independently: counts are divided by the tallest
-    bin's count, so every ridge peaks at ``1.0`` regardless of how many draws
-    or how spread-out the distribution is. Without this, ridges sharing one
-    facet y-scale are only comparable when their raw counts happen to be
-    similar — a category with fewer/more spread-out draws is squashed flat or
-    dominates, which is exactly the "areas aren't regularised across
-    epochs/subsets" failure this fixes.
+    ridge can be normalized independently: counts are divided by
+    ``n * bin_width`` (in the binning space), so every ridge integrates to
+    ``1.0`` regardless of how many draws it has. This makes ridge *height*
+    depend only on the shape of the distribution — a tightly concentrated
+    posterior is tall and narrow, a diffuse one is short and wide — while
+    remaining insensitive to raw draw count, which is what makes ridges
+    comparable across epochs/subsets in the first place (a category with
+    fewer draws is not squashed flat purely because it has less data).
+    Callers combine all ridges sharing one y-scale and rescale by the single
+    global peak (see :func:`_rescale_bins_to_global_peak`) so the tallest
+    ridge across the whole figure hits ``1.0`` without clipping.
 
     When ``log_scale`` is True, edges are computed in log10 space (equal-width
     bins on a log axis) and converted back to linear ``bin_min``/``bin_max``
@@ -140,16 +144,43 @@ def _histogram_ridge_rows(
         lo, hi = lo - 0.5, hi + 0.5
     edges = np.histogram_bin_edges(finite, bins=maxbins, range=(lo, hi))
     counts, edges = np.histogram(finite, bins=edges)
-    peak = counts.max()
-    if peak == 0:
+    total = counts.sum()
+    if total == 0:
         return []
-    normalized = counts.astype(np.float64) / float(peak)
+    bin_width = edges[1] - edges[0]
+    density = counts.astype(np.float64) / (float(total) * bin_width)
     bin_min = np.power(10.0, edges[:-1]) if log_scale else edges[:-1]
     bin_max = np.power(10.0, edges[1:]) if log_scale else edges[1:]
     return [
         {"bin_min": float(b0), "bin_max": float(b1), "value": float(v)}
-        for b0, b1, v in zip(bin_min, bin_max, normalized, strict=True)
+        for b0, b1, v in zip(bin_min, bin_max, density, strict=True)
     ]
+
+
+def _rescale_bins_to_global_peak(rows: list[dict[str, object]]) -> None:
+    """Rescale every ``row_type == "bin"`` row's ``value`` by the figure-wide peak.
+
+    Mutates ``rows`` in place.
+
+    :func:`_histogram_ridge_rows` area-normalizes each ridge independently, so
+    a ridge's raw peak height reflects how concentrated its distribution is
+    (see that function's docstring). This second pass finds the single
+    largest bin ``value`` across *all* rows sharing one y-scale (all
+    categories/panels/kinds) and divides every bin ``value`` by it, so the
+    tallest ridge in the whole figure peaks at exactly ``1.0`` — matching the
+    fixed ``domain=[0.0, 1.0]`` y-scale the callers already use — while every
+    other ridge's height stays proportional to its own peak density, making
+    spread visible instead of flattened.
+    """
+    peak = max(
+        (float(row["value"]) for row in rows if row.get("row_type") == "bin"),
+        default=0.0,
+    )
+    if peak == 0.0:
+        return
+    for row in rows:
+        if row.get("row_type") == "bin":
+            row["value"] = float(row["value"]) / peak
 
 
 def _panel_rows(
@@ -160,9 +191,11 @@ def _panel_rows(
 ) -> list[dict[str, object]]:
     """Build combined bin + summary rows for one RatePanel.
 
-    Each category's draws are pre-binned and peak-normalized by
+    Each category's draws are pre-binned and area-normalized by
     :func:`_histogram_ridge_rows` (see its docstring for why), so this
-    function does no in-spec Vega-Lite binning — it only emits rows.
+    function does no in-spec Vega-Lite binning — it only emits rows. The
+    caller must still run :func:`_rescale_bins_to_global_peak` across all
+    panels' combined rows so the tallest ridge in the figure hits ``1.0``.
     ``legend_key``/``ci_legend_key``/``median_legend_key`` are decorative
     fields (independent of ``panel``/``color``) that drive the legends added
     in :func:`_ridgeline_layers`.
@@ -217,8 +250,9 @@ def _ridgeline_layers(
         Fill colour scale for the area layer.
     y_scale :
         Shared vertical scale (controls ridge row height/overlap); its domain
-        is fixed to ``[0, 1]`` by the caller since :func:`_panel_rows`
-        peak-normalizes every ridge.
+        is fixed to ``[0, 1]`` by the caller, who area-normalizes every ridge
+        via :func:`_panel_rows` and then rescales all of them by the figure's
+        global peak via :func:`_rescale_bins_to_global_peak`.
     x_title :
         Label for the quantitative x-axis.
     log_scale :
@@ -357,11 +391,13 @@ def posterior_rates_chart(
 
     Each row facets one category; columns facet parameter panels (birth vs.
     death) when ``vertical=False`` (default), or panels are stacked as separate
-    facets when ``vertical=True``.  Within every cell a peak-normalized area
-    ridge (binned in numpy by :func:`_histogram_ridge_rows`, so every ridge
-    peaks at 1.0 regardless of draw count or spread) is drawn, with the
-    posterior median overlaid as a filled ``mark_point`` and the equal-tailed
-    credible interval as a ticked ``mark_errorbar`` along the row baseline.
+    facets when ``vertical=True``.  Within every cell an area-normalized ridge
+    (binned in numpy by :func:`_histogram_ridge_rows`, then rescaled by the
+    figure-wide peak via :func:`_rescale_bins_to_global_peak` so the tallest
+    ridge hits 1.0) is drawn — ridge height reflects how concentrated each
+    posterior is, independent of draw count — with the posterior median
+    overlaid as a filled ``mark_point`` and the equal-tailed credible interval
+    as a ticked ``mark_errorbar`` along the row baseline.
 
     Parameters
     ----------
@@ -388,16 +424,27 @@ def posterior_rates_chart(
     # caller-provided order rather than defaulting to alphabetical.
     _category_sort = list(panels[0].categories) if panels else None
     row_step = _facet_row_height(len(_category_sort) if _category_sort else 0)
-    # Domain fixed to [0, 1]: _panel_rows peak-normalizes every ridge, so all
-    # rows/facets share the same vertical scale regardless of raw draw counts.
+    # Domain fixed to [0, 1]: _panel_rows area-normalizes every ridge, then the
+    # figure-wide rescale below (_rescale_bins_to_global_peak) maps the
+    # tallest ridge to 1.0, so all rows/facets share one vertical scale.
     y_scale = alt.Scale(domain=[0.0, 1.0], range=[row_step, -row_step * _RIDGE_OVERLAP])
 
     if vertical:
         # One FacetChart per panel (row-facet only), then vconcat.
         # configure_* must be applied at the outermost level (vconcat), not on
         # individual FacetCharts, because Altair only allows config at top level.
+        # Rows are built for every panel up front (rather than per-panel inside
+        # the loop below) so the global-peak rescale sees all panels' bins
+        # before any chart is built from them.
+        panel_rows = [
+            _panel_rows(
+                panel, distribution_label=distribution_label, log_scale=log_scale
+            )
+            for panel in panels
+        ]
+        _rescale_bins_to_global_peak([row for rows in panel_rows for row in rows])
         sub_charts: list[alt.FacetChart] = []
-        for panel in panels:
+        for panel, rows in zip(panels, panel_rows, strict=True):
             pscale = alt.Scale(domain=[panel.label], range=[panel.color])
             area, median_point, ci_bar = _ridgeline_layers(
                 pscale, y_scale, x_title, log_scale, distribution_label
@@ -411,16 +458,7 @@ def posterior_rates_chart(
             sub_charts.append(
                 alt.layer(area, median_point, ci_bar)
                 .properties(height=row_step)
-                .facet(
-                    row=row_enc_v,
-                    data=pd.DataFrame(
-                        _panel_rows(
-                            panel,
-                            distribution_label=distribution_label,
-                            log_scale=log_scale,
-                        )
-                    ),
-                )
+                .facet(row=row_enc_v, data=pd.DataFrame(rows))
                 .properties(title=panel.label, bounds="flush")
             )
         return (
@@ -438,15 +476,15 @@ def posterior_rates_chart(
     area, median_point, ci_bar = _ridgeline_layers(
         color_scale, y_scale, x_title, log_scale, distribution_label
     )
-    combined_df = pd.DataFrame(
-        [
-            r
-            for panel in panels
-            for r in _panel_rows(
-                panel, distribution_label=distribution_label, log_scale=log_scale
-            )
-        ]
-    )
+    combined_rows = [
+        r
+        for panel in panels
+        for r in _panel_rows(
+            panel, distribution_label=distribution_label, log_scale=log_scale
+        )
+    ]
+    _rescale_bins_to_global_peak(combined_rows)
+    combined_df = pd.DataFrame(combined_rows)
     row_enc = alt.Row(
         "category:N",
         title=category_title,
@@ -598,12 +636,17 @@ def _prior_posterior_rows(
 ) -> list[dict[str, object]]:
     """Build combined prior-bin + posterior-bin/summary rows for one panel.
 
-    Prior and posterior are each binned and peak-normalized independently by
+    Prior and posterior are each binned and area-normalized independently by
     :func:`_histogram_ridge_rows`, so the dashed prior outline and filled
     posterior ridge are directly comparable regardless of how many draws each
     has (priors are a fixed 4000-quantile set; posteriors are MCMC draws) —
     previously both were raw Vega-Lite bin counts sharing one y-scale, so a
     much-larger prior draw count could dwarf or flatten the posterior ridge.
+    The caller must still run :func:`_rescale_bins_to_global_peak` across all
+    panels' combined rows so the tallest ridge (prior or posterior, in any
+    panel) hits ``1.0`` — a concentrated posterior against a diffuse prior
+    then reads as tall-and-narrow next to short-and-flat, instead of both
+    peaking at the same height.
 
     Only the posterior gets a ``row_type == "summary"`` row (median + CI) —
     the prior is rendered as a dashed outline only, so a second, colliding
@@ -762,13 +805,19 @@ def prior_posterior_rates_chart(
         Render the x-axis on a log scale (bin in log10 space); use for
         quantities spanning orders of magnitude (e.g. half-lives).
     """
-    # Domain fixed to [0, 1]: _prior_posterior_rows peak-normalizes both the
-    # prior and posterior ridge independently.
+    # Domain fixed to [0, 1]: _prior_posterior_rows area-normalizes the prior
+    # and posterior ridges independently, then the figure-wide rescale below
+    # (_rescale_bins_to_global_peak) maps the tallest ridge across every
+    # panel/kind to 1.0.
     y_scale = alt.Scale(
         domain=[0.0, 1.0], range=[_RIDGE_STEP, -_RIDGE_STEP * _RIDGE_OVERLAP]
     )
+    # Rows are built for every panel up front so the global-peak rescale sees
+    # all panels' (prior and posterior) bins before any chart is built.
+    panel_rows = [_prior_posterior_rows(panel, log_scale=log_scale) for panel in panels]
+    _rescale_bins_to_global_peak([row for rows in panel_rows for row in rows])
     sub_charts: list[alt.FacetChart] = []
-    for panel in panels:
+    for panel, rows in zip(panels, panel_rows, strict=True):
         prior_area, posterior_area, median_point, ci_bar = _prior_posterior_layers(
             panel.color, y_scale, x_title, log_scale
         )
@@ -781,10 +830,7 @@ def prior_posterior_rates_chart(
         sub_charts.append(
             alt.layer(prior_area, posterior_area, median_point, ci_bar)
             .properties(height=_RIDGE_STEP)
-            .facet(
-                row=row_enc,
-                data=pd.DataFrame(_prior_posterior_rows(panel, log_scale=log_scale)),
-            )
+            .facet(row=row_enc, data=pd.DataFrame(rows))
             .properties(title=panel.label, bounds="flush")
         )
     return (

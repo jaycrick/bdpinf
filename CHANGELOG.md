@@ -20,6 +20,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `inf_bp_texts.visualization.bayesian_plots`: ridgeline (joyplot) ridges in
+  `posterior_rates_chart`/`prior_rates_chart`/`prior_posterior_rates_chart`
+  now reflect posterior spread. Previously each ridge was independently
+  peak-normalized (every ridge forced to peak at 1.0), which erased variance
+  differences across categories/panels. `_histogram_ridge_rows` now
+  area-normalizes each ridge, and a new `_rescale_bins_to_global_peak` pass
+  rescales all ridges sharing a y-scale by the single tallest peak in the
+  figure, so tightly concentrated posteriors render taller than diffuse
+  ones while remaining insensitive to raw draw count.
+
 - `scripts/generate_bootstrap_kde_samples.slurm`: raised `--time` from 2h to
   5h (the job was timing out partway through the 7-subgroup sweep at \~2000s/
   subgroup) and right-sized `--cpus-per-task`/`--mem-per-cpu` down to match

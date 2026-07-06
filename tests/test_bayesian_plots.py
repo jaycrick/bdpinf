@@ -139,14 +139,17 @@ class TestPosteriorRatesChart:
         assert row["ci_high"] == pytest.approx(float(np.quantile(col, 0.975)))
         assert row["value"] == pytest.approx(0.0)  # baseline y-position
 
-    def test_constant_column_produces_peak_normalized_bin_and_summary_row(self) -> None:
-        """A constant column still emits a peak-normalized bin ridge and a summary marker.
+    def test_constant_column_produces_normalized_bin_and_summary_row(self) -> None:
+        """A constant column still emits a normalized bin ridge and a summary marker.
 
         Binning happens in numpy (:func:`_histogram_ridge_rows`), so a
         constant column produces up to ``_RIDGE_MAXBINS`` bin rows (all zero
-        except the single bin containing the constant, which normalizes to
-        1.0 — the tallest bin always peaks at 1.0). The summary row carries
-        the median (0.5) and the CI errorbar.
+        except the single bin containing the constant). With only one
+        category/panel in this test, the figure-wide rescale
+        (:func:`_rescale_bins_to_global_peak`) has nothing else to compare
+        against, so that single bin still normalizes to 1.0 — the tallest bin
+        in the (only) ridge peaks at 1.0. The summary row carries the median
+        (0.5) and the CI errorbar.
         """
         panels = [
             RatePanel(
@@ -170,24 +173,63 @@ class TestPosteriorRatesChart:
             0.5
         )  # rate=median for summary rows
 
-    def test_ridge_bins_are_peak_normalized_regardless_of_draw_count(self) -> None:
-        """Each ridge peaks at 1.0 regardless of draw count/spread.
+    def test_ridge_density_is_invariant_to_draw_count(self) -> None:
+        """Area-normalized density is unchanged when every draw is duplicated.
 
-        Before the fix, ridges shared a raw-count y-scale, so a category with
-        fewer or more spread-out draws was squashed flat relative to others.
+        :func:`_histogram_ridge_rows` normalizes by ``n * bin_width``, so
+        multiplying draw count while preserving the underlying distribution
+        (duplicating every draw the same number of times) leaves every bin's
+        density value unchanged — this is what keeps ridges comparable
+        across epochs/subsets regardless of how many posterior draws each
+        has, matching the old peak-normalization's draw-count invariance
+        without collapsing every ridge to the same peak height.
         """
         rng = np.random.default_rng(11)
-        few = rng.lognormal(size=20)
-        many = rng.lognormal(size=1000)
+        few = rng.lognormal(size=200)
+        many = np.repeat(few, 50)
 
         few_rows = _histogram_ridge_rows(few, log_scale=False)
         many_rows = _histogram_ridge_rows(many, log_scale=False)
 
-        assert max(r["value"] for r in few_rows) == pytest.approx(1.0)
-        assert max(r["value"] for r in many_rows) == pytest.approx(1.0)
+        assert [r["value"] for r in few_rows] == pytest.approx(
+            [r["value"] for r in many_rows]
+        )
+
+    def test_ridge_height_reflects_relative_spread(self) -> None:
+        """A tightly concentrated category renders taller than a diffuse one.
+
+        Previously every ridge was peak-normalized independently, so all
+        ridges read as the same height regardless of spread. After switching
+        to area-normalization plus a shared figure-wide rescale
+        (:func:`_rescale_bins_to_global_peak`), a low-variance category's
+        peak density is higher (its mass concentrates in fewer bins) than a
+        high-variance category's, so the low-variance ridge renders taller —
+        this is the spread information the flat-height ridges were hiding.
+        """
+        rng = np.random.default_rng(13)
+        tight = rng.normal(loc=1.0, scale=0.02, size=2000)
+        wide = rng.normal(loc=1.0, scale=1.0, size=2000)
+        panels = [
+            RatePanel(
+                label="Birth Rate",
+                categories=["Tight", "Wide"],
+                samples=np.column_stack([tight, wide]),
+                color="#4477AA",
+            ),
+        ]
+
+        chart = posterior_rates_chart(panels, title="test")
+
+        spec = chart.to_dict()
+        all_rows = [row for rows in spec["datasets"].values() for row in rows]
+        bin_rows = [r for r in all_rows if r.get("row_type") == "bin"]
+        tight_peak = max(r["value"] for r in bin_rows if r["category"] == "Tight")
+        wide_peak = max(r["value"] for r in bin_rows if r["category"] == "Wide")
+        assert tight_peak == pytest.approx(1.0)  # global tallest ridge
+        assert wide_peak < tight_peak
 
     def test_ridge_y_scale_domain_fixed_to_unit_interval(self) -> None:
-        """The shared facet y-scale domain is [0, 1], matching peak normalization."""
+        """The shared facet y-scale domain is [0, 1] after the global-peak rescale."""
         rng = np.random.default_rng(12)
         panels = [
             RatePanel(
