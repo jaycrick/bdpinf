@@ -16,9 +16,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   per-era estimates; an "ever existed" (total ever created) summary chart across
   all subsets with 95% CrI; and a joint, horizontally jittered per-era proportion
   chart comparing the four scripture-section corpora on shared axes.
+- `qmd_scripts/core_analysis/03_multi_epoch/manuscript_survival_proportion.qmd`:
+  a fourth "Per-era ever created" LaTeX table tab (with an "Extant" column
+  showing the observed surviving count alongside the HT median/CrI), and a new
+  "Sensitivity — Excluding Ante Nicaea Manuscripts" section that reproduces every
+  result, figure, and table using only survivors dated after 325 CE (same
+  posterior samples, no MCMC refit); ex-variant figures are saved with an
+  `_ex_ante_nicaea` filename suffix alongside the originals.
+- `qmd_scripts/core_analysis/03_multi_epoch/manuscript_survival_proportion.qmd`:
+  "Total Ever Created by Subset" per-era charts (`03f_era_ever_<key>.pdf`,
+  log-scale median + 95% CrI whiskers), matching the existing per-era
+  proportion-alive split charts, in both the main and excluding-Ante-Nicaea
+  sections.
 
 ### Changed
 
+- `qmd_scripts/core_analysis/03_multi_epoch/manuscript_survival_proportion.qmd`:
+  the four per-subject chart loops ("Per-Era Breakdown by Subset" and "Total
+  Ever Created by Subset", in both the main and excluding-Ante-Nicaea sections)
+  now render as a `panel-tabset` (one tab per subset) instead of six stacked
+  charts under a single heading, aligning with the tab conventions already used
+  in `ntvmr_birth_death_bayesian.qmd`. Saved figure files are unchanged.
+- `qmd_scripts/core_analysis/03_multi_epoch/manuscript_survival_proportion.qmd`:
+  the per-era proportion-alive chart is now saved as one image per subset
+  (`03f_era_<key>.pdf`) instead of a single faceted `03f_all_subsets_era.pdf`;
+  the joint scripture-section per-era chart (`03f_joint_era_sections.pdf`) no
+  longer connects medians with a line and dodges the four corpora closer
+  together within each era.
+- `analysis.subset_inference.build_manuscript_subsets` and the core-analysis
+  notebooks: the groups-1--3 subset's display label changed from
+  "Non-Lectionary" to "Continuous Text" across all charts, table headers, and
+  notebook prose (the internal `non_lectionary` key and figure filenames are
+  unchanged).
 - `constants.BIRTH_LOG_PRIOR_LOC`: updated from -2.0 to -3.0, the material-
   informed Bayesian prior mean applied uniformly to all free birth-rate
   parameters.
