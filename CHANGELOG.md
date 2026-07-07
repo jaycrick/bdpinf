@@ -22,6 +22,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `constants.BIRTH_LOG_PRIOR_LOC`: updated from -2.0 to -3.0, the material-
   informed Bayesian prior mean applied uniformly to all free birth-rate
   parameters.
+- `constants.DEATH_LOG_PRIOR_LOC_SIX_ERA`: Post Islamic Conquest log death-rate
+  prior mean aligned to Late Byzantium (-4.25 -> -5.6), reflecting a shared
+  durable (animal skin) writing-material assumption for both eras.
 
 ### Fixed
 
