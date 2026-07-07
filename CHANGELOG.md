@@ -11,6 +11,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `generate_recovery_studies.slurm` has already completed, and resumes
   `generate_bootstrap_kde_samples.slurm` at the specific subgroups it did not
   reach before a prior run timed out.
+- `qmd_scripts/core_analysis/03_multi_epoch/manuscript_survival_proportion.qmd`:
+  LaTeX (booktabs/siunitx) tables for the HT proportion-alive, ever-created, and
+  per-era estimates; an "ever existed" (total ever created) summary chart across
+  all subsets with 95% CrI; and a joint, horizontally jittered per-era proportion
+  chart comparing the four scripture-section corpora on shared axes.
 
 ### Changed
 
