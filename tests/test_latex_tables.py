@@ -3,6 +3,7 @@
 import math
 
 import numpy as np
+import pandas as pd
 
 from inf_bp_texts.analysis.latex_tables import (
     BAYESIAN_COLUMNS,
@@ -13,6 +14,7 @@ from inf_bp_texts.analysis.latex_tables import (
     bayesian_results_halflife_latex_by_subset,
     bayesian_results_latex_by_epoch,
     bayesian_results_latex_by_subset,
+    crosstab_latex_table,
     rates_latex_table,
     subset_fits_halflife_latex_by_epoch,
     subset_fits_halflife_latex_by_subset,
@@ -268,6 +270,99 @@ class TestRatesLatexTable:
         t = self._two_group_table()
         assert r"\end{table}" in t
         assert r"\end{tabular}" in t
+
+
+# ---------------------------------------------------------------------------
+# Crosstab renderer tests
+# ---------------------------------------------------------------------------
+
+
+class TestCrosstabLatexTable:
+    """Test crosstab_latex_table."""
+
+    def _table_with_margins(self) -> pd.DataFrame:
+        row_labels = ["A", "A", "B", "B"]
+        col_labels = ["X", "Y", "X", "Y"]
+        return pd.crosstab(
+            pd.Series(row_labels, name="Type"),
+            pd.Series(col_labels, name="Epoch"),
+            margins=True,
+            margins_name="Total",
+        )
+
+    def _render(self, **kwargs: object) -> str:
+        return crosstab_latex_table(
+            self._table_with_margins(),
+            caption="Test caption",
+            label="test",
+            row_header="Type",
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    def test_contains_begin_table(self) -> None:
+        assert r"\begin{table}" in self._render()
+
+    def test_contains_booktabs_rules(self) -> None:
+        t = self._render()
+        assert r"\toprule" in t
+        assert r"\midrule" in t
+        assert r"\bottomrule" in t
+
+    def test_contains_end_table(self) -> None:
+        t = self._render()
+        assert r"\end{table}" in t
+        assert r"\end{tabular}" in t
+
+    def test_label_in_output(self) -> None:
+        t = self._render()
+        assert r"\label{tab:test}" in t
+
+    def test_caption_in_output(self) -> None:
+        t = self._render()
+        assert "Test caption" in t
+
+    def test_row_header_in_output(self) -> None:
+        t = self._render()
+        assert "Type" in t
+
+    def test_column_headers_in_output(self) -> None:
+        t = self._render()
+        assert "{X}" in t
+        assert "{Y}" in t
+        assert "{Total}" in t
+
+    def test_row_labels_in_output(self) -> None:
+        t = self._render()
+        assert "A" in t
+        assert "B" in t
+        assert "Total" in t
+
+    def test_cells_are_integers(self) -> None:
+        t = self._render()
+        # A/X=1, A/Y=1, B/X=1, B/Y=1, row totals=2, grand total=4
+        assert " 1 " in t or "& 1 " in t
+        assert "4" in t
+
+    def test_grand_total_correct(self) -> None:
+        t = self._render()
+        # Total row's Total column = 4 (sum of all cells)
+        total_row = [
+            line for line in t.splitlines() if line.strip().startswith("Total")
+        ]
+        assert len(total_row) == 1
+        assert total_row[0].strip().endswith(r"4 \\")
+
+    def test_s_column_format_present(self) -> None:
+        t = self._render()
+        assert "S[table-format=" in t
+
+    def test_no_margins_renders_without_total(self) -> None:
+        table = pd.crosstab(
+            pd.Series(["A", "A", "B"], name="Type"),
+            pd.Series(["X", "Y", "X"], name="Epoch"),
+        )
+        t = crosstab_latex_table(table, caption="c", label="l", row_header="Type")
+        assert "Total" not in t
 
 
 # ---------------------------------------------------------------------------

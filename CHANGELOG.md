@@ -28,6 +28,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   log-scale median + 95% CrI whiskers), matching the existing per-era
   proportion-alive split charts, in both the main and excluding-Ante-Nicaea
   sections.
+- `src/inf_bp_texts/analysis/latex_tables.py`: `crosstab_latex_table()`, a
+  generic booktabs/siunitx renderer for `pd.crosstab` results.
+  `qmd_scripts/core_analysis/01_data_exploration/manuscript_data_exploration.qmd`
+  uses it to add three cross-tabulation summary tables (manuscript Type ×
+  Epoch, Type × Section, and Epoch × Section) with matching LaTeX output.
 
 ### Changed
 

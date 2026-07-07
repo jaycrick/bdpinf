@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
+import pandas as pd
 
 if TYPE_CHECKING:
     from inf_bp_texts.analysis.subset_inference import SubsetFitResult
@@ -215,6 +216,81 @@ def rates_latex_table(
 
         if g_idx < len(groups) - 1:
             lines.append(r"    \midrule")
+
+    lines += [
+        r"    \bottomrule",
+        r"  \end{tabular}",
+        r"\end{table}",
+    ]
+    return "\n".join(lines)
+
+
+def crosstab_latex_table(
+    table: pd.DataFrame,
+    *,
+    caption: str,
+    label: str,
+    row_header: str,
+) -> str:
+    r"""Render a booktabs + siunitx LaTeX table from a ``pd.crosstab`` result.
+
+    Renders integer count cells as ``S[table-format=…]`` columns.  If the
+    crosstab was built with ``margins=True``, its trailing ``"Total"`` row is
+    set off with an extra ``\midrule`` (the trailing ``"Total"`` column needs
+    no special treatment — it renders like any other count column).
+
+    Parameters
+    ----------
+    table : pd.DataFrame
+        A ``pd.crosstab(...)`` result — index = row categories (optionally
+        ending in a ``"Total"`` margin row), columns = column categories
+        (optionally ending in a ``"Total"`` margin column).
+    caption : str
+        Table caption.
+    label : str
+        LaTeX ``\label`` value (written as ``\label{tab:<label>}``).
+    row_header : str
+        Header for the row-label column, e.g. ``"Type"`` or ``"Epoch"``.
+
+    Returns
+    -------
+    str
+        A complete ``\begin{table}…\end{table}`` string.
+    """
+    columns = [str(c) for c in table.columns]
+    index_labels = [str(i) for i in table.index]
+
+    # Column width for the S[table-format=…] spec, sized to the largest cell.
+    max_val = int(table.to_numpy().max()) if table.size else 0
+    width = max(len(str(max_val)), 1)
+    s_col = f"S[table-format={width}.0]"
+
+    col_parts: list[str] = ["@{}", "l"]
+    col_parts.extend(s_col for _ in columns)
+    col_spec = "\n      ".join(col_parts) + "@{}"
+
+    # Header row — data-column headers wrapped in {} so siunitx S columns do
+    # not attempt to parse them as numbers.
+    header_cells = [row_header] + ["{" + col + "}" for col in columns]
+    header_row = " & ".join(header_cells) + r" \\"
+
+    lines: list[str] = [
+        r"\begin{table}",
+        r"  \centering",
+        r"  \footnotesize",
+        f"  \\caption{{{caption}}}",
+        f"  \\label{{tab:{label}}}",
+        f"  \\begin{{tabular}}{{{col_spec}}}",
+        r"    \toprule",
+        f"    {header_row}",
+        r"    \midrule",
+    ]
+
+    for i, idx_label in enumerate(index_labels):
+        if idx_label == "Total" and i > 0:
+            lines.append(r"    \midrule")
+        row_cells = [idx_label] + [f"{int(v):d}" for v in table.iloc[i]]
+        lines.append("    " + " & ".join(row_cells) + r" \\")
 
     lines += [
         r"    \bottomrule",
