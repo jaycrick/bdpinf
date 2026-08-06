@@ -269,3 +269,6 @@ _great_docs_build/
 .great-docs-build/
 .great-docs-cache/
 .great-docs/
+
+# Archives
+*.zip
