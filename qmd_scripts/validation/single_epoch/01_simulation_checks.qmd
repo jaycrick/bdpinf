@@ -28,7 +28,6 @@ including population counts and age distributions against theoretical curves.
 # ruff: noqa: E402
 # inf_bp_texts must be imported before jax so its JAX_PLATFORMS=cpu default
 # (see src/inf_bp_texts/__init__.py) takes effect before jax reads the env var.
-import inf_bp_texts  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
 from typing import Any
 
 import altair as alt
@@ -39,6 +38,8 @@ from IPython.display import display
 from joblib import Parallel, delayed
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
+import inf_bp_texts  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
+from inf_bp_texts import get_project_root
 from inf_bp_texts.analysis import (
     boundary_corrected_kde_on_support,
     proportion_not_at_upper,
@@ -56,7 +57,6 @@ from inf_bp_texts.simulation import (
     simulate_birth_death_lifespans,
     simulate_birth_death_process,
 )
-from inf_bp_texts import get_project_root
 from inf_bp_texts.utils import derive_worker_seeds
 from inf_bp_texts.visualization import save_chart
 from inf_bp_texts.visualization.altair_theme import PTOLQUAL
@@ -356,7 +356,11 @@ fig_population = (_pop_bars + _theory_line).properties(
 )
 display(fig_population)
 save_chart(
-    fig_population, "vse01_population_distribution", width=300, height=200, output_dir=figures_dir
+    fig_population,
+    "vse01_population_distribution",
+    width=300,
+    height=200,
+    output_dir=figures_dir,
 )
 print("Saved population figure")
 ```
@@ -381,11 +385,7 @@ spine_age_samples_process = np.asarray(
     dtype=np.float64,
 )
 spine_age_samples_lifespans = np.asarray(
-    [
-        arr[0]
-        for arr in list_of_ages_lifespans
-        if len(arr) > 0 and arr[0] < time_span
-    ],
+    [arr[0] for arr in list_of_ages_lifespans if len(arr) > 0 and arr[0] < time_span],
     dtype=np.float64,
 )
 spine_age_samples_all = np.asarray(
@@ -603,7 +603,9 @@ fig_summary = alt.vconcat(
             sp_dom,
         ),
     ),
-).properties(title="Age Densities by Generator (Full Process vs From Distribution vs Lifespan-at-birth)")
+).properties(
+    title="Age Densities by Generator (Full Process vs From Distribution vs Lifespan-at-birth)"
+)
 display(fig_summary)
 save_chart(fig_summary, "vse01_age_densities", output_dir=figures_dir)
 print("Saved age-density figure")

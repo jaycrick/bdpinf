@@ -183,7 +183,7 @@ Full mathematical derivation in `docs/date_uncertainty.qmd`.
 `simulator.py` --- two simulation engines:
 - `simulate_birth_death_process()` runs a Gillespie algorithm with time-varying rates; `predict_manuscript_counts()` predicts future population via rejection sampling.
 - `simulate_birth_death_lifespans()` / `simulate_birth_death_lifespans_arrays()`: JAX/JIT-compiled lifespan-at-birth alternative where each individual's death time is pre-sampled at birth from a piecewise-exponential distribution; the event loop runs inside `jax.lax.while_loop` with fixed-shape preallocated buffers.
-  `LifespanSimulationArrays` exposes per-individual `birth_epoch` and `survived` flags for downstream splitting/conditioning.
+`LifespanSimulationArrays` exposes per-individual `birth_epoch` and `survived` flags for downstream splitting/conditioning.
 
 `splitting.py` --- Multilevel splitting for rare-event simulation (estimating small extinction probabilities).
 Plotting functions for splitting results live in `visualization/splitting_plots.py`.
@@ -297,11 +297,16 @@ See `docs/design/DOCS_TOOLING_EVALUATION.md` for why this is two sites rather th
 Every executable notebook follows this structure:
 
 - **Frontmatter**: `title`, `subtitle`, `author: "JC"`, `date: last-modified`.
+
 - **Timing bracket**: first cell `# | label: compile-time-start` captures `time.perf_counter()`; last cell `# | label: compile-time-report` writes elapsed seconds to `_output/compile_times.json`.
   Both cells use `# | cache: false` / `# | echo: false` / `# | include: false`.
+
 - **Cell options**: hash-pipe syntax inside code fences --- `# | label:`, `# | cache: false`, `# | echo: false`, `# | include: false`.
+
 - **Import noqa**: import cells open with `# ruff: noqa: E402` (imports are not at the top of the Python file, which ruff would flag).
+
 - **Keep logic in `src/`**: cells import from `inf_bp_texts`; heavy computation belongs in the package, not inline.
+
 - **Figures**: saved via `save_chart` / `save_chart_html` from `inf_bp_texts.visualization`.
   All figures live under a single repo-root `figures/` tree that **mirrors** the `qmd_scripts/` layout:
   ```
@@ -317,4 +322,5 @@ Every executable notebook follows this structure:
   Filenames follow the pattern `<prefix>_<descriptive>.pdf`, where the prefix is the submodule id (e.g. `04b`) assigned to each notebook.
   `save_chart` defaults to `get_project_root() / "figures"` when `output_dir` is omitted, so notebooks that opt out of the mirrored layout still land at the repo root.
   Do not use hardcoded `Path("../../../figures")`.
+
 - **Design docs**: architecture/audit documents live in `docs/design/` (not the repo root).

@@ -19,7 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `qmd_scripts/core_analysis/03_multi_epoch/manuscript_survival_proportion.qmd`:
   a fourth "Per-era ever created" LaTeX table tab (with an "Extant" column
   showing the observed surviving count alongside the HT median/CrI), and a new
-  "Sensitivity — Excluding Ante Nicaea Manuscripts" section that reproduces every
+  "Sensitivity --- Excluding Ante Nicaea Manuscripts" section that reproduces every
   result, figure, and table using only survivors dated after 325 CE (same
   posterior samples, no MCMC refit); ex-variant figures are saved with an
   `_ex_ante_nicaea` filename suffix alongside the originals.
@@ -41,7 +41,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Ever Created by Subset", in both the main and excluding-Ante-Nicaea sections)
   now render as a `panel-tabset` (one tab per subset) instead of six stacked
   charts under a single heading, aligning with the tab conventions already used
-  in `ntvmr_birth_death_bayesian.qmd`. Saved figure files are unchanged.
+  in `ntvmr_birth_death_bayesian.qmd`.
+  Saved figure files are unchanged.
 - `qmd_scripts/core_analysis/03_multi_epoch/manuscript_survival_proportion.qmd`:
   the per-era proportion-alive chart is now saved as one image per subset
   (`03f_era_<key>.pdf`) instead of a single faceted `03f_all_subsets_era.pdf`;
@@ -64,9 +65,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `inf_bp_texts.visualization.bayesian_plots`: ridgeline (joyplot) ridges in
   `posterior_rates_chart`/`prior_rates_chart`/`prior_posterior_rates_chart`
-  now reflect posterior spread. Previously each ridge was independently
+  now reflect posterior spread.
+  Previously each ridge was independently
   peak-normalized (every ridge forced to peak at 1.0), which erased variance
-  differences across categories/panels. `_histogram_ridge_rows` now
+  differences across categories/panels.
+  `_histogram_ridge_rows` now
   area-normalizes each ridge, and a new `_rescale_bins_to_global_peak` pass
   rescales all ridges sharing a y-scale by the single tallest peak in the
   figure, so tightly concentrated posteriors render taller than diffuse

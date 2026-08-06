@@ -20,16 +20,19 @@ __compile_start = time.perf_counter()
 ## Overview
 
 `manuscript_survival_proportion.qmd` estimates the proportion of ever-created
-manuscripts still alive today via an analytic Horvitz–Thompson (HT) estimator. This
+manuscripts still alive today via an analytic Horvitz--Thompson (HT) estimator.
+This
 repo also has a second, simulation-based estimator of the same quantity: the
 multilevel-splitting / sequential-ABC scheme in
-`inf_bp_texts.simulation.survival_conditioning`. It conditions forward lifespan
+`inf_bp_texts.simulation.survival_conditioning`.
+It conditions forward lifespan
 simulations on the *observed per-epoch survivor counts* and reads the total
 population ever created off the matched trajectories, giving
 `proportion_alive = n_alive_present / n_born`.
 
 That estimator has never been validated against a case where the truth is known
-exactly. This notebook does a **self-consistency check**:
+exactly.
+This notebook does a **self-consistency check**:
 
 1. Simulate a ground-truth birth-death process with **known** rates (so the true
    `n_ever` and true proportion alive are known exactly).
@@ -39,7 +42,8 @@ exactly. This notebook does a **self-consistency check**:
 4. Confirm the recovered distribution brackets the truth.
 
 The timeframe in both scenarios is kept short enough that each epoch has fewer than
-ten survivors — the rare-event regime multilevel splitting is designed for. We start
+ten survivors --- the rare-event regime multilevel splitting is designed for.
+We start
 with two epochs, then repeat with three.
 
 ## Setup
@@ -48,11 +52,11 @@ with two epochs, then repeat with three.
 # ruff: noqa: E402
 # inf_bp_texts must be imported before jax so its JAX_PLATFORMS=cpu default
 # (see src/inf_bp_texts/__init__.py) takes effect before jax reads the env var.
-import inf_bp_texts  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
 import altair as alt
 import numpy as np
 import pandas as pd
 
+import inf_bp_texts  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
 from inf_bp_texts import get_project_root
 from inf_bp_texts.simulation import (
     build_target_ranges,
@@ -172,7 +176,9 @@ def build_proportion_and_n_ever_charts(
     if INCLUDE_HT and ht_proportion is not None:
         prop_labels.append("HT estimate")
         prop_values.append(ht_proportion)
-    rule_colors = alt.Scale(domain=prop_labels, range=PTOLQUAL[1 : 1 + len(prop_labels)])
+    rule_colors = alt.Scale(
+        domain=prop_labels, range=PTOLQUAL[1 : 1 + len(prop_labels)]
+    )
 
     proportion_hist = (
         alt.Chart(pd.DataFrame({"proportion_alive": proportion_alive}))
@@ -209,7 +215,9 @@ def build_proportion_and_n_ever_charts(
         .mark_bar(opacity=0.85, color=PTOLQUAL[0])
         .encode(
             alt.X(
-                "n_born:Q", bin=alt.Bin(maxbins=40), title="N ever created (splitting posterior)"
+                "n_born:Q",
+                bin=alt.Bin(maxbins=40),
+                title="N ever created (splitting posterior)",
             ),
             alt.Y("count():Q", title="Count"),
         )
@@ -229,7 +237,7 @@ def build_proportion_and_n_ever_charts(
 ## Two-Epoch Validation
 
 Rates are mildly subcritical (birth < death in each epoch) so the short time window
-yields only a handful of survivors per epoch — the rare-event regime where
+yields only a handful of survivors per epoch --- the rare-event regime where
 multilevel splitting matters.
 
 ```{python}
@@ -257,7 +265,9 @@ true_proportion_2epoch = true_n_alive_2epoch / true_n_ever_2epoch
 print("Two-epoch ground truth:")
 print(f"  Rates: birth={BIRTH_RATES_2.tolist()}  death={DEATH_RATES_2.tolist()}")
 print(f"  Epoch end times (process time): {EPOCH_END_TIMES_2.tolist()}")
-print(f"  Accepted after {n_attempts_2epoch} attempt(s), seed={ground_truth_seed_2epoch}")
+print(
+    f"  Accepted after {n_attempts_2epoch} attempt(s), seed={ground_truth_seed_2epoch}"
+)
 print(f"  Observed per-epoch survivors: {observed_counts_2epoch.tolist()}")
 print(f"  True N ever created: {true_n_ever_2epoch}")
 print(f"  True N alive today:  {true_n_alive_2epoch}")
@@ -338,7 +348,9 @@ proportion_chart_2epoch, n_ever_chart_2epoch = build_proportion_and_n_ever_chart
 
 combined_2epoch = alt.hconcat(proportion_chart_2epoch, n_ever_chart_2epoch)
 display_svg(combined_2epoch, width=800, height=260)
-save_chart(proportion_chart_2epoch, "vme07_two_epoch_proportion", output_dir=figures_dir)
+save_chart(
+    proportion_chart_2epoch, "vme07_two_epoch_proportion", output_dir=figures_dir
+)
 save_chart(n_ever_chart_2epoch, "vme07_two_epoch_n_ever", output_dir=figures_dir)
 ```
 
@@ -352,7 +364,9 @@ for diag in splitting_result_2epoch.diagnostics:
         f"passing={diag.n_passing_filter}  acceptance_rate={diag.acceptance_rate:.3f}"
     )
 print(f"Outer-loop restarts: {splitting_result_2epoch.n_outer_iterations}")
-print(f"Total era-0 particles simulated: {splitting_result_2epoch.n_total_era0_particles}")
+print(
+    f"Total era-0 particles simulated: {splitting_result_2epoch.n_total_era0_particles}"
+)
 
 prop_lo_2epoch = float(np.percentile(proportion_alive_2epoch, 2.5))
 prop_hi_2epoch = float(np.percentile(proportion_alive_2epoch, 97.5))
@@ -373,7 +387,9 @@ epoch still has fewer than ten survivors.
 
 BIRTH_RATES_3 = np.array([0.06, 0.03, 0.015])
 DEATH_RATES_3 = np.array([0.03, 0.03, 0.03])
-EPOCH_END_TIMES_3 = np.array([15.0, 35.0, 60.0])  # process time; last entry = terminal time
+EPOCH_END_TIMES_3 = np.array(
+    [15.0, 35.0, 60.0]
+)  # process time; last entry = terminal time
 
 result_3epoch, observed_counts_3epoch, ground_truth_seed_3epoch, n_attempts_3epoch = (
     find_ground_truth_realization(
@@ -393,7 +409,9 @@ true_proportion_3epoch = true_n_alive_3epoch / true_n_ever_3epoch
 print("Three-epoch ground truth:")
 print(f"  Rates: birth={BIRTH_RATES_3.tolist()}  death={DEATH_RATES_3.tolist()}")
 print(f"  Epoch end times (process time): {EPOCH_END_TIMES_3.tolist()}")
-print(f"  Accepted after {n_attempts_3epoch} attempt(s), seed={ground_truth_seed_3epoch}")
+print(
+    f"  Accepted after {n_attempts_3epoch} attempt(s), seed={ground_truth_seed_3epoch}"
+)
 print(f"  Observed per-epoch survivors: {observed_counts_3epoch.tolist()}")
 print(f"  True N ever created: {true_n_ever_3epoch}")
 print(f"  True N alive today:  {true_n_alive_3epoch}")
@@ -474,7 +492,9 @@ proportion_chart_3epoch, n_ever_chart_3epoch = build_proportion_and_n_ever_chart
 
 combined_3epoch = alt.hconcat(proportion_chart_3epoch, n_ever_chart_3epoch)
 display_svg(combined_3epoch, width=800, height=260)
-save_chart(proportion_chart_3epoch, "vme07_three_epoch_proportion", output_dir=figures_dir)
+save_chart(
+    proportion_chart_3epoch, "vme07_three_epoch_proportion", output_dir=figures_dir
+)
 save_chart(n_ever_chart_3epoch, "vme07_three_epoch_n_ever", output_dir=figures_dir)
 ```
 
@@ -488,7 +508,9 @@ for diag in splitting_result_3epoch.diagnostics:
         f"passing={diag.n_passing_filter}  acceptance_rate={diag.acceptance_rate:.3f}"
     )
 print(f"Outer-loop restarts: {splitting_result_3epoch.n_outer_iterations}")
-print(f"Total era-0 particles simulated: {splitting_result_3epoch.n_total_era0_particles}")
+print(
+    f"Total era-0 particles simulated: {splitting_result_3epoch.n_total_era0_particles}"
+)
 
 prop_lo_3epoch = float(np.percentile(proportion_alive_3epoch, 2.5))
 prop_hi_3epoch = float(np.percentile(proportion_alive_3epoch, 97.5))
@@ -502,15 +524,16 @@ print(
 ## Discussion
 
 In both the two-epoch and three-epoch scenarios, conditioning the multilevel-splitting
-sampler on the observed per-epoch survivor counts — using the *same* rates that
-generated the ground truth — recovers a `proportion_alive` distribution whose 95%
-credible interval contains the true proportion. The analytic HT point estimate, built
+sampler on the observed per-epoch survivor counts --- using the *same* rates that
+generated the ground truth --- recovers a `proportion_alive` distribution whose 95%
+credible interval contains the true proportion.
+The analytic HT point estimate, built
 from the same known rates and the handful of surviving individuals' exact birth
 times, lands in the same neighbourhood but (as expected from a single point estimate
 with so few survivors) carries no uncertainty quantification of its own.
 
 The per-era acceptance-rate diagnostics show the conditioning filter is doing real
-work — passing only a fraction of particles at each era boundary — rather than
+work --- passing only a fraction of particles at each era boundary --- rather than
 degenerating to either "everything passes" or "nothing ever passes" (which would
 signal a misspecified target range or rates that place the true trajectory in the
 tails of the model's own predictions).

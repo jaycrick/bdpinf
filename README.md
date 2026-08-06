@@ -62,13 +62,13 @@ uv run quarto render
 - Birth-death process modeling: MLE fitting (JAX, JIT-compiled) and Bayesian
   inference (NumPyro/NUTS) for single- and multi-epoch creation/death rates,
   with a Quarto research-notebook site of worked analyses and validation studies
-- Manuscript date uncertainty pipeline: KDE-quantile resampling of `[earlyYear,
-  lateYear]` intervals into representative integer years, with a 100,000-draw
+- Manuscript date uncertainty pipeline: KDE-quantile resampling of `[earlyYear,   lateYear]` intervals into representative integer years, with a 100,000-draw
   bootstrap for downstream uncertainty quantification
 
 ## Manuscript date uncertainty
 
-Every NTVMR manuscript is dated as an interval rather than a point.  The
+Every NTVMR manuscript is dated as an interval rather than a point.
+The
 pipeline resolves this in two stages.
 
 ### Deterministic KDE-quantile resampling
@@ -105,7 +105,8 @@ subgroups (`full`, `non_lectionary`, `lectionary`, `section_e`, `section_a`,
 assignments as aligned `uint16`/`int16` arrays of shape `[100_000, n]`.
 
 Each bootstrap draw resamples the manuscript collection with replacement and
-applies the identical KDE-quantile pipeline to the bootstrapped dataset.  The
+applies the identical KDE-quantile pipeline to the bootstrapped dataset.
+The
 vectorized implementation avoids calling scipy in a loop by exploiting the
 fixed integer-year support: per-manuscript multiplicities are the only
 bootstrap-varying quantity, and all bandwidth and KDE computations reduce to
@@ -121,7 +122,7 @@ resampled_years = result["resampled_years"]  # int16 [100_000, 5833]
 ```
 
 Regenerate via the script above; the `bootstrap_samples/` directory is
-`.gitignore`d (files are 50–200 MB each compressed).
+`.gitignore`d (files are 50--200 MB each compressed).
 
 ## Development
 
