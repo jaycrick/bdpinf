@@ -2,9 +2,7 @@ project:
   type: website
   output-dir: _output
   render:
-    - qmd_scripts/*.qmd
     - qmd_scripts/validation/**/*.qmd
-    - qmd_scripts/core_analysis/**/*.qmd
     - docs/*.qmd
 
 bibliography: bibliography.bib
@@ -12,49 +10,13 @@ cite-method: biblatex
 link-citations: true
 
 website:
-  title: "Inference on Birth-Death Processes for Texts"
+  title: "bdpinf: Birth-Death Process Inference"
   repo-url: https://github.com/jaycrick/bdpinf
   repo-actions: [edit, issue]
   bread-crumbs: true
   page-navigation: true
   navbar:
     left:
-      - text: "Data Exploration"
-        menu:
-          - text: "NTVMR Data Exploration"
-            file: qmd_scripts/core_analysis/01_data_exploration/manuscript_data_exploration.qmd
-          - text: "Kashouh Data Exploration"
-            file: qmd_scripts/core_analysis/01_data_exploration/kashouh_data_exploration.qmd
-      - text: "Single-Epoch Analysis"
-        menu:
-          - text: "NTVMR Single-Epoch"
-            file: qmd_scripts/core_analysis/02_single_epoch/ntvmr_single_epoch_inference.qmd
-          - text: "Kashouh Single-Epoch (FamilyK + FamilyJB)"
-            file: qmd_scripts/core_analysis/02_single_epoch/kashouh_single_epoch_inference.qmd
-      - text: "Multi-Epoch Analysis"
-        menu:
-          - text: "NTVMR Six-Epoch"
-            file: qmd_scripts/core_analysis/03_multi_epoch/ntvmr_birth_death_inference.qmd
-          - text: "NTVMR Initial Population"
-            file: qmd_scripts/core_analysis/03_multi_epoch/ntvmr_initial_population_inference.qmd
-          - text: "Kashouh Classification"
-            file: qmd_scripts/core_analysis/03_multi_epoch/kashouh_multi_epoch_inference.qmd
-          - text: "Likelihood Surface"
-            file: qmd_scripts/core_analysis/03_multi_epoch/single_vs_multi_epoch_comparison.qmd
-          - text: "Optimizer"
-            file: qmd_scripts/core_analysis/03_multi_epoch/optimizer_comparison.qmd
-          - text: "Manuscript Survival Proportion"
-            file: qmd_scripts/core_analysis/03_multi_epoch/manuscript_survival_proportion.qmd
-      - text: "Bayesian Analysis"
-        menu:
-          - text: "Kashouh FamilyK Bayesian"
-            file: qmd_scripts/core_analysis/04_bayesian/kashouh_family_k_bayesian_inference.qmd
-          - text: "Kashouh Single-Epoch Bayesian"
-            file: qmd_scripts/core_analysis/04_bayesian/kashouh_single_epoch_bayesian.qmd
-          - text: "NTVMR Single-Epoch Bayesian"
-            file: qmd_scripts/core_analysis/04_bayesian/ntvmr_single_epoch_bayesian.qmd
-          - text: "NTVMR Six-Epoch Bayesian"
-            file: qmd_scripts/core_analysis/04_bayesian/ntvmr_birth_death_bayesian.qmd
       - text: "Validation: Single-Epoch"
         menu:
           - text: "Simulation checks"
@@ -105,8 +67,6 @@ website:
         menu:
           - text: "Likelihoods"
             file: docs/likelihoods.qmd
-          - text: "Date Uncertainty"
-            file: docs/date_uncertainty.qmd
 
 format:
   html:

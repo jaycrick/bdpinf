@@ -3,13 +3,13 @@ message: "If you use this software, please cite it as below."
 type: software
 title: "bdpinf"
 abstract: >
-  A Python platform for New Testament manuscript data including quality
-  control, analysis, and birth-death process inference via maximum-likelihood
-  estimation and Bayesian methods.
+  Inference, simulation, and visualisation for linear birth-death (branching)
+  processes, via maximum-likelihood estimation (JAX) and Bayesian methods
+  (NumPyro).
 authors:
   - family-names: "Uni Mac"
     given-names: "J"
 version: "0.1.0"
 license: MIT
-repository-code: "https://github.com/placeholder/bdpinf"
+repository-code: "https://github.com/jaycrick/bdpinf"
 date-released: "2026-06-09"

@@ -68,7 +68,7 @@ reference:
     desc: >
       BirthDeathProcess — the central data structure passed between all
       modules. Holds creation times, epoch boundaries, per-epoch birth/death
-      rates, and optional manuscript genealogy.
+      rates, and optional individual-level genealogy records.
     contents:
       - name: BirthDeathProcess
 
@@ -80,7 +80,7 @@ reference:
       - models.math_extinction
       - models.math_ages
       - models.math_populations
-      - models.mathematical_derivatives
+      - models.genealogy
 
   - title: Input validation
     desc: >
@@ -93,51 +93,61 @@ reference:
     desc: Maximum likelihood estimation and covariance.
     contents:
       - inference.fitting.fit_birth_death_processes
-      - inference.fitting.fit_from_data_frame
       - name: inference.fitting.ParameterConstraints
       - inference.likelihood.log_likelihood
       - inference.likelihood.negative_log_likelihood
       - inference.uncertainty
+      - inference.bayesian
+      - inference.persistence
 
   - title: Simulation
     desc: Gillespie simulation and multilevel splitting for rare-event estimation.
     contents:
       - simulation.simulator.simulate_birth_death_process
-      - simulation.simulator.simulate_bdp_ages_from_distributions
+      - simulation.simulator.simulate_birth_death_lifespans
       - simulation.splitting.simulate_subcritical_survival_splitting
       - name: simulation.splitting.SplittingConfig
       - simulation.splitting.select_level_times_for_band
+      - simulation.survival_conditioning
 
   - title: Visualization
     desc: Altair rendering utilities for model results and diagnostics.
     contents:
       - visualization.altair_theme.save_chart
+      - visualization.altair_theme.save_chart_html
       - visualization.altair_theme.display_svg
+      - visualization.altair_theme.set_figure_dir
+      - visualization.genealogy.plot_genealogy_tree
       - visualization.bayesian_plots
       - visualization.splitting_plots
       - visualization.parameter_plots
+      - visualization.plotting
+      - visualization.age_fit_plot
+      - visualization.correlation_plots
+      - visualization.date_distribution_plots
 
   - title: Analysis
-    desc: Higher-level helpers for summarising and comparing fit results.
+    desc: >
+      Higher-level helpers for fitting and summarising results across named
+      data subsets, and for generating/persisting validation and recovery
+      studies.
     contents:
       - analysis.single_epoch
-
-  - title: Data pipeline
-    desc: >
-      NTVMR manuscript data download, XML processing, cleaning, and pattern
-      analysis.
-    contents:
-      - data.ntvmr
-      - data.xml_processing
-      - data.data_cleaning
-      - data.content_extraction
-      - data.pattern_analysis
-      - data.reports
+      - analysis.subset_fitting
+      - analysis.latex_tables
+      - analysis.date_density
+      - analysis.bootstrap_date_density
+      - analysis.validation_helpers
+      - analysis.spike_detection
+      - analysis.asymptotic_consistency
+      - analysis.single_epoch_recovery
+      - analysis.multi_epoch_recovery
 
   - title: Utilities
-    desc: Project-path resolution helper used by notebooks and scripts.
+    desc: Project-path resolution and shared types.
     contents:
       - find_project_root
+      - types
 
 # Site URL
 # --------
@@ -161,14 +171,3 @@ reference:
 # auto-generated API reference pages. Can be overridden in individual .qmd
 # file frontmatter if needed for special cases.
 jupyter: python3
-
-# CLI Documentation
-# -----------------
-# great-docs's CLI doc generator targets raw click.Command objects, not
-# typer.Typer instances directly. bdpinf.cli:click_app is a small shim
-# (typer.main.get_command(app)) that exposes the Typer app as a Click command
-# for this purpose. See docs/design/DOCS_TOOLING_EVALUATION.md.
-cli:
-  enabled: true
-  module: bdpinf.cli
-  name: click_app
