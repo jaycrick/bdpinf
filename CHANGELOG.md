@@ -12,26 +12,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The NT
   manuscript application (data download/cleaning, `constants`/`schemas`,
   CLI) now lives in a separate `nt-manuscripts` repository that depends on
-  `bdpinf`.
-  Renamed alongside the split, with no deprecation aliases:
-  `BirthDeathProcess` moved from `models.birth_death_process` to the
-  top-level `process` module; `from_manuscript_records` → `from_records`;
-  `manuscript_records`/`manuscript_ages`/`manuscript_id` →
-  `records`/`ages`/`individual_id` (and the matching `n_manuscripts` →
-  `n_individuals`, `surviving_manuscripts` → `surviving_records`,
-  `extinct_manuscripts` → `extinct_records`); `ManuscriptSubset` → `DataSubset`;
-  `fit_manuscript_subset[s][_bayesian]` → `fit_subset[s][_bayesian]`;
-  `manuscript_date_density` → `date_range_density`.
-  `BirthDeathProcess.plot_genealogy_tree()` was removed; use the free
-  function `bdpinf.visualization.genealogy.plot_genealogy_tree(process)`
-  instead (dependency inversion: `visualization` now depends on `models`,
-  not the reverse).
-  `get_project_root` → `find_project_root` (now takes configurable
-  `markers`/`env_var`), moved from `_paths.py` to `paths.py`.
-  `save_chart`/`save_chart_html` no longer assume a Quarto project: when
-  `output_dir` is omitted, resolution now goes module default
-  (`set_figure_dir`/`get_figure_dir`) → `$BDPINF_FIGURE_DIR` env var →
-  `Path.cwd() / "figures"`.
+       `bdpinf`.
+       Renamed alongside the split, with no deprecation aliases:
+       `BirthDeathProcess` moved from `models.birth_death_process` to the
+       top-level `process` module; `from_manuscript_records` → `from_records`;
+       `manuscript_records`/`manuscript_ages`/`manuscript_id` →
+       `records`/`ages`/`individual_id` (and the matching `n_manuscripts` →
+       `n_individuals`, `surviving_manuscripts` → `surviving_records`,
+       `extinct_manuscripts` → `extinct_records`); `ManuscriptSubset` → `DataSubset`;
+       `fit_manuscript_subset[s][_bayesian]` → `fit_subset[s][_bayesian]`;
+       `manuscript_date_density` → `date_range_density`.
+       `BirthDeathProcess.plot_genealogy_tree()` was removed; use the free
+       function `bdpinf.visualization.genealogy.plot_genealogy_tree(process)`
+       instead (dependency inversion: `visualization` now depends on `models`,
+       not the reverse).
+       `get_project_root` → `find_project_root` (now takes configurable
+       `markers`/`env_var`), moved from `_paths.py` to `paths.py`.
+       `save_chart`/`save_chart_html` no longer assume a Quarto project: when
+       `output_dir` is omitted, resolution now goes module default
+       (`set_figure_dir`/`get_figure_dir`) → `$BDPINF_FIGURE_DIR` env var →
+       `Path.cwd() / "figures"`.
+- Added `itables` as a dependency: two validation notebooks use it for
+  sortable/paginated interactive tables (missed in the initial split's
+  dependency list).
+
+## [0.1.0] --- pre-split (monorepo inf-bp-texts)
 
 ### Added
 
@@ -721,5 +726,3 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   helpers in `visualization.plotting` (`apply_professional_styling`,
   `apply_tufte_axes`, `save_figure`) --- the Plotly→Altair migration is
   complete; use `visualization.altair_theme.save_chart`/`display_svg` instead.
-
-## [0.1.0] --- initial release

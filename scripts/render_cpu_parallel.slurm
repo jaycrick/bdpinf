@@ -1,7 +1,10 @@
 #!/bin/bash
-# SLURM submit script: render the embarrassingly-parallel, no-GPU notebooks
-# --- bulk simulate/fit and sensitivity-sweep notebooks that use
-# joblib.Parallel(n_jobs=-1) across CPU cores.
+# SLURM submit script: render every qmd_scripts/validation/ notebook,
+# no GPU --- bulk simulate/fit and sensitivity-sweep notebooks that use
+# joblib.Parallel(n_jobs=-1) across CPU cores, plus the Bayesian NUTS
+# notebooks (single-threaded per chain; GPU was benchmarked and found
+# 1.6x-8x slower than CPU on every config tested, see
+# docs/design/GPU_RENDERING_PROTOCOL.md).
 #
 # Several of the heaviest notebooks under qmd_scripts/validation/ (the
 # single-/multi-epoch bulk-inference and asymptotic-consistency studies) no
@@ -22,11 +25,14 @@
 # Project-rendered (in _quarto.yml's `render:` list): output lands in
 # `_output/` automatically, no --execute-dir/mv needed.
 #
-# Resource sizing (see job 26813064): 16 cpus / 32G / 6h completed in
-# 1:49:01 at 37.30% CPU efficiency (~6 cores average) and 61.90% memory
-# efficiency (19.81 GB peak). Right-sized to 8 cpus / 24G / 3h, leaving
+# Resource sizing (see job 26813064, pre-split monorepo): 16 cpus / 32G / 6h
+# completed in 1:49:01 at 37.30% CPU efficiency (~6 cores average) and 61.90%
+# memory efficiency (19.81 GB peak). Right-sized to 8 cpus / 24G / 3h, leaving
 # headroom above both observed averages/peaks (mem-per-cpu raised from 2G to
-# 3G so the smaller cpu count doesn't undershoot the 19.81 GB peak).
+# 3G so the smaller cpu count doesn't undershoot the 19.81 GB peak). That job
+# didn't include qmd_scripts/validation/bayesian_multi_epoch/ (added here
+# post-split) or optimizer_comparison.qmd (moved to nt-manuscripts) --- retune
+# after measuring a real post-split run.
 #SBATCH --job-name=render-cpu-parallel
 #SBATCH --account=punim1793
 #SBATCH --ntasks=1
@@ -43,9 +49,9 @@ module load quarto/1.8.26-x64
 uv sync
 
 NOTEBOOKS=(
-  qmd_scripts/core_analysis/03_multi_epoch/optimizer_comparison.qmd
   qmd_scripts/validation/single_epoch/
   qmd_scripts/validation/multi_epoch/
+  qmd_scripts/validation/bayesian_multi_epoch/
 )
 
 for notebook in "${NOTEBOOKS[@]}"; do

@@ -3,11 +3,12 @@
 # datasets consumed by the heaviest qmd_scripts/validation notebooks, so
 # rendering itself only has to load and plot.
 #
-# This mirrors scripts/generate_bootstrap_kde_samples.slurm's role for
-# bootstrap_samples/: an offline artifact generator chained ahead of the
-# render jobs by render_all.sh, rather than something the render jobs compute
-# inline. Each study parallelizes internally via joblib.Parallel(n_jobs=-1),
-# same as render_cpu_parallel.slurm's notebooks, so this requests a similar
+# This mirrors the application repo's (nt-manuscripts)
+# generate_bootstrap_kde_samples.slurm's role for bootstrap_samples/: an
+# offline artifact generator chained ahead of the render job by
+# render_all.sh, rather than something the render job computes inline. Each
+# study parallelizes internally via joblib.Parallel(n_jobs=-1), same as
+# render_cpu_parallel.slurm's notebooks, so this requests a similar
 # many-core allocation.
 #
 # Usage (from the repo root, on an HPC login node):

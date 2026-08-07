@@ -4,9 +4,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![codecov](https://codecov.io/gh/jaycrick/bdpinf/graph/badge.svg?token=5QNFKWSL7G)](https://codecov.io/gh/jaycrick/bdpinf)
 
-A Python platform for downloading New Testament manuscript data from the NTVMR API,
-running quality control and analysis, and fitting birth-death process models
-(MLE via JAX, Bayesian via NumPyro) to estimate manuscript creation/survival rates.
+Inference, simulation, and visualisation for linear birth-death (branching)
+processes: MLE fitting (JAX, JIT-compiled) and Bayesian inference
+(NumPyro/NUTS) for single- and multi-epoch birth/death rates, Gillespie and
+lifespan-at-birth simulators, multilevel splitting for rare-event
+extinction-probability estimation, and a shared Altair chart theme/export
+chokepoint.
+No domain-specific content --- see
+[`nt-manuscripts`](https://github.com/jaycrick/nt-manuscripts) for the New
+Testament manuscript application built on top of this library.
 
 ## Installation
 
@@ -32,24 +38,23 @@ uv sync --all-groups
 
 ## Quick Start
 
-Download and analyze manuscripts (the `bdpinf` console script is installed by `uv sync`):
+```python
+from bdpinf import BirthDeathProcess
+from bdpinf.inference.fitting import fit_birth_death_processes
 
-```sh
-uv run bdpinf ntvmr download-all
-uv run bdpinf ntvmr analyze --manuscripts-dir manuscripts --output manuscript_analysis.csv
-```
-
-Run inference from cleaned data:
-
-```sh
-uv run bdpinf inference --input-csv manuscript_analysis_cleaned.csv --plot
+model = BirthDeathProcess(creation_times=[100, 200, 300], epoch_end_times=500)
+results = fit_birth_death_processes(
+    list_of_ages=[model.ages],
+    times=model.epoch_end_times,
+)
+model.update_parameters(results["birth_rates"], results["death_rates"], results)
 ```
 
 Render the research-notebook site (notebooks live under `qmd_scripts/`; output
-goes to `_output/`; see `docs/cli.md` for the full CLI reference).
-This
-includes the slow, multi-chain Bayesian notebooks --- see "HPC / batch
-rendering" below for a faster, resource-bucketed alternative:
+goes to `_output/`).
+This includes the slow, multi-chain Bayesian validation
+notebooks --- see "HPC / batch rendering" below for a faster alternative that
+precomputes the heaviest simulate-then-fit datasets first:
 
 ```sh
 uv run quarto render
@@ -57,72 +62,64 @@ uv run quarto render
 
 ## Key Features
 
-- NTVMR data collection with resume support plus git-friendly XML formatting and validation
-- Quality control, book detection, and section alignment
 - Birth-death process modeling: MLE fitting (JAX, JIT-compiled) and Bayesian
-  inference (NumPyro/NUTS) for single- and multi-epoch creation/death rates,
-  with a Quarto research-notebook site of worked analyses and validation studies
-- Manuscript date uncertainty pipeline: KDE-quantile resampling of `[earlyYear,   lateYear]` intervals into representative integer years, with a 100,000-draw
-  bootstrap for downstream uncertainty quantification
+  inference (NumPyro/NUTS) for single- and multi-epoch birth/death rates,
+  with a Quarto research-notebook site of validation studies against
+  synthetic data with known ground-truth parameters
+- Gillespie and lifespan-at-birth simulators, plus multilevel splitting for
+  estimating small extinction probabilities
+- A shared Altair chart theme and export chokepoint (`visualization.save_chart`)
+- Generic KDE-quantile date-range resampling (`analysis.date_density`) and its
+  vectorized bootstrap extension (`analysis.bootstrap_date_density`) for
+  quantifying uncertainty over interval-censored dates, independent of any
+  particular dataset
 
-## Manuscript date uncertainty
+## Date-range uncertainty
 
-Every NTVMR manuscript is dated as an interval rather than a point.
-The
-pipeline resolves this in two stages.
+Given a dataset where each item is dated as an interval rather than a point
+(e.g. `[earlyYear, lateYear]`), this library resolves that in two stages.
 
 ### Deterministic KDE-quantile resampling
 
-`add_resampled_year_column(df)` (in `data/data_cleaning.py`) assigns one
-integer year to each manuscript via a boundary-corrected weighted Gaussian KDE:
+`quantile_resample_dates(early, late, current_year, n_samples)` (in
+`analysis/date_density.py`) assigns one integer year to each item via a
+boundary-corrected weighted Gaussian KDE:
 
-1. Each range `[earlyYear, lateYear]` is expanded into `n = late - early + 1`
+1. Each range `[early, late]` is expanded into `n = late - early + 1`
    pseudo-points with weight `1/n` (exact dates are unchanged).
 2. The pseudo-points feed a weighted `gaussian_kde` with Scott's-rule bandwidth
-   and boundary correction (reflection at age 0 and at the oldest manuscript).
+   and boundary correction (reflection at age 0 and at the oldest item).
 3. The CDF is inverted at Hazen positions `(k - 0.5) / N` to produce one
-   sorted resampled year per manuscript; years are assigned to manuscripts
-   sorted by `midYear`.
+   sorted resampled year per item.
 
-The result is stored as `resampledYear` and used as the default age input to
-the birth-death models.
-
-See `docs/date_uncertainty.qmd` for the full mathematical derivation; see
-`analysis/date_density.py` and `analysis/validation_helpers.py` for the
-implementation.
+See `docs/date_uncertainty.qmd` in the application repo for the full
+mathematical derivation and its NT-manuscript-specific wrapper
+(`add_resampled_year_column`); see `analysis/date_density.py` and
+`analysis/validation_helpers.py` here for the generic implementation.
 
 ### Bootstrap uncertainty quantification
 
-To propagate date uncertainty through downstream inference, run:
-
-```sh
-uv run python scripts/generate_bootstrap_kde_samples.py
-```
-
-This generates `bootstrap_samples/<subgroup>.npz` for seven manuscript
-subgroups (`full`, `non_lectionary`, `lectionary`, `section_e`, `section_a`,
-`section_p`, `section_r`), each containing 100,000 alternative date
-assignments as aligned `uint16`/`int16` arrays of shape `[100_000, n]`.
-
-Each bootstrap draw resamples the manuscript collection with replacement and
-applies the identical KDE-quantile pipeline to the bootstrapped dataset.
-The
-vectorized implementation avoids calling scipy in a loop by exploiting the
-fixed integer-year support: per-manuscript multiplicities are the only
-bootstrap-varying quantity, and all bandwidth and KDE computations reduce to
-batched matrix operations (`k @ A / N`, chunked einsum).
-
-Load samples for downstream use:
+`analysis/bootstrap_date_density.py`'s `bootstrap_quantile_resample_dates`
+propagates date uncertainty through downstream inference by resampling the
+dataset itself with replacement (not just the KDE), applying the identical
+KDE-quantile pipeline to each bootstrap draw.
+The vectorized implementation
+avoids calling scipy in a loop by exploiting the fixed integer-year support:
+per-item multiplicities are the only bootstrap-varying quantity, and all
+bandwidth and KDE computations reduce to batched matrix operations
+(`k @ A / N`, chunked einsum).
+`save_bootstrap_samples`/`load_bootstrap_samples`
+persist results to a compressed `.npz`:
 
 ```python
 from bdpinf.analysis import load_bootstrap_samples
 
 result = load_bootstrap_samples("bootstrap_samples/full.npz")
-resampled_years = result["resampled_years"]  # int16 [100_000, 5833]
+resampled_years = result["resampled_years"]  # int16 [n_bootstrap, n]
 ```
 
-Regenerate via the script above; the `bootstrap_samples/` directory is
-`.gitignore`d (files are 50--200 MB each compressed).
+The application repo's `scripts/generate_bootstrap_kde_samples.py` is the
+concrete driver for the NT-manuscript dataset; see it for a worked example.
 
 ## Development
 
@@ -146,9 +143,11 @@ uv run quarto preview
 
 ### HPC / batch rendering
 
-Notebooks render in two CPU-resource buckets via `scripts/render_*.slurm`
-(light/serial vs. embarrassingly-parallel).
-GPU rendering of the Bayesian
-notebooks was benchmarked and found 1.6×--8× *slower* than CPU on every
-config tested, so they render on CPU too; see
+`scripts/generate_recovery_studies.slurm` precomputes the simulate-then-fit
+datasets consumed by the heaviest validation notebooks, chained via
+`scripts/render_all.sh` before `scripts/render_cpu_parallel.slurm` renders
+everything (including the Bayesian NUTS validation notebooks).
+GPU rendering
+was benchmarked and found 1.6×--8× *slower* than CPU on every config tested,
+so Bayesian notebooks render on CPU too; see
 `docs/design/GPU_RENDERING_PROTOCOL.md`.

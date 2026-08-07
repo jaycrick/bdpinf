@@ -176,6 +176,7 @@ source = { editable = "." }
 dependencies = [
     { name = "altair" },
     { name = "beartype" },
+    { name = "itables" },
     { name = "jax" },
     { name = "jaxtyping" },
     { name = "joblib" },
@@ -218,6 +219,7 @@ gpu = [
 requires-dist = [
     { name = "altair", specifier = ">=6.0.0" },
     { name = "beartype", specifier = ">=0.19.0" },
+    { name = "itables", specifier = ">=2.7.0" },
     { name = "jax", specifier = ">=0.4.38" },
     { name = "jaxtyping", specifier = ">=0.2.38" },
     { name = "joblib", specifier = ">=1.5.3" },
@@ -906,6 +908,15 @@ wheels = [
 ]
 
 [[package]]
+name = "itables"
+version = "2.9.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/2d/aa4700aeda35684c3a75f56e63e5499c4a86e5e9be2c0e350c2934198208/itables-2.9.1.tar.gz", hash = "sha256:b547f0882b56e5e37ed6a88450b3e34492aa03f5aaa4cf0fe00b54933b9eb7e9", size = 1543197, upload-time = "2026-07-22T21:08:31.523Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/3b/3a8bce7568cf568ab108fdfa41017169efc5650a4091bb6de2ae2441e5ec/itables-2.9.1-py3-none-any.whl", hash = "sha256:8342ceaa10a074d4623916875fd7390dccd703bf2cb29386ab20034e188e50cb", size = 1568923, upload-time = "2026-07-22T21:08:29.642Z" },
+]
+
+[[package]]
 name = "jax"
 version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
@@ -923,8 +934,8 @@ wheels = [
 
 [package.optional-dependencies]
 cuda12 = [
-    { name = "jax-cuda12-plugin", extra = ["with-cuda"] },
-    { name = "jaxlib" },
+    { name = "jax-cuda12-plugin", extra = ["with-cuda"], marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "jaxlib", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 
 [[package]]
@@ -941,7 +952,7 @@ name = "jax-cuda12-plugin"
 version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jax-cuda12-pjrt" },
+    { name = "jax-cuda12-pjrt", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f6/0e/fff3d0eaf710b8dd3b76b3f177b0d26ff8cfed493b4d3bedd9ccdb8b687b/jax_cuda12_plugin-0.11.0-cp313-cp313-manylinux_2_27_aarch64.whl", hash = "sha256:ef103b35364795708c4a4380376d8d73fc3d487356a7037fcf20cab735fb59a6", size = 8208891, upload-time = "2026-07-16T18:58:42.877Z" },
@@ -1710,7 +1721,7 @@ name = "nvidia-cublas-cu12"
 version = "12.9.2.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cuda-nvrtc-cu12" },
+    { name = "nvidia-cuda-nvrtc-cu12", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f7/a2/c96163a0fff1839c0c9548bbdeae7b853b867009e33b9b9264adc238b1cf/nvidia_cublas_cu12-12.9.2.10-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:5572131a59c3eebeeb1c4c8144f772d49372c20124916e072a0e3fc30df421d5", size = 575012079, upload-time = "2026-04-08T18:51:47.303Z" },
@@ -1767,7 +1778,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.9.0.52"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/69/2e/4a154b869d497ec5789c4ac3501ba657e9a19ce1d6a362faa83cbac1aa19/nvidia_cudnn_cu12-9.9.0.52-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:4d8d9c350ae3808f51923c409ede03cde12cb47a018ade04babcb2d34a750f71", size = 779760370, upload-time = "2025-05-02T18:08:50.524Z" },

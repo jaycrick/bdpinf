@@ -1,7 +1,8 @@
 r"""Generate and persist the simulate-then-fit "recovery study" datasets.
 
-This script is an **offline artifact generator**, mirroring
-``scripts/generate_bootstrap_kde_samples.py``: run it once (ideally on an HPC
+This script is an **offline artifact generator**, mirroring the application
+repo's (nt-manuscripts) ``scripts/generate_bootstrap_kde_samples.py``: run it
+once (ideally on an HPC
 node with many cores) to produce ``recovery_samples/<study>.npz`` under the
 project root. The heaviest ``qmd_scripts/validation`` notebooks then load
 these files via
