@@ -8,11 +8,11 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from inf_bp_texts.inference.persistence import (
+from bdpinf.inference.persistence import (
     load_posterior_samples,
     save_posterior_samples,
 )
-from inf_bp_texts.simulation.survival_conditioning import (
+from bdpinf.simulation.survival_conditioning import (
     _clone_particle,  # pyright: ignore[reportPrivateUsage]
     _count_era_survivors,  # pyright: ignore[reportPrivateUsage]
     _EraLoopState,  # pyright: ignore[reportPrivateUsage]
@@ -531,7 +531,7 @@ class TestConditionedSurvivalRecovery:
         """
         import numpy as np
 
-        from inf_bp_texts.simulation import simulate_birth_death_lifespans_arrays
+        from bdpinf.simulation import simulate_birth_death_lifespans_arrays
 
         rng = np.random.default_rng(_SEED + 99)
         br = np.array([0.08, 0.03])

@@ -1,1 +1,1 @@
-"""Utility scripts for the inf-bp-texts project."""
+"""Utility scripts for the bdpinf project."""

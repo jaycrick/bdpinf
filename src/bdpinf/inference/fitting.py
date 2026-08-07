@@ -14,10 +14,10 @@ import numpy as np
 import optax
 from numpy.typing import NDArray
 
-from inf_bp_texts.models.validation import (
+from bdpinf.models.validation import (
     normalize_and_validate_inputs as _jax_normalize,
 )
-from inf_bp_texts.utils import ensure_1d_tensor
+from bdpinf.utils import ensure_1d_tensor
 
 from ._fit_types import (
     DEFAULT_ITERATIONS,
@@ -816,8 +816,8 @@ def get_crude_parameter_estimates(
     times_arr, ages_arr = normalize_and_validate_inputs(times=times, ages=ages)
 
     observation_time = times_arr[-1]
-    n_manuscripts = len(ages_arr)
-    if n_manuscripts == 0:
+    n_individuals = len(ages_arr)
+    if n_individuals == 0:
         msg = "Cannot estimate parameters from empty age data"
         raise ValueError(msg)
 
@@ -832,7 +832,7 @@ def get_crude_parameter_estimates(
         est_death_rates = jnp.maximum(
             est_birth_rates
             - jnp.log(
-                jnp.array(float(n_manuscripts / initial_population), dtype=jnp.float64),
+                jnp.array(float(n_individuals / initial_population), dtype=jnp.float64),
             )
             / observation_time,
             jnp.full_like(times_arr, 1e-8, dtype=jnp.float64),

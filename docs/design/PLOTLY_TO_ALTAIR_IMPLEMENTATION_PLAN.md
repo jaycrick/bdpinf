@@ -5,7 +5,7 @@
 This document tracked the migration of the visualization layer from Plotly to
 Altair.
 All phases are now done: Altair is the only charting library used by
-`src/inf_bp_texts/visualization/` and by every notebook under `qmd_scripts/`.
+`src/bdpinf/visualization/` and by every notebook under `qmd_scripts/`.
 
 ## What changed in the final phase
 
@@ -18,7 +18,7 @@ pure Plotly (`go.Figure`/`make_subplots`, `fig.show()`,
 The four recurring Bayesian figure archetypes (prior-vs-posterior, posterior
 rates with credible intervals, MCMC trace plots, posterior predictive checks)
 were extracted into tested Altair builders in
-`src/inf_bp_texts/visualization/bayesian_plots.py`
+`src/bdpinf/visualization/bayesian_plots.py`
 (`prior_posterior_chart`, `posterior_rates_chart`, `trace_chart`, `ppc_chart`,
 covered by `tests/test_bayesian_plots.py`), and all four notebooks were
 migrated to call them via the existing `save_chart`/`display_svg` chokepoint
@@ -27,7 +27,7 @@ in `altair_theme.py`.
 Phase 6 (removing Plotly entirely) followed:
 
 - Dropped the dead Plotly-shaped helpers from
-  `src/inf_bp_texts/visualization/plotting.py`
+  `src/bdpinf/visualization/plotting.py`
   (`apply_professional_styling`, `apply_tufte_axes`, `save_figure`) and
   rewrote `tests/test_plotting.py` to cover the surviving Altair builders
   (`convergence_chart`, the `save_multi_epoch_*` savers) instead.

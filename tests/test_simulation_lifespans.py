@@ -6,15 +6,15 @@ import numpy as np
 import pytest
 from scipy.stats import ks_2samp
 
-from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.models.math_extinction import calculate_extinction_pr
-from inf_bp_texts.simulation import (
+from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.process import BirthDeathProcess
+from bdpinf.simulation import (
     LifespanSimulationArrays,
     simulate_birth_death_lifespans,
     simulate_birth_death_lifespans_arrays,
     simulate_birth_death_process,
 )
-from inf_bp_texts.simulation.simulator import (
+from bdpinf.simulation.simulator import (
     _sample_piecewise_exponential_death_time,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -41,13 +41,13 @@ class TestLifespanSimulation:
 
     def test_ages_non_negative(self) -> None:
         result = simulate_birth_death_lifespans(0.1, 0.02, 100.0, random_seed=_SEED)
-        assert np.all(result.manuscript_ages >= 0.0)
+        assert np.all(result.ages >= 0.0)
 
     def test_ages_consistency(self) -> None:
         """Age == terminal_time - creation_time for each survivor."""
         T = 100.0
         result = simulate_birth_death_lifespans(0.1, 0.02, T, random_seed=_SEED)
-        surviving = result.surviving_manuscripts
+        surviving = result.surviving_records
         assert surviving is not None
         if surviving.empty:
             pytest.skip("no survivors for this seed")
@@ -57,26 +57,26 @@ class TestLifespanSimulation:
             sorted(manual_ages),
         )
 
-    def test_surviving_manuscripts_structure(self) -> None:
+    def test_surviving_records_structure(self) -> None:
         result = simulate_birth_death_lifespans(0.2, 0.01, 50.0, random_seed=_SEED)
-        surviving = result.surviving_manuscripts
+        surviving = result.surviving_records
         assert surviving is not None
         if surviving.empty:
             pytest.skip("no survivors for this seed")
-        for col in ["manuscript_id", "creation_time", "age", "survived"]:
+        for col in ["individual_id", "creation_time", "age", "survived"]:
             assert col in surviving.columns
         assert all(surviving["survived"])
         assert all(surviving["age"] >= 0.0)
         assert all(surviving["creation_time"] >= 0.0)
 
-    def test_extinct_manuscripts_structure(self) -> None:
+    def test_extinct_records_structure(self) -> None:
         result = simulate_birth_death_lifespans(0.2, 0.01, 50.0, random_seed=_SEED)
-        dead = result.extinct_manuscripts
+        dead = result.extinct_records
         assert dead is not None
         if dead.empty:
             pytest.skip("no extinctions for this seed")
         for col in [
-            "manuscript_id",
+            "individual_id",
             "creation_time",
             "death_time",
             "lifespan",
@@ -110,7 +110,7 @@ class TestLifespanSimulation:
         result = simulate_birth_death_lifespans(
             0.1, 0.02, 100.0, random_seed=_SEED, ensure_non_extinct=True
         )
-        surviving = result.surviving_manuscripts
+        surviving = result.surviving_records
         assert surviving is not None
         assert not surviving.empty
         assert surviving["is_spine"].sum() == 1
@@ -119,14 +119,14 @@ class TestLifespanSimulation:
         result = simulate_birth_death_lifespans(
             0.001, 0.02, 100.0, random_seed=_SEED, ensure_non_extinct=True
         )
-        surviving = result.surviving_manuscripts
+        surviving = result.surviving_records
         assert surviving is not None
         assert not surviving.empty
 
     def test_birth_epoch_column_present(self) -> None:
         result = simulate_birth_death_lifespans(0.1, 0.02, 100.0, random_seed=_SEED)
-        assert result.manuscript_records is not None
-        assert "birth_epoch" in result.manuscript_records.columns
+        assert result.records is not None
+        assert "birth_epoch" in result.records.columns
 
     def test_overflow_raises(self) -> None:
         with pytest.raises(RuntimeError, match="max_population"):
@@ -207,7 +207,7 @@ class TestLifespanMultiEpoch:
         result = simulate_birth_death_lifespans(
             self._B2, self._D2, self._T2, random_seed=_SEED
         )
-        records = result.manuscript_records
+        records = result.records
         assert records is not None
         assert records["birth_epoch"].between(0, 1).all()
 
@@ -402,7 +402,7 @@ class TestLifespanEquivalence:
                 self._T,
                 random_seed=s + seed_offset,
             )
-            surv = proc.surviving_manuscripts
+            surv = proc.surviving_records
             if surv is not None and not surv.empty:
                 age_arrays.append(surv["age"].to_numpy(dtype=np.float64))
         return age_arrays
@@ -455,7 +455,7 @@ class TestLifespanEquivalence:
             proc = simulate_birth_death_lifespans(
                 self._BIRTH_RATE, self._DEATH_RATE, self._T, random_seed=s
             )
-            surv = proc.surviving_manuscripts
+            surv = proc.surviving_records
             if surv is None or surv.empty:
                 n_extinct += 1
 

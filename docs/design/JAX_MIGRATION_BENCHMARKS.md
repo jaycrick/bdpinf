@@ -27,7 +27,7 @@ After JIT-compiling the math kernels
 End-to-end fitter benchmark (LBFGS, `scripts/bench_jax_jit.py bench-fitter`):
 warm fits run in \~0.6--1.5s regardless of `n_ages` (Python/scipy overhead
 dominates, not per-step cost); the JIT-vs-eager wall-clock advantage scales
-with iteration count, reaching 20--60× for real 6-epoch manuscript fits
+with iteration count, reaching 20--60× for real 6-epoch individual fits
 (50--200 iterations).
 
 ## CPU vs GPU (NVIDIA A100 80GB, 2026-06-22)
@@ -80,12 +80,12 @@ Going 200→1000 samples just multiplies the per-step dispatch overhead on both
 backends roughly equally.
 
 **A much larger per-call model doesn't help either.** The same 1-chain/50-sample
-config run against the `non_lectionary` NTVMR subset (3,351 manuscripts, six
-epochs --- 67× more manuscripts and 3× more epochs than the Kashouh FamilyK
+config run against the `non_lectionary` NTVMR subset (3,351 records, six
+epochs --- 67× more records and 3× more epochs than the Kashouh FamilyK
 model) gave 10.3s CPU vs. 16.6s GPU (0.62×): the same ratio as every smaller
 configuration above.
 Across three independent scaling axes tested today
-(samples, chains, and manuscript/epoch count), GPU loses by the same \~1.6×
+(samples, chains, and individual/epoch count), GPU loses by the same \~1.6×
 margin every time, which rules out "the model is too small" as the
 explanation.
 The likely real cause: NUTS's tree-building involves substantial

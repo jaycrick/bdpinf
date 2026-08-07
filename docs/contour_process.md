@@ -3,7 +3,7 @@
 ## Overview
 
 This document describes the contour-process based simulator introduced in
-`src/inf_bp_texts/simulation/simulator.py`.
+`src/bdpinf/simulation/simulator.py`.
 
 ## Concepts
 
@@ -38,11 +38,11 @@ This document describes the contour-process based simulator introduced in
 
 - The contour is interpreted as alternating death and birth times,
   starting and ending at 0.
-- Use two stacks: one for birth times and one for manuscript numbers.
-- Manuscript 0 (root) is created with creation time 0.
+- Use two stacks: one for birth times and one for individual numbers.
+- Individual 0 (root) is created with creation time 0.
 - On reading a birth time, pop the birth-time stack until the top birth time
-  is strictly less than the new birth time; the manuscript number on the
-  top of the manuscript stack becomes the parent of the new manuscript.
+  is strictly less than the new birth time; the individual number on the
+  top of the individual stack becomes the parent of the new individual.
 - This reproduces the usual genealogical reconstruction from a contour.
 
 ## Assumptions and invariants
@@ -51,18 +51,18 @@ This document describes the contour-process based simulator introduced in
 - Terminal time `T` is positive.
 - Generated contour lists must be strictly alternating and start/end with 0.
 - The public API returns a `BirthDeathProcess` canonical object (use
-  `BirthDeathProcess.from_manuscript_records` internally) so downstream
+  `BirthDeathProcess.from_records` internally) so downstream
   code sees the same representation as other simulators in the project.
 
 ## Spine / survival semantics
 
-- Manuscripts whose recorded death time equals the terminal time `T` are
+- Records whose recorded death time equals the terminal time `T` are
   treated as still alive at observation and their `death_time` is stored as
-  `NaN` in the canonical `manuscript_records` table.
+  `NaN` in the canonical `records` table.
   This ensures the
   `survived` boolean and `age` fields reflect survival to `T`.
-- Exactly one manuscript will be marked `is_spine = True`: the first
-  surviving manuscript (the earliest created manuscript that is alive at
+- Exactly one individual will be marked `is_spine = True`: the first
+  surviving individual (the earliest created individual that is alive at
   `T`) --- this matches the convention used by the genealogy ordering
   utilities.
 
@@ -75,18 +75,18 @@ This document describes the contour-process based simulator introduced in
 ## Usage
 
 Call `simulate_birth_death_process_from_contour_process(...)` from the
-`inf_bp_texts.simulation` package.
+`bdpinf.simulation` package.
 See the function docstring and
-`src/inf_bp_texts/simulation/simulator.py` for parameter descriptions and
+`src/bdpinf/simulation/simulator.py` for parameter descriptions and
 examples.
 
 ## Notes and next steps
 
-- The reconstructed manuscripts currently have their `is_spine` field set
+- The reconstructed records currently have their `is_spine` field set
   using the canonical `BirthDeathProcess` logic (the genealogical ordering
   functions mark the first surviving lineage as the spine).
   If a different
-  `is_spine` convention is desired (e.g. mark all spine-origin manuscripts
+  `is_spine` convention is desired (e.g. mark all spine-origin records
   explicitly), modify `_contour_process_list_to_birth_death_process` to
   set the `is_spine` flag during record creation.
 - Add cross-references to the user-facing docs if desired.

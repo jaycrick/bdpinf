@@ -3,7 +3,7 @@
 Moved out of the three heaviest ``qmd_scripts/validation/multi_epoch`` bulk
 inference notebooks so the per-replicate simulate+fit work can be run once by
 ``scripts/generate_recovery_studies.py`` and persisted via
-:func:`~inf_bp_texts.inference.save_recovery_results`:
+:func:`~bdpinf.inference.save_recovery_results`:
 
 - :func:`run_two_rate_replicate` --- ``03_bulk_inference.qmd``: a genuine
   two-epoch process (distinct birth/death rate per epoch).
@@ -11,7 +11,7 @@ inference notebooks so the per-replicate simulate+fit work can be run once by
   single-rate generative data fit with a two-epoch model.
 - :func:`run_zero_birth_replicate` --- ``05_bulk_inference_zero_birth.qmd``:
   structural-zero second-epoch birth rate with a shared death rate, fit under
-  :class:`~inf_bp_texts.inference.fitting.ParameterConstraints`.
+  :class:`~bdpinf.inference.fitting.ParameterConstraints`.
 """
 
 from typing import Any
@@ -20,18 +20,18 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from inf_bp_texts.analysis.single_epoch import extract_alive_ages
-from inf_bp_texts.analysis.single_epoch_recovery import sample_single_epoch_ages
-from inf_bp_texts.analysis.validation_helpers import (
+from bdpinf.analysis.single_epoch import extract_alive_ages
+from bdpinf.analysis.single_epoch_recovery import sample_single_epoch_ages
+from bdpinf.analysis.validation_helpers import (
     FitModelConfig,
     fit_single_model,
     has_ages_in_each_epoch,
 )
-from inf_bp_texts.inference.fitting import (
+from bdpinf.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
 )
-from inf_bp_texts.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death_process
 
 
 def _epoch_row(
@@ -115,8 +115,8 @@ def simulate_zero_birth_second_epoch(
         random_seed=first_epoch_seed,
     )
 
-    assert first_epoch.manuscript_records is not None
-    simulation = first_epoch.manuscript_records.copy()
+    assert first_epoch.records is not None
+    simulation = first_epoch.records.copy()
     alive_mask = simulation["death_time"].isna()
     alive_indices = simulation.index[alive_mask]
     if len(alive_indices) > 0:

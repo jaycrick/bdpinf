@@ -13,7 +13,7 @@ link-citations: true
 
 website:
   title: "Inference on Birth-Death Processes for Texts"
-  repo-url: https://github.com/jaycrick/inf-bp-texts
+  repo-url: https://github.com/jaycrick/bdpinf
   repo-actions: [edit, issue]
   bread-crumbs: true
   page-navigation: true
@@ -73,6 +73,8 @@ website:
             file: qmd_scripts/validation/single_epoch/08_asymptotic_consistency_llm.qmd
           - text: "Subcritical splitting"
             file: qmd_scripts/validation/single_epoch/09_subcritical_splitting.qmd
+          - text: "Likelihood surface comparison"
+            file: qmd_scripts/validation/single_epoch/10_likelihood_surface_comparison.qmd
       - text: "Validation: Multi-Epoch"
         menu:
           - text: "Simulation checks"

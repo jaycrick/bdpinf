@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 # Must be set before `import jax` — jax reads JAX_PLATFORMS into its config at
-# import time, so setting this any later (e.g. via `import inf_bp_texts`) is
+# import time, so setting this any later (e.g. via `import bdpinf`) is
 # too late and lets JAX auto-select GPU whenever CUDA is visible.
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
@@ -34,14 +34,14 @@ import jax.numpy as jnp
 import numpy as np
 import typer
 
-import inf_bp_texts  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
-from inf_bp_texts import get_project_root
-from inf_bp_texts.inference import fit_birth_death_processes
-from inf_bp_texts.models.math_ages import (
+import bdpinf  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
+from bdpinf import get_project_root
+from bdpinf.inference import fit_birth_death_processes
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.models.math_populations import calculate_populations_log_lik
+from bdpinf.models.math_populations import calculate_populations_log_lik
 
 app = typer.Typer(add_completion=False)
 

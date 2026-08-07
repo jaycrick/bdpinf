@@ -8,13 +8,13 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from inf_bp_texts.inference.likelihood import log_likelihood
-from inf_bp_texts.models import (
-    BirthDeathProcess,
+from bdpinf.inference.likelihood import log_likelihood
+from bdpinf.models import (
     calculate_populations_log_lik,
     calculate_populations_log_pmf,
 )
-from inf_bp_texts.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.process import BirthDeathProcess
 
 
 class TestPopulationProbability:
@@ -596,13 +596,13 @@ class TestPopulationProbabilityIntegration:
             epoch_end_times=1000.0,
         )
 
-        # Set up a simple manuscript scenario
-        creation_times = [1000.0, 1200.0, 1400.0]  # Three manuscripts
+        # Set up a simple individual scenario
+        creation_times = [1000.0, 1200.0, 1400.0]  # Three records
         model.creation_times = creation_times
         model.set_epoch_end_times(1500.0)
 
         # Test that log-likelihood calculation doesn't fail using modular function
-        ages = model.manuscript_ages
+        ages = model.ages
         log_likelihood_value = log_likelihood(
             birth_rates=0.1,
             death_rates=0.05,
@@ -616,16 +616,16 @@ class TestPopulationProbabilityIntegration:
         )
 
     def test_population_probability_in_context(self) -> None:
-        """Test population probability calculation in realistic manuscript context."""
-        # Realistic medieval manuscript parameters
-        birth_rate = 0.01  # 1 manuscript per 100 years
+        """Test population probability calculation in realistic individual context."""
+        # Realistic medieval individual parameters
+        birth_rate = 0.01  # 1 individual per 100 years
         death_rate = 0.001  # 0.1% death rate per year
         time = 1000.0  # 1000 years of observation
-        n = 50  # 50 surviving manuscripts
+        n = 50  # 50 surviving records
 
         result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=n)
 
         assert math.isfinite(float(result)), (
-            "Realistic manuscript parameters should give finite result"
+            "Realistic individual parameters should give finite result"
         )
         assert float(result) <= 0, "Log probability should be non-positive"

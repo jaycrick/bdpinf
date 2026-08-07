@@ -15,7 +15,7 @@ import numpy as np
 import optax
 import scipy.optimize
 
-from inf_bp_texts.inference._fit_types import (
+from bdpinf.inference._fit_types import (
     PATIENCE_GRADIENT_MULTIPLIER,
     ConvergenceConfig,
     OptimizerStrategy,

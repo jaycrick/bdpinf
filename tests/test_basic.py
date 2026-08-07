@@ -1,9 +1,9 @@
-"""Tests for inf-bp-texts package basics."""
+"""Tests for bdpinf package basics."""
 
 import tempfile
 from pathlib import Path
 
-from inf_bp_texts.utils import ensure_directory
+from bdpinf.utils import ensure_directory
 
 
 class TestBasic:
@@ -19,6 +19,6 @@ class TestBasic:
 
     def test_package_import(self) -> None:
         """Test that the package can be imported."""
-        import inf_bp_texts
+        import bdpinf
 
-        assert inf_bp_texts.__version__ == "0.1.0"
+        assert bdpinf.__version__ == "0.1.0"

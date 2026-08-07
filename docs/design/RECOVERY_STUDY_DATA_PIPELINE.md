@@ -22,11 +22,11 @@ other kinds of expensive data, and this pipeline follows the same shape:
   script `scripts/generate_bootstrap_kde_samples.py`, persisted via
   `save_bootstrap_samples`/`load_bootstrap_samples` in
   `analysis/bootstrap_date_density.py`.
-- **`posterior_samples/<subset>.npz`** --- generated inline in
-  `ntvmr_birth_death_bayesian.qmd` (MCMC has to run somewhere), persisted via
-  `save_posterior_samples`/`load_posterior_samples` in
-  `inference/persistence.py`, and **reloaded, not recomputed**, by
-  `manuscript_survival_proportion.qmd`.
+- **`posterior_samples/<subset>.npz`** --- generated inline in the
+  application repo's `ntvmr_birth_death_bayesian.qmd` (MCMC has to run
+  somewhere), persisted via `save_posterior_samples`/`load_posterior_samples`
+  in `inference/persistence.py`, and **reloaded, not recomputed**, by the
+  application repo's `manuscript_survival_proportion.qmd`.
 - **`analysis/asymptotic_consistency.py`** already went halfway there for
   `07_asymptotic_consistency.qmd`: its per-replicate simulate+fit logic was
   moved out of the Quarto script into an importable module.

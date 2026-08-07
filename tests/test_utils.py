@@ -5,9 +5,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from inf_bp_texts.inference.likelihood import log_likelihood
-from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.utils import derive_worker_seeds, ensure_1d_tensor, format_ordinal
+from bdpinf.inference.likelihood import log_likelihood
+from bdpinf.process import BirthDeathProcess
+from bdpinf.utils import derive_worker_seeds, ensure_1d_tensor, format_ordinal
 
 
 class TestFormatOrdinal:
@@ -40,8 +40,8 @@ class TestEdgeCases:
         process = BirthDeathProcess(creation_times=[], epoch_end_times=1000.0)
 
         assert len(process.creation_times) == 0
-        assert len(process.manuscript_ages) == 0
-        assert process.n_manuscripts == 0
+        assert len(process.ages) == 0
+        assert process.n_individuals == 0
 
     def test_zero_rates(self) -> None:
         """Test behavior with zero rates."""
@@ -56,7 +56,7 @@ class TestEdgeCases:
         process.set_epoch_end_times(200.0)
 
         # Use modular log_likelihood function
-        ages = process.manuscript_ages
+        ages = process.ages
         ll = log_likelihood(0.0, 0.01, ages, process.epoch_end_times[-1])
         assert ll == -np.inf
 
@@ -67,7 +67,7 @@ class TestEdgeCases:
         process.set_epoch_end_times(200.0)
 
         # Use modular log_likelihood function
-        ages = process.manuscript_ages
+        ages = process.ages
 
         # Negative rates should give -inf log-likelihood
         ll = log_likelihood(-0.01, 0.01, ages, process.epoch_end_times[-1])
@@ -88,29 +88,29 @@ class TestEdgeCases:
         process.set_epoch_end_times(100000.0)  # Very large final time
 
         # Use modular log_likelihood function
-        ages = process.manuscript_ages
+        ages = process.ages
 
         # Should handle large ages without crashing
         ll = log_likelihood(0.001, 0.0001, ages, process.epoch_end_times[-1])
         # Result might be -inf due to numerical limits, but shouldn't crash
         assert np.isfinite(ll) or ll == -np.inf
 
-    def test_single_manuscript(self) -> None:
-        """Test behavior with single manuscript."""
+    def test_single_individual(self) -> None:
+        """Test behavior with single individual."""
         process = BirthDeathProcess(
             creation_times=[],
             epoch_end_times=1000.0,
             birth_rates=0.01,
             death_rates=0.005,
         )
-        process.add_manuscript(100.0)
+        process.add_individual(100.0)
         process.set_epoch_end_times(500.0)
 
-        assert len(process.manuscript_ages) == 1
-        assert process.manuscript_ages[0] == 400.0
+        assert len(process.ages) == 1
+        assert process.ages[0] == 400.0
 
         # Use modular log_likelihood function
-        ages = process.manuscript_ages
+        ages = process.ages
 
         # Should be able to calculate log-likelihood
         ll = log_likelihood(0.01, 0.005, ages, process.epoch_end_times[-1])
@@ -119,18 +119,18 @@ class TestEdgeCases:
     @pytest.mark.xfail(
         reason="set_epoch_end_times now raises ValueError when the new epoch end"
         " time is before an existing creation_time, instead of silently"
-        " filtering the manuscript out — pre-existing failure, to be sorted"
+        " filtering the individual out — pre-existing failure, to be sorted"
         " through later"
     )
     def test_epoch_end_time_before_creation_time(self) -> None:
         """Test behavior when epoch end time is before creation_time."""
         process = BirthDeathProcess(creation_times=[], epoch_end_times=1000.0)
-        process.add_manuscript(1000.0)
+        process.add_individual(1000.0)
         process.set_epoch_end_times(500.0)  # Before creation time
 
-        # The manuscript should be filtered out (since creation time > final time)
-        # So there should be no manuscripts left
-        ages = process.manuscript_ages
+        # The individual should be filtered out (since creation time > final time)
+        # So there should be no records left
+        ages = process.ages
         assert len(ages) == 0
 
 

@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL, save_chart
+from bdpinf.visualization.altair_theme import PTOLQUAL, save_chart
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def compute_consistency_bands(
         ``mean``/``median``/``variance``), ``estimate``, ``lower``, ``upper``,
         and ``true_value`` (NaN for ``variance``, which has no reference line).
     """
-    from inf_bp_texts.analysis.spike_detection import seed_from_parts
+    from bdpinf.analysis.spike_detection import seed_from_parts
 
     regime_order = [regime_config["name"] for regime_config in regime_configs]
     regime_lookup = {cfg["name"]: cfg for cfg in regime_configs}
@@ -280,7 +280,7 @@ def save_multi_epoch_convergence_figure(
         directory via :func:`save_chart`.
 
     """
-    from inf_bp_texts.analysis.validation_helpers import (
+    from bdpinf.analysis.validation_helpers import (
         get_selected_attempt,
     )
 
@@ -313,23 +313,26 @@ def save_multi_epoch_birth_time_figure(
     case_name: str,
     result: dict[str, Any],
     epochs: list[Any],
-    manuscripts_df: pd.DataFrame,
+    birth_years: NDArray[np.float64],
     times: NDArray[np.float64],
     output_slug: str,
+    *,
     figures_dir: Path | None = None,
+    title: str | None = None,
+    x_title: str = "Birth year",
 ) -> None:
-    """Save manuscript birth-time histogram with fitted density overlay.
+    """Save observed-vs-fitted birth-time histogram with density overlay.
 
     Parameters
     ----------
     case_name : str
-        Human-readable label used in the figure title.
+        Human-readable label used in the default figure title.
     result : dict[str, Any]
         Fit result dict as returned by ``fit_birth_death_processes``.
     epochs : list[Any]
         List of ``(start, end, label)`` epoch tuples.
-    manuscripts_df : pd.DataFrame
-        DataFrame with a ``"parsed_year"`` column of manuscript creation years.
+    birth_years : NDArray[np.float64]
+        Observed creation years.
     times : NDArray[np.float64]
         Epoch boundary times as a 1-D float64 array.
     output_slug : str
@@ -337,12 +340,16 @@ def save_multi_epoch_birth_time_figure(
     figures_dir : Path | None
         Directory for saved figures. Defaults to the project-root ``figures/``
         directory via :func:`save_chart`.
+    title : str | None
+        Figure title. Defaults to ``f"{case_name}: Observed vs Fitted Birth Times"``.
+    x_title : str
+        X-axis title. Default ``"Birth year"``.
 
     """
-    from inf_bp_texts.inference.likelihood import (
+    from bdpinf.inference.likelihood import (
         calculate_unknown_spine_mixture_birth_density,
     )
-    from inf_bp_texts.visualization.age_fit_plot import (
+    from bdpinf.visualization.age_fit_plot import (
         creation_year_fit_chart,
     )
 
@@ -351,7 +358,7 @@ def save_multi_epoch_birth_time_figure(
 
     birth_rates = np.asarray(result["birth_rates"], dtype=float)
     death_rates = np.asarray(result["death_rates"], dtype=float)
-    observed_birth_years = manuscripts_df["parsed_year"].to_numpy(dtype=float)
+    observed_birth_years = np.asarray(birth_years, dtype=float)
     if observed_birth_years.size == 0:
         return
 
@@ -368,7 +375,7 @@ def save_multi_epoch_birth_time_figure(
                 death_rates=np.asarray(death_rates, dtype=np.float64),
                 birth_time_grid=np.asarray(birth_time_grid, dtype=np.float64),
                 times=times,
-                num_manuscripts=len(observed_birth_years),
+                num_individuals=len(observed_birth_years),
             ),
             dtype=np.float64,
         )
@@ -382,9 +389,9 @@ def save_multi_epoch_birth_time_figure(
         observed_birth_years,
         birth_year_grid if density_values is not None else None,
         density_values,
-        title=f"{case_name}: Observed vs Fitted Manuscript Birth Times",
+        title=title or f"{case_name}: Observed vs Fitted Birth Times",
         nbins=50,
-        x_title="Manuscript birth year (CE)",
+        x_title=x_title,
         observed_label="Observed Birth Years",
         density_label="Fitted Birth-Time Distribution",
     )

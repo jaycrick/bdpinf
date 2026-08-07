@@ -15,7 +15,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-job_name="inf-bp-texts-render"
+job_name="bdpinf-render"
 
 for job in scripts/render_cpu_light.slurm scripts/render_cpu_parallel.slurm; do
   job_id=$(sbatch --parsable --dependency=singleton --job-name="${job_name}" "${job}")

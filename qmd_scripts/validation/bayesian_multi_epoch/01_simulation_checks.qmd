@@ -23,7 +23,7 @@ __compile_start = time.perf_counter()
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death_process
 ```
 
 ## Simulate Replicates
@@ -45,12 +45,12 @@ for i in range(num_sims):
     )
     simulated_processes.append(sim)
 
-    alive = sim.surviving_manuscripts
+    alive = sim.surviving_records
     assert alive is not None
     alive = alive.sort_values("is_spine", ascending=False)
     ages = (times[-1] - alive["creation_time"].to_numpy(dtype=float)).astype(float)
 
-    extinct = sim.extinct_manuscripts
+    extinct = sim.extinct_records
     rows.append(
         {
             "replicate": i,

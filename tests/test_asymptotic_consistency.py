@@ -2,7 +2,7 @@
 
 import numpy as np
 
-import inf_bp_texts.analysis.asymptotic_consistency as ac
+import bdpinf.analysis.asymptotic_consistency as ac
 
 
 class TestAsymptoticConsistency:

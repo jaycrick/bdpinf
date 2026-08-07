@@ -31,9 +31,10 @@ import numpy as np
 import pandas as pd
 from IPython.display import display
 
-from inf_bp_texts.analysis import FitModelConfig, fit_single_model
-from inf_bp_texts.simulation import simulate_birth_death_process
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf.analysis import FitModelConfig, fit_single_model
+from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.visualization.altair_theme import PTOLQUAL
+from bdpinf.visualization.genealogy import plot_genealogy_tree
 ```
 
 ## Simulate One Dataset
@@ -51,15 +52,15 @@ simulation_df = simulate_birth_death_process(
     random_seed=seed,
     ensure_non_extinct=True,
 )
-surviving_manuscripts = simulation_df.surviving_manuscripts
-assert surviving_manuscripts is not None
-ages = surviving_manuscripts["age"].to_numpy(dtype=np.float64)
+surviving_records = simulation_df.surviving_records
+assert surviving_records is not None
+ages = surviving_records["age"].to_numpy(dtype=np.float64)
 
-print(f"Total manuscripts: {len(simulation_df)}")
-print(f"Surviving manuscripts: {len(ages)}")
+print(f"Total records: {len(simulation_df)}")
+print(f"Surviving records: {len(ages)}")
 print(f"First 10 ages: {ages[:10].tolist()}")
-assert simulation_df.manuscript_records is not None
-print(simulation_df.manuscript_records.to_string())
+assert simulation_df.records is not None
+print(simulation_df.records.to_string())
 
 newick_str = simulation_df.to_newick()
 print("Newick:", newick_str)
@@ -71,11 +72,11 @@ print("Newick:", newick_str)
 genealogy_order = simulation_df.genealogy_dfs_order()
 print(
     genealogy_order[
-        ["dfs_index", "manuscript_id", "parent_id", "survived", "is_spine"]
+        ["dfs_index", "individual_id", "parent_id", "survived", "is_spine"]
     ].to_string(index=False)
 )
 
-genealogy_fig = simulation_df.plot_genealogy_tree()
+genealogy_fig = plot_genealogy_tree(simulation_df)
 genealogy_fig
 ```
 

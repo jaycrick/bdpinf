@@ -38,19 +38,19 @@ import pandas as pd
 from IPython.display import display
 from itables import show as show_table
 
-from inf_bp_texts.analysis.asymptotic_consistency import (
+from bdpinf.analysis.asymptotic_consistency import (
     FittingRunConfig,
     reproduce_replicate,
 )
-from inf_bp_texts.analysis.spike_detection import (
+from bdpinf.analysis.spike_detection import (
     compute_ci_width_table,
     select_extreme_replicates,
     select_max_ci_times,
 )
-from inf_bp_texts.analysis.validation_helpers import safe_mean, safe_var
-from inf_bp_texts.inference import ConvergenceConfig
-from inf_bp_texts.utils import format_table_dataframe, json_safe
-from inf_bp_texts.visualization.plotting import plot_parameter_consistency
+from bdpinf.analysis.validation_helpers import safe_mean, safe_var
+from bdpinf.inference import ConvergenceConfig
+from bdpinf.utils import format_table_dataframe, json_safe
+from bdpinf.visualization.plotting import plot_parameter_consistency
 
 
 class RegimeConfig(TypedDict):
@@ -131,7 +131,7 @@ fit_run_config = FittingRunConfig(
 The 4 regimes x 15 observation times x 1,000 replicates below (60,000
 simulate-then-fit calls) are precomputed by
 `scripts/generate_recovery_studies.py --study single_epoch_asymptotic_consistency`
---- see `inf_bp_texts.analysis.asymptotic_consistency.run_single_replicate` for
+--- see `bdpinf.analysis.asymptotic_consistency.run_single_replicate` for
 the per-replicate logic --- and persisted to
 `recovery_samples/single_epoch_asymptotic_consistency.npz`.
 Everything below
@@ -140,10 +140,10 @@ reproduction) is cheap and still runs at render time.
 
 ```{python}
 # | label: load-simulations-and-fits
-from inf_bp_texts import get_project_root
-from inf_bp_texts.inference import load_recovery_results
+from bdpinf import find_project_root
+from bdpinf.inference import load_recovery_results
 
-recovery_samples_dir = get_project_root() / "recovery_samples"
+recovery_samples_dir = find_project_root() / "recovery_samples"
 loaded = load_recovery_results(
     recovery_samples_dir / "single_epoch_asymptotic_consistency.npz"
 )
@@ -300,7 +300,7 @@ print(
 ## Consistency Plots
 
 ```{python}
-# plotting moved to src/inf_bp_texts/visualization/plotting.py; see plot_parameter_consistency
+# plotting moved to src/bdpinf/visualization/plotting.py; see plot_parameter_consistency
 
 fig_birth = plot_parameter_consistency(
     summary_df=summary_df,

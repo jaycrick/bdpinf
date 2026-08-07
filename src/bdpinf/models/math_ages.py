@@ -16,12 +16,12 @@ import jax.numpy as jnp
 from beartype import beartype
 from jaxtyping import Array, Float, jaxtyped
 
-from inf_bp_texts.models.math_extinction import (
+from bdpinf.models.math_extinction import (
     calculate_log_lik_initial_lifetimes_given_extinction,
     calculate_log_lik_initial_lifetimes_given_non_extinction,
 )
-from inf_bp_texts.models.validation import normalize_and_validate_inputs
-from inf_bp_texts.utils import ensure_1d_tensor
+from bdpinf.models.validation import normalize_and_validate_inputs
+from bdpinf.utils import ensure_1d_tensor
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -79,7 +79,7 @@ def calculate_non_spine_ages_log_lik(
     return_array: bool = False,
     _skip_normalization: bool = False,
 ) -> jax.Array:
-    r"""Log-likelihood of non-spine manuscript ages.
+    r"""Log-likelihood of non-spine individual ages.
 
     For the single-epoch case uses the Kück & Schuhmacher (2018) eq. 3.6
     density; for multi-epoch delegates via the time-reversal trick.
@@ -172,7 +172,7 @@ def calculate_spine_ages_log_lik(
     return_array: bool = False,
     _skip_normalization: bool = False,
 ) -> jax.Array:
-    r"""Log-likelihood of spine manuscript ages (with boundary mass at T).
+    r"""Log-likelihood of spine individual ages (with boundary mass at T).
 
     For the single-epoch case implements Kück & Schuhmacher (2018) eq. 3.8;
     multi-epoch delegates via the time-reversal trick.
@@ -286,7 +286,7 @@ def calculate_ages_log_lik(
     are_spines: bool = False,
     _skip_normalization: bool = False,
 ) -> jax.Array:
-    r"""Compute log-likelihood of manuscript ages under a birth-death model.
+    r"""Compute log-likelihood of individual ages under a birth-death model.
 
     Dispatches to spine or non-spine likelihood based on ``are_spines``.
 
@@ -297,7 +297,7 @@ def calculate_ages_log_lik(
     death_rates : jax.Array | float
         Death rate(s) μ. Same shape as birth_rates.
     ages : jax.Array | float
-        Manuscript age(s) t. All ages must satisfy 0 ≤ t ≤ T.
+        Individual age(s) t. All ages must satisfy 0 ≤ t ≤ T.
     times : jax.Array | float
         Epoch end time(s) T. Scalar or strictly-increasing 1D array.
     are_spines : bool

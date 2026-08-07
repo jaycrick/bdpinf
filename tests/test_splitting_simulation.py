@@ -2,20 +2,20 @@
 
 import numpy as np
 
-from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.simulation import (
+from bdpinf.process import BirthDeathProcess
+from bdpinf.simulation import (
     SplittingConfig,
-    plot_level_survival_probabilities,
     select_level_times_for_band,
     simulate_subcritical_survival_splitting,
 )
-from inf_bp_texts.simulation.splitting import (
+from bdpinf.simulation.splitting import (
     _BAND_LOWER,
     _BAND_UPPER,
     _MAX_BAND_LEVELS,
     _adaptive_particle_count,
     _calculate_extinction_probability,
 )
+from bdpinf.visualization import plot_level_survival_probabilities
 
 
 class TestSplittingSimulation:
@@ -186,7 +186,7 @@ class TestSplittingSimulation:
 
     def test_splitting_spine_is_alive_list_head(self) -> None:
         # Verify that each conditioned trajectory has exactly one is_spine
-        # manuscript that is also a survivor — consistent with the
+        # individual that is also a survivor — consistent with the
         # simulate_birth_death_process index-0 alive-list convention.
         config = SplittingConfig(
             birth_rate=0.9,
@@ -200,7 +200,7 @@ class TestSplittingSimulation:
 
         assert len(result.conditioned_trajectories) > 0, "expected non-zero survivors"
         for traj in result.conditioned_trajectories:
-            records = traj.process.manuscript_records
+            records = traj.process.records
             if records is None:
                 continue
             spine_rows = records[records["is_spine"]]

@@ -19,12 +19,11 @@ __compile_start = time.perf_counter()
 
 ## Overview
 
-`manuscript_survival_proportion.qmd` estimates the proportion of ever-created
-manuscripts still alive today via an analytic Horvitz--Thompson (HT) estimator.
-This
-repo also has a second, simulation-based estimator of the same quantity: the
-multilevel-splitting / sequential-ABC scheme in
-`inf_bp_texts.simulation.survival_conditioning`.
+The application repo's `manuscript_survival_proportion.qmd` estimates the
+proportion of ever-created records still alive today via an analytic
+Horvitz--Thompson (HT) estimator. This library also provides a second,
+simulation-based estimator of the same quantity: the multilevel-splitting /
+sequential-ABC scheme in `bdpinf.simulation.survival_conditioning`.
 It conditions forward lifespan
 simulations on the *observed per-epoch survivor counts* and reads the total
 population ever created off the matched trajectories, giving
@@ -50,23 +49,23 @@ with two epochs, then repeat with three.
 
 ```{python}
 # ruff: noqa: E402
-# inf_bp_texts must be imported before jax so its JAX_PLATFORMS=cpu default
-# (see src/inf_bp_texts/__init__.py) takes effect before jax reads the env var.
+# bdpinf must be imported before jax so its JAX_PLATFORMS=cpu default
+# (see src/bdpinf/__init__.py) takes effect before jax reads the env var.
 import altair as alt
 import numpy as np
 import pandas as pd
 
-import inf_bp_texts  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
-from inf_bp_texts import get_project_root
-from inf_bp_texts.simulation import (
+import bdpinf  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
+from bdpinf import find_project_root
+from bdpinf.simulation import (
     build_target_ranges,
     sample_conditioned_survival_process,
     simulate_birth_death_lifespans_arrays,
 )
-from inf_bp_texts.visualization import display_svg, save_chart
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf.visualization import display_svg, save_chart
+from bdpinf.visualization.altair_theme import PTOLQUAL
 
-figures_dir = get_project_root() / "figures" / "validation" / "multi_epoch"
+figures_dir = find_project_root() / "figures" / "validation" / "multi_epoch"
 figures_dir.mkdir(parents=True, exist_ok=True)
 
 # Toggle: also post-filter the (module-unconditioned) last epoch so *every*

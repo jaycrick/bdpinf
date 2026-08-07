@@ -8,19 +8,19 @@ import pandas as pd
 from numpy.typing import NDArray
 
 
-class _HasManuscriptRecords(Protocol):
+class _HasRecords(Protocol):
     @property
-    def manuscript_records(self) -> pd.DataFrame | None: ...
+    def records(self) -> pd.DataFrame | None: ...
 
 
 def extract_alive_ages(
-    simulation_df: _HasManuscriptRecords,
+    simulation_df: _HasRecords,
     time_span: float,
 ) -> NDArray[np.float64]:
-    """Return manuscript ages for extant records sorted by spine flag."""
-    records = simulation_df.manuscript_records
+    """Return individual ages for extant records sorted by spine flag."""
+    records = simulation_df.records
     if records is None:
-        msg = "extract_alive_ages requires manuscript_records"
+        msg = "extract_alive_ages requires records"
         raise ValueError(msg)
 
     alive_mask = records["death_time"].isna()

@@ -22,8 +22,8 @@ from beartype import beartype
 from jax import lax
 from jaxtyping import Array, Float, jaxtyped
 
-from inf_bp_texts.models.validation import normalize_and_validate_inputs
-from inf_bp_texts.utils import ensure_1d_tensor
+from bdpinf.models.validation import normalize_and_validate_inputs
+from bdpinf.utils import ensure_1d_tensor
 
 # ---------------------------------------------------------------------------
 # Internal helpers

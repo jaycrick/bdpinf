@@ -15,7 +15,7 @@ Core function:
 
 ## Purpose
 
-Given observed manuscript ages $t_i$ at a final observation time $T$, the function
+Given observed individual ages $t_i$ at a final observation time $T$, the function
 returns the summed log-likelihood under a birth-death process with birth rate
 $\lambda$ and death rate $\mu$.
 
@@ -167,7 +167,7 @@ rates are identical.
 ```python
 import jax.numpy as jnp
 
-from inf_bp_texts.models import calculate_non_spine_ages_log_lik
+from bdpinf.models import calculate_non_spine_ages_log_lik
 
 ages = jnp.array([15.0, 60.0, 95.0])
 birth_rates_val = jnp.array([0.02])

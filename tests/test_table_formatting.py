@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.utils import format_table_dataframe, format_table_value
+from bdpinf.utils import format_table_dataframe, format_table_value
 
 
 class TestTableFormatting:

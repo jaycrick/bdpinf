@@ -3,7 +3,7 @@
 import altair as alt
 import numpy as np
 
-from inf_bp_texts.visualization.age_fit_plot import (
+from bdpinf.visualization.age_fit_plot import (
     creation_year_fit_chart,
     plot_creation_year_fit,
 )
@@ -31,7 +31,7 @@ class TestPlotCreationYearFit:
     def test_excludes_point_mass_when_oldest_age_is_full_duration(self) -> None:
         """The spine's age is deterministically the full duration (a point mass).
 
-        When the oldest observed manuscript's age equals that duration, the
+        When the oldest observed individual's age equals that duration, the
         density grid must not evaluate exactly there, so the resulting
         expected-count overlay stays finite.
         """

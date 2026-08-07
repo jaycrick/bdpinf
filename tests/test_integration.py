@@ -4,15 +4,15 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from inf_bp_texts.inference.fitting import (
+from bdpinf.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
     fit_from_data_frame,
 )
-from inf_bp_texts.inference.likelihood import log_likelihood
-from inf_bp_texts.simulation import simulate_birth_death_process
-from inf_bp_texts.simulation.simulator import simulate_bdp_ages_from_distributions
-from inf_bp_texts.simulation.splitting import (
+from bdpinf.inference.likelihood import log_likelihood
+from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.simulation.simulator import simulate_bdp_ages_from_distributions
+from bdpinf.simulation.splitting import (
     SplittingConfig,
     simulate_subcritical_survival_splitting,
 )
@@ -107,8 +107,8 @@ class TestIntegration:
         assert n_datasets >= int(n_trials * 0.75)
         assert n_success / n_datasets >= 0.9
 
-    def test_manuscript_lifecycle_workflow(self) -> None:
-        """Test workflow for tracking manuscript lifecycle."""
+    def test_individual_lifecycle_workflow(self) -> None:
+        """Test workflow for tracking individual lifecycle."""
         # Create with initial data
         creation_times = [
             100.0,
@@ -129,11 +129,11 @@ class TestIntegration:
         assert len(ages) == 12
         assert all(age > 0 for age in ages)
         summary = {
-            "n_manuscripts": len(creation_times_extended),
+            "n_individuals": len(creation_times_extended),
             "min_age": min(ages),
             "max_age": max(ages),
         }
-        assert summary["n_manuscripts"] == 12
+        assert summary["n_individuals"] == 12
         assert summary["min_age"] == 100
         assert summary["max_age"] == 900
         fit_df = pd.DataFrame({"age": ages})
@@ -155,9 +155,9 @@ class TestIntegration:
         assert all(pred <= 0 for pred in predictions)
 
     def test_external_data_processing_workflow(self) -> None:
-        """Test workflow for processing external manuscript data."""
-        # Create realistic manuscript data
-        manuscript_dates = np.array(
+        """Test workflow for processing external individual data."""
+        # Create realistic individual data
+        individual_dates = np.array(
             [800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700],
         )
         current_year = 2000
@@ -165,8 +165,8 @@ class TestIntegration:
         # Create DataFrame as might come from real data
         df = pd.DataFrame(
             {
-                "manuscript_id": range(1, 11),
-                "midYear": manuscript_dates,
+                "individual_id": range(1, 11),
+                "midYear": individual_dates,
                 "location": ["Location_" + str(i) for i in range(1, 11)],
             },
         )
@@ -211,7 +211,7 @@ class TestIntegration:
         # Create models with more reasonable initial parameters
         max_age = float(ages.max())
         final_time = max_age + 50.0  # Smaller buffer
-        from inf_bp_texts.inference.fitting import fit_from_data_frame
+        from bdpinf.inference.fitting import fit_from_data_frame
 
         initial_params_list = [(0.01, 0.005), (0.02, 0.001)]
         results = []
@@ -388,7 +388,7 @@ class TestIntegration:
         process = simulate_bdp_ages_from_distributions(
             br, dr, T, rng, ensure_non_extinct=True
         )
-        ages = np.asarray(process.manuscript_ages)
+        ages = np.asarray(process.ages)
         if ages.size == 0:
             return
         ll = log_likelihood(

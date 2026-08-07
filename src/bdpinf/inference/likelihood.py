@@ -9,12 +9,12 @@ import warnings
 import jax.numpy as jnp
 import numpy as np
 
-from inf_bp_texts.models.math_ages import (
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.models.math_populations import calculate_populations_log_lik
-from inf_bp_texts.utils import ensure_1d_tensor, ensure_1d_tensors
+from bdpinf.models.math_populations import calculate_populations_log_lik
+from bdpinf.utils import ensure_1d_tensor, ensure_1d_tensors
 
 
 def log_likelihood(
@@ -30,17 +30,17 @@ def log_likelihood(
     is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> jnp.ndarray:
-    """Compute the log-likelihood of observed manuscript ages in a birth--death process.
+    """Compute the log-likelihood of observed individual ages in a birth--death process.
 
     This function evaluates the joint log-likelihood
-    for a dataset of observed manuscript ages
+    for a dataset of observed individual ages
     given a birth (λ) and death (μ) rate under a birth--death model.
     The likelihood is computed
     as the sum of two contributions:
 
         1. The log-probability of observing the total population configuration
             at observation time T (log P_n(T)).
-        2. The sum of log age-densities for the observed manuscripts (Σ log f(t_i)),
+        2. The sum of log age-densities for the observed individuals (Σ log f(t_i)),
             with an option to treat one or more observations as "spines"
             (special conditional ages).
 
@@ -79,7 +79,7 @@ def log_likelihood(
     death_rates : float | jax.Array
         Death rate parameter μ > 0, or log(μ) if log_scale_params is True.
     ages : jax.Array | float
-        Observed ages of manuscripts. A scalar is treated as a single-element array.
+        Observed ages of individuals. A scalar is treated as a single-element array.
         All ages must satisfy 0 <= age <= observation_time.
     times : jax.Array | float
         Observation times (> 0) at which the population/ages are observed.
@@ -375,11 +375,11 @@ def calculate_unknown_spine_mixture_age_density(
     death_rates: object,
     age_grid: object,
     times: object,
-    num_manuscripts: int,
+    num_individuals: int,
 ) -> jnp.ndarray:
-    """Compute age density for a random manuscript when the spine is unknown.
+    """Compute age density for a random individual when the spine is unknown.
 
-    Assumes exactly one spine among ``num_manuscripts`` observations and uses
+    Assumes exactly one spine among ``num_individuals`` observations and uses
     the mixture
 
         (1 / n) * ((n - 1) * f_non_spine(a) + f_spine(a)).
@@ -397,8 +397,8 @@ def calculate_unknown_spine_mixture_age_density(
         Age grid values where the density is evaluated.
     times : jax.Array | float
         Observation time(s). Scalar for single epoch or 1D epoch end times.
-    num_manuscripts : int
-        Number of manuscripts ``n`` in the mixture formula. Must be positive.
+    num_individuals : int
+        Number of individuals ``n`` in the mixture formula. Must be positive.
 
     Returns
     -------
@@ -408,11 +408,11 @@ def calculate_unknown_spine_mixture_age_density(
     Raises
     ------
     ValueError
-        If ``num_manuscripts`` is not positive.
+        If ``num_individuals`` is not positive.
 
     """
-    if num_manuscripts <= 0:
-        msg = "num_manuscripts must be a positive integer."
+    if num_individuals <= 0:
+        msg = "num_individuals must be a positive integer."
         raise ValueError(msg)
 
     birth_rates, death_rates, age_grid, times = ensure_1d_tensors(
@@ -423,9 +423,9 @@ def calculate_unknown_spine_mixture_age_density(
     )
 
     mixture_log_density_vals: list[jnp.ndarray] = []
-    log_n = jnp.log(jnp.float64(num_manuscripts))
-    if num_manuscripts > 1:
-        log_n_minus_one = jnp.log(jnp.float64(num_manuscripts - 1))
+    log_n = jnp.log(jnp.float64(num_individuals))
+    if num_individuals > 1:
+        log_n_minus_one = jnp.log(jnp.float64(num_individuals - 1))
     else:
         log_n_minus_one = jnp.array(-jnp.inf, dtype=jnp.float64)
 
@@ -457,9 +457,9 @@ def calculate_unknown_spine_mixture_birth_density(
     death_rates: object,
     birth_time_grid: object,
     times: object,
-    num_manuscripts: int,
+    num_individuals: int,
 ) -> jnp.ndarray:
-    """Compute birth-time density for a random manuscript when the spine is unknown.
+    """Compute birth-time density for a random individual when the spine is unknown.
 
     This transforms the age-density mixture to a density over birth times by the
     change of variables birth_time = T - age, where T = times[-1]. The Jacobian
@@ -468,7 +468,7 @@ def calculate_unknown_spine_mixture_birth_density(
 
     Parameters
     ----------
-    birth_rates, death_rates, birth_time_grid, times, num_manuscripts
+    birth_rates, death_rates, birth_time_grid, times, num_individuals
         Same semantics as :func:`calculate_unknown_spine_mixture_age_density`,
         except that ``birth_time_grid`` is interpreted as times since the
         model `start_time` (i.e., in the same coordinate system as ``times``).
@@ -479,8 +479,8 @@ def calculate_unknown_spine_mixture_birth_density(
         Density evaluated at each point in ``birth_time_grid`` (shape matches grid).
 
     """
-    if num_manuscripts <= 0:
-        msg = "num_manuscripts must be a positive integer."
+    if num_individuals <= 0:
+        msg = "num_individuals must be a positive integer."
         raise ValueError(msg)
 
     birth_rates, death_rates, birth_time_grid, times = ensure_1d_tensors(
@@ -503,7 +503,7 @@ def calculate_unknown_spine_mixture_birth_density(
         death_rates=death_rates,
         age_grid=age_grid,
         times=times,
-        num_manuscripts=num_manuscripts,
+        num_individuals=num_individuals,
     )
 
 
@@ -534,7 +534,7 @@ def negative_log_likelihood(
     death_rates : float | jax.Array
         Death rate parameter(s) μ > 0, or log(μ) if log_scale_params is True.
     ages : jax.Array | float
-        Ages of observed manuscripts (or a single age).
+        Ages of observed individuals (or a single age).
     times : jax.Array | float
         Observation times (> 0) at which the population/ages are observed.
     spine_ages : jax.Array | None, optional

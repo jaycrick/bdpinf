@@ -2,7 +2,7 @@
 
 Thin save/load wrappers around ``numpy.savez_compressed`` so that posterior
 samples produced by :func:`fit_birth_death_processes_bayesian` (or the subset
-wrapper :func:`~inf_bp_texts.analysis.subset_inference.fit_manuscript_subsets_bayesian`)
+wrapper :func:`~bdpinf.analysis.subset_fitting.fit_subsets_bayesian`)
 can be written to disk once and reloaded into downstream analysis notebooks
 without re-running the slow MCMC step.
 
@@ -21,7 +21,7 @@ File format
     time* (i.e. years since the process start, not calendar years).
 ``epoch_names``
     Object array of strings of shape ``[n_epochs]`` — human-readable era names
-    (e.g. ``"Ante Nicaea"``).
+    (e.g. "Epoch 1").
 
 All four keys are always present; ``epoch_end_times`` and ``epoch_names`` are
 set to empty arrays when the caller omits them.
@@ -29,9 +29,9 @@ set to empty arrays when the caller omits them.
 This module also holds :func:`save_recovery_results` /
 :func:`load_recovery_results`, a schema-agnostic ``.npz`` round-tripper for
 the tidy per-replicate DataFrames produced by simulate-then-fit validation
-studies (e.g. :mod:`~inf_bp_texts.analysis.single_epoch_recovery`,
-:mod:`~inf_bp_texts.analysis.multi_epoch_recovery`,
-:mod:`~inf_bp_texts.analysis.asymptotic_consistency`). Those studies are the
+studies (e.g. :mod:`~bdpinf.analysis.single_epoch_recovery`,
+:mod:`~bdpinf.analysis.multi_epoch_recovery`,
+:mod:`~bdpinf.analysis.asymptotic_consistency`). Those studies are the
 most expensive cells in the ``qmd_scripts/validation`` notebooks; precomputing
 them once via ``scripts/generate_recovery_studies.py`` and loading the result
 here keeps the notebooks themselves fast to render.
@@ -71,7 +71,7 @@ def save_posterior_samples(
         Stored verbatim so the loading notebook does not need to re-derive
         them.  Defaults to an empty float64 array.
     epoch_names : list[str], optional
-        Human-readable era names (e.g. ``"Ante Nicaea"``).  Defaults to an
+        Human-readable era names (e.g. "Epoch 1").  Defaults to an
         empty object array.
 
     Raises

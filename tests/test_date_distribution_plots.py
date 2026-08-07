@@ -3,7 +3,7 @@
 import altair as alt
 import numpy as np
 
-from inf_bp_texts.visualization import plot_date_range_kde_comparison
+from bdpinf.visualization import plot_date_range_kde_comparison
 
 
 class TestDateRangeKdeComparison:

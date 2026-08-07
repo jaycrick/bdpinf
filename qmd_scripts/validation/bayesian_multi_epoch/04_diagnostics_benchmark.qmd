@@ -23,13 +23,13 @@ __compile_start = time.perf_counter()
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.inference import fit_birth_death_processes_bayesian
-from inf_bp_texts.inference.bayesian import (
+from bdpinf.inference import fit_birth_death_processes_bayesian
+from bdpinf.inference.bayesian import (
     BayesianMCMCConfig,
     BayesianModelConfig,
     BayesianPriorConfig,
 )
-from inf_bp_texts.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death_process
 ```
 
 ## Diagnostic Benchmark
@@ -59,7 +59,7 @@ for run in range(num_runs):
         times=times,
         random_seed=3000 + run,
     )
-    alive = sim.surviving_manuscripts
+    alive = sim.surviving_records
     assert alive is not None
     alive = alive.sort_values("is_spine", ascending=False)
     ages = (times[-1] - alive["creation_time"].to_numpy(dtype=float)).astype(float)

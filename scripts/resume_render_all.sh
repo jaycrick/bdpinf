@@ -18,7 +18,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-job_name="inf-bp-texts-render"
+job_name="bdpinf-render"
 
 bootstrap_job_id=$(sbatch --parsable --dependency=singleton --job-name="${job_name}" \
   scripts/generate_bootstrap_kde_samples.slurm \

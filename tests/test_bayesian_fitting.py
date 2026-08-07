@@ -3,11 +3,11 @@
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.inference import (
+from bdpinf.inference import (
     fit_birth_death_processes_bayesian,
     fit_birth_death_processes_bayesian_from_data_frame,
 )
-from inf_bp_texts.inference.bayesian import BayesianMCMCConfig, BayesianModelConfig
+from bdpinf.inference.bayesian import BayesianMCMCConfig, BayesianModelConfig
 
 
 class TestBayesianFitting:

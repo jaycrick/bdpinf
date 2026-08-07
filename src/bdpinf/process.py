@@ -1,4 +1,4 @@
-"""Core Birth-Death Process model for manuscript survival and creation analysis.
+"""Core Birth-Death Process model for individual survival and creation analysis.
 
 This module contains the main BirthDeathProcess class with basic data management,
 initialization, and core functionality. Complex mathematical computations and
@@ -8,7 +8,7 @@ fitting procedures are handled by separate modules.
 from __future__ import annotations
 
 from collections.abc import Hashable
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import jax
 import jax.numpy as jnp
@@ -16,63 +16,62 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from inf_bp_texts.models.validation import (
+from bdpinf.inference.likelihood import log_likelihood as _log_likelihood
+from bdpinf.inference.likelihood import (
+    negative_log_likelihood as _negative_log_likelihood,
+)
+from bdpinf.models.genealogy import genealogy_dfs_order as _genealogy_dfs_order
+from bdpinf.models.validation import (
     ValidationConfig,
     normalize_and_validate_inputs,
 )
-from inf_bp_texts.utils import ensure_1d_tensor
-
-if TYPE_CHECKING:
-    import altair as alt
-
-    from inf_bp_texts.visualization.genealogy import GenealogyPlotConfig
+from bdpinf.utils import ensure_1d_tensor
 
 NumericInput = float | list[float] | NDArray[np.float64] | jax.Array
 RateLabel = Literal["birth", "death"]
 
 
 class BirthDeathProcess:
-    r"""Canonical birth--death process representation for manuscript data.
+    r"""Canonical birth--death process representation for individual data.
 
     This class is the canonical output for the simulators in this package and
-    represents a birth--death process used to model manuscript creation and
-    loss. It stores observation data (creation times or a full manuscript
+    represents a birth--death process used to model individual creation and
+    loss. It stores observation data (creation times or a full individual
     record table), optional sampled spine/non-spine ages, epoch boundaries, and
     per-epoch rate vectors when available.
 
     Key attributes and accessors
-    - `creation_times` (list[float]): times when manuscripts were created.
+    - `creation_times` (list[float]): times when records were created.
     - `epoch_end_times` (jax.Array): strictly increasing epoch end times.
-    - `manuscript_ages` (jax.Array): ages computed as latest epoch end time
+    - `ages` (jax.Array): ages computed as latest epoch end time
         minus creation times.
-    - `manuscript_records` (pd.DataFrame | None): full event table when
+    - `records` (pd.DataFrame | None): full event table when
         available; may include `death_time`, `age`, `lifespan`, `is_spine`, and
         `survived`. When present, survivors' `death_time` values may be NaN.
     - `spine_ages`, `non_spine_ages` (jax.Array | None): sampled age
         vectors produced by the age-sampling simulator.
     - `death_times` (jax.Array | None): vector of death times extracted
-        from `manuscript_records` when present.
-    - `surviving_manuscripts`, `extinct_manuscripts` (pd.DataFrame | None):
+        from `records` when present.
+    - `surviving_records`, `extinct_records` (pd.DataFrame | None):
         convenience views into the record table.
 
     Construction
     - `BirthDeathProcess(...)` accepts `creation_times` and `epoch_end_times`.
     - `from_age_samples(...)` builds a process from sampled spine and
         non-spine ages (useful when simulators return only sampled ages).
-    - `from_manuscript_records(...)` builds a process from a full event table
+    - `from_records(...)` builds a process from a full event table
         (useful when simulators return detailed records including extinct
-        manuscripts).
+        records).
 
     Key methods
 
     - `to_newick`: export the full genealogy as a strict Newick-format tree
-        string (requires `manuscript_records` with `manuscript_id` and
+        string (requires `records` with `individual_id` and
         `parent_id`).
-    - `genealogy_dfs_order`: validate the manuscript record table and return
+    - `genealogy_dfs_order`: validate the individual record table and return
         a preorder DFS ordering for the rooted genealogy used by the
-        serializer and plotting helpers.
-    - `plot_genealogy_tree`: return an Altair chart showing manuscript
-        lifetimes and the genealogy (requires `manuscript_records`).
+        serializer and plotting helpers. Pass an instance directly to
+        :func:`bdpinf.visualization.genealogy.plot_genealogy_tree` to render it.
     - `log_likelihood` / `negative_log_likelihood`: compute the likelihood
         given per-epoch `birth_rates` and `death_rates` (stored internally as
         `jax.Array`).
@@ -89,9 +88,9 @@ class BirthDeathProcess:
                     >>> proc.spine_ages
                     Array([10.,  5.], dtype=float64)
 
-            Construct from a manuscript record table and access death times::
+            Construct from an individual record table and access death times::
 
-                    >>> df = proc.manuscript_records  # may be None if not provided
+                    >>> df = proc.records  # may be None if not provided
                     >>> if df is not None:
                     ...     print(proc.death_times)
 
@@ -109,19 +108,19 @@ class BirthDeathProcess:
         initial_population: int = 1,
         birth_rates: NumericInput | None = None,
         death_rates: NumericInput | None = None,
-        manuscript_records: pd.DataFrame | None = None,
+        records: pd.DataFrame | None = None,
         spine_ages: NumericInput | None = None,
         non_spine_ages: NumericInput | None = None,
     ) -> None:
         """Initialize birth-death process with observation data.
 
         Args:
-            creation_times: List of times when manuscripts were created
+            creation_times: List of times when records were created
             epoch_end_times: Scalar or vector of epoch end times
             start_time: Start time of the observation period
             initial_population: Initial population size (must be a positive integer)
-            birth_rates: Manuscript creation-rate vector (λ) - optional
-            death_rates: Manuscript loss-rate vector (μ) - optional
+            birth_rates: Individual creation-rate vector (λ) - optional
+            death_rates: Individual loss-rate vector (μ) - optional
 
         """
         self.creation_times: list[float] = creation_times.copy()
@@ -149,11 +148,9 @@ class BirthDeathProcess:
         self._validate_rate_lengths()
 
         self._validate_creation_times()
-        self._manuscript_ages: jax.Array = self._compute_manuscript_ages()
-        self._manuscript_records: pd.DataFrame | None = (
-            self._normalize_manuscript_records(
-                manuscript_records,
-            )
+        self._ages: jax.Array = self._compute_ages()
+        self._records: pd.DataFrame | None = self._normalize_records(
+            records,
         )
         self._spine_ages: jax.Array | None = (
             self._normalize_optional_age_vector(spine_ages)
@@ -173,9 +170,9 @@ class BirthDeathProcess:
         self.fit_results: dict[str, Any] | None = None
 
     @classmethod
-    def from_manuscript_records(
+    def from_records(
         cls,
-        manuscripts: pd.DataFrame,
+        records: pd.DataFrame,
         *,
         epoch_end_times: NumericInput,
         start_time: float = 0.0,
@@ -183,9 +180,9 @@ class BirthDeathProcess:
         birth_rates: NumericInput | None = None,
         death_rates: NumericInput | None = None,
     ) -> BirthDeathProcess:
-        """Build a process from a full manuscript event table."""
+        """Build a process from a full individual event table."""
         required_columns = {
-            "manuscript_id",
+            "individual_id",
             "parent_id",
             "creation_time",
             "death_time",
@@ -194,13 +191,13 @@ class BirthDeathProcess:
             "age",
             "lifespan",
         }
-        missing_columns = required_columns.difference(manuscripts.columns)
+        missing_columns = required_columns.difference(records.columns)
         if missing_columns:
             missing_text = ", ".join(sorted(missing_columns))
-            msg = f"manuscripts is missing required columns: {missing_text}"
+            msg = f"records is missing required columns: {missing_text}"
             raise ValueError(msg)
 
-        observed = manuscripts[manuscripts["survived"]].copy()
+        observed = records[records["survived"]].copy()
         process = cls(
             creation_times=observed["creation_time"].astype(float).tolist(),
             epoch_end_times=epoch_end_times,
@@ -208,7 +205,7 @@ class BirthDeathProcess:
             initial_population=initial_population,
             birth_rates=birth_rates,
             death_rates=death_rates,
-            manuscript_records=manuscripts.copy(),
+            records=records.copy(),
         )
         return process
 
@@ -224,7 +221,7 @@ class BirthDeathProcess:
         birth_rates: NumericInput | None = None,
         death_rates: NumericInput | None = None,
     ) -> BirthDeathProcess:
-        """Build a process from sampled spine and non-spine manuscript ages."""
+        """Build a process from sampled spine and non-spine individual ages."""
         epoch_end_times_arr = ensure_1d_tensor(epoch_end_times)
         max_time = float(epoch_end_times_arr[-1])
         creation_times = [
@@ -334,13 +331,13 @@ class BirthDeathProcess:
             raise ValueError(msg)
         return age_arr
 
-    def _normalize_manuscript_records(
+    def _normalize_records(
         self,
-        manuscripts: pd.DataFrame | None,
+        records: pd.DataFrame | None,
     ) -> pd.DataFrame | None:
-        if manuscripts is None:
+        if records is None:
             return None
-        records = manuscripts.copy()
+        records = records.copy()
         if "death_time" in records.columns:
             records["death_time"] = records["death_time"].astype(float)
         if "age" in records.columns:
@@ -349,29 +346,29 @@ class BirthDeathProcess:
             records["lifespan"] = records["lifespan"].astype(float)
         if "parent_id" in records.columns:
             records["parent_id"] = records["parent_id"].astype("Int64")
-        if "manuscript_id" in records.columns:
-            records["manuscript_id"] = records["manuscript_id"].astype(int)
+        if "individual_id" in records.columns:
+            records["individual_id"] = records["individual_id"].astype(int)
         self._validate_genealogy_birth_death_order(records)
         return records
 
     @staticmethod
     def _validate_genealogy_birth_death_order(records: pd.DataFrame) -> None:
-        """Validate that each manuscript is born during its parent's lifetime."""
-        required_columns = {"manuscript_id", "parent_id", "creation_time"}
+        """Validate that each individual is born during its parent's lifetime."""
+        required_columns = {"individual_id", "parent_id", "creation_time"}
         if not required_columns.issubset(records.columns):
             return
 
         creation_by_id = dict(
-            zip(records["manuscript_id"], records["creation_time"], strict=True),
+            zip(records["individual_id"], records["creation_time"], strict=True),
         )
         death_by_id = (
-            dict(zip(records["manuscript_id"], records["death_time"], strict=True))
+            dict(zip(records["individual_id"], records["death_time"], strict=True))
             if "death_time" in records.columns
             else {}
         )
 
-        for manuscript_id, parent_id, child_birth in zip(
-            records["manuscript_id"],
+        for individual_id, parent_id, child_birth in zip(
+            records["individual_id"],
             records["parent_id"],
             records["creation_time"],
             strict=True,
@@ -385,7 +382,7 @@ class BirthDeathProcess:
             parent_birth = creation_by_id[parent_id]
             if child_birth <= parent_birth:
                 msg = (
-                    f"manuscript {manuscript_id} has creation_time {child_birth} "
+                    f"individual {individual_id} has creation_time {child_birth} "
                     f"that is not after parent {parent_id}'s creation_time "
                     f"{parent_birth}"
                 )
@@ -398,7 +395,7 @@ class BirthDeathProcess:
                 and child_birth >= parent_death
             ):
                 msg = (
-                    f"manuscript {manuscript_id} has creation_time {child_birth} "
+                    f"individual {individual_id} has creation_time {child_birth} "
                     f"that is not before parent {parent_id}'s death_time "
                     f"{parent_death}"
                 )
@@ -419,13 +416,14 @@ class BirthDeathProcess:
             (rates_arr,) = normalize_and_validate_inputs(death_rates=rate_input)
         return rates_arr
 
-    def _latest_epoch_end_time(self) -> jax.Array:
+    @property
+    def latest_epoch_end_time(self) -> jax.Array:
         """Get the latest epoch end time as an array scalar."""
         return self._epoch_end_times[-1]
 
     def _validate_start_time_window(self) -> None:
         """Validate start-time relative to epoch end times."""
-        latest_epoch_end_time = float(self._latest_epoch_end_time())
+        latest_epoch_end_time = float(self.latest_epoch_end_time)
         if self.start_time > latest_epoch_end_time:
             msg = "start_time must be less than or equal to latest epoch_end_time"
             raise ValueError(msg)
@@ -470,7 +468,7 @@ class BirthDeathProcess:
         )
 
     def _validate_creation_times(self) -> None:
-        """Validate manuscripts fall within [start_time, latest epoch end time]."""
+        """Validate records fall within [start_time, latest epoch end time]."""
         if not self.creation_times:
             return
 
@@ -486,7 +484,7 @@ class BirthDeathProcess:
             msg = "creation_times must be greater than or equal to start_time"
             raise ValueError(msg)
 
-        latest_epoch_end_time = float(self._latest_epoch_end_time())
+        latest_epoch_end_time = float(self.latest_epoch_end_time)
         invalid_after_epoch = [
             ct for ct in self.creation_times if ct > latest_epoch_end_time
         ]
@@ -494,9 +492,9 @@ class BirthDeathProcess:
             msg = "creation_times must be less than or equal to latest epoch_end_time"
             raise ValueError(msg)
 
-    def _compute_manuscript_ages(self) -> jax.Array:
-        """Compute manuscript ages from creation times and latest epoch end time."""
-        latest_epoch_end_time = self._latest_epoch_end_time()
+    def _compute_ages(self) -> jax.Array:
+        """Compute individual ages from creation times and latest epoch end time."""
+        latest_epoch_end_time = self.latest_epoch_end_time
         if self.creation_times:
             return latest_epoch_end_time - jnp.array(
                 self.creation_times,
@@ -504,22 +502,22 @@ class BirthDeathProcess:
             )
         return jnp.array([], dtype=jnp.float64)
 
-    def _recompute_manuscript_ages(self) -> None:
-        """Recompute and cache manuscript ages."""
-        self._manuscript_ages = self._compute_manuscript_ages()
+    def _recompute_ages(self) -> None:
+        """Recompute and cache individual ages."""
+        self._ages = self._compute_ages()
 
     @property
-    def manuscript_ages(self) -> jax.Array:
-        """Get cached manuscript ages from creation times and latest epoch end time."""
-        self._recompute_manuscript_ages()
-        return self._manuscript_ages
+    def ages(self) -> jax.Array:
+        """Get cached individual ages from creation times and latest epoch end time."""
+        self._recompute_ages()
+        return self._ages
 
     @property
-    def manuscript_records(self) -> pd.DataFrame | None:
-        """Get the full manuscript record table when available."""
-        if self._manuscript_records is None:
+    def records(self) -> pd.DataFrame | None:
+        """Get the full individual record table when available."""
+        if self._records is None:
             return None
-        return self._manuscript_records.copy()
+        return self._records.copy()
 
     @property
     def spine_ages(self) -> jax.Array | None:
@@ -533,82 +531,50 @@ class BirthDeathProcess:
 
     @property
     def death_times(self) -> jax.Array | None:
-        """Get manuscript death times when available."""
-        if (
-            self._manuscript_records is None
-            or "death_time" not in self._manuscript_records
-        ):
+        """Get individual death times when available."""
+        if self._records is None or "death_time" not in self._records:
             return None
         return jnp.array(
-            self._manuscript_records["death_time"].to_numpy(dtype=np.float64),
+            self._records["death_time"].to_numpy(dtype=np.float64),
             dtype=jnp.float64,
         )
 
     @property
-    def all_manuscript_ages(self) -> jax.Array | None:
-        """Get manuscript ages for all records when a record table exists."""
-        if self._manuscript_records is None or "age" not in self._manuscript_records:
+    def all_ages(self) -> jax.Array | None:
+        """Get individual ages for all records when a record table exists."""
+        if self._records is None or "age" not in self._records:
             return None
         return jnp.array(
-            self._manuscript_records["age"].to_numpy(dtype=np.float64),
+            self._records["age"].to_numpy(dtype=np.float64),
             dtype=jnp.float64,
         )
 
     @property
-    def extinct_manuscripts(self) -> pd.DataFrame | None:
-        """Get the extinct-manuscript subset when a record table exists."""
-        if self._manuscript_records is None:
+    def extinct_records(self) -> pd.DataFrame | None:
+        """Get the extinct-individual subset when a record table exists."""
+        if self._records is None:
             return None
-        return self._manuscript_records[~self._manuscript_records["survived"]].copy()
+        return self._records[~self._records["survived"]].copy()
 
     @property
-    def surviving_manuscripts(self) -> pd.DataFrame | None:
-        """Get the surviving-manuscript subset when a record table exists."""
-        if self._manuscript_records is None:
+    def surviving_records(self) -> pd.DataFrame | None:
+        """Get the surviving-individual subset when a record table exists."""
+        if self._records is None:
             return None
-        return self._manuscript_records[self._manuscript_records["survived"]].copy()
+        return self._records[self._records["survived"]].copy()
 
     def genealogy_dfs_order(self) -> pd.DataFrame:
         """Return the preorder DFS ordering for the full genealogy tree."""
-        if self._manuscript_records is None:
+        if self._records is None:
             msg = (
-                "genealogy_dfs_order requires manuscript_records with "
-                "manuscript_id and parent_id"
+                "genealogy_dfs_order requires records with individual_id and parent_id"
             )
             raise ValueError(msg)
-
-        from inf_bp_texts.visualization.genealogy import (
-            genealogy_dfs_order as _genealogy_dfs_order,
-        )
 
         return _genealogy_dfs_order(
-            self._manuscript_records,
+            self._records,
             start_time=self.start_time,
-            simulation_end_time=float(self._latest_epoch_end_time()),
-        )
-
-    def plot_genealogy_tree(
-        self,
-        *,
-        config: GenealogyPlotConfig | None = None,
-    ) -> alt.LayerChart:
-        """Return an Altair chart showing manuscript lifetimes and genealogy."""
-        from inf_bp_texts.visualization.genealogy import (
-            plot_genealogy_tree as _plot_genealogy_tree,
-        )
-
-        if self._manuscript_records is None:
-            msg = (
-                "plot_genealogy_tree requires manuscript_records with "
-                "manuscript_id and parent_id"
-            )
-            raise ValueError(msg)
-
-        return _plot_genealogy_tree(
-            self._manuscript_records,
-            start_time=self.start_time,
-            simulation_end_time=float(self._latest_epoch_end_time()),
-            config=config,
+            simulation_end_time=float(self.latest_epoch_end_time),
         )
 
     @classmethod
@@ -621,14 +587,14 @@ class BirthDeathProcess:
 
     def _to_newick_fragment(
         self,
-        manuscript_id: int,
+        individual_id: int,
         *,
         records_by_id: dict[int, dict[Hashable, Any]],
         child_map: dict[int, list[int]],
         simulation_end_time: float,
     ) -> str:
         """Serialize one lineage into a nested Newick fragment."""
-        record = records_by_id[manuscript_id]
+        record = records_by_id[individual_id]
         birth_time = float(record["creation_time"])
         death_raw = record.get("death_time")
         death_time = (
@@ -637,17 +603,17 @@ class BirthDeathProcess:
             else float(simulation_end_time)
         )
 
-        children = child_map.get(manuscript_id, [])
+        children = child_map.get(individual_id, [])
         if not children:
             branch_length = self._format_newick_length(death_time - birth_time)
-            return f"({manuscript_id}:{branch_length}):0"
+            return f"({individual_id}:{branch_length}):0"
 
         last_child_id = children[-1]
         last_child_birth_time = float(records_by_id[last_child_id]["creation_time"])
         branch_length = self._format_newick_length(
             death_time - last_child_birth_time,
         )
-        current = f"({manuscript_id}:{branch_length}):0"
+        current = f"({individual_id}:{branch_length}):0"
 
         for index in range(len(children) - 1, -1, -1):
             child_id = children[index]
@@ -672,27 +638,25 @@ class BirthDeathProcess:
 
     def to_newick(self) -> str:
         """Export the full genealogy as a strict Newick tree string."""
-        if self._manuscript_records is None:
-            msg = (
-                "to_newick requires manuscript_records with manuscript_id and parent_id"
-            )
+        if self._records is None:
+            msg = "to_newick requires records with individual_id and parent_id"
             raise ValueError(msg)
 
         # Reuse the genealogy validator to enforce the rooted-tree contract.
         ordered_records = self.genealogy_dfs_order()
 
         records_by_id = {
-            int(row["manuscript_id"]): row.to_dict()
+            int(row["individual_id"]): row.to_dict()
             for _, row in ordered_records.iterrows()
         }
 
         child_map: dict[int, list[int]] = {}
-        for manuscript_id, record in records_by_id.items():
+        for individual_id, record in records_by_id.items():
             parent_raw = record.get("parent_id")
             if pd.isna(parent_raw):
                 continue
             parent_id = int(parent_raw)
-            child_map.setdefault(parent_id, []).append(manuscript_id)
+            child_map.setdefault(parent_id, []).append(individual_id)
 
         for child_ids in child_map.values():
             child_ids.sort(
@@ -703,9 +667,9 @@ class BirthDeathProcess:
             )
 
         root_rows = ordered_records[ordered_records["parent_id"].isna()]
-        root_id = int(root_rows.iloc[0]["manuscript_id"])
+        root_id = int(root_rows.iloc[0]["individual_id"])
         root_birth_time = float(root_rows.iloc[0]["creation_time"])
-        simulation_end_time = float(self._latest_epoch_end_time())
+        simulation_end_time = float(self.latest_epoch_end_time)
 
         root_fragment = self._to_newick_fragment(
             root_id,
@@ -722,11 +686,8 @@ class BirthDeathProcess:
         """Test equality against another BirthDeathProcess instance."""
         if not isinstance(other, BirthDeathProcess):
             return False
-        if (
-            self._manuscript_records is not None
-            and other._manuscript_records is not None
-        ):
-            return self._manuscript_records.equals(other._manuscript_records)
+        if self._records is not None and other._records is not None:
+            return self._records.equals(other._records)
 
         def _arrays_equal(a: jax.Array | None, b: jax.Array | None) -> bool:
             if a is None and b is None:
@@ -749,34 +710,34 @@ class BirthDeathProcess:
         return NotImplemented
 
     def __len__(self) -> int:
-        """Return the number of manuscript records when available."""
-        if self._manuscript_records is not None:
-            return len(self._manuscript_records)
-        return len(self.manuscript_ages)
+        """Return the number of individual records when available."""
+        if self._records is not None:
+            return len(self._records)
+        return len(self.ages)
 
     @property
-    def n_manuscripts(self) -> int:
-        """Get the number of manuscripts in the process."""
-        return len(self.manuscript_ages)
+    def n_individuals(self) -> int:
+        """Get the number of records in the process."""
+        return len(self.ages)
 
-    def add_manuscript(self, creation_time: float) -> None:
-        """Add a manuscript with given creation time to the process.
+    def add_individual(self, creation_time: float) -> None:
+        """Add an individual with given creation time to the process.
 
         Args:
-            creation_time: Time when the manuscript was created
+            creation_time: Time when the individual was created
 
         """
         if creation_time < self.start_time:
             msg = "creation_time must be greater than or equal to start_time"
             raise ValueError(msg)
 
-        latest_epoch_end_time = float(self._latest_epoch_end_time())
+        latest_epoch_end_time = float(self.latest_epoch_end_time)
         if creation_time > latest_epoch_end_time:
             msg = "creation_time must be less than or equal to latest epoch_end_time"
             raise ValueError(msg)
 
         self.creation_times.append(creation_time)
-        self._recompute_manuscript_ages()
+        self._recompute_ages()
 
     def set_epoch_end_times(
         self,
@@ -797,7 +758,7 @@ class BirthDeathProcess:
             self._validate_start_time_against_epoch_end_time(latest_epoch_end_time)
             self._validate_rate_lengths()
             self._validate_creation_times()
-            self._recompute_manuscript_ages()
+            self._recompute_ages()
         except Exception:
             self._epoch_end_times = previous_epoch_end_times
             raise
@@ -815,12 +776,10 @@ class BirthDeathProcess:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
 
-        from inf_bp_texts.inference.likelihood import log_likelihood as _log_likelihood
-
         return _log_likelihood(
             birth_rates=self._birth_rates,
             death_rates=self._death_rates,
-            ages=self.manuscript_ages,
+            ages=self.ages,
             times=self.adjusted_epoch_end_times,
             unbias=unbias,
         )
@@ -831,14 +790,10 @@ class BirthDeathProcess:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
 
-        from inf_bp_texts.inference.likelihood import (
-            negative_log_likelihood as _negative_log_likelihood,
-        )
-
         return _negative_log_likelihood(
             birth_rates=self._birth_rates,
             death_rates=self._death_rates,
-            ages=self.manuscript_ages,
+            ages=self.ages,
             times=self.adjusted_epoch_end_times,
             unbias=unbias,
         )

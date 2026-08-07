@@ -24,9 +24,9 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from inf_bp_texts.analysis import FitModelConfig, fit_single_model
-from inf_bp_texts.simulation import simulate_birth_death_process
-from inf_bp_texts.utils import derive_worker_seeds
+from bdpinf.analysis import FitModelConfig, fit_single_model
+from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.utils import derive_worker_seeds
 ```
 
 ## Sensitivity Sweep
@@ -62,7 +62,7 @@ for cfg_idx, cfg in enumerate(configs):
 
     ages_list = []
     for sim in sims:
-        alive = sim.surviving_manuscripts
+        alive = sim.surviving_records
         assert alive is not None
         alive = alive.sort_values("is_spine", ascending=False)
         ages_list.append(

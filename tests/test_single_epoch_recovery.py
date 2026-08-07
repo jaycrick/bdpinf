@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-import inf_bp_texts.analysis.single_epoch_recovery as ser
+import bdpinf.analysis.single_epoch_recovery as ser
 
 
 class _FakeSampledAges:

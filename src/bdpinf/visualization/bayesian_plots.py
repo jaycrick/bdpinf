@@ -18,7 +18,7 @@ import pandas as pd
 from numpy.typing import NDArray
 from scipy.stats import norm
 
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf.visualization.altair_theme import PTOLQUAL
 
 _PANEL_WIDTH = 360
 _PANEL_HEIGHT = 300
@@ -526,7 +526,7 @@ def prior_rate_samples(
     locs, scales :
         Log-scale prior mean/std, shape ``[2 * n_categories]`` following the
         birth-then-death convention of
-        :meth:`~inf_bp_texts.inference.bayesian.BayesianPriorConfig.resolve_tensors`
+        :meth:`~bdpinf.inference.bayesian.BayesianPriorConfig.resolve_tensors`
         (index ``i < n_categories`` is birth category ``i``; ``i >=
         n_categories`` is death category ``i - n_categories``).
     n_categories :

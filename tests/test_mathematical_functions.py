@@ -8,13 +8,13 @@ import numpy as np
 import pytest
 import scipy
 
-from inf_bp_texts.models.math_ages import (
+from bdpinf.models.math_ages import (
     _reverse_time,
     calculate_ages_log_lik,
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.models.math_extinction import (
+from bdpinf.models.math_extinction import (
     _integrand_surv_from_weighted_birth_time,
     calculate_extinction_pr,
     calculate_log_lik_initial_lifetimes_given_extinction,
@@ -23,7 +23,7 @@ from inf_bp_texts.models.math_extinction import (
     calculate_log_pr_extinction_given_initial_lifetimes,
     pr_extinction_numerator,
 )
-from inf_bp_texts.models.math_populations import (
+from bdpinf.models.math_populations import (
     calculate_populations_log_lik,
     population_geometric_parameter,
 )

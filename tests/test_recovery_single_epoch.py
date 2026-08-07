@@ -1,6 +1,6 @@
 """Single-epoch parameter recovery tests.
 
-Each test simulates manuscript data under known parameters, fits a
+Each test simulates individual data under known parameters, fits a
 birth-death model, and verifies the recovered parameters are within
 a scientifically meaningful tolerance of the truth.
 
@@ -13,7 +13,7 @@ Design
 ------
 - 5 independent simulation seeds per scenario; at least 4 must recover
   the parameter within the stated relative tolerance.
-- Minimum 15 surviving manuscripts per replicate required; replicates that
+- Minimum 15 surviving records per replicate required; replicates that
   produce fewer are skipped and replaced by trying an additional seed.
 - Relative tolerance 20 % (25 % for the critical-rate scenario).
 - Seeds and tolerances are fixed so failures are reproducible.
@@ -24,11 +24,11 @@ from typing import Any
 import numpy as np
 import pytest
 
-from inf_bp_texts.inference.fitting import (
+from bdpinf.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
 )
-from inf_bp_texts.simulation import (
+from bdpinf.simulation import (
     simulate_birth_death_lifespans,
     simulate_birth_death_process,
 )
@@ -56,7 +56,7 @@ def _simulate_and_fit(
         ensure_non_extinct=ensure_non_extinct,
         max_retries=max_retries,
     )
-    surviving = df.surviving_manuscripts
+    surviving = df.surviving_records
     if surviving is None or len(surviving) < _MIN_SURVIVORS:
         return None
     ages = surviving["age"].to_numpy(dtype=np.float64)
@@ -185,7 +185,7 @@ class TestRecoverySingleEpoch:
         df = simulate_birth_death_process(
             birth_rates=0.01, death_rates=0.003, times=600.0, random_seed=42
         )
-        surviving = df.surviving_manuscripts
+        surviving = df.surviving_records
         if surviving is None or len(surviving) < _MIN_SURVIVORS:
             pytest.skip("insufficient survivors for this seed")
         ages = surviving["age"].to_numpy(dtype=np.float64)
@@ -275,7 +275,7 @@ def _simulate_lifespans_and_fit(
         ensure_non_extinct=ensure_non_extinct,
         max_retries=max_retries,
     )
-    surviving = df.surviving_manuscripts
+    surviving = df.surviving_records
     if surviving is None or len(surviving) < _MIN_SURVIVORS:
         return None
     ages = surviving["age"].to_numpy(dtype=np.float64)
@@ -346,7 +346,7 @@ class TestRecoveryLifespanSingleEpoch:
         df = simulate_birth_death_lifespans(
             birth_rates=0.01, death_rates=0.003, times=600.0, random_seed=42
         )
-        surviving = df.surviving_manuscripts
+        surviving = df.surviving_records
         if surviving is None or len(surviving) < _MIN_SURVIVORS:
             pytest.skip("insufficient survivors for this seed")
         ages = surviving["age"].to_numpy(dtype=np.float64)

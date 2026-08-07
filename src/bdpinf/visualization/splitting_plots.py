@@ -8,10 +8,10 @@ import altair as alt
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf.visualization.altair_theme import PTOLQUAL
 
 if TYPE_CHECKING:
-    from inf_bp_texts.simulation.splitting import ConditionedTrajectory
+    from bdpinf.simulation.splitting import ConditionedTrajectory
 
 
 def _point(color: str) -> alt.OverlayMarkDef:

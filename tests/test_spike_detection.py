@@ -3,8 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.analysis import spike_detection as sd
-from inf_bp_texts.analysis.spike_detection import (
+from bdpinf.analysis import spike_detection as sd
+from bdpinf.analysis.spike_detection import (
     bootstrap_percentile_ci,
     compute_ci_width_table,
     select_extreme_replicates,

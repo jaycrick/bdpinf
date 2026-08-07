@@ -5,7 +5,7 @@ This script is an **offline artifact generator**, mirroring
 node with many cores) to produce ``recovery_samples/<study>.npz`` under the
 project root. The heaviest ``qmd_scripts/validation`` notebooks then load
 these files via
-:func:`~inf_bp_texts.inference.load_recovery_results` instead of re-running
+:func:`~bdpinf.inference.load_recovery_results` instead of re-running
 thousands of simulate-then-fit replicates on every render.
 
 Studies
@@ -22,9 +22,9 @@ Studies
     validation/multi_epoch/05_bulk_inference_zero_birth.qmd
 
 The per-replicate simulate+fit logic itself lives in
-:mod:`inf_bp_texts.analysis.single_epoch_recovery`,
-:mod:`inf_bp_texts.analysis.multi_epoch_recovery`, and
-:mod:`inf_bp_texts.analysis.asymptotic_consistency` — this script only wires
+:mod:`bdpinf.analysis.single_epoch_recovery`,
+:mod:`bdpinf.analysis.multi_epoch_recovery`, and
+:mod:`bdpinf.analysis.asymptotic_consistency` — this script only wires
 up each study's parameter grid, runs it via ``joblib.Parallel``, and persists
 the tidy result table.
 
@@ -66,8 +66,8 @@ def _generate_single_epoch_bulk_inference(
     num_sims: int,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """``06_bulk_inference.qmd``: 1 birth/death rate, single epoch."""
-    from inf_bp_texts.analysis import run_single_epoch_recovery_replicate
-    from inf_bp_texts.utils import derive_worker_seeds
+    from bdpinf.analysis import run_single_epoch_recovery_replicate
+    from bdpinf.utils import derive_worker_seeds
 
     seed = 42
     birth_rate = 0.5
@@ -101,11 +101,11 @@ def _generate_single_epoch_asymptotic_consistency(
     num_simulations: int,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """``07_asymptotic_consistency.qmd``: 4 regimes x 15 observation times."""
-    from inf_bp_texts.analysis.asymptotic_consistency import (
+    from bdpinf.analysis.asymptotic_consistency import (
         FittingRunConfig,
         run_single_replicate,
     )
-    from inf_bp_texts.inference import ConvergenceConfig
+    from bdpinf.inference import ConvergenceConfig
 
     seed = 42
     time_grid = np.logspace(-0.5, 0.5, num=15)
@@ -174,8 +174,8 @@ def _generate_multi_epoch_two_rate(
     num_sims: int,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """``03_bulk_inference.qmd``: two-epoch process, distinct rates per epoch."""
-    from inf_bp_texts.analysis import FitModelConfig, run_two_rate_replicate
-    from inf_bp_texts.utils import derive_worker_seeds
+    from bdpinf.analysis import FitModelConfig, run_two_rate_replicate
+    from bdpinf.utils import derive_worker_seeds
 
     seed = 42
     birth_rates_true = np.array([0.5, 0.7], dtype=float)
@@ -207,8 +207,8 @@ def _generate_multi_epoch_single_rate(
     num_sims: int,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """``04_bulk_inference_single_rate.qmd``: single-rate data fit with two epochs."""
-    from inf_bp_texts.analysis import FitModelConfig, run_single_rate_replicate
-    from inf_bp_texts.utils import derive_worker_seeds
+    from bdpinf.analysis import FitModelConfig, run_single_rate_replicate
+    from bdpinf.utils import derive_worker_seeds
 
     seed = 42
     birth_rate = 0.5
@@ -243,9 +243,9 @@ def _generate_multi_epoch_zero_birth(
     num_sims: int,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """``05_bulk_inference_zero_birth.qmd``: structural-zero birth, shared death."""
-    from inf_bp_texts.analysis import FitModelConfig, run_zero_birth_replicate
-    from inf_bp_texts.inference.fitting import ParameterConstraints
-    from inf_bp_texts.utils import derive_worker_seeds
+    from bdpinf.analysis import FitModelConfig, run_zero_birth_replicate
+    from bdpinf.inference.fitting import ParameterConstraints
+    from bdpinf.utils import derive_worker_seeds
 
     birth_rate_epoch_1_true = 1.0
     death_rate_true = birth_rate_epoch_1_true - 0.9
@@ -335,8 +335,8 @@ def main(
     ] = None,
 ) -> None:
     """Generate and save recovery-study (simulate-then-fit) datasets."""
-    from inf_bp_texts import get_project_root
-    from inf_bp_texts.inference import save_recovery_results
+    from bdpinf import get_project_root
+    from bdpinf.inference import save_recovery_results
 
     project_root = get_project_root()
     output_dir = out_dir or (project_root / "recovery_samples")

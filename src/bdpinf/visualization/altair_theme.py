@@ -4,7 +4,7 @@ This module is the single source of truth for the project's figure house
 style: every per-figure layout block (palette, fonts, axis styling) is
 centralized here instead of scattered across plotting functions.
 
-Importing this module **registers and enables** the ``inf_bp_texts`` Altair theme
+Importing this module **registers and enables** the ``bdpinf`` Altair theme
 process-wide, so every chart created afterwards inherits the palette
 (``ptolqual``), the serif font stack, the muted ``#FAFAFA`` background, and
 minimalist Tufte axes (no gridlines, thin domain lines, small outward muted
@@ -18,11 +18,50 @@ does **not** swallow export errors and does **not** mutate display state.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import altair as alt
 
 logger = logging.getLogger(__name__)
+
+_FIGURE_DIR_ENV_VAR = "BDPINF_FIGURE_DIR"
+_figure_dir: Path | None = None
+
+
+def set_figure_dir(path: str | Path | None) -> None:
+    """Set the module-wide default output directory for :func:`save_chart`.
+
+    Pass ``None`` to clear the override and fall back to the environment
+    variable / cwd resolution described in :func:`save_chart`.
+    """
+    global _figure_dir
+    _figure_dir = Path(path) if path is not None else None
+
+
+def get_figure_dir() -> Path | None:
+    """Return the module-wide default output directory set by :func:`set_figure_dir`."""
+    return _figure_dir
+
+
+def _resolve_output_dir(output_dir: str | Path | None) -> Path:
+    """Resolve the effective output directory for a chart export.
+
+    Order: explicit ``output_dir`` argument, then the module default set via
+    :func:`set_figure_dir`, then the ``BDPINF_FIGURE_DIR`` environment
+    variable, then ``Path.cwd() / "figures"``. This module deliberately makes
+    no assumption about Quarto or any other project layout — it does not
+    import anything from ``bdpinf`` itself.
+    """
+    if output_dir is not None:
+        return Path(output_dir)
+    if _figure_dir is not None:
+        return _figure_dir
+    env_dir = os.environ.get(_FIGURE_DIR_ENV_VAR)
+    if env_dir:
+        return Path(env_dir)
+    return Path.cwd() / "figures"
+
 
 # House style constants shared by every figure builder in this package.
 FONT: str = "Libertinus Serif, Latin Modern Roman, Times New Roman, Times, serif"
@@ -65,13 +104,13 @@ DIVERGING_RDBU: list[str] = [
     "#B2182B",  # -1  Red
 ]
 
-THEME_NAME: str = "inf_bp_texts"
+THEME_NAME: str = "bdpinf"
 
 _NORMAL = "normal"
 
 
 @alt.theme.register(THEME_NAME, enable=True)
-def inf_bp_texts_theme() -> alt.theme.ThemeConfig:
+def bdpinf_theme() -> alt.theme.ThemeConfig:
     """Register the project house style as an Altair theme.
 
     Enabled on import. Titles and labels are deliberately non-bold and the
@@ -354,8 +393,10 @@ def save_chart(
         Optional overrides for the chart's view dimensions in pixels. When
         ``None`` the chart's own sizing (or the theme default) is used.
     output_dir : str | Path | None
-        Directory to write into; created if absent. Defaults to
-        ``get_project_root() / "figures"`` (the single top-level figures tree).
+        Directory to write into; created if absent. Resolution order when
+        omitted: the module default set via :func:`set_figure_dir`, then the
+        ``BDPINF_FIGURE_DIR`` environment variable, then
+        ``Path.cwd() / "figures"``.
     fmt : str
         Output format understood by vl-convert: ``"pdf"`` (default), ``"svg"``,
         or ``"png"``.
@@ -370,12 +411,7 @@ def save_chart(
     Path
         Path to the written file.
     """
-    if output_dir is None:
-        from inf_bp_texts._paths import get_project_root
-
-        output_path = get_project_root() / "figures"
-    else:
-        output_path = Path(output_dir)
+    output_path = _resolve_output_dir(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     register_export_fonts()
 
@@ -418,20 +454,15 @@ def save_chart_html(
         Optional overrides for the chart's view dimensions in pixels. When
         ``None`` the chart's own sizing (or the theme default) is used.
     output_dir : str | Path | None
-        Directory to write into; created if absent. Defaults to
-        ``get_project_root() / "figures"`` (the single top-level figures tree).
+        Directory to write into; created if absent. See :func:`save_chart`
+        for the resolution order when omitted.
 
     Returns
     -------
     Path
         Path to the written file.
     """
-    if output_dir is None:
-        from inf_bp_texts._paths import get_project_root
-
-        output_path = get_project_root() / "figures"
-    else:
-        output_path = Path(output_dir)
+    output_path = _resolve_output_dir(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     sized = _sized(chart, width, height)
@@ -491,8 +522,10 @@ __all__ = [
     "THEME_NAME",
     "TITLE_FONT_SIZE",
     "display_svg",
-    "inf_bp_texts_theme",
+    "bdpinf_theme",
+    "get_figure_dir",
     "register_export_fonts",
     "save_chart",
     "save_chart_html",
+    "set_figure_dir",
 ]

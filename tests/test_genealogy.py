@@ -1,13 +1,11 @@
-"""Tests for visualization.genealogy: DFS ordering and tree plotting."""
+"""Tests for visualization.genealogy: tree plotting."""
 
 import altair as alt
 import pandas as pd
 import pytest
 
-from inf_bp_texts.visualization.genealogy import (
-    genealogy_dfs_order,
-    plot_genealogy_tree,
-)
+from bdpinf.process import BirthDeathProcess
+from bdpinf.visualization.genealogy import plot_genealogy_tree
 
 
 def _layer_mark_types(spec: dict) -> set[str]:
@@ -26,7 +24,7 @@ def _simple_records() -> pd.DataFrame:
     """Two-generation tree: root → child (both survived)."""
     return pd.DataFrame(
         {
-            "manuscript_id": [1, 2],
+            "individual_id": [1, 2],
             "parent_id": [None, 1],
             "creation_time": [0.0, 100.0],
             "death_time": [_T, _T],
@@ -37,26 +35,7 @@ def _simple_records() -> pd.DataFrame:
 
 
 class TestGenealogy:
-    """Test genealogy DFS ordering and tree rendering."""
-
-    def test_genealogy_dfs_order_correct_for_simple_tree(self) -> None:
-        records = _simple_records()
-        frame = genealogy_dfs_order(records, start_time=0.0, simulation_end_time=_T)
-        assert len(frame) == 2
-        assert list(frame["manuscript_id"]) == [1, 2]
-        assert list(frame["dfs_index"]) == [0, 1]
-
-    def test_genealogy_dfs_order_marks_spine(self) -> None:
-        """DFS order result has an is_spine column with boolean values."""
-        records = _simple_records()
-        frame = genealogy_dfs_order(records, start_time=0.0, simulation_end_time=_T)
-        # is_spine column should exist with boolean dtype
-        assert "is_spine" in frame.columns
-        assert (
-            frame["is_spine"].dtype == bool
-            or frame["is_spine"].map(type).eq(bool).all()
-            or frame["is_spine"].isin([True, False]).all()
-        )
+    """Test genealogy tree rendering."""
 
     def test_plot_genealogy_tree_returns_layered_rule_chart(self) -> None:
         records = _simple_records()
@@ -64,33 +43,28 @@ class TestGenealogy:
         assert isinstance(chart, alt.LayerChart)
         spec = chart.to_dict()
         assert _layer_mark_types(spec) == {"rule"}
-        # y axis is labelled by manuscript_id with the root (id 1) on top.
+        # y axis is labelled by individual_id with the root (id 1) on top.
         assert spec["layer"][0]["encoding"]["y"]["scale"]["domain"] == ["1", "2"]
 
-    def test_genealogy_requires_single_root(self) -> None:
-        two_roots = pd.DataFrame(
-            {
-                "manuscript_id": [1, 2],
-                "parent_id": [None, None],
-                "creation_time": [0.0, 0.0],
-                "death_time": [_T, _T],
-                "survived": [True, True],
-                "is_spine": [False, False],
-            }
-        )
-        with pytest.raises(ValueError, match="exactly one root"):
-            genealogy_dfs_order(two_roots, start_time=0.0, simulation_end_time=_T)
+    def test_plot_genealogy_tree_missing_times_raises(self) -> None:
+        with pytest.raises(ValueError, match="start_time and simulation_end_time"):
+            plot_genealogy_tree(_simple_records())
 
-    def test_genealogy_dfs_order_empty_records(self) -> None:
-        empty = pd.DataFrame(
-            columns=[
-                "manuscript_id",
-                "parent_id",
-                "creation_time",
-                "death_time",
-                "survived",
-                "is_spine",
-            ]
+    def test_plot_genealogy_tree_accepts_process_directly(self) -> None:
+        records = _simple_records()
+        records["age"] = [_T, _T - 100.0]
+        records["lifespan"] = [float("nan"), float("nan")]
+        process = BirthDeathProcess.from_records(
+            records,
+            epoch_end_times=_T,
+            start_time=0.0,
         )
-        with pytest.raises(ValueError):
-            genealogy_dfs_order(empty, start_time=0.0, simulation_end_time=_T)
+        chart = plot_genealogy_tree(process)
+        assert isinstance(chart, alt.LayerChart)
+        spec = chart.to_dict()
+        assert spec["layer"][0]["encoding"]["y"]["scale"]["domain"] == ["1", "2"]
+
+    def test_plot_genealogy_tree_process_without_records_raises(self) -> None:
+        process = BirthDeathProcess(creation_times=[0.0], epoch_end_times=_T)
+        with pytest.raises(ValueError, match="requires records"):
+            plot_genealogy_tree(process)

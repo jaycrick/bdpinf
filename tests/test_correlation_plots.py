@@ -4,8 +4,8 @@ import altair as alt
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.visualization.altair_theme import DIVERGING_RDBU
-from inf_bp_texts.visualization.correlation_plots import (
+from bdpinf.visualization.altair_theme import DIVERGING_RDBU
+from bdpinf.visualization.correlation_plots import (
     correlation_heatmap_chart,
     posterior_rate_correlation,
 )

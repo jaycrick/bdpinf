@@ -1,17 +1,17 @@
-"""Tests for manuscript date density estimation and quantile resampling."""
+"""Tests for item date density estimation and quantile resampling."""
 
 import numpy as np
 import pytest
 
-from inf_bp_texts.analysis.date_density import (
+from bdpinf.analysis.date_density import (
+    date_range_density,
     explode_date_ranges,
-    manuscript_date_density,
     quantile_resample_dates,
 )
 
 
 class TestDateDensity:
-    """Test date density estimation for manuscripts with date ranges."""
+    """Test date density estimation for items with date ranges."""
 
     # -----------------------------------------------------------------
     # explode_date_ranges
@@ -31,21 +31,21 @@ class TestDateDensity:
         assert len(years) == 5  # 100, 101, 102, 103, 104
         np.testing.assert_allclose(weights, np.full(5, 0.2))
 
-    def test_explode_total_weight_equals_manuscript_count(self) -> None:
+    def test_explode_total_weight_equals_item_count(self) -> None:
         early = np.array([100, 200, 300], dtype=np.int64)
         late = np.array([110, 250, 300], dtype=np.int64)
         _, weights = explode_date_ranges(early, late)
         np.testing.assert_allclose(weights.sum(), 3.0, rtol=1e-12)
 
     def test_explode_per_range_weights_sum_to_one(self) -> None:
-        # Each manuscript's pseudo-points should sum to 1.
+        # Each item's pseudo-points should sum to 1.
         early = np.array([100, 200], dtype=np.int64)
         late = np.array([109, 204], dtype=np.int64)
         years, weights = explode_date_ranges(early, late)
-        # First manuscript: years 100-109 (10 points)
+        # First item: years 100-109 (10 points)
         w_first = weights[years < 200]
         np.testing.assert_allclose(w_first.sum(), 1.0, rtol=1e-12)
-        # Second manuscript: years 200-204 (5 points)
+        # Second item: years 200-204 (5 points)
         w_second = weights[years >= 200]
         np.testing.assert_allclose(w_second.sum(), 1.0, rtol=1e-12)
 
@@ -69,33 +69,33 @@ class TestDateDensity:
             explode_date_ranges(early, late)
 
     # -----------------------------------------------------------------
-    # manuscript_date_density
+    # date_range_density
     # -----------------------------------------------------------------
 
     def test_density_integrates_to_one(self) -> None:
         early = np.array([100, 200, 300, 400, 500], dtype=np.int64)
         late = np.array([150, 250, 350, 450, 550], dtype=np.int64)
-        year_grid, density = manuscript_date_density(early, late, current_year=2024)
+        year_grid, density = date_range_density(early, late, current_year=2024)
         integral = float(np.trapezoid(density, year_grid))
         assert abs(integral - 1.0) < 0.02
 
     def test_density_nonnegative(self) -> None:
         early = np.array([100, 200, 300], dtype=np.int64)
         late = np.array([150, 250, 350], dtype=np.int64)
-        _, density = manuscript_date_density(early, late, current_year=2024)
+        _, density = date_range_density(early, late, current_year=2024)
         assert np.all(density >= 0.0)
 
     def test_density_year_grid_spans_data(self) -> None:
         early = np.array([400, 800], dtype=np.int64)
         late = np.array([500, 900], dtype=np.int64)
-        year_grid, _ = manuscript_date_density(early, late, current_year=2024)
+        year_grid, _ = date_range_density(early, late, current_year=2024)
         assert year_grid[0] <= 400
         assert year_grid[-1] >= 900
 
     def test_density_year_grid_monotonically_increasing(self) -> None:
         early = np.array([100, 500, 900], dtype=np.int64)
         late = np.array([200, 600, 1000], dtype=np.int64)
-        year_grid, _ = manuscript_date_density(early, late, current_year=2024)
+        year_grid, _ = date_range_density(early, late, current_year=2024)
         assert np.all(np.diff(year_grid) > 0)
 
     # -----------------------------------------------------------------

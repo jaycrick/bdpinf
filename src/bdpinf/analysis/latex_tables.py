@@ -8,12 +8,12 @@ consuming document's LaTeX preamble.
 Two canonical renderings are supported:
 
 * **Per-epoch** tables (rows = traditions, one table per epoch) — compare how a
-  given historical period's rates differ across manuscript subsets.
+  given historical period's rates differ across data subsets.
 * **Per-tradition** tables (rows = epochs, one table per tradition) — show how
-  rates evolve over time within a single manuscript group.
+  rates evolve over time within a single group.
 
 Assembly helpers extract values from the existing result structures
-(:class:`~inf_bp_texts.analysis.subset_inference.SubsetFitResult` for MLE,
+(:class:`~bdpinf.analysis.subset_fitting.SubsetFitResult` for MLE,
 ``bayesian_results`` dicts from the parallel driver for Bayesian) and return a
 ``{name: latex_string}`` dict ready to be printed as fenced code blocks in
 Quarto notebooks.
@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    from inf_bp_texts.analysis.subset_inference import SubsetFitResult
+    from bdpinf.analysis.subset_fitting import SubsetFitResult
 
 
 # ---------------------------------------------------------------------------
@@ -309,22 +309,29 @@ def subset_fits_latex_by_epoch(
     subset_fits: list[SubsetFitResult],
     epoch_names: Sequence[str],
     *,
+    entity_noun: str = "individual",
+    caption: str | None = None,
     num_format: str = "1.6",
     num_precision: int = 6,
 ) -> dict[str, str]:
     """Return ``{epoch_name: latex_table}`` for per-epoch MLE tables.
 
-    Each table has rows = manuscript traditions (subset fits) and columns
-    Est. / SE / 95 % CI.  A tradition is omitted for a given epoch when it
-    has zero manuscripts in that epoch (e.g. Lectionary in Ante Nicaea).
+    Each table has rows = traditions (subset fits) and columns Est. / SE /
+    95 % CI.  A tradition is omitted for a given epoch when it has zero
+    entities in that epoch (e.g. a lectionary subset before it starts).
 
     Parameters
     ----------
     subset_fits : list[SubsetFitResult]
         Converged or not-converged MLE fits from
-        :func:`~inf_bp_texts.analysis.subset_inference.fit_manuscript_subset`.
+        :func:`~bdpinf.analysis.subset_fitting.fit_subset`.
     epoch_names : Sequence[str]
         Canonical epoch names in display order.
+    entity_noun : str
+        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
+        ``caption`` is given.
+    caption : str | None
+        Full caption override; if ``None``, derived from ``entity_noun``.
     num_format : str
         Forwarded to :func:`rates_latex_table`.
     num_precision : int
@@ -343,7 +350,7 @@ def subset_fits_latex_by_epoch(
             if not fit.success or not fit.epoch_results:
                 continue
             ep = next((r for r in fit.epoch_results if r["period"] == epoch_name), None)
-            if ep is None or ep.get("n_manuscripts", 0) == 0:
+            if ep is None or ep.get("n_individuals", 0) == 0:
                 continue
             birth_rows.append(
                 LatexRateRow(
@@ -378,16 +385,17 @@ def subset_fits_latex_by_epoch(
             continue
 
         safe_name = epoch_name.lower().replace(" ", "-")
+        table_caption = caption or (
+            f"MLE birth and death rate estimates with 95\\% confidence"
+            f" intervals --- {epoch_name}"
+        )
         tables[epoch_name] = rates_latex_table(
             [
                 LatexParamGroup(symbol=r"\lambda", rows=birth_rows),
                 LatexParamGroup(symbol=r"\mu", rows=death_rows),
             ],
             MLE_COLUMNS,
-            caption=(
-                f"MLE birth and death rate estimates with 95\\% confidence"
-                f" intervals --- {epoch_name}"
-            ),
+            caption=table_caption,
             label=f"mle-{safe_name}",
             row_header="Tradition",
             num_format=num_format,
@@ -399,18 +407,25 @@ def subset_fits_latex_by_epoch(
 def subset_fits_latex_by_subset(
     subset_fits: list[SubsetFitResult],
     *,
+    entity_noun: str = "individual",
+    caption: str | None = None,
     num_format: str = "1.6",
     num_precision: int = 6,
 ) -> dict[str, str]:
     """Return ``{subset_label: latex_table}`` for per-tradition MLE tables.
 
     Each table has rows = epochs and columns Est. / SE / 95 % CI.  Epochs with
-    zero manuscripts are omitted.
+    zero entities are omitted.
 
     Parameters
     ----------
     subset_fits : list[SubsetFitResult]
         Converged MLE fits.
+    entity_noun : str
+        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
+        ``caption`` is given.
+    caption : str | None
+        Full caption override; if ``None``, derived from ``entity_noun``.
     num_format : str
         Forwarded to :func:`rates_latex_table`.
     num_precision : int
@@ -439,7 +454,7 @@ def subset_fits_latex_by_subset(
                 },
             )
             for ep in fit.epoch_results
-            if ep.get("n_manuscripts", 0) > 0
+            if ep.get("n_individuals", 0) > 0
         ]
         death_rows = [
             LatexRateRow(
@@ -455,21 +470,22 @@ def subset_fits_latex_by_subset(
                 },
             )
             for ep in fit.epoch_results
-            if ep.get("n_manuscripts", 0) > 0
+            if ep.get("n_individuals", 0) > 0
         ]
         if not birth_rows:
             continue
 
+        table_caption = caption or (
+            f"MLE birth and death rate estimates with 95\\% confidence"
+            f" intervals --- {fit.label}"
+        )
         tables[fit.label] = rates_latex_table(
             [
                 LatexParamGroup(symbol=r"\lambda", rows=birth_rows),
                 LatexParamGroup(symbol=r"\mu", rows=death_rows),
             ],
             MLE_COLUMNS,
-            caption=(
-                f"MLE birth and death rate estimates with 95\\% confidence"
-                f" intervals --- {fit.label}"
-            ),
+            caption=table_caption,
             label=f"mle-{fit.key}",
             row_header="Epoch",
             num_format=num_format,
@@ -518,6 +534,8 @@ def bayesian_results_latex_by_epoch(
     bayesian_results: dict[str, dict[str, Any]],
     epoch_names: Sequence[str],
     *,
+    entity_noun: str = "individual",
+    caption: str | None = None,
     num_format: str = "1.6",
     num_precision: int = 6,
     cri_prob: float = 0.95,
@@ -526,19 +544,24 @@ def bayesian_results_latex_by_epoch(
 
     Each table has rows = traditions and columns Mean / Median / 95 % CrI.
     A tradition is omitted for a given epoch when that epoch does not appear in
-    its ``epoch_names`` list (e.g. Lectionary subset fitted from 380 CE lacks
-    ``"Ante Nicaea"``).
+    its ``epoch_names`` list (e.g. a subset fitted from a later start year
+    lacks the earliest epoch).
 
     Parameters
     ----------
     bayesian_results : dict[str, dict]
         Output of
-        :func:`~inf_bp_texts.analysis.subset_inference.fit_manuscript_subsets_bayesian`.
+        :func:`~bdpinf.analysis.subset_fitting.fit_subsets_bayesian`.
         Keys are subset keys; each entry must contain ``"label"``,
         ``"epoch_names"``, ``"birth_rates"``, ``"death_rates"``, and
         ``"posterior_samples"`` (``{"birth_rates": ndarray, "death_rates": ndarray}``).
     epoch_names : Sequence[str]
         Canonical epoch names in display order.
+    entity_noun : str
+        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
+        ``caption`` is given.
+    caption : str | None
+        Full caption override; if ``None``, derived from ``entity_noun``.
     num_format : str
         Forwarded to :func:`rates_latex_table`.
     num_precision : int
@@ -577,16 +600,17 @@ def bayesian_results_latex_by_epoch(
             continue
 
         safe_name = epoch_name.lower().replace(" ", "-")
+        table_caption = caption or (
+            f"Posterior birth and death rate estimates"
+            f" (mean, median, {int(cri_prob * 100)}\\% CrI) --- {epoch_name}"
+        )
         tables[epoch_name] = rates_latex_table(
             [
                 LatexParamGroup(symbol=r"\lambda", rows=birth_rows),
                 LatexParamGroup(symbol=r"\mu", rows=death_rows),
             ],
             BAYESIAN_COLUMNS,
-            caption=(
-                f"Posterior birth and death rate estimates"
-                f" (mean, median, {int(cri_prob * 100)}\\% CrI) --- {epoch_name}"
-            ),
+            caption=table_caption,
             label=f"bayes-{safe_name}",
             row_header="Tradition",
             num_format=num_format,
@@ -604,7 +628,7 @@ def _halflife_mle_values(
     ----------
     ep : dict
         One entry from
-        :attr:`~inf_bp_texts.analysis.subset_inference.SubsetFitResult.epoch_results`.
+        :attr:`~bdpinf.analysis.subset_fitting.SubsetFitResult.epoch_results`.
         Expected keys: ``"half_life"``, optionally ``"death_rate_se"``,
         ``"death_rates"``, ``"death_rate_ci"``.
 
@@ -643,25 +667,31 @@ def subset_fits_halflife_latex_by_epoch(
     subset_fits: list[SubsetFitResult],
     epoch_names: Sequence[str],
     *,
+    entity_noun: str = "individual",
+    caption: str | None = None,
     num_format: str = "5.0",
     num_precision: int = 0,
 ) -> dict[str, str]:
     r"""Return ``{epoch_name: latex_table}`` for per-epoch MLE half-life tables.
 
     Each table has one :class:`LatexParamGroup` (symbol ``t_{1/2}``) with rows
-    = manuscript traditions and columns Est. / SE / 95 % CI.  The half-life
-    estimate is ``ln(2)/μ`` (years); SE comes from the delta method and CI from
-    inverting and swapping the death-rate confidence-interval bounds.  A
-    tradition is omitted for a given epoch when it has zero manuscripts in that
-    epoch.
+    = traditions and columns Est. / SE / 95 % CI.  The half-life estimate is
+    ``ln(2)/μ`` (years); SE comes from the delta method and CI from inverting
+    and swapping the death-rate confidence-interval bounds.  A tradition is
+    omitted for a given epoch when it has zero entities in that epoch.
 
     Parameters
     ----------
     subset_fits : list[SubsetFitResult]
         Converged or not-converged MLE fits from
-        :func:`~inf_bp_texts.analysis.subset_inference.fit_manuscript_subset`.
+        :func:`~bdpinf.analysis.subset_fitting.fit_subset`.
     epoch_names : Sequence[str]
         Canonical epoch names in display order.
+    entity_noun : str
+        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
+        ``caption`` is given.
+    caption : str | None
+        Full caption override; if ``None``, derived from ``entity_noun``.
     num_format : str
         ``table-format`` value for ``S`` columns (default ``"5.0"`` for
         whole-year values).
@@ -681,7 +711,7 @@ def subset_fits_halflife_latex_by_epoch(
             if not fit.success or not fit.epoch_results:
                 continue
             ep = next((r for r in fit.epoch_results if r["period"] == epoch_name), None)
-            if ep is None or ep.get("n_manuscripts", 0) == 0:
+            if ep is None or ep.get("n_individuals", 0) == 0:
                 continue
             rows.append(LatexRateRow(label=fit.label, values=_halflife_mle_values(ep)))
 
@@ -689,13 +719,14 @@ def subset_fits_halflife_latex_by_epoch(
             continue
 
         safe_name = epoch_name.lower().replace(" ", "-")
+        table_caption = caption or (
+            f"MLE {entity_noun} half-lives (years) with 95\\% confidence"
+            f" intervals --- {epoch_name}"
+        )
         tables[epoch_name] = rates_latex_table(
             [LatexParamGroup(symbol=r"t_{1/2}", rows=rows)],
             MLE_COLUMNS,
-            caption=(
-                f"MLE manuscript half-lives (years) with 95\\% confidence"
-                f" intervals --- {epoch_name}"
-            ),
+            caption=table_caption,
             label=f"mle-halflife-{safe_name}",
             row_header="Tradition",
             num_format=num_format,
@@ -707,19 +738,26 @@ def subset_fits_halflife_latex_by_epoch(
 def subset_fits_halflife_latex_by_subset(
     subset_fits: list[SubsetFitResult],
     *,
+    entity_noun: str = "individual",
+    caption: str | None = None,
     num_format: str = "5.0",
     num_precision: int = 0,
 ) -> dict[str, str]:
     r"""Return ``{subset_label: latex_table}`` for per-tradition MLE half-life tables.
 
     Each table has one :class:`LatexParamGroup` (symbol ``t_{1/2}``) with rows
-    = epochs and columns Est. / SE / 95 % CI.  Epochs with zero manuscripts are
+    = epochs and columns Est. / SE / 95 % CI.  Epochs with zero entities are
     omitted.
 
     Parameters
     ----------
     subset_fits : list[SubsetFitResult]
         Converged MLE fits.
+    entity_noun : str
+        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
+        ``caption`` is given.
+    caption : str | None
+        Full caption override; if ``None``, derived from ``entity_noun``.
     num_format : str
         ``table-format`` value for ``S`` columns (default ``"5.0"``).
     num_precision : int
@@ -738,18 +776,19 @@ def subset_fits_halflife_latex_by_subset(
         rows = [
             LatexRateRow(label=ep["period"], values=_halflife_mle_values(ep))
             for ep in fit.epoch_results
-            if ep.get("n_manuscripts", 0) > 0
+            if ep.get("n_individuals", 0) > 0
         ]
         if not rows:
             continue
 
+        table_caption = caption or (
+            f"MLE {entity_noun} half-lives (years) with 95\\% confidence"
+            f" intervals --- {fit.label}"
+        )
         tables[fit.label] = rates_latex_table(
             [LatexParamGroup(symbol=r"t_{1/2}", rows=rows)],
             MLE_COLUMNS,
-            caption=(
-                f"MLE manuscript half-lives (years) with 95\\% confidence"
-                f" intervals --- {fit.label}"
-            ),
+            caption=table_caption,
             label=f"mle-halflife-{fit.key}",
             row_header="Epoch",
             num_format=num_format,
@@ -762,6 +801,8 @@ def bayesian_results_halflife_latex_by_epoch(
     bayesian_results: dict[str, dict[str, Any]],
     epoch_names: Sequence[str],
     *,
+    entity_noun: str = "individual",
+    caption: str | None = None,
     num_format: str = "5.0",
     num_precision: int = 0,
     cri_prob: float = 0.95,
@@ -776,11 +817,16 @@ def bayesian_results_halflife_latex_by_epoch(
     ----------
     bayesian_results : dict[str, dict]
         Output of
-        :func:`~inf_bp_texts.analysis.subset_inference.fit_manuscript_subsets_bayesian`.
+        :func:`~bdpinf.analysis.subset_fitting.fit_subsets_bayesian`.
         Each entry must contain ``"label"``, ``"epoch_names"``, and
         ``"posterior_samples"`` with key ``"death_rates"`` (``ndarray``).
     epoch_names : Sequence[str]
         Canonical epoch names in display order.
+    entity_noun : str
+        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
+        ``caption`` is given.
+    caption : str | None
+        Full caption override; if ``None``, derived from ``entity_noun``.
     num_format : str
         ``table-format`` value for ``S`` columns (default ``"5.0"``).
     num_precision : int
@@ -815,13 +861,14 @@ def bayesian_results_halflife_latex_by_epoch(
             continue
 
         safe_name = epoch_name.lower().replace(" ", "-")
+        table_caption = caption or (
+            f"Posterior {entity_noun} half-lives (years)"
+            f" (mean, median, {int(cri_prob * 100)}\\% CrI) --- {epoch_name}"
+        )
         tables[epoch_name] = rates_latex_table(
             [LatexParamGroup(symbol=r"t_{1/2}", rows=rows)],
             BAYESIAN_COLUMNS,
-            caption=(
-                f"Posterior manuscript half-lives (years)"
-                f" (mean, median, {int(cri_prob * 100)}\\% CrI) --- {epoch_name}"
-            ),
+            caption=table_caption,
             label=f"bayes-halflife-{safe_name}",
             row_header="Tradition",
             num_format=num_format,
@@ -833,6 +880,8 @@ def bayesian_results_halflife_latex_by_epoch(
 def bayesian_results_halflife_latex_by_subset(
     bayesian_results: dict[str, dict[str, Any]],
     *,
+    entity_noun: str = "individual",
+    caption: str | None = None,
     num_format: str = "5.0",
     num_precision: int = 0,
     cri_prob: float = 0.95,
@@ -847,7 +896,12 @@ def bayesian_results_halflife_latex_by_subset(
     ----------
     bayesian_results : dict[str, dict]
         Output of
-        :func:`~inf_bp_texts.analysis.subset_inference.fit_manuscript_subsets_bayesian`.
+        :func:`~bdpinf.analysis.subset_fitting.fit_subsets_bayesian`.
+    entity_noun : str
+        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
+        ``caption`` is given.
+    caption : str | None
+        Full caption override; if ``None``, derived from ``entity_noun``.
     num_format : str
         ``table-format`` value for ``S`` columns (default ``"5.0"``).
     num_precision : int
@@ -875,13 +929,14 @@ def bayesian_results_halflife_latex_by_subset(
             continue
 
         label_str: str = entry["label"]
+        table_caption = caption or (
+            f"Posterior {entity_noun} half-lives (years)"
+            f" (mean, median, {int(cri_prob * 100)}\\% CrI) --- {label_str}"
+        )
         tables[label_str] = rates_latex_table(
             [LatexParamGroup(symbol=r"t_{1/2}", rows=rows)],
             BAYESIAN_COLUMNS,
-            caption=(
-                f"Posterior manuscript half-lives (years)"
-                f" (mean, median, {int(cri_prob * 100)}\\% CrI) --- {label_str}"
-            ),
+            caption=table_caption,
             label=f"bayes-halflife-{subset_key}",
             row_header="Epoch",
             num_format=num_format,
@@ -893,6 +948,8 @@ def bayesian_results_halflife_latex_by_subset(
 def bayesian_results_latex_by_subset(
     bayesian_results: dict[str, dict[str, Any]],
     *,
+    entity_noun: str = "individual",
+    caption: str | None = None,
     num_format: str = "1.6",
     num_precision: int = 6,
     cri_prob: float = 0.95,
@@ -905,7 +962,12 @@ def bayesian_results_latex_by_subset(
     ----------
     bayesian_results : dict[str, dict]
         Output of
-        :func:`~inf_bp_texts.analysis.subset_inference.fit_manuscript_subsets_bayesian`.
+        :func:`~bdpinf.analysis.subset_fitting.fit_subsets_bayesian`.
+    entity_noun : str
+        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
+        ``caption`` is given.
+    caption : str | None
+        Full caption override; if ``None``, derived from ``entity_noun``.
     num_format : str
         Forwarded to :func:`rates_latex_table`.
     num_precision : int
@@ -936,16 +998,17 @@ def bayesian_results_latex_by_subset(
             continue
 
         label_str: str = entry["label"]
+        table_caption = caption or (
+            f"Posterior birth and death rate estimates"
+            f" (mean, median, {int(cri_prob * 100)}\\% CrI) --- {label_str}"
+        )
         tables[label_str] = rates_latex_table(
             [
                 LatexParamGroup(symbol=r"\lambda", rows=birth_rows),
                 LatexParamGroup(symbol=r"\mu", rows=death_rows),
             ],
             BAYESIAN_COLUMNS,
-            caption=(
-                f"Posterior birth and death rate estimates"
-                f" (mean, median, {int(cri_prob * 100)}\\% CrI) --- {label_str}"
-            ),
+            caption=table_caption,
             label=f"bayes-{subset_key}",
             row_header="Epoch",
             num_format=num_format,

@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from inf_bp_texts.analysis.bootstrap_date_density import (
+from bdpinf.analysis.bootstrap_date_density import (
     _build_weight_matrix,  # pyright: ignore[reportPrivateUsage]
     _resample_batch,  # pyright: ignore[reportPrivateUsage]
     bootstrap_epoch_counts,
@@ -15,7 +15,7 @@ from inf_bp_texts.analysis.bootstrap_date_density import (
     load_bootstrap_samples,
     save_bootstrap_samples,
 )
-from inf_bp_texts.analysis.date_density import quantile_resample_dates
+from bdpinf.analysis.date_density import quantile_resample_dates
 
 # ---------------------------------------------------------------------------
 # Shared test fixtures
@@ -24,11 +24,11 @@ from inf_bp_texts.analysis.date_density import quantile_resample_dates
 _SEED = 42
 _CURRENT_YEAR = 2024
 
-# Small synthetic dataset: 5 manuscripts with varying date ranges
+# Small synthetic dataset: 5 items with varying date ranges
 _EARLY = np.array([200, 400, 600, 800, 1000], dtype=np.int64)
 _LATE = np.array([300, 600, 700, 1200, 1400], dtype=np.int64)
 _LATE_CLAMPED = np.maximum(_LATE, _EARLY)
-_DOC_IDS = np.array([10001, 10002, 10003, 10004, 10005], dtype=np.int64)
+_ITEM_IDS = np.array([10001, 10002, 10003, 10004, 10005], dtype=np.int64)
 _MID = (_EARLY + _LATE_CLAMPED) / 2.0
 _M = len(_EARLY)
 
@@ -91,7 +91,7 @@ class TestBuildWeightMatrix:
         # Let's verify: sum is actually 1.0 per row regardless of c
         np.testing.assert_allclose(row_sums, np.ones(_M), atol=1e-12)
 
-    def test_exact_dated_manuscript(self) -> None:
+    def test_exact_dated_item(self) -> None:
         # Exact dating (early == late): only one year in range
         early = np.array([500], dtype=np.int64)
         late = np.array([500], dtype=np.int64)
@@ -108,7 +108,7 @@ class TestBuildWeightMatrix:
         W = (k @ A) / _M  # [1, Y]
         # W must be non-negative
         assert np.all(W >= 0)
-        # Total weight sums to 1 (each manuscript contributes 1/M)
+        # Total weight sums to 1 (each item contributes 1/M)
         np.testing.assert_allclose(W.sum(), 1.0, atol=1e-12)
 
 
@@ -143,31 +143,20 @@ class TestResampleBatch:
         computed = np.round(resampled[0]).astype(np.int64)
         np.testing.assert_array_equal(computed, ref)
 
-    def test_identity_multiplicity_section_r(self) -> None:
-        # Test on a realistic subgroup (section_r, n=309) to confirm match at scale.
-        import pandas as pd
-
-        from inf_bp_texts import get_project_root
-
-        csv = get_project_root() / "manuscript_analysis_cleaned.csv"
-        if not csv.exists():
-            pytest.skip("manuscript_analysis_cleaned.csv not found")
-
-        df = pd.read_csv(csv)
-        sub = df.dropna(subset=["earlyYear", "lateYear"])
-        sub = sub[sub["section_r"] == 1].copy()
-        if len(sub) == 0:
-            pytest.skip("section_r subgroup is empty")
-
-        early = sub["earlyYear"].to_numpy(dtype=np.int64)
-        late = np.maximum(sub["lateYear"].to_numpy(dtype=np.int64), early)
+    def test_identity_multiplicity_matches_at_larger_scale(self) -> None:
+        # Same identity-multiplicity property, but on a larger synthetic
+        # dataset (n=300) to confirm the match holds beyond the tiny fixture.
+        rng = np.random.default_rng(7)
+        n = 300
+        early = rng.integers(100, 1900, size=n).astype(np.int64)
+        late = np.maximum(early, early + rng.integers(0, 80, size=n)).astype(np.int64)
 
         ref = quantile_resample_dates(
-            early, late, current_year=_CURRENT_YEAR, n_samples=len(early)
+            early, late, current_year=_CURRENT_YEAR, n_samples=n
         )
 
         pre = _make_precomputed(early, late)
-        k = np.ones((1, len(early)), dtype=np.float64)
+        k = np.ones((1, n), dtype=np.float64)
         resampled = _resample_batch(
             k,
             pre["A"],
@@ -242,46 +231,46 @@ class TestBootstrapQuantileResampleDates:
 
     def test_output_shapes(self) -> None:
         n_boot = 10
-        doc_ids, years = bootstrap_quantile_resample_dates(
+        item_ids, years = bootstrap_quantile_resample_dates(
             _EARLY,
             _LATE_CLAMPED,
-            _DOC_IDS,
+            _ITEM_IDS,
             _MID,
             n_bootstrap=n_boot,
             seed=_SEED,
         )
-        assert doc_ids.shape == (n_boot, _M)
+        assert item_ids.shape == (n_boot, _M)
         assert years.shape == (n_boot, _M)
 
     def test_output_dtypes(self) -> None:
-        doc_ids, years = bootstrap_quantile_resample_dates(
+        item_ids, years = bootstrap_quantile_resample_dates(
             _EARLY,
             _LATE_CLAMPED,
-            _DOC_IDS,
+            _ITEM_IDS,
             _MID,
             n_bootstrap=4,
             seed=_SEED,
         )
-        assert doc_ids.dtype == np.uint16
+        assert item_ids.dtype == np.uint16
         assert years.dtype == np.int16
 
-    def test_doc_ids_are_valid(self) -> None:
-        doc_ids, _ = bootstrap_quantile_resample_dates(
+    def test_item_ids_are_valid(self) -> None:
+        item_ids, _ = bootstrap_quantile_resample_dates(
             _EARLY,
             _LATE_CLAMPED,
-            _DOC_IDS,
+            _ITEM_IDS,
             _MID,
             n_bootstrap=20,
             seed=_SEED,
         )
-        valid_set = set(int(x) for x in _DOC_IDS)
-        assert all(int(v) in valid_set for row in doc_ids for v in row)
+        valid_set = set(int(x) for x in _ITEM_IDS)
+        assert all(int(v) in valid_set for row in item_ids for v in row)
 
     def test_resampled_years_in_range(self) -> None:
         _, years = bootstrap_quantile_resample_dates(
             _EARLY,
             _LATE_CLAMPED,
-            _DOC_IDS,
+            _ITEM_IDS,
             _MID,
             n_bootstrap=20,
             seed=_SEED,
@@ -293,7 +282,7 @@ class TestBootstrapQuantileResampleDates:
         _, years = bootstrap_quantile_resample_dates(
             _EARLY,
             _LATE_CLAMPED,
-            _DOC_IDS,
+            _ITEM_IDS,
             _MID,
             n_bootstrap=8,
             seed=_SEED,
@@ -303,28 +292,28 @@ class TestBootstrapQuantileResampleDates:
                 f"Row {b} not sorted"
             )
 
-    def test_doc_ids_sorted_by_midyear(self) -> None:
-        # Each bootstrap's doc_ids must be in ascending midYear order.
-        doc_ids, _ = bootstrap_quantile_resample_dates(
+    def test_item_ids_sorted_by_mid_value(self) -> None:
+        # Each bootstrap's item_ids must be in ascending mid_value order.
+        item_ids, _ = bootstrap_quantile_resample_dates(
             _EARLY,
             _LATE_CLAMPED,
-            _DOC_IDS,
+            _ITEM_IDS,
             _MID,
             n_bootstrap=10,
             seed=_SEED,
         )
-        # Build docID → midYear map
-        id_to_mid = {int(d): float(m) for d, m in zip(_DOC_IDS, _MID, strict=True)}
-        for b in range(len(doc_ids)):
-            mids = [id_to_mid[int(d)] for d in doc_ids[b]]
-            assert mids == sorted(mids), f"Row {b} docIDs not sorted by midYear"
+        # Build item id → mid_value map
+        id_to_mid = {int(d): float(m) for d, m in zip(_ITEM_IDS, _MID, strict=True)}
+        for b in range(len(item_ids)):
+            mids = [id_to_mid[int(d)] for d in item_ids[b]]
+            assert mids == sorted(mids), f"Row {b} item ids not sorted by mid_value"
 
     def test_reproducibility(self) -> None:
         kwargs: dict = dict(
             early=_EARLY,
             late=_LATE_CLAMPED,
-            doc_ids=_DOC_IDS,
-            mid_year=_MID,
+            item_ids=_ITEM_IDS,
+            mid_value=_MID,
             n_bootstrap=8,
             seed=_SEED,
         )
@@ -335,26 +324,26 @@ class TestBootstrapQuantileResampleDates:
 
     def test_different_seeds_differ(self) -> None:
         d1, _ = bootstrap_quantile_resample_dates(
-            _EARLY, _LATE_CLAMPED, _DOC_IDS, _MID, n_bootstrap=20, seed=1
+            _EARLY, _LATE_CLAMPED, _ITEM_IDS, _MID, n_bootstrap=20, seed=1
         )
         d2, _ = bootstrap_quantile_resample_dates(
-            _EARLY, _LATE_CLAMPED, _DOC_IDS, _MID, n_bootstrap=20, seed=2
+            _EARLY, _LATE_CLAMPED, _ITEM_IDS, _MID, n_bootstrap=20, seed=2
         )
         # At least some rows should differ (vanishingly unlikely to match)
         assert not np.array_equal(d1, d2)
 
     def test_batch_boundary_exact(self) -> None:
         # n_bootstrap not divisible by batch_size — last partial batch handled correctly
-        doc_ids, years = bootstrap_quantile_resample_dates(
+        item_ids, years = bootstrap_quantile_resample_dates(
             _EARLY,
             _LATE_CLAMPED,
-            _DOC_IDS,
+            _ITEM_IDS,
             _MID,
             n_bootstrap=7,
             batch_size=3,
             seed=_SEED,
         )
-        assert doc_ids.shape == (7, _M)
+        assert item_ids.shape == (7, _M)
         assert years.shape == (7, _M)
 
     def test_empty_input_raises(self) -> None:
@@ -372,26 +361,26 @@ class TestBootstrapQuantileResampleDates:
             bootstrap_quantile_resample_dates(
                 _EARLY,
                 _LATE_CLAMPED,
-                _DOC_IDS[:3],
+                _ITEM_IDS[:3],
                 _MID,
                 n_bootstrap=1,
             )
 
     def test_late_clamping(self) -> None:
-        # Passing late < early should not raise; clamping matches add_resampled_year_column
+        # Passing late < early should not raise; the function clamps internally.
         bad_late = np.array([100, 400, 600, 800, 1000], dtype=np.int64)  # first is bad
         bad_late[0] = 150  # actually valid; use original early-1 scenario:
         bad_late2 = _EARLY.copy()
         bad_late2[0] = _EARLY[0] - 50  # bad: late < early
-        doc_ids, years = bootstrap_quantile_resample_dates(
+        item_ids, years = bootstrap_quantile_resample_dates(
             _EARLY,
             bad_late2,
-            _DOC_IDS,
+            _ITEM_IDS,
             _MID,
             n_bootstrap=2,
             seed=_SEED,
         )
-        assert doc_ids.shape == (2, _M)
+        assert item_ids.shape == (2, _M)
 
 
 class TestSaveLoadBootstrapSamples:
@@ -399,32 +388,32 @@ class TestSaveLoadBootstrapSamples:
 
     def _make_tiny(self, n: int = 3, m: int = 4) -> tuple:
         rng = np.random.default_rng(0)
-        doc = rng.integers(10001, 10020, size=(n, m), dtype=np.uint16)
+        ids = rng.integers(10001, 10020, size=(n, m), dtype=np.uint16)
         years = rng.integers(200, 1800, size=(n, m), dtype=np.int16)
-        return doc, years
+        return ids, years
 
     def test_round_trip_arrays(self) -> None:
-        doc, years = self._make_tiny()
+        ids, years = self._make_tiny()
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "test_samples.npz"
-            save_bootstrap_samples(doc, years, path)
+            save_bootstrap_samples(ids, years, path)
             result = load_bootstrap_samples(path)
-        np.testing.assert_array_equal(result["doc_id_samples"], doc)
+        np.testing.assert_array_equal(result["item_id_samples"], ids)
         np.testing.assert_array_equal(result["resampled_years"], years)
 
     def test_round_trip_metadata(self) -> None:
-        doc, years = self._make_tiny()
+        ids, years = self._make_tiny()
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "samples.npz"
             save_bootstrap_samples(
-                doc,
+                ids,
                 years,
                 path,
                 subgroup="non_lectionary",
                 n_bootstrap=3,
                 current_year=2024,
                 seed=99,
-                order="sorted_by_midYear",
+                order="sorted_by_mid_value",
             )
             result = load_bootstrap_samples(path)
         meta = result["metadata"]
@@ -432,24 +421,57 @@ class TestSaveLoadBootstrapSamples:
         assert meta["n_bootstrap"] == 3
         assert meta["current_year"] == 2024
         assert meta["seed"] == 99
-        assert meta["order"] == "sorted_by_midYear"
+        assert meta["order"] == "sorted_by_mid_value"
+        assert meta["schema_version"] == 2
+        assert meta["item_id_dtype"] == "uint16"
 
     def test_dtypes_preserved(self) -> None:
-        doc, years = self._make_tiny()
+        ids, years = self._make_tiny()
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "s.npz"
-            save_bootstrap_samples(doc, years, path)
+            save_bootstrap_samples(ids, years, path)
             result = load_bootstrap_samples(path)
-        assert result["doc_id_samples"].dtype == np.uint16
+        assert result["item_id_samples"].dtype == np.uint16
         assert result["resampled_years"].dtype == np.int16
 
+    def test_wider_id_dtype_preserved(self) -> None:
+        # Ids beyond uint16 range must round-trip without wrapping.
+        rng = np.random.default_rng(1)
+        ids = rng.integers(70_000, 80_000, size=(2, 3)).astype(np.uint32)
+        years = rng.integers(200, 1800, size=(2, 3)).astype(np.int16)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "wide.npz"
+            save_bootstrap_samples(ids, years, path)
+            result = load_bootstrap_samples(path)
+        np.testing.assert_array_equal(result["item_id_samples"], ids)
+        assert result["metadata"]["item_id_dtype"] == "uint32"
+
+    def test_legacy_doc_id_samples_key_still_loads(self) -> None:
+        # Pre-split files used the key "doc_id_samples" with a fixed uint16
+        # dtype and no schema_version. load_bootstrap_samples must still
+        # read them.
+        ids, years = self._make_tiny()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "legacy.npz"
+            np.savez_compressed(
+                path,
+                doc_id_samples=ids,
+                resampled_years=years,
+                subgroup=np.array("non_lectionary", dtype=object),
+                order_meta=np.array("sorted_by_midYear", dtype=object),
+            )
+            result = load_bootstrap_samples(path)
+        np.testing.assert_array_equal(result["item_id_samples"], ids)
+        assert result["metadata"]["schema_version"] == 1
+        assert result["metadata"]["item_id_dtype"] == "uint16"
+
     def test_load_without_extension(self) -> None:
-        doc, years = self._make_tiny()
+        ids, years = self._make_tiny()
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "s"
-            save_bootstrap_samples(doc, years, path)
+            save_bootstrap_samples(ids, years, path)
             result = load_bootstrap_samples(path)  # no .npz extension
-        assert result["doc_id_samples"].shape == doc.shape
+        assert result["item_id_samples"].shape == ids.shape
 
     def test_file_not_found_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -457,17 +479,17 @@ class TestSaveLoadBootstrapSamples:
                 load_bootstrap_samples(Path(tmp) / "nonexistent.npz")
 
     def test_shape_mismatch_raises(self) -> None:
-        doc, years = self._make_tiny()
+        ids, years = self._make_tiny()
         bad_years = years[:, :2]  # wrong shape
         with tempfile.TemporaryDirectory() as tmp:
             with pytest.raises(ValueError, match="shape"):
-                save_bootstrap_samples(doc, bad_years, Path(tmp) / "bad.npz")
+                save_bootstrap_samples(ids, bad_years, Path(tmp) / "bad.npz")
 
     def test_parent_dir_created(self) -> None:
-        doc, years = self._make_tiny()
+        ids, years = self._make_tiny()
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "deep" / "nested" / "samples.npz"
-            save_bootstrap_samples(doc, years, path)
+            save_bootstrap_samples(ids, years, path)
             assert path.exists()
 
 
@@ -503,11 +525,11 @@ class TestBootstrapEpochCounts:
 
     def test_exact_counts(self) -> None:
         counts = bootstrap_epoch_counts(self._YEARS, _EPOCH_BOUNDS)
-        # Each row has exactly one manuscript per epoch
+        # Each row has exactly one item per epoch
         assert np.all(counts == 1)
 
-    def test_duplicate_manuscripts_in_epoch(self) -> None:
-        # All manuscripts land in epoch 0
+    def test_duplicate_items_in_epoch(self) -> None:
+        # All items land in epoch 0
         years = np.array([[200, 250, 300]], dtype=np.int16)
         bounds = [(100, 325), (325, 636)]
         counts = bootstrap_epoch_counts(years, bounds)
@@ -547,7 +569,7 @@ class TestBootstrapEpochCounts:
 
     def test_target_ranges_wider_for_larger_n_bootstrap(self) -> None:
         rng = np.random.default_rng(0)
-        # Two datasets of same manuscripts, spread over epochs — CI should be wider
+        # Two datasets of same items, spread over epochs — CI should be wider
         # when counts vary more across draws
         uniform = np.full((100, 1), 200, dtype=np.int16)  # always epoch 0
         variable = rng.choice([200, 400, 700], size=(100, 1)).astype(np.int16)
@@ -563,51 +585,30 @@ class TestBootstrapEpochCounts:
 
 @pytest.mark.slow
 class TestBootstrapRecovery:
-    """Recovery test: per-manuscript mean resampled year ≈ deterministic resample."""
+    """Recovery test: per-item mean resampled year ≈ deterministic resample, at scale."""
 
     def test_mean_resampled_year_close_to_deterministic(self) -> None:
-        import pandas as pd
-
-        from inf_bp_texts import get_project_root
-        from inf_bp_texts.analysis.date_density import quantile_resample_dates
-        from inf_bp_texts.data.data_cleaning import add_resampled_year_column
-
-        csv = get_project_root() / "manuscript_analysis_cleaned.csv"
-        if not csv.exists():
-            pytest.skip("manuscript_analysis_cleaned.csv not found")
-
-        df = pd.read_csv(csv)
-        sub = df.dropna(subset=["earlyYear", "lateYear"])
-        # Use section_r (n≈309) for speed
-        sub = sub[sub["section_r"] == 1].copy()
-        sub["earlyYear"] = sub["earlyYear"].astype(int)
-        sub["lateYear"] = sub["lateYear"].astype(int)
-        sub["midYear"] = (sub["earlyYear"] + sub["lateYear"]) / 2.0
-        add_resampled_year_column(sub)
-
-        if len(sub) < 10:
-            pytest.skip("section_r subgroup too small")
-
-        early = sub["earlyYear"].to_numpy(dtype=np.int64)
-        late = np.maximum(sub["lateYear"].to_numpy(dtype=np.int64), early)
-        doc_ids = sub["docID"].to_numpy(dtype=np.int64)
-        mid_year = sub["midYear"].to_numpy(dtype=np.float64)
-        M = len(early)
+        rng = np.random.default_rng(11)
+        n = 300
+        early = rng.integers(100, 1900, size=n).astype(np.int64)
+        late = np.maximum(early, early + rng.integers(0, 80, size=n)).astype(np.int64)
+        item_ids = np.arange(10001, 10001 + n, dtype=np.int64)
+        mid_value = (early + late) / 2.0
 
         n_boot = 2_000
-        doc_id_samples, resampled_years = bootstrap_quantile_resample_dates(
+        _item_id_samples, resampled_years = bootstrap_quantile_resample_dates(
             early,
             late,
-            doc_ids,
-            mid_year,
+            item_ids,
+            mid_value,
             n_bootstrap=n_boot,
             seed=_SEED,
         )
 
-        # For each manuscript position (sorted by midYear), compute mean resampled year.
-        # Compare to the deterministic quantile resample values.
+        # For each item position (sorted by mid_value), compute mean resampled
+        # year and compare to the deterministic quantile resample values.
         det_years = quantile_resample_dates(
-            early, late, current_year=_CURRENT_YEAR, n_samples=M
+            early, late, current_year=_CURRENT_YEAR, n_samples=n
         )
 
         # Bootstrap mean of each year slot

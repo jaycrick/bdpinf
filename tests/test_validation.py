@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from inf_bp_texts.models.validation import (
+from bdpinf.models.validation import (
     ValidationConfig,
     normalize_and_validate_inputs,
 )

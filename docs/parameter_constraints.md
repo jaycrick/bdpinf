@@ -15,7 +15,7 @@ Fix the death rate at epoch 0 to 0.1 while optimizing all other parameters:
 ```python
 import jax.numpy as jnp
 
-from inf_bp_texts.inference.fitting import (
+from bdpinf.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
 )

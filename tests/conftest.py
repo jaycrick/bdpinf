@@ -7,19 +7,12 @@ import os
 # Must be set BEFORE any import that transitively imports jax.
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
-import sys
-from pathlib import Path
 from typing import Any
 
 import jax.numpy as jnp
-import pandas as pd
 import pytest
 
-from inf_bp_texts.models.birth_death_process import BirthDeathProcess
-
-# Add the src directory to the path so we can import inf_bp_texts
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
+from bdpinf.process import BirthDeathProcess
 
 
 @pytest.fixture
@@ -45,19 +38,6 @@ def unfitted_model(sample_creation_times: list[float]) -> BirthDeathProcess:
     return BirthDeathProcess(
         creation_times=sample_creation_times,
         epoch_end_times=600.0,
-    )
-
-
-@pytest.fixture
-def sample_manuscript_data() -> pd.DataFrame:
-    """Create sample manuscript DataFrame."""
-    return pd.DataFrame(
-        {
-            "age": [100.0, 200.0, 150.0, 300.0, 250.0],
-            "count": [1, 1, 1, 1, 1],
-            "docID": ["MS001", "MS002", "MS003", "MS004", "MS005"],
-            "creation_time": [500.0, 400.0, 450.0, 300.0, 350.0],
-        },
     )
 
 

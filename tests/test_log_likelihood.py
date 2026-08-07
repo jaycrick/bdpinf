@@ -3,10 +3,10 @@
 import numpy as np
 from numpy.testing import assert_allclose
 
-from inf_bp_texts.inference.likelihood import log_likelihood, negative_log_likelihood
-from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.models.math_ages import calculate_ages_log_lik
-from inf_bp_texts.models.math_populations import calculate_populations_log_lik
+from bdpinf.inference.likelihood import log_likelihood, negative_log_likelihood
+from bdpinf.models.math_ages import calculate_ages_log_lik
+from bdpinf.models.math_populations import calculate_populations_log_lik
+from bdpinf.process import BirthDeathProcess
 
 
 def _as_float(value: object) -> float:
@@ -27,7 +27,7 @@ class TestLogLikelihood:
             death_rates=0.01,
         )
 
-        ages = process.manuscript_ages
+        ages = process.ages
         result = log_likelihood(
             birth_rates=0.1,
             death_rates=0.01,
@@ -44,7 +44,7 @@ class TestLogLikelihood:
             epoch_end_times=1000.0,
         )
 
-        ages = process.manuscript_ages
+        ages = process.ages
         result = log_likelihood(
             birth_rates=0.01,
             death_rates=0.005,
@@ -67,7 +67,7 @@ class TestLogLikelihood:
         birth_rate = 0.01
         death_rate = 0.01 + 1e-12  # Nearly equal
 
-        ages = process.manuscript_ages
+        ages = process.ages
         result = log_likelihood(
             birth_rates=birth_rate,
             death_rates=death_rate,
@@ -89,7 +89,7 @@ class TestLogLikelihood:
         )
 
         # Use explicit parameters
-        ages = process.manuscript_ages
+        ages = process.ages
         result = log_likelihood(
             birth_rates=0.02,
             death_rates=0.001,
@@ -109,7 +109,7 @@ class TestLogLikelihood:
         )
 
         # These should be identical
-        ages = process.manuscript_ages
+        ages = process.ages
         result1 = log_likelihood(
             birth_rates=0.01,
             death_rates=0.005,
@@ -134,7 +134,7 @@ class TestLogLikelihood:
             epoch_end_times=1000.0,
         )
 
-        ages = process.manuscript_ages
+        ages = process.ages
 
         # Negative birth rate should still work (just gives very negative log-likelihood)
         result = log_likelihood(
@@ -164,7 +164,7 @@ class TestLogLikelihood:
         )
 
         # Use log-scale parameters as expected by negative_log_likelihood
-        ages = process.manuscript_ages
+        ages = process.ages
         result = negative_log_likelihood(
             np.log(0.01),
             np.log(0.005),
@@ -188,7 +188,7 @@ class TestLogLikelihood:
 
         # Use log-scale parameters as expected by negative_log_likelihood
         birth_rate, death_rate = 0.01, 0.005
-        ages = process.manuscript_ages
+        ages = process.ages
         result = negative_log_likelihood(
             birth_rate,
             death_rate,
@@ -204,7 +204,7 @@ class TestLogLikelihood:
         """Test the external log-likelihood helper method via public interface."""
         ages_data = [100.0, 200.0, 300.0]
         process = BirthDeathProcess(creation_times=ages_data, epoch_end_times=500.0)
-        ages = process.manuscript_ages
+        ages = process.ages
         # Test log likelihood calculation with explicit parameters
         result = log_likelihood(
             birth_rates=0.01,
@@ -223,7 +223,7 @@ class TestLogLikelihood:
             creation_times=creation_times,
             epoch_end_times=500.0,
         )
-        ages = process.manuscript_ages
+        ages = process.ages
         # Test with invalid parameters using public interface
         result = log_likelihood(
             birth_rates=-0.01,
@@ -248,7 +248,7 @@ class TestLogLikelihood:
             epoch_end_times=1000.0,
         )
 
-        ages = process.manuscript_ages
+        ages = process.ages
 
         # Very small rates
         result1 = log_likelihood(
@@ -275,7 +275,7 @@ class TestLogLikelihood:
             creation_times=[1.0, 2.0, 3.0],
             epoch_end_times=10000.0,
         )
-        ages_large = process_large.manuscript_ages
+        ages_large = process_large.ages
         result3 = log_likelihood(
             birth_rates=0.001,
             death_rates=0.0001,
@@ -369,7 +369,7 @@ class TestLogLikelihood:
         birth_rate = 0.02
         death_rate = 0.01
         final_time = 600.0
-        ns = np.array([2, 1])  # 2 manuscripts in first group, 1 in second
+        ns = np.array([2, 1])  # 2 records in first group, 1 in second
 
         # Single epoch
         result_single = log_likelihood(

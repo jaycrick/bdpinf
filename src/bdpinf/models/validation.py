@@ -5,7 +5,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
-from inf_bp_texts.utils import (
+from bdpinf.utils import (
     ensure_1d_tensors,
     validate_matching_lengths,
     validate_matching_shapes,

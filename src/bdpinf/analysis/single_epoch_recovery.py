@@ -4,7 +4,7 @@ Moved out of ``qmd_scripts/validation/single_epoch/06_bulk_inference.qmd`` (and
 the equivalent sampling step in ``04_bulk_inference_single_rate.qmd``) so the
 heavy per-replicate work can be run once by
 ``scripts/generate_recovery_studies.py`` and persisted via
-:func:`~inf_bp_texts.inference.save_recovery_results`, instead of re-running on
+:func:`~bdpinf.inference.save_recovery_results`, instead of re-running on
 every notebook render.
 """
 
@@ -14,9 +14,9 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from inf_bp_texts.analysis.validation_helpers import get_selected_attempt
-from inf_bp_texts.inference import ConvergenceConfig, fit_birth_death_processes
-from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
+from bdpinf.analysis.validation_helpers import get_selected_attempt
+from bdpinf.inference import ConvergenceConfig, fit_birth_death_processes
+from bdpinf.simulation import simulate_bdp_ages_from_distributions
 
 _DEFAULT_OPTIMIZER_KWARGS: dict[str, dict[str, Any]] = {
     "lbfgs": {"lr": 1.0, "line_search_fn": "strong_wolfe", "min_iterations": 10},

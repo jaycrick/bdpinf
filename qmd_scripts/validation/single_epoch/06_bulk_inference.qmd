@@ -34,13 +34,13 @@ import numpy as np
 import pandas as pd
 from IPython.display import display
 
-from inf_bp_texts import get_project_root
-from inf_bp_texts.analysis import build_hist_bins, iqr_plotting_subset
-from inf_bp_texts.inference import load_recovery_results
-from inf_bp_texts.visualization import save_chart
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf import find_project_root
+from bdpinf.analysis import build_hist_bins, iqr_plotting_subset
+from bdpinf.inference import load_recovery_results
+from bdpinf.visualization import save_chart
+from bdpinf.visualization.altair_theme import PTOLQUAL
 
-figures_dir = get_project_root() / "figures" / "validation" / "single_epoch"
+figures_dir = find_project_root() / "figures" / "validation" / "single_epoch"
 figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
@@ -48,14 +48,14 @@ figures_dir.mkdir(parents=True, exist_ok=True)
 
 Simulation and fitting for this study (4000 replicates x two optimizers) are
 precomputed by `scripts/generate_recovery_studies.py` --- see
-`inf_bp_texts.analysis.single_epoch_recovery` for the per-replicate
+`bdpinf.analysis.single_epoch_recovery` for the per-replicate
 simulate+fit logic --- and persisted to
 `recovery_samples/single_epoch_bulk_inference.npz`.
 Re-run that script (with
 `--study single_epoch_bulk_inference`) to refresh this notebook's data.
 
 ```{python}
-recovery_samples_dir = get_project_root() / "recovery_samples"
+recovery_samples_dir = find_project_root() / "recovery_samples"
 loaded = load_recovery_results(recovery_samples_dir / "single_epoch_bulk_inference.npz")
 results_df = loaded["results"]
 recovery_metadata = loaded["metadata"]
@@ -68,7 +68,7 @@ print(f"Simulations: {recovery_metadata['n_simulated']}")
 
 ## Mixed Distribution Likelihood (Unknown Spine)
 
-When the spine manuscript is unknown, each observed age could be either
+When the spine individual is unknown, each observed age could be either
 
 - a non-spine draw with density $f(x_i; \lambda, \mu)$, or
 - the unique spine draw with density $g(x_i; \lambda, \mu)$.

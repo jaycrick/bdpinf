@@ -1,32 +1,23 @@
 [project]
-name = "inf-bp-texts"
+name = "bdpinf"
 version = "0.1.0"
-description = "A Python platform for New Testament manuscript data and running quality control, analysis, and birth-death process inference."
+description = "Inference, simulation, and visualisation for linear birth-death (branching) processes."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
   "altair>=6.0.0",
   "beartype>=0.19.0",
-  "itables>=2.7.0",
   "jax>=0.4.38",
   "jaxtyping>=0.2.38",
   "joblib>=1.5.3",
-  "jupyter>=1.1.1",
-  "lxml>=6.0.2",
   "numpy>=2.4.2",
   "numpyro>=0.16.0",
   "optax>=0.2.4",
   "optimistix>=0.0.9",
   "pandas>=3.0.0",
-  "pydantic>=2.12.5",
-  "pyyaml>=6.0.0",
   "scipy>=1.17.0",
-  "typer>=0.24.1",
   "vl-convert-python>=1.9.0.post1"
 ]
-
-[project.scripts]
-inf-bp-texts = "inf_bp_texts.cli:main"
 
 [dependency-groups]
 gpu = [
@@ -39,8 +30,8 @@ dev = [
   "isort>=8.0.0",
   "joblib-stubs>=1.5.3.1.20260117",
   "jupyter-cache>=1.0.1",
+  "jupyter>=1.1.1",
   "lintquarto>=0.13.1",
-  "lxml-stubs>=0.5.1",
   "panache-cli>=2.56.0",
   "pandas-stubs>=3.0.0.260204",
   "pre-commit>=4.5.1",
@@ -50,11 +41,12 @@ dev = [
   "ruff>=0.15.1",
   "scipy-stubs>=1.17.0.2",
   "toml-sort>=0.24.3",
+  "typer>=0.24.1",
   "typing-extensions>=4.15.0"
 ]
 
 [tool.isort]
-known_first_party = ["inf_bp_texts"]
+known_first_party = ["bdpinf"]
 line_length = 88
 multi_line_output = 3
 profile = "black"
@@ -95,7 +87,7 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 # jaxtyping dimension strings (e.g. Float[Array, " epochs"]) are not Python
 # expressions, so ruff's forward-annotation checker (F722) fires on them.
-"src/inf_bp_texts/models/math_*.py" = ["F722"]
+"src/bdpinf/models/math_*.py" = ["F722"]
 # __init__.py files call jax.config.update before package imports — this is
 # intentional (float64 must be enabled before any jax array is created).
 "src/**/__init__.py" = ["E402"]
@@ -156,7 +148,7 @@ precision = 2
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["inf_bp_texts*"]
+include = ["bdpinf*"]
 
 [build-system]
 requires = ["setuptools"]

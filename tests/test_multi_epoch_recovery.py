@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import inf_bp_texts.analysis.multi_epoch_recovery as mer
-from inf_bp_texts.analysis.validation_helpers import FitModelConfig
-from inf_bp_texts.inference.fitting import ParameterConstraints
+import bdpinf.analysis.multi_epoch_recovery as mer
+from bdpinf.analysis.validation_helpers import FitModelConfig
+from bdpinf.inference.fitting import ParameterConstraints
 
 
 def _fake_two_epoch_result(
@@ -158,7 +158,7 @@ class TestSimulateZeroBirthSecondEpoch:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         split_time, final_time = 7.5, 15.0
-        records = pd.DataFrame(
+        records_df = pd.DataFrame(
             {
                 "death_time": [np.nan, 3.0, np.nan],
                 "creation_time": [0.0, 0.0, 0.0],
@@ -167,7 +167,7 @@ class TestSimulateZeroBirthSecondEpoch:
         )
 
         class _FakeFirstEpoch:
-            manuscript_records = records
+            records = records_df
 
         monkeypatch.setattr(
             mer, "simulate_birth_death_process", lambda **kwargs: _FakeFirstEpoch()

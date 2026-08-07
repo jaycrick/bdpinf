@@ -1,0 +1,332 @@
+---
+title: "Single vs Multi-Epoch Likelihood Surface Comparison"
+subtitle: "Consistency Checks for Spine and Non-Spine Age Likelihoods"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+import time
+
+__compile_start = time.perf_counter()
+```
+
+## Overview
+
+This notebook compares single-epoch and multi-epoch likelihood surfaces under
+identical rates for both spine and non-spine formulations, highlighting where
+the maxima agree or diverge.
+
+## Setup
+
+```{python}
+# ruff: noqa: E402
+import json
+import os
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+import altair as alt
+import jax.numpy as jnp
+import numpy as np
+import pandas as pd
+from IPython.display import display
+
+from bdpinf import find_project_root
+from bdpinf.models.math_ages import (
+    calculate_non_spine_ages_log_lik,
+    calculate_spine_ages_log_lik,
+)
+from bdpinf.visualization import save_chart
+
+figures_dir = find_project_root() / "figures" / "validation" / "single_epoch"
+figures_dir.mkdir(parents=True, exist_ok=True)
+```
+
+```{python}
+# Test case from failing unit test
+ages = jnp.array([15.0])
+birth_rate_val = jnp.array([0.02])
+death_rate_val = jnp.array([0.01])
+T = jnp.array([40.0])
+
+# Multi-epoch with identical rates
+multi_times = jnp.array([20.0, 40.0])
+
+n_epochs = len(multi_times)
+```
+
+## Likelihood surface comparison
+
+```{python}
+birth_rate_grid = np.linspace(0.005, 0.05, 70)
+death_rate_grid = np.linspace(0.002, 0.03, 70)
+
+
+def compute_surface(
+    log_lik_fn: Callable[..., Any],
+) -> tuple[np.ndarray, np.ndarray, tuple[float, float], tuple[float, float]]:
+    single_vals = np.full(
+        (len(death_rate_grid), len(birth_rate_grid)), np.nan, dtype=np.float64
+    )
+    multi_vals = np.full_like(single_vals, np.nan)
+
+    for i, mu in enumerate(death_rate_grid):
+        for j, lam in enumerate(birth_rate_grid):
+            lam_t = jnp.array([lam])
+            death_rate_t = jnp.array([mu])
+            single = log_lik_fn(lam_t, death_rate_t, ages, T)
+            if j == 0 and i == 0:
+                print(f"{jnp.full(n_epochs, lam)} and {lam_t}")
+                print(f"{jnp.full(n_epochs, lam).shape} and {ages.shape}")
+            multi = log_lik_fn(
+                jnp.full(n_epochs, lam),
+                jnp.full(n_epochs, mu),
+                ages,
+                multi_times,
+            )
+            single_vals[i, j] = float(single)
+            multi_vals[i, j] = float(multi)
+
+    single_max_idx = np.unravel_index(np.nanargmax(single_vals), single_vals.shape)
+    multi_max_idx = np.unravel_index(np.nanargmax(multi_vals), multi_vals.shape)
+
+    single_max = (
+        birth_rate_grid[single_max_idx[1]],
+        death_rate_grid[single_max_idx[0]],
+    )
+    multi_max = (birth_rate_grid[multi_max_idx[1]], death_rate_grid[multi_max_idx[0]])
+
+    return single_vals, multi_vals, single_max, multi_max
+
+
+(
+    non_spine_single_vals,
+    non_spine_multi_vals,
+    non_spine_single_max,
+    non_spine_multi_max,
+) = compute_surface(calculate_non_spine_ages_log_lik)
+
+(
+    spine_single_vals,
+    spine_multi_vals,
+    spine_single_max,
+    spine_multi_max,
+) = compute_surface(calculate_spine_ages_log_lik)
+
+(
+    non_spine_single_max,
+    non_spine_multi_max,
+    spine_single_max,
+    spine_multi_max,
+)
+```
+
+```{python}
+# Per-cell bin widths for the regular grid
+_lam_step = float(birth_rate_grid[1] - birth_rate_grid[0])
+_mu_step = float(death_rate_grid[1] - death_rate_grid[0])
+
+
+def _build_hm_df(vals: np.ndarray) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for i, mu in enumerate(death_rate_grid):
+        for j, lam in enumerate(birth_rate_grid):
+            rows.append(
+                {"lambda": float(lam), "mu": float(mu), "log_lik": float(vals[i, j])}
+            )
+    return pd.DataFrame(rows)
+
+
+def _hm_panel(
+    vals: np.ndarray,
+    max_lam: float,
+    max_mu: float,
+    title: str,
+    color_scale: alt.Scale,
+) -> alt.LayerChart:
+    df = _build_hm_df(vals)
+    hm = (
+        alt.Chart(df)
+        .mark_rect()
+        .encode(
+            x=alt.X(
+                "lambda:Q",
+                bin=alt.Bin(step=_lam_step),
+                title="λ",
+                axis=alt.Axis(format=".3f", tickCount=5),
+            ),
+            y=alt.Y(
+                "mu:Q",
+                bin=alt.Bin(step=_mu_step),
+                title="μ",
+                axis=alt.Axis(format=".3f", tickCount=5),
+            ),
+            color=alt.Color("mean(log_lik):Q", scale=color_scale, legend=None),
+        )
+        .properties(width=220, height=180)
+    )
+    dot = (
+        alt.Chart(pd.DataFrame({"lambda": [max_lam], "mu": [max_mu]}))
+        .mark_circle(color="white", size=80, opacity=0.9)
+        .encode(x="lambda:Q", y="mu:Q")
+    )
+    return (hm + dot).properties(title=title)
+
+
+# Shared viridis scale for absolute panels, redblue for diff panels
+_abs_vals = np.stack(
+    [non_spine_single_vals, non_spine_multi_vals, spine_single_vals, spine_multi_vals]
+)
+_abs_min = float(np.nanmin(_abs_vals))
+_abs_max = float(np.nanmax(_abs_vals))
+_viridis = alt.Scale(domain=[_abs_min, _abs_max], scheme="viridis")
+
+_diff_ns = non_spine_multi_vals - non_spine_single_vals
+_diff_sp = spine_multi_vals - spine_single_vals
+_diff_ext = float(np.nanmax(np.abs(np.stack([_diff_ns, _diff_sp]))))
+_redblue = alt.Scale(domain=[-_diff_ext, _diff_ext], scheme="redblue")
+
+_row1 = alt.hconcat(
+    _hm_panel(
+        non_spine_single_vals, *non_spine_single_max, "Non-spine single-epoch", _viridis
+    ),
+    _hm_panel(
+        non_spine_multi_vals, *non_spine_multi_max, "Non-spine multi-epoch", _viridis
+    ),
+    _hm_panel(_diff_ns, *non_spine_single_max, "Non-spine multi − single", _redblue),
+)
+_row2 = alt.hconcat(
+    _hm_panel(spine_single_vals, *spine_single_max, "Spine single-epoch", _viridis),
+    _hm_panel(spine_multi_vals, *spine_multi_max, "Spine multi-epoch", _viridis),
+    _hm_panel(_diff_sp, *spine_single_max, "Spine multi − single", _redblue),
+)
+fig = alt.vconcat(_row1, _row2).properties(title="Likelihood Surface Comparison")
+display(fig)
+save_chart(fig, "vse10_likelihood_surfaces", output_dir=figures_dir)
+```
+
+## Slice comparison at fixed mu
+
+```{python}
+mu_fixed = 0.01
+non_spine_single_line = []
+non_spine_multi_line = []
+spine_single_line = []
+spine_multi_line = []
+
+for lam in birth_rate_grid:
+    lam_t = jnp.array([lam])
+    death_rate_t = jnp.array([mu_fixed])
+    non_spine_single = calculate_non_spine_ages_log_lik(lam_t, death_rate_t, ages, T)
+    non_spine_multi = calculate_non_spine_ages_log_lik(
+        jnp.full(n_epochs, lam),
+        jnp.full(n_epochs, mu_fixed),
+        ages,
+        multi_times,
+    )
+    spine_single = calculate_spine_ages_log_lik(lam_t, death_rate_t, ages, T)
+    spine_multi = calculate_spine_ages_log_lik(
+        jnp.full(n_epochs, lam),
+        jnp.full(n_epochs, mu_fixed),
+        ages,
+        multi_times,
+    )
+    non_spine_single_line.append(float(non_spine_single))
+    non_spine_multi_line.append(float(non_spine_multi))
+    spine_single_line.append(float(spine_single))
+    spine_multi_line.append(float(spine_multi))
+
+_n = len(birth_rate_grid)
+line_df = pd.DataFrame(
+    {
+        "lambda": list(birth_rate_grid) * 4,
+        "log_lik": (
+            non_spine_single_line
+            + non_spine_multi_line
+            + spine_single_line
+            + spine_multi_line
+        ),
+        "series": (
+            ["non-spine single"] * _n
+            + ["non-spine multi"] * _n
+            + ["spine single"] * _n
+            + ["spine multi"] * _n
+        ),
+    }
+)
+line_fig = (
+    alt.Chart(line_df)
+    .mark_line()
+    .encode(
+        x=alt.X("lambda:Q", title="birth rate (λ)"),
+        y=alt.Y("log_lik:Q", title="log-likelihood"),
+        color=alt.Color("series:N", legend=alt.Legend(title=None, orient="top")),
+    )
+    .properties(
+        title=f"Log-likelihood slice at death rate = {mu_fixed}",
+        width=700,
+        height=300,
+    )
+)
+display(line_fig)
+save_chart(line_fig, "vse10_slice", width=300, height=200, output_dir=figures_dir)
+```
+
+## Single point check
+
+```{python}
+non_spine_single = calculate_non_spine_ages_log_lik(
+    birth_rate_val, death_rate_val, ages, T
+)
+non_spine_multi = calculate_non_spine_ages_log_lik(
+    jnp.full(n_epochs, float(birth_rate_val[0])),
+    jnp.full(n_epochs, float(death_rate_val[0])),
+    ages,
+    multi_times,
+)
+spine_single = calculate_spine_ages_log_lik(birth_rate_val, death_rate_val, ages, T)
+spine_multi = calculate_spine_ages_log_lik(
+    jnp.full(n_epochs, float(birth_rate_val[0])),
+    jnp.full(n_epochs, float(death_rate_val[0])),
+    ages,
+    multi_times,
+)
+(
+    float(non_spine_single),
+    float(non_spine_multi),
+    float(non_spine_multi - non_spine_single),
+    float(spine_single),
+    float(spine_multi),
+    float(spine_multi - spine_single),
+)
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+doc_name = "10_likelihood_surface_comparison.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

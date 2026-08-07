@@ -91,7 +91,7 @@ Every `tests/test_*.py` file follows this order, top to bottom:
 import <stdlib>
 import <third-party>
 
-from inf_bp_texts... import ...
+from bdpinf... import ...
 
 # module-level constants, fixtures, and non-test helper functions stay here
 
@@ -118,7 +118,7 @@ class TestSubject:
 
 ## Architecture
 
-**inf-bp-texts** downloads New Testament manuscript data from the NTVMR API, runs quality control, and fits birth-death process models to estimate manuscript creation/survival rates via MLE.
+**bdpinf** downloads New Testament manuscript data from the NTVMR API, runs quality control, and fits birth-death process models to estimate manuscript creation/survival rates via MLE.
 
 ### Core data structure: `BirthDeathProcess`
 
@@ -216,8 +216,8 @@ This module set is intentionally the boundary between reusable, tested chart log
 
 ### Data pipeline: `data/`
 
-All NTVMR ETL modules live in the `inf_bp_texts/data/` subpackage.
-Key public API (also re-exported from `inf_bp_texts.data`):
+All NTVMR ETL modules live in the `bdpinf/data/` subpackage.
+Key public API (also re-exported from `bdpinf.data`):
 
 `ntvmr.py` --- downloads from NTVMR API with resume support; `format_xml_files()` pretty-prints XML and strips Unicode line separators (U+2028/U+2029) for clean git diffs.
 
@@ -239,10 +239,10 @@ Key public API (also re-exported from `inf_bp_texts.data`):
 
 `schemas.py` --- `ValidationConfig` Pydantic model (also available from `models.validation`) controlling which validation checks are enforced.
 
-`_paths.py` --- `get_project_root()` (exported from `inf_bp_texts` top-level): returns the Quarto project root via `$QUARTO_PROJECT_DIR` env var, or walks up from `cwd` to find `_quarto.yml`.
+`paths.py` --- `find_project_root()` (exported from `bdpinf` top-level): returns the Quarto project root via `$QUARTO_PROJECT_DIR` env var, or walks up from `cwd` to find `_quarto.yml`/`pyproject.toml`/`.git`.
 Use this in notebooks and scripts instead of hardcoded relative paths.
 
-**CLI**: The package installs an `inf-bp-texts` command (entry point: `inf_bp_texts.cli:main`) via `[project.scripts]` in `pyproject.toml`.
+**CLI**: The package installs an `bdpinf` command (entry point: `bdpinf.cli:main`) via `[project.scripts]` in `pyproject.toml`.
 
 ## Key design decisions
 
@@ -305,9 +305,9 @@ Every executable notebook follows this structure:
 
 - **Import noqa**: import cells open with `# ruff: noqa: E402` (imports are not at the top of the Python file, which ruff would flag).
 
-- **Keep logic in `src/`**: cells import from `inf_bp_texts`; heavy computation belongs in the package, not inline.
+- **Keep logic in `src/`**: cells import from `bdpinf`; heavy computation belongs in the package, not inline.
 
-- **Figures**: saved via `save_chart` / `save_chart_html` from `inf_bp_texts.visualization`.
+- **Figures**: saved via `save_chart` / `save_chart_html` from `bdpinf.visualization`.
   All figures live under a single repo-root `figures/` tree that **mirrors** the `qmd_scripts/` layout:
   ```
   figures/
@@ -318,9 +318,9 @@ Every executable notebook follows this structure:
     validation/single_epoch/             # prefix vse01_, vse05_, vse06_
     validation/multi_epoch/              # prefix vme01_, vme03_, vme04_, vme05_
   ```
-  In each notebook, set `figures_dir = get_project_root() / "figures" / "<mirror-subpath>"` and pass `output_dir=figures_dir` to every `save_chart` / `save_chart_html` call.
+  In each notebook, set `figures_dir = find_project_root() / "figures" / "<mirror-subpath>"` and pass `output_dir=figures_dir` to every `save_chart` / `save_chart_html` call.
   Filenames follow the pattern `<prefix>_<descriptive>.pdf`, where the prefix is the submodule id (e.g. `04b`) assigned to each notebook.
-  `save_chart` defaults to `get_project_root() / "figures"` when `output_dir` is omitted, so notebooks that opt out of the mirrored layout still land at the repo root.
+  When `output_dir` is omitted, `save_chart` falls back to the module default set via `set_figure_dir()`, then `$BDPINF_FIGURE_DIR`, then `Path.cwd() / "figures"` --- so notebooks that opt out of the mirrored layout still get a `figures/` directory next to wherever they're run from.
   Do not use hardcoded `Path("../../../figures")`.
 
 - **Design docs**: architecture/audit documents live in `docs/design/` (not the repo root).

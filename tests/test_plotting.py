@@ -6,7 +6,7 @@ import altair as alt
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.visualization.plotting import (
+from bdpinf.visualization.plotting import (
     convergence_chart,
     rate_ci_panel,
     save_multi_epoch_birth_time_figure,
@@ -86,19 +86,19 @@ class TestSaveMultiEpochConvergenceFigure:
 
 
 class TestSaveMultiEpochBirthTimeFigure:
-    """Test the manuscript birth-time histogram saver."""
+    """Test the birth-time histogram saver."""
 
     def test_writes_chart_for_successful_result(self, tmp_path: Path) -> None:
         result = _fit_result()
         epochs = [(0.0, 100.0, "Epoch 1"), (100.0, 200.0, "Epoch 2")]
-        manuscripts_df = pd.DataFrame({"parsed_year": [20.0, 50.0, 80.0, 150.0]})
+        birth_years = np.array([20.0, 50.0, 80.0, 150.0])
         times = np.array([100.0, 200.0], dtype=np.float64)
 
         save_multi_epoch_birth_time_figure(
             "Test Case",
             result,
             epochs,
-            manuscripts_df,
+            birth_years,
             times,
             "birth_time_slug",
             figures_dir=tmp_path,
@@ -109,14 +109,14 @@ class TestSaveMultiEpochBirthTimeFigure:
     def test_skips_unsuccessful_result(self, tmp_path: Path) -> None:
         result = _fit_result(success=False)
         epochs = [(0.0, 100.0, "Epoch 1")]
-        manuscripts_df = pd.DataFrame({"parsed_year": [20.0]})
+        birth_years = np.array([20.0])
         times = np.array([100.0], dtype=np.float64)
 
         save_multi_epoch_birth_time_figure(
             "Test Case",
             result,
             epochs,
-            manuscripts_df,
+            birth_years,
             times,
             "birth_time_slug",
             figures_dir=tmp_path,
@@ -127,14 +127,14 @@ class TestSaveMultiEpochBirthTimeFigure:
     def test_skips_when_no_observed_years(self, tmp_path: Path) -> None:
         result = _fit_result()
         epochs = [(0.0, 100.0, "Epoch 1")]
-        manuscripts_df = pd.DataFrame({"parsed_year": pd.Series([], dtype=float)})
+        birth_years = np.array([], dtype=float)
         times = np.array([100.0], dtype=np.float64)
 
         save_multi_epoch_birth_time_figure(
             "Test Case",
             result,
             epochs,
-            manuscripts_df,
+            birth_years,
             times,
             "birth_time_slug",
             figures_dir=tmp_path,

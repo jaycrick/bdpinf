@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import gaussian_kde
 
-from inf_bp_texts.inference import fit_birth_death_processes
+from bdpinf.inference import fit_birth_death_processes
 
 
 @dataclass(frozen=True)
@@ -523,7 +523,7 @@ def has_ages_in_each_epoch(
     Parameters
     ----------
     ages : NDArray[np.float64]
-        Array of manuscript ages.
+        Array of individual ages.
     times : NDArray[np.float64]
         Epoch boundary times (e.g., ``[epoch_1_end, final_time]``).
 

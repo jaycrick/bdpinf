@@ -6,17 +6,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import inf_bp_texts.simulation.simulator as simulator_module
-from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.models.math_ages import (
+import bdpinf.simulation.simulator as simulator_module
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.simulation import (
+from bdpinf.process import BirthDeathProcess
+from bdpinf.simulation import (
     simulate_birth_death_process,
     simulate_birth_death_process_from_contour_process,
 )
-from inf_bp_texts.simulation.simulator import (
+from bdpinf.simulation.simulator import (
     _build_contour_process_list,
     _contour_process_list_to_birth_death_process,
     _generate_non_spine_component,
@@ -43,15 +43,15 @@ class TestSimulation:
         assert isinstance(df, BirthDeathProcess)
 
         process = df
-        surviving_manuscripts = process.surviving_manuscripts
-        assert surviving_manuscripts is not None
+        surviving_records = process.surviving_records
+        assert surviving_records is not None
 
         # Check that epoch_end_times and creation_times were set
         assert process.epoch_end_times[-1] == 100.0
         assert isinstance(process.creation_times, list)
 
         # Ages should be calculated consistently
-        ages = process.manuscript_ages
+        ages = process.ages
         assert len(ages) == len(process.creation_times)
 
     def test_simulation_with_seed_reproducible(self) -> None:
@@ -70,12 +70,12 @@ class TestSimulation:
             random_seed=42,
         )
 
-        # Should have same number of manuscripts
+        # Should have same number of records
         assert len(df1) == len(df2)
 
         # Create process objects from simulation results
-        surviving1 = df1.surviving_manuscripts
-        surviving2 = df2.surviving_manuscripts
+        surviving1 = df1.surviving_records
+        surviving2 = df2.surviving_records
         assert surviving1 is not None and surviving2 is not None
         creation_times1 = surviving1["creation_time"].tolist()
         creation_times2 = surviving2["creation_time"].tolist()
@@ -99,11 +99,11 @@ class TestSimulation:
         )
 
         # Very unlikely to have identical results with different seeds
-        # (unless both simulations produce 0 manuscripts, which is possible but rare)
+        # (unless both simulations produce 0 records, which is possible but rare)
         if len(df1) > 0 and len(df2) > 0:
-            # If both have manuscripts, they should be different
-            surviving1 = df1.surviving_manuscripts
-            surviving2 = df2.surviving_manuscripts
+            # If both have records, they should be different
+            surviving1 = df1.surviving_records
+            surviving2 = df2.surviving_records
             assert surviving1 is not None and surviving2 is not None
             creation_times1 = surviving1["creation_time"].tolist()
             creation_times2 = surviving2["creation_time"].tolist()
@@ -120,27 +120,27 @@ class TestSimulation:
         )
 
         if len(df) > 0:
-            # Check required columns for surviving manuscripts
-            surviving = df.surviving_manuscripts
+            # Check required columns for surviving records
+            surviving = df.surviving_records
             assert surviving is not None
             if len(surviving) > 0:
-                required_cols = ["manuscript_id", "creation_time", "age", "survived"]
+                required_cols = ["individual_id", "creation_time", "age", "survived"]
                 for col in required_cols:
                     assert col in surviving.columns
 
                 # Check data types and validity
-                assert all(surviving["manuscript_id"] >= 0)
+                assert all(surviving["individual_id"] >= 0)
                 assert all(surviving["creation_time"] >= 0)
                 assert all(surviving["creation_time"] <= 50.0)
                 assert all(surviving["age"] >= 0)
                 assert all(surviving["survived"])
 
-            # Check dead manuscripts
-            dead = df.extinct_manuscripts
+            # Check dead records
+            dead = df.extinct_records
             assert dead is not None
             if len(dead) > 0:
                 required_cols = [
-                    "manuscript_id",
+                    "individual_id",
                     "creation_time",
                     "death_time",
                     "lifespan",
@@ -165,10 +165,10 @@ class TestSimulation:
         )
 
         # Create process object from simulation results
-        surviving_manuscripts = df.surviving_manuscripts
-        assert surviving_manuscripts is not None
-        if len(surviving_manuscripts) > 0:
-            creation_times = surviving_manuscripts["creation_time"].tolist()
+        surviving_records = df.surviving_records
+        assert surviving_records is not None
+        if len(surviving_records) > 0:
+            creation_times = surviving_records["creation_time"].tolist()
             process = BirthDeathProcess(
                 creation_times=creation_times,
                 epoch_end_times=80.0,
@@ -176,25 +176,25 @@ class TestSimulation:
                 death_rates=0.03,
             )
 
-            # Check that manual calculation matches process.manuscript_ages
+            # Check that manual calculation matches process.ages
             manual_ages = [
                 process.epoch_end_times[-1] - ct for ct in process.creation_times
             ]
             np.testing.assert_array_almost_equal(
-                process.manuscript_ages,
+                process.ages,
                 manual_ages,
             )
 
-            # Check that ages for surviving manuscripts match process.manuscript_ages
-            df_ages = surviving_manuscripts["age"].values
-            # All surviving manuscripts should have ages that match process.manuscript_ages
+            # Check that ages for surviving records match process.ages
+            df_ages = surviving_records["age"].values
+            # All surviving records should have ages that match process.ages
             np.testing.assert_array_almost_equal(
                 sorted(df_ages),
-                sorted(process.manuscript_ages),
+                sorted(process.ages),
             )
 
     def test_simulation_empty_result(self) -> None:
-        """Test simulation that might produce no manuscripts."""
+        """Test simulation that might produce no records."""
         # Very low birth rate, high death rate, short time
         df = simulate_birth_death_process(
             birth_rates=0.001,
@@ -207,13 +207,13 @@ class TestSimulation:
         assert isinstance(df, BirthDeathProcess)
 
         process = df
-        surviving_manuscripts = process.surviving_manuscripts
-        assert surviving_manuscripts is not None
+        surviving_records = process.surviving_records
+        assert surviving_records is not None
 
         # Check that the process state is still valid
         assert process.epoch_end_times[-1].item() == 1.0
         assert isinstance(process.creation_times, list)
-        assert isinstance(process.manuscript_ages, jax.Array)
+        assert isinstance(process.ages, jax.Array)
 
     def test_simulation_resets_process(self) -> None:
         """Test that creating new process with simulation results gives proper state."""
@@ -225,7 +225,7 @@ class TestSimulation:
             birth_rates=0.1,
             death_rates=0.02,
         )
-        initial_ages = jnp.array(process.manuscript_ages)
+        initial_ages = jnp.array(process.ages)
 
         # Run simulation using modular function - should give new results
         df = simulate_birth_death_process(
@@ -236,11 +236,11 @@ class TestSimulation:
         )
 
         # Create new process from simulation results
-        surviving_manuscripts = df.surviving_manuscripts
-        assert surviving_manuscripts is not None
+        surviving_records = df.surviving_records
+        assert surviving_records is not None
         new_creation_times = (
-            surviving_manuscripts["creation_time"].tolist()
-            if len(surviving_manuscripts) > 0
+            surviving_records["creation_time"].tolist()
+            if len(surviving_records) > 0
             else []
         )
         new_process = BirthDeathProcess(
@@ -255,8 +255,8 @@ class TestSimulation:
         # creation_times should be from simulation, not initial values
         assert new_process.creation_times != initial_creation_times
         # ages should be different
-        if len(new_process.manuscript_ages) > 0:
-            assert not np.array_equal(new_process.manuscript_ages, initial_ages)
+        if len(new_process.ages) > 0:
+            assert not np.array_equal(new_process.ages, initial_ages)
 
     def test_bdp_distribution_sampler_defaults_to_extinction_branch(
         self,
@@ -333,7 +333,7 @@ class TestSimulation:
         max_time = 10.0
         random_seed = 42
 
-        # High birth rate, low death rate - should produce many manuscripts
+        # High birth rate, low death rate - should produce many records
         df_high_birth = simulate_birth_death_process(
             birth_rates=0.5,
             death_rates=0.01,
@@ -341,7 +341,7 @@ class TestSimulation:
             random_seed=random_seed,
         )
 
-        # Low birth rate, high death rate - should produce few manuscripts
+        # Low birth rate, high death rate - should produce few records
         df_low_birth = simulate_birth_death_process(
             birth_rates=0.01,
             death_rates=0.1,
@@ -350,9 +350,9 @@ class TestSimulation:
         )
 
         # This is probabilistic, but with these extreme parameters,
-        # high birth rate should generally produce more surviving manuscripts
-        high_surv = df_high_birth.surviving_manuscripts
-        low_surv = df_low_birth.surviving_manuscripts
+        # high birth rate should generally produce more surviving records
+        high_surv = df_high_birth.surviving_records
+        low_surv = df_low_birth.surviving_records
         assert high_surv is not None and low_surv is not None
         surviving_high = len(high_surv)
         surviving_low = len(low_surv)
@@ -374,15 +374,15 @@ class TestSimulation:
         )
 
         # All creation times should be between 0 and max_time
-        surviving_manuscripts = df.surviving_manuscripts
-        assert surviving_manuscripts is not None
-        if len(surviving_manuscripts) > 0:
-            creation_times = surviving_manuscripts["creation_time"].tolist()
+        surviving_records = df.surviving_records
+        assert surviving_records is not None
+        if len(surviving_records) > 0:
+            creation_times = surviving_records["creation_time"].tolist()
             assert all(0 <= ct <= max_time for ct in creation_times)
 
         # All creation times in DataFrame should also be within bounds
         if len(df) > 0:
-            df_records = df.manuscript_records
+            df_records = df.records
             assert df_records is not None
             assert all(0 <= ct <= max_time for ct in df_records["creation_time"])
 
@@ -396,10 +396,10 @@ class TestSimulation:
         )
 
         # Create process from simulation results to test age calculation
-        surviving_manuscripts = df.surviving_manuscripts
-        assert surviving_manuscripts is not None
-        if len(surviving_manuscripts) > 0:
-            creation_times = surviving_manuscripts["creation_time"].tolist()
+        surviving_records = df.surviving_records
+        assert surviving_records is not None
+        if len(surviving_records) > 0:
+            creation_times = surviving_records["creation_time"].tolist()
             process = BirthDeathProcess(
                 creation_times=creation_times,
                 epoch_end_times=60.0,
@@ -407,12 +407,12 @@ class TestSimulation:
                 death_rates=0.02,
             )
 
-            # All ages in process.manuscript_ages should be non-negative
-            assert all(age >= 0 for age in process.manuscript_ages)
+            # All ages in process.ages should be non-negative
+            assert all(age >= 0 for age in process.ages)
 
         # All ages in DataFrame should be non-negative
-        if len(surviving_manuscripts) > 0:
-            assert all(age >= 0 for age in surviving_manuscripts["age"])
+        if len(surviving_records) > 0:
+            assert all(age >= 0 for age in surviving_records["age"])
 
 
 class TestContourProcessSimulation:
@@ -461,12 +461,12 @@ class TestContourProcessSimulation:
         )
 
         assert isinstance(process, BirthDeathProcess)
-        records = process.manuscript_records
+        records = process.records
         assert records is not None
-        records = records.sort_values("manuscript_id").reset_index(drop=True)
+        records = records.sort_values("individual_id").reset_index(drop=True)
 
         assert pd.isna(records.loc[0, "parent_id"])
-        assert records.loc[0, "manuscript_id"] == 0
+        assert records.loc[0, "individual_id"] == 0
         assert records.loc[0, "creation_time"] == 0.0
         assert records.loc[0, "death_time"] == 3.0
         assert records.loc[1, "parent_id"] == 0
@@ -474,7 +474,7 @@ class TestContourProcessSimulation:
         assert records.loc[3, "parent_id"] == 2
 
         genealogy = process.genealogy_dfs_order()
-        assert genealogy.loc[genealogy["manuscript_id"] == 0, "parent_id"].isna().all()
+        assert genealogy.loc[genealogy["individual_id"] == 0, "parent_id"].isna().all()
         assert len(genealogy) == len(process)
 
     def test_simulation_is_deterministic_for_fixed_seed(self) -> None:
@@ -521,9 +521,9 @@ class TestContourProcessSimulation:
             birth_rate=0.8,
             death_rate=1.1,
         )
-        assert process.manuscript_records is not None
-        assert process.manuscript_records["manuscript_id"].is_unique
-        assert process.manuscript_records["parent_id"].isna().sum() == 1
+        assert process.records is not None
+        assert process.records["individual_id"].is_unique
+        assert process.records["parent_id"].isna().sum() == 1
         assert process.epoch_end_times[-1].item() == 4.0
         assert all(0.0 <= ct <= 4.0 for ct in process.creation_times)
 
@@ -549,8 +549,8 @@ class TestMultiEpochSimulation:
 
         # All creation times should be <= final time
         if len(df) > 0:
-            assert df.manuscript_records is not None
-            assert all(df.manuscript_records["creation_time"] <= times[-1])
+            assert df.records is not None
+            assert all(df.records["creation_time"] <= times[-1])
 
     def test_two_epoch_simulation_reproducible(self) -> None:
         """Test that two-epoch simulation with same seed is reproducible."""
@@ -571,14 +571,14 @@ class TestMultiEpochSimulation:
             random_seed=123,
         )
 
-        # Should have same number of manuscripts
+        # Should have same number of records
         assert len(df1) == len(df2)
 
         # Creation times should match
         if len(df1) > 0 and len(df2) > 0:
             np.testing.assert_array_almost_equal(
-                sorted(df1.manuscript_records["creation_time"]),
-                sorted(df2.manuscript_records["creation_time"]),
+                sorted(df1.records["creation_time"]),
+                sorted(df2.records["creation_time"]),
             )
 
     def test_three_epoch_simulation(self) -> None:
@@ -597,9 +597,9 @@ class TestMultiEpochSimulation:
         assert isinstance(df, BirthDeathProcess)
         # Check that all times are within bounds
         if len(df) > 0:
-            assert df.manuscript_records is not None
-            assert all(df.manuscript_records["creation_time"] >= 0)
-            assert all(df.manuscript_records["creation_time"] <= times[-1])
+            assert df.records is not None
+            assert all(df.records["creation_time"] >= 0)
+            assert all(df.records["creation_time"] <= times[-1])
 
     def test_multi_epoch_data_frame_structure(self) -> None:
         """Test that multi-epoch simulation returns properly structured DataFrame."""
@@ -615,9 +615,9 @@ class TestMultiEpochSimulation:
         )
 
         if len(df) > 0:
-            surviving = df.surviving_manuscripts
+            surviving = df.surviving_records
             if len(surviving) > 0:
-                required_cols = ["manuscript_id", "creation_time", "age", "survived"]
+                required_cols = ["individual_id", "creation_time", "age", "survived"]
                 for col in required_cols:
                     assert col in surviving.columns
 
@@ -655,7 +655,7 @@ class TestMultiEpochSimulation:
         # Results should differ (different epoch configurations and seeds)
         # This is probabilistic but with different seeds should be reliable
         if len(df1) > 0 or len(df2) > 0:
-            # At least one simulation produced manuscripts
+            # At least one simulation produced records
             assert True
 
     def test_multi_epoch_scalar_compatibility(self) -> None:
@@ -683,8 +683,8 @@ class TestMultiEpochSimulation:
         # Should produce identical results
         assert len(df_scalar) == len(df_array)
         if len(df_scalar) > 0:
-            scalar_records = df_scalar.manuscript_records
-            array_records = df_array.manuscript_records
+            scalar_records = df_scalar.records
+            array_records = df_array.records
             assert scalar_records is not None and array_records is not None
             np.testing.assert_array_almost_equal(
                 sorted(scalar_records["creation_time"]),

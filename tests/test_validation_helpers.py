@@ -5,8 +5,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-import inf_bp_texts.analysis.validation_helpers as validation_helpers_module
-from inf_bp_texts.analysis import (
+import bdpinf.analysis.validation_helpers as validation_helpers_module
+from bdpinf.analysis import (
     FitModelConfig,
     boundary_corrected_kde_at_zero,
     boundary_corrected_kde_on_support,
@@ -20,8 +20,8 @@ from inf_bp_texts.analysis import (
     robust_y_max,
     theoretical_age_density,
 )
-from inf_bp_texts.analysis import validation_helpers as vh
-from inf_bp_texts.models.math_ages import calculate_non_spine_ages_log_lik
+from bdpinf.analysis import validation_helpers as vh
+from bdpinf.models.math_ages import calculate_non_spine_ages_log_lik
 
 
 class TestValidationHelpers:

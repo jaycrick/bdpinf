@@ -177,14 +177,14 @@ The spike
   not re-exported at the package's top level (e.g. `inference.fitting.fit_birth_death_processes`),
   and falls back to static analysis successfully.
 - **CLI reference: broken out of the box, fixed with a one-line shim.** Enabling
-  `cli: {module: inf_bp_texts.cli, name: app}` crashes the build with
+  `cli: {module: bdpinf.cli, name: app}` crashes the build with
   `AttributeError: 'Typer' object has no attribute 'allow_extra_args'` --- great-docs's CLI doc
-  generator expects a raw `click.Command`, and `inf_bp_texts.cli:app` is a `typer.Typer()`
+  generator expects a raw `click.Command`, and `bdpinf.cli:app` is a `typer.Typer()`
   instance, not supported directly in v0.14.0.
   Typer wraps Click internally, so
   `typer.main.get_command(app)` produces exactly the `click.Command` great-docs wants, with no
   behavior change to the CLI itself.
-  Added as `inf_bp_texts.cli.click_app` (a single module-level
+  Added as `bdpinf.cli.click_app` (a single module-level
   line, not used anywhere else) and pointed `great-docs.yml`'s `cli.name` at it.
   Rebuilt clean,
   generating a full nested reference (`reference/cli/`, including the `ntvmr` subcommand group and
@@ -214,7 +214,7 @@ The spike
 3. **great-docs** --- **adopted in hybrid form**, per the spike above: great-docs now owns the API
    reference (`great-docs.yml`, replacing quartodoc and the auto-generated `reference/` directory)
    and the package landing page, including a CLI reference (via the `click_app` shim in
-   `inf_bp_texts/cli.py`); `_quarto.yml` continues to own the 30-notebook research site
+   `bdpinf/cli.py`); `_quarto.yml` continues to own the 30-notebook research site
    unchanged otherwise (quartodoc's `quartodoc:` block, `reference/*.qmd` render glob, and
    `reference/_styles-quartodoc.css` removed from it).
    This means **two separate sites** rather

@@ -20,13 +20,13 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from inf_bp_texts.inference.likelihood import log_likelihood
-from inf_bp_texts.models.math_ages import (
+from bdpinf.inference.likelihood import log_likelihood
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.models.math_extinction import calculate_extinction_pr
-from inf_bp_texts.models.math_populations import calculate_populations_log_lik
+from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_populations import calculate_populations_log_lik
 
 # ---------------------------------------------------------------------------
 # Canonical parameter set (single epoch, supercritical)

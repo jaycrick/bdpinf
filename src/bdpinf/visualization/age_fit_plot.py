@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf.visualization.altair_theme import PTOLQUAL
 
 logger = logging.getLogger(__name__)
 
@@ -163,15 +163,15 @@ def plot_creation_year_fit(
 ) -> alt.LayerChart:
     """Plot observed creation years against the theoretical birth-time density.
 
-    Converts manuscript ages (relative to the last epoch end) to calendar
+    Converts individual ages (relative to the last epoch end) to calendar
     creation years and overlays the
-    :func:`~inf_bp_texts.inference.calculate_unknown_spine_mixture_birth_density`
+    :func:`~bdpinf.inference.calculate_unknown_spine_mixture_birth_density`
     density scaled to the histogram counts.
 
     Parameters
     ----------
     ages : NDArray[np.float64]
-        Manuscript ages in years (``age = last_epoch_end - creation_year``).
+        Individual ages in years (``age = last_epoch_end - creation_year``).
     times : NDArray[np.float64]
         Adjusted epoch end times from
         ``BirthDeathProcess.adjusted_epoch_end_times``.
@@ -184,7 +184,7 @@ def plot_creation_year_fit(
     nbins : int
         Number of histogram bins (default 30).
     """
-    from inf_bp_texts.inference import (
+    from bdpinf.inference import (
         calculate_unknown_spine_mixture_birth_density,
     )
 
@@ -196,7 +196,7 @@ def plot_creation_year_fit(
     n = len(ages)
     if n > 0 and birth_rate > 0.0 and death_rate >= 0.0 and ages.size > 0:
         try:
-            # age == process_duration is the spine manuscript's age: it is
+            # age == process_duration is the spine individual's age: it is
             # deterministically alive for the full duration, so the mixture
             # density has a point mass there rather than a continuous value.
             # Exclude it from the grid so it does not distort the overlay's
@@ -214,7 +214,7 @@ def plot_creation_year_fit(
                     death_rates=death_rate,
                     birth_time_grid=birth_grid_rel,
                     times=times,
-                    num_manuscripts=n,
+                    num_individuals=n,
                 ),
                 dtype=np.float64,
             )

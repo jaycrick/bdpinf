@@ -1,19 +1,32 @@
 """Tests for the Altair theme and export chokepoint."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import altair as alt
 import pandas as pd
 import pytest
 
-from inf_bp_texts.visualization.altair_theme import (
+from bdpinf.visualization import altair_theme
+from bdpinf.visualization.altair_theme import (
     BACKGROUND,
     PTOLQUAL,
     THEME_NAME,
     _untitled,
     display_svg,
+    get_figure_dir,
     save_chart,
+    set_figure_dir,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_figure_dir() -> Iterator[None]:
+    previous = get_figure_dir()
+    try:
+        yield
+    finally:
+        set_figure_dir(previous)
 
 
 def _sample_chart() -> alt.Chart:
@@ -172,3 +185,70 @@ class TestAltairTheme:
         saved = save_chart(_sample_chart(), "out", output_dir=tmp_path, keep_title=True)
 
         assert saved.exists()
+
+
+class TestFigureDirResolution:
+    """Test the output_dir resolution order used by save_chart when omitted."""
+
+    def test_get_figure_dir_defaults_to_none(self) -> None:
+        assert get_figure_dir() is None
+
+    def test_set_figure_dir_round_trips(self, tmp_path: Path) -> None:
+        set_figure_dir(tmp_path)
+        assert get_figure_dir() == tmp_path
+
+    def test_set_figure_dir_none_clears_override(self, tmp_path: Path) -> None:
+        set_figure_dir(tmp_path)
+        set_figure_dir(None)
+        assert get_figure_dir() is None
+
+    def test_save_chart_uses_module_default_when_output_dir_omitted(
+        self, tmp_path: Path
+    ) -> None:
+        set_figure_dir(tmp_path)
+        saved = save_chart(_sample_chart(), "out")
+
+        assert saved.parent == tmp_path
+
+    def test_save_chart_explicit_output_dir_overrides_module_default(
+        self, tmp_path: Path
+    ) -> None:
+        other = tmp_path / "other"
+        set_figure_dir(tmp_path / "default")
+        saved = save_chart(_sample_chart(), "out", output_dir=other)
+
+        assert saved.parent == other
+
+    def test_save_chart_falls_back_to_env_var(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        set_figure_dir(None)
+        monkeypatch.setenv("BDPINF_FIGURE_DIR", str(tmp_path))
+        saved = save_chart(_sample_chart(), "out")
+
+        assert saved.parent == tmp_path
+
+    def test_save_chart_falls_back_to_cwd_figures(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        set_figure_dir(None)
+        monkeypatch.delenv("BDPINF_FIGURE_DIR", raising=False)
+        monkeypatch.chdir(tmp_path)
+        saved = save_chart(_sample_chart(), "out")
+
+        assert saved.parent == tmp_path / "figures"
+
+    def test_resolve_output_dir_precedence_order(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        explicit = tmp_path / "explicit"
+        default = tmp_path / "default"
+        env_dir = tmp_path / "env"
+
+        set_figure_dir(default)
+        monkeypatch.setenv("BDPINF_FIGURE_DIR", str(env_dir))
+        assert altair_theme._resolve_output_dir(explicit) == explicit
+        assert altair_theme._resolve_output_dir(None) == default
+
+        set_figure_dir(None)
+        assert altair_theme._resolve_output_dir(None) == env_dir

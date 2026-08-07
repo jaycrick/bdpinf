@@ -1,26 +1,27 @@
-"""Bootstrap KDE-quantile resamples of manuscript date uncertainty.
+"""Bootstrap KDE-quantile resamples of interval-censored date uncertainty.
 
-The current deterministic pipeline (:func:`quantile_resample_dates`) produces
-a single set of resampled years from the weighted, boundary-corrected KDE of
-manuscript ``[earlyYear, lateYear]`` ranges.  To quantify date uncertainty
-downstream, this module generates **100,000 bootstrap resamples** of the same
-pipeline via a vectorized reimplementation that avoids calling scipy's
-``gaussian_kde`` in a Python loop.
+The current deterministic pipeline
+(:func:`~bdpinf.analysis.date_density.quantile_resample_dates`) produces a
+single set of resampled years from the weighted, boundary-corrected KDE of
+``[early, late]`` date ranges.  To quantify date uncertainty downstream, this
+module generates **100,000 bootstrap resamples** of the same pipeline via a
+vectorized reimplementation that avoids calling scipy's ``gaussian_kde`` in a
+Python loop.
 
 Algorithm
 ---------
 The key insight is that all pseudo-points live on a **fixed integer-year
-support** (≈1800 distinct years).  A bootstrap only changes the per-manuscript
-multiplicity *k_m* (how many times manuscript *m* is drawn), hence the per-year
-weight — not the kernel locations.  Every quantity that ``scipy.gaussian_kde``
-with Scott's rule needs is therefore computable from per-manuscript aggregates:
+support**.  A bootstrap only changes the per-item multiplicity *k_m* (how many
+times item *m* is drawn), hence the per-year weight — not the kernel
+locations.  Every quantity that ``scipy.gaussian_kde`` with Scott's rule needs
+is therefore computable from per-item aggregates:
 
 1. **Per-year weights** ``W[y] = (1/N) Σ_m k_m c_m 1[y ∈ [e_m, l_m]]``,
    where ``c_m = 1/(l_m - e_m + 1)`` and ``N = Σ k_m``.
    Built via a sparse range-add / difference-array cumsum (precomputed once).
 2. **Scott's bandwidth** derived from ``n_eff = N² / Σ k_m c_m`` (effective
    sample size), ``data_cov`` = Bessel-corrected weighted variance (formula
-   derived from per-manuscript mean and within-manuscript variance), and
+   derived from per-item mean and within-item variance), and
    ``factor = n_eff^{-1/5}``.
 3. **Reflection KDE on age grid** ``[0, max_age]`` as per
    ``boundary_corrected_kde_on_support``: evaluate
@@ -42,16 +43,17 @@ Storage format
 --------------
 ``.npz`` via :func:`numpy.savez_compressed` with keys:
 
-``doc_id_samples``
-    ``uint16`` array of shape ``[n_bootstrap, n]``.  Row *b* lists the
-    manuscript ``docID`` values of the bootstrap sample in ascending
-    ``midYear`` order.
+``item_id_samples``
+    Unsigned integer array of shape ``[n_bootstrap, n]``, width chosen from
+    the input id range (see :func:`bootstrap_quantile_resample_dates`).  Row
+    *b* lists the item identifiers of the bootstrap sample in ascending
+    ``mid_value`` order.
 ``resampled_years``
     ``int16`` array of shape ``[n_bootstrap, n]``.  Row *b* lists the
     corresponding resampled calendar years (sorted ascending), matching
-    the ordering of ``doc_id_samples``.
+    the ordering of ``item_id_samples``.
 ``subgroup``, ``n_bootstrap_meta``, ``n_meta``, ``current_year_meta``,
-``seed_meta``, ``order_meta``
+``seed_meta``, ``order_meta``, ``schema_version_meta``, ``item_id_dtype_meta``
     Scalar metadata arrays (see :func:`save_bootstrap_samples`).
 """
 
@@ -63,7 +65,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from inf_bp_texts.analysis.spike_detection import seed_from_parts
+from bdpinf.analysis.spike_detection import seed_from_parts
 
 _DEFAULT_SEED_TAG = "bootstrap_kde_v1"
 
@@ -84,12 +86,12 @@ def _build_weight_matrix(
     ``A[m, y] = c_m`` (= ``1 / n_m``) if year ``y_min + y`` falls within
     ``[early_m, late_m]``, else zero.  Used to convert bootstrap
     multiplicity vectors ``k[B, M]`` into per-year weights
-    ``W = k @ A / N`` without an explicit loop over manuscripts.
+    ``W = k @ A / N`` without an explicit loop over items.
 
     Parameters
     ----------
     early, late : NDArray[np.int64]
-        Length-M arrays of per-manuscript earliest/latest year.
+        Length-M arrays of per-item earliest/latest year.
     y_min, y_max : int
         Global support boundaries (inclusive).
 
@@ -136,7 +138,7 @@ def _resample_batch(
     Parameters
     ----------
     k : NDArray[np.float64], shape ``[B, M]``
-        Per-manuscript multiplicities for ``B`` bootstraps.
+        Per-item multiplicities for ``B`` bootstraps.
     A : NDArray[np.float64], shape ``[M, Y]``
         Weight matrix; see :func:`_build_weight_matrix`.
     D0_sq, D1_sq, D2_sq : NDArray[np.float64], shape ``[n_grid, Y]``
@@ -149,11 +151,11 @@ def _resample_batch(
     quantiles : NDArray[np.float64], shape ``[M]``
         Hazen plotting positions ``(k - 0.5) / M`` for ``k = 1..M``.
     mid_age : NDArray[np.float64], shape ``[M]``
-        ``current_year - midYear`` for each manuscript.
+        ``current_year - mid_value`` for each item.
     within_var : NDArray[np.float64], shape ``[M]``
-        ``(n_m^2 - 1) / 12`` — within-manuscript age variance.
+        ``(n_m^2 - 1) / 12`` — within-item age variance.
     c : NDArray[np.float64], shape ``[M]``
-        ``1 / n_m`` for each manuscript.
+        ``1 / n_m`` for each item.
     min_year, max_year : float
         Clamp limits for the resampled years.
     grid_chunk : int
@@ -174,7 +176,7 @@ def _resample_batch(
     # ------------------------------------------------------------------ #
     # Scott's-rule bandwidth  (exact match to scipy gaussian_kde)          #
     # ------------------------------------------------------------------ #
-    # Normalised per-point weight for pseudo-point of manuscript m:
+    # Normalised per-point weight for pseudo-point of item m:
     #   w_i = (1/n_m) / N  ⟹  Σ wᵢ² = Σ_m k_m c_m / N²
     sum_kc = (k * c[None, :]).sum(axis=1)  # [B]
     mu = (k * mid_age[None, :]).sum(axis=1) / N_safe  # [B]
@@ -268,8 +270,8 @@ def _resample_batch(
 def bootstrap_quantile_resample_dates(
     early: NDArray[np.int_] | list[int],
     late: NDArray[np.int_] | list[int],
-    doc_ids: NDArray[np.int_] | list[int],
-    mid_year: NDArray[np.floating[Any]] | list[float],
+    item_ids: NDArray[np.int_] | list[int],
+    mid_value: NDArray[np.floating[Any]] | list[float],
     *,
     n_bootstrap: int = 100_000,
     current_year: int = 2024,
@@ -277,24 +279,21 @@ def bootstrap_quantile_resample_dates(
     batch_size: int = 500,
     grid_chunk: int = 30,
     seed: int | None = None,
-) -> tuple[NDArray[np.uint16], NDArray[np.int16]]:
-    """Generate bootstrap KDE-quantile resamples of manuscript dating uncertainty.
+) -> tuple[NDArray[np.unsignedinteger[Any]], NDArray[np.int16]]:
+    """Generate bootstrap KDE-quantile resamples of interval-censored dates.
 
     Runs the same weighted boundary-corrected KDE + Hazen-quantile pipeline as
-    :func:`~inf_bp_texts.analysis.date_density.quantile_resample_dates` and
-    :func:`~inf_bp_texts.data.data_cleaning.add_resampled_year_column`,
-    but bootstraps the **manuscript dataset** 100,000 times to capture date
-    uncertainty.
+    :func:`~bdpinf.analysis.date_density.quantile_resample_dates`, but
+    bootstraps the **dataset** 100,000 times to capture date uncertainty.
 
     Each bootstrap:
 
-    1. Draws *n* manuscript indices with replacement.
+    1. Draws *n* item indices with replacement.
     2. Computes the bandwidth-corrected weighted KDE of date ranges (vectorised;
        see module docstring for the exact formulae).
     3. Draws *n* Hazen-quantile years from the resulting CDF.
-    4. Assigns sorted years to manuscripts sorted by ``mid_year`` (reproducing
-       :func:`~inf_bp_texts.data.data_cleaning.add_resampled_year_column`).
-    5. Returns the ``docID`` and year for each manuscript slot.
+    4. Assigns sorted years to items sorted by ``mid_value``.
+    5. Returns the item id and year for each slot.
 
     With the identity multiplicity (``k_m = 1`` for all *m*) the output
     equals ``quantile_resample_dates(early, late, n_samples=M)`` exactly.
@@ -302,14 +301,13 @@ def bootstrap_quantile_resample_dates(
     Parameters
     ----------
     early : array-like of int
-        Length-*M* array of per-manuscript earliest year estimates.
+        Length-*M* array of per-item earliest year estimates.
     late : array-like of int
-        Length-*M* array of per-manuscript latest year estimates (clamped to
-        ``>= early`` internally, matching
-        :func:`~inf_bp_texts.data.data_cleaning.add_resampled_year_column`).
-    doc_ids : array-like of int
-        Length-*M* manuscript identifier values (``docID`` column).
-    mid_year : array-like of float
+        Length-*M* array of per-item latest year estimates (clamped to
+        ``>= early`` internally).
+    item_ids : array-like of int
+        Length-*M* non-negative item identifier values.
+    mid_value : array-like of float
         Length-*M* midpoint year values (used only for rank-ordering the
         resampled years, not for bandwidth computation).
     n_bootstrap : int
@@ -328,13 +326,16 @@ def bootstrap_quantile_resample_dates(
         peak memory at the cost of slightly more loop overhead.
     seed : int or None
         Seed for the NumPy random generator.  ``None`` uses a stable default
-        derived from :func:`~inf_bp_texts.analysis.spike_detection.seed_from_parts`.
+        derived from :func:`~bdpinf.analysis.spike_detection.seed_from_parts`.
 
     Returns
     -------
-    doc_id_samples : NDArray[np.uint16], shape ``[n_bootstrap, M]``
-        Bootstrap manuscript ``docID`` values, sorted by ``mid_year`` within
-        each row.  ``uint16`` is sufficient (max docID 42,580 < 65,535).
+    item_id_samples : NDArray[np.unsignedinteger], shape ``[n_bootstrap, M]``
+        Bootstrap item id values, sorted by ``mid_value`` within each row.
+        The dtype width is chosen from the actual id range via
+        ``np.promote_types(np.min_scalar_type(item_ids.max()), np.uint16)``,
+        so it is never narrower than ``uint16`` and never silently wraps for
+        larger id spaces.
     resampled_years : NDArray[np.int16], shape ``[n_bootstrap, M]``
         Corresponding resampled calendar years, sorted ascending.  ``int16``
         is sufficient (years 100–1899 ≪ 32,767).
@@ -342,40 +343,50 @@ def bootstrap_quantile_resample_dates(
     Raises
     ------
     ValueError
-        If the input arrays are empty or have mismatched lengths.
+        If the input arrays are empty, have mismatched lengths, or
+        ``item_ids`` contains a negative value.
     """
     early_arr = np.asarray(early, dtype=np.int64)
     late_arr = np.asarray(late, dtype=np.int64)
-    # Clamp late ≥ early: matches add_resampled_year_column behaviour
+    # Clamp late ≥ early
     late_arr = np.maximum(late_arr, early_arr)
-    doc_ids_arr = np.asarray(doc_ids, dtype=np.int64)
-    mid_year_arr = np.asarray(mid_year, dtype=np.float64)
+    item_ids_arr = np.asarray(item_ids, dtype=np.int64)
+    if item_ids_arr.size and item_ids_arr.min() < 0:
+        msg = "item_ids must be non-negative."
+        raise ValueError(msg)
+    mid_value_arr = np.asarray(mid_value, dtype=np.float64)
 
     M = len(early_arr)
     if M == 0:
         msg = "Cannot bootstrap an empty dataset."
         raise ValueError(msg)
-    if not (len(late_arr) == len(doc_ids_arr) == len(mid_year_arr) == M):
-        msg = "early, late, doc_ids, mid_year must all have the same length."
+    if not (len(late_arr) == len(item_ids_arr) == len(mid_value_arr) == M):
+        msg = "early, late, item_ids, mid_value must all have the same length."
         raise ValueError(msg)
 
     y_min = int(early_arr.min())
     y_max = int(late_arr.max())
 
+    # Output id dtype: widened from the actual id range, never narrower than
+    # uint16, so ids past 65535 are not silently wrapped.
+    item_id_dtype: np.dtype[np.unsignedinteger[Any]] = np.promote_types(
+        np.min_scalar_type(int(item_ids_arr.max())), np.uint16
+    )
+
     # ------------------------------------------------------------------
-    # Per-manuscript precomputed quantities (invariant to bootstraps)
+    # Per-item precomputed quantities (invariant to bootstraps)
     # ------------------------------------------------------------------
     n_m = (late_arr - early_arr + 1).astype(np.float64)  # [M]
     c = 1.0 / n_m  # [M]  = 1/n_m
-    mid_year_mid = (early_arr + late_arr) / 2.0  # [M]
-    mid_age = float(current_year) - mid_year_mid  # [M]  age of midpoint
+    mid_value_mid = (early_arr + late_arr) / 2.0  # [M]
+    mid_age = float(current_year) - mid_value_mid  # [M]  age of midpoint
     within_var = (n_m**2 - 1.0) / 12.0  # [M]  intra-range age variance
 
     # Weight matrix: A[M, Y], A[m, y] = c_m if year (y_min+y) ∈ [e_m, l_m]
     A = _build_weight_matrix(early_arr, late_arr, y_min, y_max)  # [M, Y]
 
     # Fixed age/year grids (use global min/max so all bootstraps share
-    # the same grid; bootstraps missing the earliest manuscript use a
+    # the same grid; bootstraps missing the earliest item use a
     # slightly wider grid, harmless since density → 0 there).
     max_age = float(current_year - y_min)
     x_grid = np.linspace(0.0, max_age, n_grid)  # [n_grid] age space
@@ -401,7 +412,7 @@ def bootstrap_quantile_resample_dates(
     rng = np.random.default_rng(actual_seed)
 
     # Output arrays (pre-allocated)
-    doc_id_out = np.empty((n_bootstrap, M), dtype=np.uint16)
+    item_id_out = np.empty((n_bootstrap, M), dtype=item_id_dtype)
     years_out = np.empty((n_bootstrap, M), dtype=np.int16)
 
     b_done = 0
@@ -434,26 +445,28 @@ def bootstrap_quantile_resample_dates(
             grid_chunk,
         )  # [B, M] float64, already sorted ascending
 
-        # Sort bootstrapped manuscripts by mid_year; resampled_f is already
-        # sorted so position i → i-th smallest mid_year manuscript.
-        mid_b = mid_year_arr[idx]  # [B, M]
+        # Sort bootstrapped items by mid_value; resampled_f is already
+        # sorted so position i → i-th smallest mid_value item.
+        mid_b = mid_value_arr[idx]  # [B, M]
         sort_orders = np.argsort(mid_b, kind="stable", axis=1)  # [B, M]
-        doc_b = doc_ids_arr[idx]  # [B, M]
+        item_b = item_ids_arr[idx]  # [B, M]
 
         b_rows = np.arange(B)[:, None]
-        doc_id_out[b_done : b_done + B] = doc_b[b_rows, sort_orders].astype(np.uint16)
+        item_id_out[b_done : b_done + B] = item_b[b_rows, sort_orders].astype(
+            item_id_dtype
+        )
         years_out[b_done : b_done + B] = np.round(resampled_f).astype(np.int16)
 
         b_done += B
 
-    return doc_id_out, years_out
+    return item_id_out, years_out
 
 
 def bootstrap_epoch_counts(
     resampled_years: NDArray[np.int16] | NDArray[np.int64],
     epoch_bounds: list[tuple[int, int]],
 ) -> NDArray[np.intp]:
-    """Count manuscripts per epoch for each bootstrap draw.
+    """Count items per epoch for each bootstrap draw.
 
     Parameters
     ----------
@@ -461,15 +474,15 @@ def bootstrap_epoch_counts(
         Integer calendar years from :func:`bootstrap_quantile_resample_dates`
         or :func:`load_bootstrap_samples`.
     epoch_bounds : list of ``(lo, hi)`` tuples
-        Inclusive-lower, exclusive-upper epoch year boundaries.  Matches
-        the ``(start, end, name)`` triples in
-        :data:`~inf_bp_texts.constants.MANUSCRIPT_EPOCHS_SIX_ERA`.
+        Inclusive-lower, exclusive-upper epoch year boundaries, derived from
+        the ``(start, end, name)`` triples of an :data:`~bdpinf.types.EpochDefinition`
+        sequence.
 
     Returns
     -------
     NDArray[np.intp], shape ``[n_bootstrap, n_eras]``
         Per-draw epoch counts — entry ``[b, k]`` is the number of
-        manuscripts in bootstrap draw *b* whose resampled year falls
+        items in bootstrap draw *b* whose resampled year falls
         in ``[epoch_bounds[k][0], epoch_bounds[k][1])``.
     """
     yrs = np.asarray(resampled_years, dtype=np.int64)
@@ -491,12 +504,12 @@ def bootstrap_target_ranges(
 ) -> NDArray[np.intp]:
     """Build per-era ``[lo, hi]`` target ranges from bootstrap 95 % CI.
 
-    Computes the per-epoch manuscript count distribution across all
+    Computes the per-epoch item count distribution across all
     bootstrap draws and returns the ``[quantile_lo, quantile_hi]``
     interval as the acceptance window for each era.  The **last era is
     always unconditioned** (its bounds are set to ``[0, 2^31 - 1]``),
     matching the convention of
-    :func:`~inf_bp_texts.simulation.survival_conditioning.build_target_ranges`.
+    :func:`~bdpinf.simulation.survival_conditioning.build_target_ranges`.
 
     Parameters
     ----------
@@ -533,8 +546,11 @@ def bootstrap_target_ranges(
     return ranges
 
 
+_SCHEMA_VERSION = 2
+
+
 def save_bootstrap_samples(
-    doc_id_samples: NDArray[np.uint16],
+    item_id_samples: NDArray[np.unsignedinteger[Any]],
     resampled_years: NDArray[np.int16],
     path: str | Path,
     *,
@@ -542,20 +558,22 @@ def save_bootstrap_samples(
     n_bootstrap: int | None = None,
     current_year: int = 2024,
     seed: int = -1,
-    order: str = "sorted_by_midYear",
+    order: str = "sorted_by_mid_value",
 ) -> None:
     """Persist bootstrap KDE samples to a compressed ``.npz`` file.
 
     Parameters
     ----------
-    doc_id_samples : NDArray[np.uint16], shape ``[n_bootstrap, n]``
-        Bootstrap manuscript docID arrays.
+    item_id_samples : NDArray[np.unsignedinteger], shape ``[n_bootstrap, n]``
+        Bootstrap item id arrays.  The dtype is stored as-is (see
+        :func:`bootstrap_quantile_resample_dates` for how it is chosen) so a
+        wider id space is never silently truncated.
     resampled_years : NDArray[np.int16], shape ``[n_bootstrap, n]``
         Corresponding resampled years (same shape).
     path : str or Path
         Output path; ``.npz`` is appended by NumPy if absent.
     subgroup : str
-        Name of the manuscript subgroup (e.g. ``"non_lectionary"``).
+        Name of the item subgroup (e.g. ``"non_lectionary"``).
     n_bootstrap : int or None
         Number of bootstrap samples (inferred from array shape if ``None``).
     current_year : int
@@ -568,35 +586,40 @@ def save_bootstrap_samples(
     Raises
     ------
     ValueError
-        If ``doc_id_samples`` and ``resampled_years`` have different shapes.
+        If ``item_id_samples`` and ``resampled_years`` have different shapes.
     """
-    doc = np.asarray(doc_id_samples, dtype=np.uint16)
+    ids = np.asarray(item_id_samples)
     yrs = np.asarray(resampled_years, dtype=np.int16)
-    if doc.shape != yrs.shape:
-        msg = f"doc_id_samples shape {doc.shape} != resampled_years shape {yrs.shape}"
+    if ids.shape != yrs.shape:
+        msg = f"item_id_samples shape {ids.shape} != resampled_years shape {yrs.shape}"
         raise ValueError(msg)
 
-    n_boot = n_bootstrap if n_bootstrap is not None else doc.shape[0]
+    n_boot = n_bootstrap if n_bootstrap is not None else ids.shape[0]
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
     np.savez_compressed(
         out,
-        doc_id_samples=doc,
+        item_id_samples=ids,
         resampled_years=yrs,
         subgroup=np.array(subgroup, dtype=object),
         n_bootstrap_meta=np.array(n_boot, dtype=np.int64),
-        n_meta=np.array(doc.shape[1] if doc.ndim == 2 else 0, dtype=np.int64),
+        n_meta=np.array(ids.shape[1] if ids.ndim == 2 else 0, dtype=np.int64),
         current_year_meta=np.array(current_year, dtype=np.int64),
         seed_meta=np.array(seed, dtype=np.int64),
         order_meta=np.array(order, dtype=object),
+        schema_version_meta=np.array(_SCHEMA_VERSION, dtype=np.int64),
+        item_id_dtype_meta=np.array(str(ids.dtype), dtype=object),
     )
 
 
 def load_bootstrap_samples(path: str | Path) -> dict[str, Any]:
     """Load bootstrap KDE samples from a ``.npz`` file.
 
-    The file must have been written by :func:`save_bootstrap_samples`.
+    The file must have been written by :func:`save_bootstrap_samples`.  Files
+    written before the ``item_id_samples``/dynamic-dtype schema change (schema
+    version < 2, key ``doc_id_samples``, fixed ``uint16``) still load: the
+    legacy key is read as a fallback and its stored ``uint16`` dtype is kept.
 
     Parameters
     ----------
@@ -606,13 +629,14 @@ def load_bootstrap_samples(path: str | Path) -> dict[str, Any]:
     Returns
     -------
     dict[str, Any]
-        ``"doc_id_samples"``
-            ``uint16`` array of shape ``[n_bootstrap, n]``.
+        ``"item_id_samples"``
+            Unsigned integer array of shape ``[n_bootstrap, n]``.
         ``"resampled_years"``
             ``int16`` array of shape ``[n_bootstrap, n]``.
         ``"metadata"``
             Dict with keys ``subgroup``, ``n_bootstrap``, ``n``,
-            ``current_year``, ``seed``, ``order``.
+            ``current_year``, ``seed``, ``order``, ``schema_version``,
+            ``item_id_dtype``.
 
     Raises
     ------
@@ -633,17 +657,23 @@ def load_bootstrap_samples(path: str | Path) -> dict[str, Any]:
         v = data[key]
         return v[()] if v.ndim == 0 else (v.item() if v.size == 1 else v.tolist())
 
+    ids_key = "item_id_samples" if "item_id_samples" in data else "doc_id_samples"
+    ids_raw = np.asarray(data[ids_key])
+    default_dtype = str(ids_raw.dtype) if ids_key == "item_id_samples" else "uint16"
+
     metadata: dict[str, Any] = {
         "subgroup": str(_scalar("subgroup", "")),
         "n_bootstrap": int(_scalar("n_bootstrap_meta", 0)),
         "n": int(_scalar("n_meta", 0)),
         "current_year": int(_scalar("current_year_meta", 2024)),
         "seed": int(_scalar("seed_meta", -1)),
-        "order": str(_scalar("order_meta", "sorted_by_midYear")),
+        "order": str(_scalar("order_meta", "sorted_by_mid_value")),
+        "schema_version": int(_scalar("schema_version_meta", 1)),
+        "item_id_dtype": str(_scalar("item_id_dtype_meta", default_dtype)),
     }
 
     return {
-        "doc_id_samples": np.asarray(data["doc_id_samples"], dtype=np.uint16),
+        "item_id_samples": ids_raw.astype(metadata["item_id_dtype"]),
         "resampled_years": np.asarray(data["resampled_years"], dtype=np.int16),
         "metadata": metadata,
     }

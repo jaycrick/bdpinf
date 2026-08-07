@@ -26,8 +26,8 @@ including population counts and age distributions against theoretical curves.
 
 ```{python}
 # ruff: noqa: E402
-# inf_bp_texts must be imported before jax so its JAX_PLATFORMS=cpu default
-# (see src/inf_bp_texts/__init__.py) takes effect before jax reads the env var.
+# bdpinf must be imported before jax so its JAX_PLATFORMS=cpu default
+# (see src/bdpinf/__init__.py) takes effect before jax reads the env var.
 from typing import Any
 
 import altair as alt
@@ -38,30 +38,30 @@ from IPython.display import display
 from joblib import Parallel, delayed
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
-import inf_bp_texts  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
-from inf_bp_texts import get_project_root
-from inf_bp_texts.analysis import (
+import bdpinf  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
+from bdpinf import find_project_root
+from bdpinf.analysis import (
     boundary_corrected_kde_on_support,
     proportion_not_at_upper,
     robust_y_max,
     theoretical_age_density,
 )
-from inf_bp_texts.models.math_ages import (
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.models.math_extinction import calculate_extinction_pr
-from inf_bp_texts.models.math_populations import calculate_populations_log_pmf
-from inf_bp_texts.simulation import (
+from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_populations import calculate_populations_log_pmf
+from bdpinf.simulation import (
     simulate_bdp_ages_from_distributions,
     simulate_birth_death_lifespans,
     simulate_birth_death_process,
 )
-from inf_bp_texts.utils import derive_worker_seeds
-from inf_bp_texts.visualization import save_chart
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf.utils import derive_worker_seeds
+from bdpinf.visualization import save_chart
+from bdpinf.visualization.altair_theme import PTOLQUAL
 
-figures_dir = get_project_root() / "figures" / "validation" / "single_epoch"
+figures_dir = find_project_root() / "figures" / "validation" / "single_epoch"
 figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
@@ -104,7 +104,7 @@ def sample_age_vector_full_process(
         times=float(span),
         random_seed=seed,
     )
-    survivors = simulated_df.surviving_manuscripts
+    survivors = simulated_df.surviving_records
     assert survivors is not None
     if survivors.empty:
         return np.array([], dtype=np.float64)
@@ -158,7 +158,7 @@ def sample_age_vector_lifespans(
         times=float(span),
         random_seed=seed,
     )
-    survivors = simulated_df.surviving_manuscripts
+    survivors = simulated_df.surviving_records
     assert survivors is not None
     if survivors.empty:
         return np.array([], dtype=np.float64)

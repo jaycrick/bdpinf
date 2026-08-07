@@ -1,14 +1,14 @@
 """Simulation functions for birth-death process models.
 
-This module contains functions for simulating manuscript data from birth-death
+This module contains functions for simulating individual data from birth-death
 processes and making predictions using fitted models.
 
 Examples
 --------
-    Simulating manuscript creation and survival with constant rates:
+    Simulating individual creation and survival with constant rates:
 
     >>> import numpy as np
-    >>> from inf_bp_texts.simulation.simulator import simulate_birth_death_process
+    >>> from bdpinf.simulation.simulator import simulate_birth_death_process
     >>>
     >>> # Set simulation parameters
     >>> birth_rate = 0.5
@@ -16,10 +16,10 @@ Examples
     >>> observation_time = 500
     >>>
     >>> # Run simulation with constant rates
-    >>> manuscripts = simulate_birth_death_process(
+    >>> records = simulate_birth_death_process(
     ...     birth_rate, death_rate, observation_time, random_seed=42
     ... )
-    >>> print(f"Simulated {len(manuscripts)} surviving manuscripts")
+    >>> print(f"Simulated {len(records)} surviving records")
 
     Simulating with time-varying rates:
 
@@ -28,23 +28,23 @@ Examples
     >>> death_rates = np.array([0.3, 0.4, 0.2])
     >>> times = np.array([200, 400, 600])
     >>>
-    >>> manuscripts = simulate_birth_death_process(
+    >>> records = simulate_birth_death_process(
     ...     birth_rates, death_rates, times, random_seed=42
     ... )
-    >>> print(f"Simulated {len(manuscripts)} manuscripts")
+    >>> print(f"Simulated {len(records)} records")
 
-    Predicting future manuscript counts:
+    Predicting future individual counts:
 
-    >>> from inf_bp_texts.simulation.simulator import predict_manuscript_counts
+    >>> from bdpinf.simulation.simulator import predict_individual_counts
     >>>
-    >>> # Current manuscript ages
+    >>> # Current individual ages
     >>> current_ages = np.array([100, 200, 300, 400])
     >>>
     >>> # Predict counts in 100 years
-    >>> predicted_count = predict_manuscript_counts(
+    >>> predicted_count = predict_individual_counts(
     ...     current_ages, birth_rate, death_rate, future_time=100
     ... )
-    >>> print(f"Predicted future manuscripts: {predicted_count}")
+    >>> print(f"Predicted future records: {predicted_count}")
 
 """
 
@@ -59,13 +59,13 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from inf_bp_texts.models.birth_death_process import BirthDeathProcess
-from inf_bp_texts.models.math_ages import (
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.models.math_extinction import calculate_extinction_pr
-from inf_bp_texts.models.math_populations import population_geometric_parameter
+from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_populations import population_geometric_parameter
+from bdpinf.process import BirthDeathProcess
 
 MAX_REJECTION_ATTEMPTS = 200_000
 MIN_CONTOUR_PROCESS_LENGTH = 3
@@ -470,9 +470,9 @@ def _contour_process_list_to_birth_death_process(
     """Reconstruct a ``BirthDeathProcess`` from a validated contour list.
 
     The contour is interpreted as alternating death and birth times. This
-    function returns a canonical `BirthDeathProcess` where manuscripts that
+    function returns a canonical `BirthDeathProcess` where records that
     reach the terminal time are treated as surviving, and exactly one
-    surviving manuscript is marked as the spine: the individual that was
+    surviving individual is marked as the spine: the individual that was
     last-born among those alive when the process first reaches the terminal
     time (equivalently, the individual at the top of the genealogy stack
     when T is first hit).
@@ -484,7 +484,7 @@ def _contour_process_list_to_birth_death_process(
 
     records: list[dict[str, Any]] = [
         {
-            "manuscript_id": 0,
+            "individual_id": 0,
             "parent_id": None,
             "creation_time": values[0],
             "death_time": float("nan"),
@@ -493,40 +493,40 @@ def _contour_process_list_to_birth_death_process(
     ]
 
     birth_times_stack = [values[0]]
-    manuscript_number_stack = [0]
-    next_manuscript_id = 1
+    individual_number_stack = [0]
+    next_individual_id = 1
     # Spine = the individual at the top of the genealogy stack the first time
     # the process reaches T; equivalently, the last-born individual alive at T.
-    spine_manuscript_id: int | None = None
+    spine_individual_id: int | None = None
 
     for index in range(1, len(values) - 1):
         current_value = values[index]
-        # Odd indices are death times for the current top-of-stack manuscript
+        # Odd indices are death times for the current top-of-stack individual
         if index % 2 == 1:
             if np.isclose(current_value, terminal_time):
-                # Manuscript that 'dies' at terminal time is considered alive
-                records[manuscript_number_stack[-1]]["death_time"] = float(
+                # Individual that 'dies' at terminal time is considered alive
+                records[individual_number_stack[-1]]["death_time"] = float(
                     "nan",
                 )
-                if spine_manuscript_id is None:
-                    spine_manuscript_id = manuscript_number_stack[-1]
+                if spine_individual_id is None:
+                    spine_individual_id = individual_number_stack[-1]
             else:
-                records[manuscript_number_stack[-1]]["death_time"] = current_value
+                records[individual_number_stack[-1]]["death_time"] = current_value
             continue
 
         # Even indices are birth times: pop ancestors with birth times >=
         # current birth time
         while birth_times_stack and birth_times_stack[-1] >= current_value:
             birth_times_stack.pop()
-            manuscript_number_stack.pop()
+            individual_number_stack.pop()
 
-        if not manuscript_number_stack:
+        if not individual_number_stack:
             raise ValueError("contour_process_list is not valid for reconstruction")
 
         records.append(
             {
-                "manuscript_id": next_manuscript_id,
-                "parent_id": manuscript_number_stack[-1],
+                "individual_id": next_individual_id,
+                "parent_id": individual_number_stack[-1],
                 "creation_time": current_value,
                 "death_time": float("nan"),
                 "is_spine": False,
@@ -534,12 +534,12 @@ def _contour_process_list_to_birth_death_process(
         )
 
         birth_times_stack.append(current_value)
-        manuscript_number_stack.append(next_manuscript_id)
-        next_manuscript_id += 1
+        individual_number_stack.append(next_individual_id)
+        next_individual_id += 1
 
     records_df = pd.DataFrame(records)
 
-    # Manuscripts with death_time == terminal_time are considered alive.
+    # Records with death_time == terminal_time are considered alive.
     records_df["survived"] = records_df["death_time"].isna()
     records_df["age"] = np.where(
         records_df["survived"],
@@ -554,11 +554,11 @@ def _contour_process_list_to_birth_death_process(
 
     # Mark the spine: the individual last-born when T was first reached.
     records_df["is_spine"] = False
-    if spine_manuscript_id is not None:
-        records_df.loc[spine_manuscript_id, "is_spine"] = True
+    if spine_individual_id is not None:
+        records_df.loc[spine_individual_id, "is_spine"] = True
 
-    return BirthDeathProcess.from_manuscript_records(
-        manuscripts=records_df,
+    return BirthDeathProcess.from_records(
+        records=records_df,
         epoch_end_times=terminal_time,
         birth_rates=float(birth_rate),
         death_rates=float(death_rate),
@@ -619,17 +619,17 @@ def simulate_birth_death_process(
     ensure_non_extinct: bool = False,
     max_retries: int = 100,
 ) -> BirthDeathProcess:
-    """Simulate manuscript data from the birth-death process with time-varying rates.
+    """Simulate individual data from the birth-death process with time-varying rates.
 
-    This creates a proper birth-death process simulation where manuscripts
+    This creates a proper birth-death process simulation where records
     are born at rate λ and die at rate μ. The rates can change at specified
     time points. The simulation runs until the final time is reached and
     records both creation times and survival status.
 
     Args:
-        birth_rates: Birth rate(s) (λ) for manuscript creation. Either a single
+        birth_rates: Birth rate(s) (λ) for individual creation. Either a single
             float or an array of rates corresponding to time periods.
-        death_rates: Death rate(s) (μ) for manuscript loss. Either a single
+        death_rates: Death rate(s) (μ) for individual loss. Either a single
             float or an array of rates corresponding to time periods.
         times: End time(s) for the simulation. Either a single float or an array
             of time points at which rates change. Must be the same length as
@@ -638,7 +638,7 @@ def simulate_birth_death_process(
 
     Returns
     -------
-        BirthDeathProcess instance containing the simulated manuscript records
+        BirthDeathProcess instance containing the simulated individual records
 
     """
     # Convert inputs to arrays for uniform handling
@@ -684,19 +684,19 @@ def simulate_birth_death_process(
 
         # Initialize tracking variables for this attempt
         current_time = 0.0
-        manuscripts_alive: list[tuple[float, int]] = [
+        individuals_alive: list[tuple[float, int]] = [
             (0.0, 0),
-        ]  # (creation_time, manuscript_id)
-        all_manuscripts: list[dict[str, Any]] = [
+        ]  # (creation_time, individual_id)
+        all_records: list[dict[str, Any]] = [
             {
-                "manuscript_id": 0,
+                "individual_id": 0,
                 "parent_id": None,
                 "creation_time": 0.0,
                 "death_time": None,
                 "is_spine": False,
             },
-        ]  # Record of all manuscripts
-        new_manuscript_id = 1
+        ]  # Record of all records
+        new_individual_id = 1
 
         # Initialize rate tracking
         period_idx = 0
@@ -706,7 +706,7 @@ def simulate_birth_death_process(
 
         birth_death_rate = birth_rate + death_rate
         prop_birth = birth_rate / birth_death_rate
-        n_alive = len(manuscripts_alive)
+        n_alive = len(individuals_alive)
         total_rate = n_alive * birth_death_rate
 
         while current_time < max_time:
@@ -727,7 +727,7 @@ def simulate_birth_death_process(
                 death_rate = float(death_rates_arr[period_idx])
                 birth_death_rate = birth_rate + death_rate
                 prop_birth = birth_rate / birth_death_rate
-                total_rate = len(manuscripts_alive) * birth_death_rate
+                total_rate = len(individuals_alive) * birth_death_rate
                 # Continue to start of loop to generate dt with new rates
                 continue
 
@@ -737,58 +737,58 @@ def simulate_birth_death_process(
             # Determine if event is birth or death
             if rng.random() < prop_birth:
                 # Birth event
-                new_entry = (current_time, new_manuscript_id)
+                new_entry = (current_time, new_individual_id)
                 # Insert at a random position other than the first.
-                if len(manuscripts_alive) == 1:
-                    manuscripts_alive.append(new_entry)
-                    parent_id = manuscripts_alive[0][1]
+                if len(individuals_alive) == 1:
+                    individuals_alive.append(new_entry)
+                    parent_id = individuals_alive[0][1]
                 else:
-                    insert_idx = int(rng.integers(1, len(manuscripts_alive) + 1))
-                    manuscripts_alive.insert(insert_idx, new_entry)
-                    parent_id = manuscripts_alive[insert_idx - 1][1]
+                    insert_idx = int(rng.integers(1, len(individuals_alive) + 1))
+                    individuals_alive.insert(insert_idx, new_entry)
+                    parent_id = individuals_alive[insert_idx - 1][1]
 
-                all_manuscripts.append(
+                all_records.append(
                     {
-                        "manuscript_id": new_manuscript_id,
+                        "individual_id": new_individual_id,
                         "parent_id": parent_id,
                         "creation_time": current_time,
                         "death_time": None,
                         "is_spine": False,
                     },
                 )
-                new_manuscript_id += 1
+                new_individual_id += 1
                 total_rate += birth_death_rate
             else:
                 # Death event
-                death_idx = rng.integers(0, len(manuscripts_alive))
-                _, dead_id = manuscripts_alive.pop(death_idx)
+                death_idx = rng.integers(0, len(individuals_alive))
+                _, dead_id = individuals_alive.pop(death_idx)
 
                 # Update the record
-                for manuscript in all_manuscripts:
-                    if manuscript["manuscript_id"] == dead_id:
-                        manuscript["death_time"] = current_time
+                for individual in all_records:
+                    if individual["individual_id"] == dead_id:
+                        individual["death_time"] = current_time
                         break
 
                 total_rate -= birth_death_rate
 
-        # Process surviving manuscripts
-        spine_id = manuscripts_alive[0][1] if manuscripts_alive else None
+        # Process surviving records
+        spine_id = individuals_alive[0][1] if individuals_alive else None
         if spine_id is not None:
-            for manuscript in all_manuscripts:
-                if manuscript["manuscript_id"] == spine_id:
-                    manuscript["is_spine"] = True
+            for individual in all_records:
+                if individual["individual_id"] == spine_id:
+                    individual["is_spine"] = True
                     break
 
         # Create DataFrame and add derived columns
-        df = pd.DataFrame(all_manuscripts)
+        df = pd.DataFrame(all_records)
 
         # Add survived column (True if death_time is None)
         df["survived"] = df["death_time"].isna()
 
-        # Add age column for surviving manuscripts (vectorized)
+        # Add age column for surviving records (vectorized)
         df["age"] = np.where(df["survived"], max_time - df["creation_time"], np.nan)
 
-        # Add lifespan column for dead manuscripts (vectorized)
+        # Add lifespan column for dead records (vectorized)
         df["lifespan"] = np.where(
             ~df["survived"],
             df["death_time"] - df["creation_time"],
@@ -797,7 +797,7 @@ def simulate_birth_death_process(
 
         # If we don't need to ensure non-extinction, return first draw.
         if not ensure_non_extinct:
-            return BirthDeathProcess.from_manuscript_records(
+            return BirthDeathProcess.from_records(
                 df,
                 epoch_end_times=times_arr,
                 birth_rates=birth_rates_arr,
@@ -806,7 +806,7 @@ def simulate_birth_death_process(
 
         # If we require non-extinction, check if at least one survived.
         if df["survived"].any():
-            return BirthDeathProcess.from_manuscript_records(
+            return BirthDeathProcess.from_records(
                 df,
                 epoch_end_times=times_arr,
                 birth_rates=birth_rates_arr,
@@ -830,7 +830,7 @@ def simulate_bdp_ages_from_distributions(
     rng: np.random.Generator,
     ensure_non_extinct: bool = False,
 ) -> BirthDeathProcess:
-    """Sample population size and manuscript ages from BDP-derived distributions.
+    """Sample population size and individual ages from BDP-derived distributions.
 
     The population size draw follows the existing extinction/geometric logic.
     Conditional on a non-zero population, this function samples exactly one spine
@@ -1256,7 +1256,7 @@ def _reconstruct_genealogy(
     Returns
     -------
     pd.DataFrame
-        Canonical eight-column records table (manuscript_id, parent_id,
+        Canonical eight-column records table (individual_id, parent_id,
         creation_time, death_time, is_spine, survived, age, lifespan) plus
         ``birth_epoch``.
 
@@ -1276,7 +1276,7 @@ def _reconstruct_genealogy(
 
     # ---- Replay ----
     records: list[dict[str, Any]] = []
-    alive_list: list[int] = []  # ordered list of alive manuscript IDs
+    alive_list: list[int] = []  # ordered list of alive individual IDs
     parent_map: dict[int, int | None] = {}
 
     for _t, kind, i in events:
@@ -1309,7 +1309,7 @@ def _reconstruct_genealogy(
         died = np.isfinite(raw_death) and raw_death <= terminal_time
         records.append(
             {
-                "manuscript_id": i,
+                "individual_id": i,
                 "parent_id": parent_map.get(i),
                 "creation_time": float(birth_times[i]),
                 "death_time": raw_death if died else None,
@@ -1448,8 +1448,8 @@ def simulate_birth_death_lifespans(
     are reconstructed on the host from the stored per-individual birth/death
     times and insertion uniforms.
 
-    The returned :class:`~inf_bp_texts.models.BirthDeathProcess` contains an
-    additional ``birth_epoch`` column in its ``manuscript_records`` table,
+    The returned :class:`~bdpinf.process.BirthDeathProcess` contains an
+    additional ``birth_epoch`` column in its ``records`` table,
     recording the epoch in which each individual was born.
 
     Args:
@@ -1548,7 +1548,7 @@ def simulate_birth_death_lifespans(
         )
 
         if not ensure_non_extinct:
-            return BirthDeathProcess.from_manuscript_records(
+            return BirthDeathProcess.from_records(
                 records_df,
                 epoch_end_times=times_arr,
                 birth_rates=birth_rates_arr,
@@ -1556,7 +1556,7 @@ def simulate_birth_death_lifespans(
             )
 
         if records_df["survived"].any():
-            return BirthDeathProcess.from_manuscript_records(
+            return BirthDeathProcess.from_records(
                 records_df,
                 epoch_end_times=times_arr,
                 birth_rates=birth_rates_arr,

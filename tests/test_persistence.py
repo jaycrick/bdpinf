@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from inf_bp_texts.inference.persistence import (
+from bdpinf.inference.persistence import (
     load_recovery_results,
     save_recovery_results,
 )

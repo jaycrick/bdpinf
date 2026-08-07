@@ -33,7 +33,7 @@ is required.
 Engine
 ------
 The JAX lifespan-at-birth engine from
-:func:`~inf_bp_texts.simulation.simulator.simulate_birth_death_lifespans_arrays`
+:func:`~bdpinf.simulation.simulator.simulate_birth_death_lifespans_arrays`
 is the simulation substrate.  A new single-era JIT core
 (:func:`_simulate_era_core`) seeds from an arbitrary alive-population state
 and advances the event loop to the era boundary, sampling new births' death
@@ -66,7 +66,7 @@ import pandas as pd
 from jax import lax
 from numpy.typing import NDArray
 
-from inf_bp_texts.simulation.simulator import (
+from bdpinf.simulation.simulator import (
     _sample_piecewise_exponential_death_time,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -188,7 +188,7 @@ def _simulate_era_core(
     within a single era.  The birth rate is fixed at ``birth_rate_k`` for the
     duration.  New births receive their death time sampled over the **full**
     ``epoch_end_times`` hazard grid via
-    :func:`~inf_bp_texts.simulation.simulator._sample_piecewise_exponential_death_time`,
+    :func:`~bdpinf.simulation.simulator._sample_piecewise_exponential_death_time`,
     so survival-to-present is always well-defined regardless of the current
     era.
 

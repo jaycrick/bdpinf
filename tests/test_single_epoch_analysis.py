@@ -6,18 +6,20 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from inf_bp_texts.analysis import (
-    BoxPlotStyle,
-    KdePlotConfig,
-    compute_boxplot_summary,
+from bdpinf.analysis import (
     compute_parameter_summary,
-    create_kde_density_plot,
-    create_parameter_box_plot,
     extract_alive_ages,
     extract_rate_arrays,
     summarize_fit_success,
 )
-from inf_bp_texts.models.birth_death_process import BirthDeathProcess
+from bdpinf.process import BirthDeathProcess
+from bdpinf.visualization import (
+    BoxPlotStyle,
+    KdePlotConfig,
+    compute_boxplot_summary,
+    create_kde_density_plot,
+    create_parameter_box_plot,
+)
 
 
 def _layer_mark_types(spec: dict[str, Any]) -> set[str]:
@@ -46,7 +48,7 @@ class TestSingleEpochAnalysis:
         process = BirthDeathProcess(
             creation_times=[100.0, 50.0],
             epoch_end_times=200.0,
-            manuscript_records=simulation_df,
+            records=simulation_df,
         )
 
         ages = extract_alive_ages(process, time_span=200.0)

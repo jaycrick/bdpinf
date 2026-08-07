@@ -5,6 +5,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** split out of the `inf-bp-texts` monorepo into this
+  standalone, domain-free `bdpinf` package (import name `bdpinf`).
+  The NT
+  manuscript application (data download/cleaning, `constants`/`schemas`,
+  CLI) now lives in a separate `nt-manuscripts` repository that depends on
+  `bdpinf`.
+  Renamed alongside the split, with no deprecation aliases:
+  `BirthDeathProcess` moved from `models.birth_death_process` to the
+  top-level `process` module; `from_manuscript_records` → `from_records`;
+  `manuscript_records`/`manuscript_ages`/`manuscript_id` →
+  `records`/`ages`/`individual_id` (and the matching `n_manuscripts` →
+  `n_individuals`, `surviving_manuscripts` → `surviving_records`,
+  `extinct_manuscripts` → `extinct_records`); `ManuscriptSubset` → `DataSubset`;
+  `fit_manuscript_subset[s][_bayesian]` → `fit_subset[s][_bayesian]`;
+  `manuscript_date_density` → `date_range_density`.
+  `BirthDeathProcess.plot_genealogy_tree()` was removed; use the free
+  function `bdpinf.visualization.genealogy.plot_genealogy_tree(process)`
+  instead (dependency inversion: `visualization` now depends on `models`,
+  not the reverse).
+  `get_project_root` → `find_project_root` (now takes configurable
+  `markers`/`env_var`), moved from `_paths.py` to `paths.py`.
+  `save_chart`/`save_chart_html` no longer assume a Quarto project: when
+  `output_dir` is omitted, resolution now goes module default
+  (`set_figure_dir`/`get_figure_dir`) → `$BDPINF_FIGURE_DIR` env var →
+  `Path.cwd() / "figures"`.
+
 ### Added
 
 - `scripts/resume_render_all.sh`: resumes the `render_all.sh` job chain when
@@ -28,7 +56,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   log-scale median + 95% CrI whiskers), matching the existing per-era
   proportion-alive split charts, in both the main and excluding-Ante-Nicaea
   sections.
-- `src/inf_bp_texts/analysis/latex_tables.py`: `crosstab_latex_table()`, a
+- `src/bdpinf/analysis/latex_tables.py`: `crosstab_latex_table()`, a
   generic booktabs/siunitx renderer for `pd.crosstab` results.
   `qmd_scripts/core_analysis/01_data_exploration/manuscript_data_exploration.qmd`
   uses it to add three cross-tabulation summary tables (manuscript Type ×
@@ -63,7 +91,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- `inf_bp_texts.visualization.bayesian_plots`: ridgeline (joyplot) ridges in
+- `bdpinf.visualization.bayesian_plots`: ridgeline (joyplot) ridges in
   `posterior_rates_chart`/`prior_rates_chart`/`prior_posterior_rates_chart`
   now reflect posterior spread.
   Previously each ridge was independently
@@ -85,9 +113,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `--mem-per-cpu`, and `--time` to match observed CPU/memory utilization from
   completed runs, freeing up shared cluster resources.
 
-- `inf_bp_texts.data.data_cleaning.run_cleaning_pipeline`: single canonical
+- `bdpinf.data.data_cleaning.run_cleaning_pipeline`: single canonical
   entry point for producing `manuscript_analysis_cleaned.csv`, now the only
-  code path `inf-bp-texts ntvmr clean` uses.
+  code path `bdpinf ntvmr clean` uses.
   Composes a docID-based group
   filter, explicit removal of "merged" manuscripts (both `earlyYear` and
   `lateYear` are 0 --- see `identify_merged_manuscripts`, confirmed examples
@@ -406,7 +434,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   emit `\multirow` parameter groups, `S[table-format=…]` numeric columns,
   and `\num{}`-bracketed CI/CrI columns.
   All names re-exported from
-  `inf_bp_texts.analysis`.
+  `bdpinf.analysis`.
 
 - `analysis.latex_tables`: four new half-life table helpers
   (`subset_fits_halflife_latex_by_epoch`, `subset_fits_halflife_latex_by_subset`,
@@ -464,7 +492,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   constant replaces the two duplicated inline f-strings.
 
 - `cli ntvmr download-all` gains `--verbose`/`-v` and `--log-file PATH` options;
-  `--log-file` attaches a `FileHandler` to the `inf_bp_texts` package logger so all
+  `--log-file` attaches a `FileHandler` to the `bdpinf` package logger so all
   progress and error detail is persisted to a file.
   The summary line now shows the
   error sub-counts, and a human-readable "server appears unreachable" hint is printed
@@ -474,11 +502,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reusable helpers that build alternating era background-band and label layers
   from any `EpochDefinition` tuple (e.g. `MANUSCRIPT_EPOCHS_SIX_ERA`) for
   figures using a quantitative century axis; re-exported from
-  `inf_bp_texts.visualization`.
+  `bdpinf.visualization`.
 
 - `visualization.altair_theme.save_chart_html` --- exports an Altair chart to a
   self-contained interactive HTML (Vega + vega-embed inlined); re-exported from
-  `inf_bp_texts.visualization`.
+  `bdpinf.visualization`.
 
 - `figures/mde_temporal_distribution_eras.pdf` --- era-shaded variant of the
   temporal distribution figure with alternating bands and era labels from
@@ -656,7 +684,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (pre-JAX-migration) --- interior branch used epoch end time `T` instead of
   manuscript age `t`, giving wrong gradients off epoch boundaries.
 - `kashouh_family_k_bayesian_inference.qmd` --- `import jax` ran before
-  `from inf_bp_texts import ...`, so the package's CPU-default
+  `from bdpinf import ...`, so the package's CPU-default
   `os.environ.setdefault("JAX_PLATFORMS", "cpu")` never took effect once the
   `gpu` dependency group was installed; the notebook would silently render on
   GPU regardless of intent.

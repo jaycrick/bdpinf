@@ -4,7 +4,7 @@ import altair as alt
 import numpy as np
 import pytest
 
-from inf_bp_texts.visualization.bayesian_plots import (
+from bdpinf.visualization.bayesian_plots import (
     PriorPosteriorPanel,
     PriorPosteriorRatePanel,
     RatePanel,

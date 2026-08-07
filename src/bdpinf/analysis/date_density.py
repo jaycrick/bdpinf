@@ -1,17 +1,17 @@
-"""Date density estimation for manuscripts with date ranges.
+"""Date density estimation for items with interval-censored dates.
 
-Manuscripts in the NTVMR dataset are dated as intervals ``[earlyYear, lateYear]``.
-The functions here convert those ranges into a smooth probability density over
-calendar years and, optionally, resample a fixed number of exact integer dates
-from that density for downstream birth-death inference.
+Items are dated as intervals ``[early, late]``.  The functions here convert
+those ranges into a smooth probability density over calendar years and,
+optionally, resample a fixed number of exact integer dates from that density
+for downstream birth-death inference.
 
 Methodology
 -----------
-Each manuscript with range ``[e, l]`` is *exploded* into ``n = l - e + 1``
+Each item with range ``[e, l]`` is *exploded* into ``n = l - e + 1``
 pseudo-points, one per integer year, each carrying weight ``1/n``.  The
 resulting (year, weight) pairs are converted to ages (``age = current_year - year``)
 and fed into the boundary-corrected, weighted KDE from
-:func:`~inf_bp_texts.analysis.validation_helpers.boundary_corrected_kde_on_support`.
+:func:`~bdpinf.analysis.validation_helpers.boundary_corrected_kde_on_support`.
 The density is then mapped back into calendar-year space for plotting or
 quantile resampling.
 """
@@ -28,13 +28,13 @@ def explode_date_ranges(
     early: NDArray[np.int_],
     late: NDArray[np.int_],
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Explode manuscript date ranges into per-year pseudo-points with 1/n weights.
+    """Explode item date ranges into per-year pseudo-points with 1/n weights.
 
-    Each manuscript with date range ``[early, late]`` contributes
+    Each item with date range ``[early, late]`` contributes
     ``n = late - early + 1`` pseudo-points (one per integer year), each with
-    weight ``1/n``.  Exact-dated manuscripts (``early == late``) contribute a
+    weight ``1/n``.  Exact-dated items (``early == late``) contribute a
     single point with weight ``1.0``.  The total weight across all pseudo-points
-    equals the number of manuscripts.
+    equals the number of items.
 
     Parameters
     ----------
@@ -50,7 +50,7 @@ def explode_date_ranges(
         Flat array of pseudo-point years; length equals ``sum(late - early + 1)``.
     weights : NDArray[np.float64]
         Flat array of per-pseudo-point weights (sums to M, one unit per
-        manuscript).
+        item).
 
     Raises
     ------
@@ -79,15 +79,15 @@ def explode_date_ranges(
     return np.concatenate(years_parts), np.concatenate(weights_parts)
 
 
-def manuscript_date_density(
+def date_range_density(
     early: NDArray[np.int_],
     late: NDArray[np.int_],
     current_year: int,
     n_grid: int = 300,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Estimate a kernel density of manuscript creation dates, honouring date ranges.
+    """Estimate a kernel density of item creation dates, honouring date ranges.
 
-    Each manuscript's ``[early, late]`` range is exploded into integer-year
+    Each item's ``[early, late]`` range is exploded into integer-year
     pseudo-points with ``1/n`` weights.  A boundary-corrected, weighted KDE is
     fit in age space (``age = current_year - year``) to exploit the existing
     nonnegative-age convention, then the result is transformed back to
@@ -121,7 +121,7 @@ def manuscript_date_density(
 
     """
     # Import here to avoid a circular dependency in the analysis sub-package.
-    from inf_bp_texts.analysis.validation_helpers import (
+    from bdpinf.analysis.validation_helpers import (
         boundary_corrected_kde_on_support,
     )
 
@@ -136,7 +136,7 @@ def manuscript_date_density(
         weights=weights,
     )
     if age_grid is None or age_density is None:
-        msg = "Could not estimate date density from the provided manuscripts"
+        msg = "Could not estimate date density from the provided items"
         raise ValueError(msg)
 
     # Transform from age space back to calendar-year space.
@@ -154,9 +154,9 @@ def quantile_resample_dates(
     n_samples: int | None = None,
     n_grid: int = 300,
 ) -> NDArray[np.int_]:
-    """Resample exact manuscript dates from the weighted date-range KDE.
+    """Resample exact item dates from the weighted date-range KDE.
 
-    Builds the date density via :func:`manuscript_date_density`, integrates it
+    Builds the date density via :func:`date_range_density`, integrates it
     to form a CDF, then uses Hazen plotting positions
     ``q_k = (k - 0.5) / n_samples`` for ``k = 1 … n_samples`` to deterministically
     pick *n_samples* quantiles.  Each quantile is inverted via linear interpolation
@@ -175,7 +175,7 @@ def quantile_resample_dates(
         Reference year used internally for age computation. Default 2024.
     n_samples : int | None
         Number of exact dates to return.  Defaults to ``len(early)`` (one
-        resample per input manuscript).
+        resample per input item).
     n_grid : int
         Number of density grid points. Default 300.
 
@@ -183,7 +183,7 @@ def quantile_resample_dates(
     -------
     NDArray[np.int_]
         Sorted array of *n_samples* integer calendar years whose empirical
-        distribution approximates the manuscript date density.
+        distribution approximates the item date density.
 
     """
     early_arr = np.asarray(early, dtype=np.int64)
@@ -191,7 +191,7 @@ def quantile_resample_dates(
     if n_samples is None:
         n_samples = len(early_arr)
 
-    year_grid, density = manuscript_date_density(
+    year_grid, density = date_range_density(
         early_arr,
         late_arr,
         current_year,

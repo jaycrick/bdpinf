@@ -41,13 +41,15 @@ Resampling survivors at each level concentrates computation on rare surviving li
 ```{python}
 import numpy as np
 
-from inf_bp_texts.simulation import (
+from bdpinf.simulation import (
     SplittingConfig,
+    select_level_times_for_band,
+    simulate_subcritical_survival_splitting,
+)
+from bdpinf.visualization import (
     plot_conditioned_trajectories,
     plot_empirical_population_mean,
     plot_level_survival_probabilities,
-    select_level_times_for_band,
-    simulate_subcritical_survival_splitting,
 )
 ```
 

@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from inf_bp_texts.inference.fitting import (
+from bdpinf.inference.fitting import (
     ParameterConstraints,
     _apply_constraints_to_full_params,
     _reduce_to_free_params,

@@ -1,13 +1,5 @@
 """Analysis helpers for notebook and report workflows."""
 
-from inf_bp_texts.visualization.parameter_plots import (
-    BoxPlotStyle,
-    KdePlotConfig,
-    compute_boxplot_summary,
-    create_kde_density_plot,
-    create_parameter_box_plot,
-)
-
 from .bootstrap_date_density import (
     bootstrap_epoch_counts,
     bootstrap_quantile_resample_dates,
@@ -16,8 +8,8 @@ from .bootstrap_date_density import (
     save_bootstrap_samples,
 )
 from .date_density import (
+    date_range_density,
     explode_date_ranges,
-    manuscript_date_density,
     quantile_resample_dates,
 )
 from .latex_tables import (
@@ -60,15 +52,13 @@ from .spike_detection import (
     select_extreme_replicates,
     select_max_ci_times,
 )
-from .subset_inference import (
-    CANONICAL_SUBSET_KEYS,
+from .subset_fitting import (
     BayesianSubsetConfig,
-    ManuscriptSubset,
+    DataSubset,
     SubsetFitResult,
-    build_manuscript_subsets,
-    fit_manuscript_subset,
-    fit_manuscript_subset_bayesian,
-    fit_manuscript_subsets_bayesian,
+    fit_subset,
+    fit_subset_bayesian,
+    fit_subsets_bayesian,
 )
 from .validation_helpers import (
     FitModelConfig,
@@ -93,25 +83,21 @@ __all__ = [
     "bootstrap_target_ranges",
     "load_bootstrap_samples",
     "save_bootstrap_samples",
-    "CANONICAL_SUBSET_KEYS",
     "MLE_COLUMNS",
-    "BoxPlotStyle",
     "BayesianSubsetConfig",
+    "DataSubset",
     "FitModelConfig",
-    "KdePlotConfig",
     "LatexColumn",
     "LatexParamGroup",
     "LatexRateRow",
-    "ManuscriptSubset",
     "SubsetFitResult",
     "bayesian_results_halflife_latex_by_epoch",
     "bayesian_results_halflife_latex_by_subset",
     "bayesian_results_latex_by_epoch",
     "bayesian_results_latex_by_subset",
-    "build_manuscript_subsets",
-    "fit_manuscript_subset",
-    "fit_manuscript_subset_bayesian",
-    "fit_manuscript_subsets_bayesian",
+    "fit_subset",
+    "fit_subset_bayesian",
+    "fit_subsets_bayesian",
     "rates_latex_table",
     "subset_fits_halflife_latex_by_epoch",
     "subset_fits_halflife_latex_by_subset",
@@ -121,11 +107,8 @@ __all__ = [
     "boundary_corrected_kde_at_zero",
     "boundary_corrected_kde_on_support",
     "build_hist_bins",
-    "compute_boxplot_summary",
     "compute_ci_width_table",
     "compute_parameter_summary",
-    "create_kde_density_plot",
-    "create_parameter_box_plot",
     "explode_date_ranges",
     "extract_alive_ages",
     "extract_epoch_parameter_arrays",
@@ -137,7 +120,7 @@ __all__ = [
     "get_selected_attempt",
     "has_ages_in_each_epoch",
     "iqr_plotting_subset",
-    "manuscript_date_density",
+    "date_range_density",
     "proportion_not_at_upper",
     "quantile_resample_dates",
     "robust_y_max",

@@ -42,13 +42,13 @@ import pandas as pd
 from numpy.typing import NDArray
 from numpyro.infer import MCMC, NUTS
 
-from inf_bp_texts.inference.fitting import ParameterConstraints
-from inf_bp_texts.models.math_ages import (
+from bdpinf.inference.fitting import ParameterConstraints
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.models.math_populations import calculate_populations_log_lik
-from inf_bp_texts.models.validation import normalize_and_validate_inputs
+from bdpinf.models.math_populations import calculate_populations_log_lik
+from bdpinf.models.validation import normalize_and_validate_inputs
 
 logger = logging.getLogger(__name__)
 
@@ -661,7 +661,7 @@ def mle_init_log_rates(
     Parameters
     ----------
     mle_result : dict
-        Return value of :func:`inf_bp_texts.inference.fit_birth_death_processes`.
+        Return value of :func:`bdpinf.inference.fit_birth_death_processes`.
     constraints : ParameterConstraints | None
         Same constraints used for the Bayesian fit.  ``None`` → all parameters
         are free.

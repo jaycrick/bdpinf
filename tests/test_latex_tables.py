@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.analysis.latex_tables import (
+from bdpinf.analysis.latex_tables import (
     BAYESIAN_COLUMNS,
     MLE_COLUMNS,
     LatexParamGroup,
@@ -21,7 +21,7 @@ from inf_bp_texts.analysis.latex_tables import (
     subset_fits_latex_by_epoch,
     subset_fits_latex_by_subset,
 )
-from inf_bp_texts.analysis.subset_inference import SubsetFitResult
+from bdpinf.analysis.subset_fitting import SubsetFitResult
 
 # ---------------------------------------------------------------------------
 # Minimal SubsetFitResult fixtures
@@ -45,7 +45,7 @@ def _make_fit(
             key=key,
             label=label,
             success=False,
-            n_manuscripts=0,
+            n_individuals=0,
             times=np.zeros(2),
             ages=np.empty(0),
             nll_history=[],
@@ -57,7 +57,7 @@ def _make_fit(
             "period": name,
             "start": start,
             "end": end,
-            "n_manuscripts": 10 + i,
+            "n_individuals": 10 + i,
             "birth_rates": 0.001 * (i + 1),
             "death_rates": 0.000001 * (i + 1),
             "half_life": math.log(2) / (0.000001 * (i + 1)),
@@ -73,7 +73,7 @@ def _make_fit(
         key=key,
         label=label,
         success=True,
-        n_manuscripts=20,
+        n_individuals=20,
         times=np.array([325.0, 636.0]),
         ages=np.arange(20, dtype=float),
         nll_history=[1.0, 0.5],
@@ -93,7 +93,7 @@ def _make_bayesian_entry(key: str, label: str, n_draws: int = 50) -> dict:
         "key": key,
         "label": label,
         "success": True,
-        "n_manuscripts": 20,
+        "n_individuals": 20,
         "epoch_names": ep_names,
         "n_epochs": n_epochs,
         "birth_rates": bs.mean(axis=0),
@@ -437,6 +437,23 @@ class TestSubsetFitsLatexHelpers:
         tables = subset_fits_latex_by_epoch(self._fits(), self._epoch_names())
         for t in tables.values():
             assert "Tradition" in t
+
+    def test_entity_noun_manuscript_reproduces_pre_split_caption(self) -> None:
+        """entity_noun="individual" must reproduce the byte-identical pre-split caption.
+
+        The monorepo's app-only captions hardcoded "individual half-lives"; after
+        the split that wording is parameterised via entity_noun. This is the
+        regression guard for the paper's .tex output — the app must pass
+        entity_noun="individual" and get exactly what it got before the split.
+        """
+        tables = subset_fits_halflife_latex_by_epoch(
+            self._fits(), self._epoch_names(), entity_noun="individual"
+        )
+        for epoch_name, t in tables.items():
+            assert (
+                f"MLE individual half-lives (years) with 95\\% confidence"
+                f" intervals --- {epoch_name}"
+            ) in t
 
 
 # ---------------------------------------------------------------------------

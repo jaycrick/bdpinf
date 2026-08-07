@@ -44,11 +44,11 @@ import numpy as np
 import pandas as pd
 from itables import show as show_table
 
-from inf_bp_texts.inference import ConvergenceConfig
-from inf_bp_texts.inference.fitting import fit_birth_death_processes
-from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
-from inf_bp_texts.utils import format_table_dataframe
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL, display_svg
+from bdpinf.inference import ConvergenceConfig
+from bdpinf.inference.fitting import fit_birth_death_processes
+from bdpinf.simulation import simulate_bdp_ages_from_distributions
+from bdpinf.utils import format_table_dataframe
+from bdpinf.visualization.altair_theme import PTOLQUAL, display_svg
 ```
 
 ## Simulate One Dataset

@@ -19,8 +19,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.process import BirthDeathProcess
 
 MIN_LEVEL_TIMES = 2
 _BAND_LOWER: float = np.e**-2.0  # ≈ 0.135; at this pr_ext, R = ceil(e^2) = 8
@@ -128,7 +128,7 @@ class ConditionedTrajectory:
     populations : np.ndarray
         Population sizes corresponding to ``times``.
     process : BirthDeathProcess
-        Manuscript-level birth-death process reconstructed from particle
+        Individual-level birth-death process reconstructed from particle
         ancestry records.
 
     """
@@ -161,7 +161,7 @@ class SplittingSimulationResult:
     level_mean_populations : np.ndarray
         Ensemble mean population at each level boundary.
     final_survivor_count : int
-        Number of surviving manuscripts/lineages at the terminal time.
+        Number of surviving records/lineages at the terminal time.
     conditioned_trajectories : list[ConditionedTrajectory]
         Sampled conditioned trajectories selected from surviving particles.
     particle_genealogy : pd.DataFrame
@@ -192,12 +192,12 @@ class _ParticleState:
         Unique identifier assigned to the particle instance.
     current_time : float
         Current simulated time for this particle.
-    next_manuscript_id : int
-        Next available manuscript identifier for descendants.
+    next_individual_id : int
+        Next available individual identifier for descendants.
     alive_ids : list[int]
-        List of manuscript ids currently alive within the particle.
-    manuscript_records : dict[int, dict[str, Any]]
-        Mapping from manuscript id to a record dict containing creation and
+        List of individual ids currently alive within the particle.
+    records : dict[int, dict[str, Any]]
+        Mapping from individual id to a record dict containing creation and
         death metadata.
     trace_times : list[float]
         Times at which the particle trace population was recorded.
@@ -210,9 +210,9 @@ class _ParticleState:
 
     particle_id: int
     current_time: float
-    next_manuscript_id: int
+    next_individual_id: int
     alive_ids: list[int]
-    manuscript_records: dict[int, dict[str, Any]]
+    records: dict[int, dict[str, Any]]
     trace_times: list[float]
     trace_populations: list[int]
     rng: np.random.Generator
@@ -385,7 +385,7 @@ def _initialize_particle(
     seed_rng: np.random.Generator,
 ) -> _ParticleState:
     root_record = {
-        "manuscript_id": 0,
+        "individual_id": 0,
         "parent_id": None,
         "creation_time": 0.0,
         "death_time": None,
@@ -394,9 +394,9 @@ def _initialize_particle(
     return _ParticleState(
         particle_id=particle_id,
         current_time=0.0,
-        next_manuscript_id=1,
+        next_individual_id=1,
         alive_ids=[0],
-        manuscript_records={0: root_record},
+        records={0: root_record},
         trace_times=[0.0],
         trace_populations=[1],
         rng=_make_child_rng(seed_rng=seed_rng),
@@ -448,8 +448,8 @@ def _simulate_to_level(
 
         state.current_time = event_time
         if state.rng.uniform() < birth_probability:
-            child_id = state.next_manuscript_id
-            state.next_manuscript_id += 1
+            child_id = state.next_individual_id
+            state.next_individual_id += 1
             # Insert at a random position >= 1 so index-0 lineage is never
             # displaced — matching simulate_birth_death_process's convention.
             # Parent is the left neighbour at insert_idx - 1.
@@ -460,8 +460,8 @@ def _simulate_to_level(
                 insert_idx = int(state.rng.integers(1, len(state.alive_ids) + 1))
                 state.alive_ids.insert(insert_idx, child_id)
                 parent_id = state.alive_ids[insert_idx - 1]
-            state.manuscript_records[child_id] = {
-                "manuscript_id": child_id,
+            state.records[child_id] = {
+                "individual_id": child_id,
                 "parent_id": parent_id,
                 "creation_time": event_time,
                 "death_time": None,
@@ -470,7 +470,7 @@ def _simulate_to_level(
         else:
             death_idx = int(state.rng.integers(0, len(state.alive_ids)))
             dead_id = state.alive_ids.pop(death_idx)
-            state.manuscript_records[dead_id]["death_time"] = event_time
+            state.records[dead_id]["death_time"] = event_time
 
         _append_trace_point(state=state, time_point=event_time)
 
@@ -484,11 +484,9 @@ def _clone_particle(
     return _ParticleState(
         particle_id=particle_id,
         current_time=float(donor.current_time),
-        next_manuscript_id=int(donor.next_manuscript_id),
+        next_individual_id=int(donor.next_individual_id),
         alive_ids=donor.alive_ids.copy(),
-        manuscript_records={
-            key: value.copy() for key, value in donor.manuscript_records.items()
-        },
+        records={key: value.copy() for key, value in donor.records.items()},
         trace_times=donor.trace_times.copy(),
         trace_populations=donor.trace_populations.copy(),
         rng=_make_child_rng(seed_rng=seed_rng),
@@ -502,11 +500,11 @@ def _particle_to_birth_death_process(
     birth_rate: float,
     death_rate: float,
 ) -> BirthDeathProcess:
-    records_df = pd.DataFrame(state.manuscript_records.values())
+    records_df = pd.DataFrame(state.records.values())
     if records_df.empty:
         records_df = pd.DataFrame(
             columns=[
-                "manuscript_id",
+                "individual_id",
                 "parent_id",
                 "creation_time",
                 "death_time",
@@ -517,7 +515,7 @@ def _particle_to_birth_death_process(
     records_df["is_spine"] = False
     if state.alive_ids:
         spine_id = state.alive_ids[0]
-        records_df.loc[records_df["manuscript_id"] == spine_id, "is_spine"] = True
+        records_df.loc[records_df["individual_id"] == spine_id, "is_spine"] = True
 
     records_df["survived"] = records_df["death_time"].isna()
     records_df["age"] = np.where(
@@ -532,8 +530,8 @@ def _particle_to_birth_death_process(
         np.nan,
     )
 
-    return BirthDeathProcess.from_manuscript_records(
-        manuscripts=records_df,
+    return BirthDeathProcess.from_records(
+        records=records_df,
         epoch_end_times=float(terminal_time),
         birth_rates=float(birth_rate),
         death_rates=float(death_rate),

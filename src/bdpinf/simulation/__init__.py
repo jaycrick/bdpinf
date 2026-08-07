@@ -4,12 +4,6 @@ This package contains simulation and prediction utilities for birth-death
 process models.
 """
 
-from inf_bp_texts.visualization.splitting_plots import (
-    plot_conditioned_trajectories,
-    plot_empirical_population_mean,
-    plot_level_survival_probabilities,
-)
-
 from .simulator import (
     LifespanSimulationArrays,
     simulate_bdp_ages_from_distributions,
@@ -39,9 +33,6 @@ __all__ = [
     "MatchedSurvivalSample",
     "SplittingConfig",
     "build_target_ranges",
-    "plot_conditioned_trajectories",
-    "plot_empirical_population_mean",
-    "plot_level_survival_probabilities",
     "sample_conditioned_survival_per_posterior",
     "sample_conditioned_survival_process",
     "select_level_times_for_band",

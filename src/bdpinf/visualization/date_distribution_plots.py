@@ -1,4 +1,4 @@
-"""Altair helpers for manuscript date-distribution exploration figures.
+"""Altair helpers for date-distribution exploration figures.
 
 The recurring "date-range KDE" comparison — a midpoint histogram, the
 weighted date-range KDE curve, and a resampled-date histogram overlaid on one
@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike
 
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf.visualization.altair_theme import PTOLQUAL
 
 _MIDPOINT_LABEL = "Midpoint (parsed_year)"
 _KDE_LABEL = "Weighted date-range KDE"
@@ -36,6 +36,7 @@ def plot_date_range_kde_comparison(
     title: str,
     x_title: str = "Year (CE)",
     midpoint_label: str = _MIDPOINT_LABEL,
+    count_noun: str = "Count",
     interaction: LegendInteraction = "none",
     x_domain: tuple[float, float] | None = None,
 ) -> alt.LayerChart:
@@ -44,14 +45,14 @@ def plot_date_range_kde_comparison(
     Parameters
     ----------
     midpoint_years : NDArray[np.float64]
-        Per-manuscript midpoint (``parsed_year``) values.
+        Per-item midpoint (``parsed_year``) values.
     year_grid, density : NDArray[np.float64]
         The weighted date-range KDE grid and its density; the density is scaled
         to histogram counts as ``density * n * bin_width``.
     resampled_years : NDArray[np.float64]
         Deterministic quantile-resampled exact dates.
     n : int
-        Manuscript count used to scale the KDE to count units.
+        Item count used to scale the KDE to count units.
     bin_width : float
         Histogram bin width in years (shared by both histograms).
     title : str
@@ -60,8 +61,10 @@ def plot_date_range_kde_comparison(
         X-axis label (default ``"Year (CE)"``).
     midpoint_label : str
         Legend label for the midpoint histogram (default
-        ``"Midpoint (parsed_year)"``); pass e.g. ``"Midpoint (midYear)"`` for
+        ``"Midpoint (parsed_year)"``); pass e.g. ``"Midpoint (mid_value)"`` for
         datasets keyed on a different column.
+    count_noun : str
+        Noun used in the y-axis title, e.g. ``"Manuscripts"``. Default ``"Count"``.
     interaction : {"none", "filter", "highlight"}
         Legend-click behaviour in the interactive (HTML) render. ``"filter"``
         shows only the clicked series; ``"highlight"`` keeps every series but dims
@@ -72,7 +75,7 @@ def plot_date_range_kde_comparison(
         x scale are pinned to it, so the axis does not rescale when a series is
         filtered out. Defaults to auto-fitting the data.
     """
-    y_title = f"Manuscripts per {int(bin_width)}-year bin"
+    y_title = f"{count_noun} per {int(bin_width)}-year bin"
     x_scale = (
         alt.Scale(domain=list(x_domain)) if x_domain is not None else alt.Undefined
     )

@@ -25,13 +25,13 @@ import numpy as np
 import pandas as pd
 from IPython.display import display
 
-from inf_bp_texts import get_project_root
-from inf_bp_texts.analysis.validation_helpers import iqr_plotting_subset
-from inf_bp_texts.inference import load_recovery_results
-from inf_bp_texts.visualization import display_svg, save_chart
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf import find_project_root
+from bdpinf.analysis.validation_helpers import iqr_plotting_subset
+from bdpinf.inference import load_recovery_results
+from bdpinf.visualization import display_svg, save_chart
+from bdpinf.visualization.altair_theme import PTOLQUAL
 
-figures_dir = get_project_root() / "figures" / "validation" / "multi_epoch"
+figures_dir = find_project_root() / "figures" / "validation" / "multi_epoch"
 figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
@@ -43,7 +43,7 @@ This avoids sending single-epoch samples into a two-epoch fit, which would make 
 Simulation and fitting for this study (1000 replicates, full two-epoch
 process with distinct rates per epoch) are precomputed by
 `scripts/generate_recovery_studies.py --study multi_epoch_two_rate` --- see
-`inf_bp_texts.analysis.multi_epoch_recovery.run_two_rate_replicate` for the
+`bdpinf.analysis.multi_epoch_recovery.run_two_rate_replicate` for the
 per-replicate simulate+fit logic, including the "kept only if ages appear in
 each epoch" filter --- and persisted to
 `recovery_samples/multi_epoch_two_rate.npz`.
@@ -53,7 +53,7 @@ each epoch" filter --- and persisted to
 birth_rates_true = np.array([0.5, 0.7], dtype=float)
 death_rates_true = np.array([0.1, 0.15], dtype=float)
 
-recovery_samples_dir = get_project_root() / "recovery_samples"
+recovery_samples_dir = find_project_root() / "recovery_samples"
 loaded = load_recovery_results(recovery_samples_dir / "multi_epoch_two_rate.npz")
 results_df = loaded["results"]
 recovery_metadata = loaded["metadata"]

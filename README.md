@@ -1,8 +1,8 @@
-# inf-bp-texts
+# bdpinf
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![codecov](https://codecov.io/gh/jaycrick/inf-bp-texts/graph/badge.svg?token=5QNFKWSL7G)](https://codecov.io/gh/jaycrick/inf-bp-texts)
+[![codecov](https://codecov.io/gh/jaycrick/bdpinf/graph/badge.svg?token=5QNFKWSL7G)](https://codecov.io/gh/jaycrick/bdpinf)
 
 A Python platform for downloading New Testament manuscript data from the NTVMR API,
 running quality control and analysis, and fitting birth-death process models
@@ -20,7 +20,7 @@ Clone the repository and install dependencies:
 
 ```sh
 git clone <repository-url>
-cd inf-bp-texts
+cd bdpinf
 uv sync
 ```
 
@@ -32,17 +32,17 @@ uv sync --all-groups
 
 ## Quick Start
 
-Download and analyze manuscripts (the `inf-bp-texts` console script is installed by `uv sync`):
+Download and analyze manuscripts (the `bdpinf` console script is installed by `uv sync`):
 
 ```sh
-uv run inf-bp-texts ntvmr download-all
-uv run inf-bp-texts ntvmr analyze --manuscripts-dir manuscripts --output manuscript_analysis.csv
+uv run bdpinf ntvmr download-all
+uv run bdpinf ntvmr analyze --manuscripts-dir manuscripts --output manuscript_analysis.csv
 ```
 
 Run inference from cleaned data:
 
 ```sh
-uv run inf-bp-texts inference --input-csv manuscript_analysis_cleaned.csv --plot
+uv run bdpinf inference --input-csv manuscript_analysis_cleaned.csv --plot
 ```
 
 Render the research-notebook site (notebooks live under `qmd_scripts/`; output
@@ -115,7 +115,7 @@ batched matrix operations (`k @ A / N`, chunked einsum).
 Load samples for downstream use:
 
 ```python
-from inf_bp_texts.analysis import load_bootstrap_samples
+from bdpinf.analysis import load_bootstrap_samples
 
 result = load_bootstrap_samples("bootstrap_samples/full.npz")
 resampled_years = result["resampled_years"]  # int16 [100_000, 5833]

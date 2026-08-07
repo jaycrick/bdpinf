@@ -10,9 +10,11 @@ from .altair_theme import (
     PTOLQUAL,
     THEME_NAME,
     display_svg,
+    get_figure_dir,
     register_export_fonts,
     save_chart,
     save_chart_html,
+    set_figure_dir,
 )
 from .bayesian_plots import (
     PriorPosteriorPanel,
@@ -29,7 +31,6 @@ from .bayesian_plots import (
 )
 from .correlation_plots import correlation_heatmap_chart, posterior_rate_correlation
 from .date_distribution_plots import plot_date_range_kde_comparison
-from .era_shading import era_band_chart, year_to_century_coord
 from .parameter_plots import (
     BoxPlotStyle,
     KdePlotConfig,
@@ -64,7 +65,7 @@ __all__ = [
     "rate_ci_panel",
     "correlation_heatmap_chart",
     "display_svg",
-    "era_band_chart",
+    "get_figure_dir",
     "plot_creation_year_fit",
     "plot_date_range_kde_comparison",
     "posterior_rate_correlation",
@@ -77,8 +78,8 @@ __all__ = [
     "register_export_fonts",
     "save_chart",
     "save_chart_html",
+    "set_figure_dir",
     "trace_chart",
-    "year_to_century_coord",
     "compute_boxplot_summary",
     "create_kde_density_plot",
     "create_parameter_box_plot",

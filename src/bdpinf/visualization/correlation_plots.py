@@ -4,7 +4,7 @@
 correlation matrix from per-epoch posterior draws (or any other set of
 columns, e.g. section indicators). :func:`correlation_heatmap_chart` renders
 any such square, labelled correlation matrix as an Altair heatmap using the
-project's shared :data:`~inf_bp_texts.visualization.altair_theme.DIVERGING_RDBU`
+project's shared :data:`~bdpinf.visualization.altair_theme.DIVERGING_RDBU`
 palette, centred at zero with the numeric value overlaid on each cell.
 """
 
@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from inf_bp_texts.visualization.altair_theme import DIVERGING_RDBU
+from bdpinf.visualization.altair_theme import DIVERGING_RDBU
 
 
 def posterior_rate_correlation(
@@ -71,7 +71,7 @@ def correlation_heatmap_chart(
     """Render a square correlation matrix as a diverging heatmap with labels.
 
     Colour uses the shared
-    :data:`~inf_bp_texts.visualization.altair_theme.DIVERGING_RDBU` palette,
+    :data:`~bdpinf.visualization.altair_theme.DIVERGING_RDBU` palette,
     reversed so the domain ``[-1, 1]`` maps low-to-high against the palette's
     red-to-blue order (``+1`` blue, ``0`` white, ``-1`` red). The numeric
     value is overlaid on each cell, switching to white text on saturated cells

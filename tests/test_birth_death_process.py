@@ -8,7 +8,8 @@ import pandas as pd
 import pytest
 from numpy.testing import assert_array_equal
 
-from inf_bp_texts.models import BirthDeathProcess
+from bdpinf.process import BirthDeathProcess
+from bdpinf.visualization.genealogy import plot_genealogy_tree
 
 
 class TestBirthDeathProcessInit:
@@ -32,7 +33,7 @@ class TestBirthDeathProcessInit:
             not process.fitted
         )  # Not fitted since birth_rates and death_rates not provided
         assert process.fit_results is None
-        assert len(process.manuscript_ages) == 0
+        assert len(process.ages) == 0
 
     def test_custom_initialization(self) -> None:
         """Test initialization with custom parameters."""
@@ -53,7 +54,7 @@ class TestBirthDeathProcessInit:
 
         # Ages should be calculated on-demand
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
-        assert_array_equal(process.manuscript_ages, expected_ages)
+        assert_array_equal(process.ages, expected_ages)
 
     def test_adjusted_epoch_end_times_property(self) -> None:
         """Test adjusted epoch end times are shifted by start_time."""
@@ -74,18 +75,18 @@ class TestBirthDeathProcessInit:
             [300.0, 700.0, 1100.0],
         )
 
-    def test_add_manuscript(self) -> None:
-        """Test adding manuscripts."""
+    def test_add_individual(self) -> None:
+        """Test adding records."""
         process = BirthDeathProcess(creation_times=[], epoch_end_times=1000.0)
 
-        # Add manuscripts
+        # Add records
         creation_times = [100, 300, 700]
         for ct in creation_times:
-            process.add_manuscript(ct)
+            process.add_individual(ct)
 
         assert process.creation_times == creation_times
         expected_ages = np.array([900, 700, 300], dtype=np.float64)
-        assert_array_equal(process.manuscript_ages, expected_ages)
+        assert_array_equal(process.ages, expected_ages)
 
     def test_set_epoch_end_times(self) -> None:
         """Test setting epoch end times."""
@@ -94,49 +95,49 @@ class TestBirthDeathProcessInit:
 
         # Initially epoch end time is 1000, so ages should be calculated
         expected_initial_ages = np.array([900, 800, 700], dtype=np.float64)
-        assert_array_equal(process.manuscript_ages, expected_initial_ages)
+        assert_array_equal(process.ages, expected_initial_ages)
 
         # Update epoch end time using setter
         process.set_epoch_end_times(500)
         assert process.epoch_end_times[-1].item() == 500
 
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
-        assert_array_equal(process.manuscript_ages, expected_ages)
+        assert_array_equal(process.ages, expected_ages)
 
     def test_ages_calculated_on_demand(self) -> None:
         """Test that ages are calculated correctly on-demand when inputs change."""
         process = BirthDeathProcess(creation_times=[], epoch_end_times=1000.0)
 
-        # Add manuscripts and verify ages are calculated correctly
-        process.add_manuscript(100)
-        assert_array_equal(process.manuscript_ages, [900])
+        # Add records and verify ages are calculated correctly
+        process.add_individual(100)
+        assert_array_equal(process.ages, [900])
 
-        process.add_manuscript(300)
-        assert_array_equal(process.manuscript_ages, [900, 700])
+        process.add_individual(300)
+        assert_array_equal(process.ages, [900, 700])
 
         # Change epoch end time and verify ages are recalculated correctly
         process.set_epoch_end_times(1200)
-        assert_array_equal(process.manuscript_ages, [1100, 900])
+        assert_array_equal(process.ages, [1100, 900])
 
-    def test_manuscript_ages_values(self) -> None:
-        """Test manuscript_ages property values."""
+    def test_ages_values(self) -> None:
+        """Test ages property values."""
         process = BirthDeathProcess(creation_times=[100, 200, 300], epoch_end_times=500)
 
-        ages = process.manuscript_ages
+        ages = process.ages
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
         assert_array_equal(ages, expected_ages)
 
         # Verify multiple calls return consistent results
-        ages2 = process.manuscript_ages
+        ages2 = process.ages
         assert_array_equal(ages, ages2)
 
-    def test_manuscript_ages_property(self) -> None:
-        """Test manuscript_ages property returns expected values."""
+    def test_ages_property(self) -> None:
+        """Test ages property returns expected values."""
         process = BirthDeathProcess(creation_times=[100, 200, 300], epoch_end_times=500)
 
         expected_ages = np.array([400, 300, 200], dtype=np.float64)
-        assert_array_equal(process.manuscript_ages, expected_ages)
-        assert_array_equal(process.manuscript_ages, expected_ages)
+        assert_array_equal(process.ages, expected_ages)
+        assert_array_equal(process.ages, expected_ages)
 
     def test_get_process_summary(self) -> None:
         """Test process summary generation."""
@@ -150,14 +151,14 @@ class TestBirthDeathProcessInit:
 
         assert process.birth_rates.tolist() == [0.02]
         assert process.death_rates.tolist() == [0.005]
-        assert process.n_manuscripts == 4
+        assert process.n_individuals == 4
         assert process.epoch_end_times.tolist() == [1000.0]
         assert process.adjusted_epoch_end_times.tolist() == [1000.0]
         assert process.initial_population == 2
-        assert min(process.manuscript_ages) == 500.0  # 1000 - 500
-        assert max(process.manuscript_ages) == 900.0  # 1000 - 100
+        assert min(process.ages) == 500.0  # 1000 - 500
+        assert max(process.ages) == 900.0  # 1000 - 100
         assert (
-            float(jnp.mean(process.manuscript_ages)) == 725.0
+            float(jnp.mean(process.ages)) == 725.0
         )  # Mean of [900, 800, 700, 500] = 2900/4 = 725
 
     def test_initial_population_validation(self) -> None:
@@ -180,7 +181,7 @@ class TestBirthDeathProcessInit:
             )
 
     def test_empty_process_summary(self) -> None:
-        """Test summary with no manuscripts."""
+        """Test summary with no records."""
         process = BirthDeathProcess(
             creation_times=[],
             epoch_end_times=1000.0,
@@ -190,7 +191,7 @@ class TestBirthDeathProcessInit:
 
         assert process.birth_rates.tolist() == [0.01]
         assert process.death_rates.tolist() == [0.002]
-        assert process.n_manuscripts == 0
+        assert process.n_individuals == 0
         assert process.epoch_end_times.tolist() == [1000.0]
 
     def test_type_consistency(self) -> None:
@@ -211,14 +212,14 @@ class TestBirthDeathProcessInit:
         assert process.n_epochs == 1
         assert isinstance(process.creation_times, list)
 
-        # Test that manuscript_ages returns correct type
-        ages = process.manuscript_ages
+        # Test that ages returns correct type
+        ages = process.ages
         assert isinstance(ages, jax.Array)
         assert ages.dtype == jnp.float64
 
-    def test_manuscript_validation_on_epoch_end_time_update(self) -> None:
-        """Test that invalid manuscripts trigger validation on epoch updates."""
-        # Start with manuscripts that span before and after a future end time
+    def test_individual_validation_on_epoch_end_time_update(self) -> None:
+        """Test that invalid records trigger validation on epoch updates."""
+        # Start with records that span before and after a future end time
         creation_times = [100.0, 200.0, 300.0, 600.0, 800.0]
         initial_epoch_end_times = 1000.0
 
@@ -227,7 +228,7 @@ class TestBirthDeathProcessInit:
             epoch_end_times=initial_epoch_end_times,
         )
 
-        # Initially all manuscripts should be present
+        # Initially all records should be present
         assert len(process.creation_times) == 5
         assert process.creation_times == [100.0, 200.0, 300.0, 600.0, 800.0]
 
@@ -255,8 +256,8 @@ class TestBirthDeathProcessInit:
                 start_time=150.0,
             )
 
-    def test_add_manuscript_respects_start_time(self) -> None:
-        """Test add_manuscript validates manuscript time against start_time."""
+    def test_add_individual_respects_start_time(self) -> None:
+        """Test add_individual validates individual time against start_time."""
         process = BirthDeathProcess(
             creation_times=[200.0, 250.0],
             epoch_end_times=500.0,
@@ -267,7 +268,7 @@ class TestBirthDeathProcessInit:
             ValueError,
             match="creation_time must be greater than or equal to start_time",
         ):
-            process.add_manuscript(100.0)
+            process.add_individual(100.0)
 
     def test_vector_epoch_times_and_rates(self) -> None:
         """Test vector epoch end times and vector rates with matching lengths."""
@@ -296,7 +297,7 @@ class TestBirthDeathProcessGenealogy:
         return pd.DataFrame(
             [
                 {
-                    "manuscript_id": 0,
+                    "individual_id": 0,
                     "parent_id": None,
                     "creation_time": 0.0,
                     "death_time": 2.5,
@@ -306,7 +307,7 @@ class TestBirthDeathProcessGenealogy:
                     "lifespan": 2.5,
                 },
                 {
-                    "manuscript_id": 1,
+                    "individual_id": 1,
                     "parent_id": 0,
                     "creation_time": 1.0,
                     "death_time": 6.0,
@@ -316,7 +317,7 @@ class TestBirthDeathProcessGenealogy:
                     "lifespan": 5.0,
                 },
                 {
-                    "manuscript_id": 2,
+                    "individual_id": 2,
                     "parent_id": 0,
                     "creation_time": 2.0,
                     "death_time": np.nan,
@@ -326,7 +327,7 @@ class TestBirthDeathProcessGenealogy:
                     "lifespan": np.nan,
                 },
                 {
-                    "manuscript_id": 3,
+                    "individual_id": 3,
                     "parent_id": 1,
                     "creation_time": 3.0,
                     "death_time": np.nan,
@@ -336,7 +337,7 @@ class TestBirthDeathProcessGenealogy:
                     "lifespan": np.nan,
                 },
                 {
-                    "manuscript_id": 4,
+                    "individual_id": 4,
                     "parent_id": 1,
                     "creation_time": 4.0,
                     "death_time": 9.0,
@@ -349,7 +350,7 @@ class TestBirthDeathProcessGenealogy:
         )
 
     def test_genealogy_dfs_order_marks_first_survivor_as_spine(self) -> None:
-        process = BirthDeathProcess.from_manuscript_records(
+        process = BirthDeathProcess.from_records(
             self._sample_genealogy_records(),
             epoch_end_times=10.0,
             start_time=0.0,
@@ -357,20 +358,20 @@ class TestBirthDeathProcessGenealogy:
 
         order = process.genealogy_dfs_order()
 
-        assert order["manuscript_id"].tolist() == [0, 2, 1, 4, 3]
+        assert order["individual_id"].tolist() == [0, 2, 1, 4, 3]
         assert order["dfs_index"].tolist() == [0, 1, 2, 3, 4]
-        assert order.loc[order["is_spine"], "manuscript_id"].tolist() == [2]
-        assert order.loc[order["manuscript_id"] == 2, "plot_death_time"].item() == 10.0
-        assert order.loc[order["manuscript_id"] == 0, "plot_death_time"].item() == 2.5
+        assert order.loc[order["is_spine"], "individual_id"].tolist() == [2]
+        assert order.loc[order["individual_id"] == 2, "plot_death_time"].item() == 10.0
+        assert order.loc[order["individual_id"] == 0, "plot_death_time"].item() == 2.5
 
     def test_plot_genealogy_tree_builds_layered_rule_chart(self) -> None:
-        process = BirthDeathProcess.from_manuscript_records(
+        process = BirthDeathProcess.from_records(
             self._sample_genealogy_records(),
             epoch_end_times=10.0,
             start_time=0.0,
         )
 
-        chart = process.plot_genealogy_tree()
+        chart = plot_genealogy_tree(process)
 
         assert isinstance(chart, alt.LayerChart)
         spec = chart.to_dict()
@@ -378,7 +379,7 @@ class TestBirthDeathProcessGenealogy:
         assert lifetimes["mark"]["type"] == "rule"
         assert connectors["mark"]["type"] == "rule"
 
-        # y axis labelled by manuscript_id in DFS order (root 0 on top), the same
+        # y axis labelled by individual_id in DFS order (root 0 on top), the same
         # ordering the previous Plotly ticktext produced.
         assert lifetimes["encoding"]["y"]["scale"]["domain"] == [
             "0",
@@ -400,18 +401,15 @@ class TestBirthDeathProcessGenealogy:
     def test_genealogy_helpers_require_records(self) -> None:
         process = BirthDeathProcess(creation_times=[1.0], epoch_end_times=10.0)
 
-        with pytest.raises(ValueError, match="requires manuscript_records"):
+        with pytest.raises(ValueError, match="requires records"):
             process.genealogy_dfs_order()
-
-        with pytest.raises(ValueError, match="requires manuscript_records"):
-            process.plot_genealogy_tree()
 
     def test_rejects_child_born_before_parent(self) -> None:
         records = self._sample_genealogy_records()
-        records.loc[records["manuscript_id"] == 1, "creation_time"] = -1.0
+        records.loc[records["individual_id"] == 1, "creation_time"] = -1.0
 
         with pytest.raises(ValueError, match="not after parent"):
-            BirthDeathProcess.from_manuscript_records(
+            BirthDeathProcess.from_records(
                 records,
                 epoch_end_times=10.0,
                 start_time=0.0,
@@ -419,10 +417,10 @@ class TestBirthDeathProcessGenealogy:
 
     def test_rejects_child_born_after_parent_death(self) -> None:
         records = self._sample_genealogy_records()
-        records.loc[records["manuscript_id"] == 1, "creation_time"] = 3.0
+        records.loc[records["individual_id"] == 1, "creation_time"] = 3.0
 
         with pytest.raises(ValueError, match="not before parent"):
-            BirthDeathProcess.from_manuscript_records(
+            BirthDeathProcess.from_records(
                 records,
                 epoch_end_times=10.0,
                 start_time=0.0,
@@ -437,7 +435,7 @@ class TestBirthDeathProcessNewick:
         return pd.DataFrame(
             [
                 {
-                    "manuscript_id": 1,
+                    "individual_id": 1,
                     "parent_id": 0,
                     "creation_time": 2.0,
                     "death_time": 6.0,
@@ -447,7 +445,7 @@ class TestBirthDeathProcessNewick:
                     "lifespan": 4.0,
                 },
                 {
-                    "manuscript_id": 0,
+                    "individual_id": 0,
                     "parent_id": None,
                     "creation_time": 0.0,
                     "death_time": np.nan,
@@ -460,7 +458,7 @@ class TestBirthDeathProcessNewick:
         )
 
     def test_to_newick_exports_deterministic_tree(self) -> None:
-        process = BirthDeathProcess.from_manuscript_records(
+        process = BirthDeathProcess.from_records(
             self._sample_newick_records(),
             epoch_end_times=10.0,
             start_time=0.0,
@@ -468,10 +466,10 @@ class TestBirthDeathProcessNewick:
 
         assert process.to_newick() == "((((1:4.0):0,(0:8.0):0):8.0):0):0.0;"
 
-    def test_to_newick_requires_manuscript_records(self) -> None:
+    def test_to_newick_requires_records(self) -> None:
         process = BirthDeathProcess(creation_times=[1.0], epoch_end_times=10.0)
 
-        with pytest.raises(ValueError, match="requires manuscript_records"):
+        with pytest.raises(ValueError, match="requires records"):
             process.to_newick()
 
 
@@ -518,12 +516,12 @@ class TestBirthDeathProcessFactories:
         assert process.death_rates is not None
         assert process.birth_rates[0].item() == pytest.approx(0.05)
 
-    def test_from_manuscript_records_creates_correct_epoch_structure(self) -> None:
-        """from_manuscript_records filters to survivors and stores records."""
+    def test_from_records_creates_correct_epoch_structure(self) -> None:
+        """from_records filters to survivors and stores records."""
         T = 600.0
         records = pd.DataFrame(
             {
-                "manuscript_id": [1, 2, 3, 4],
+                "individual_id": [1, 2, 3, 4],
                 "parent_id": [None, 1, 1, 2],
                 "creation_time": [0.0, 100.0, 200.0, 300.0],
                 "death_time": [T, T, 400.0, T],
@@ -533,18 +531,18 @@ class TestBirthDeathProcessFactories:
                 "lifespan": [T, T - 100.0, 200.0, T - 300.0],
             }
         )
-        process = BirthDeathProcess.from_manuscript_records(
+        process = BirthDeathProcess.from_records(
             records,
             epoch_end_times=T,
             birth_rates=0.01,
             death_rates=0.003,
         )
-        # Only survivors (3 of 4 manuscripts) contribute creation_times
+        # Only survivors (3 of 4 records) contribute creation_times
         assert len(process.creation_times) == 3
         assert sorted(process.creation_times) == pytest.approx([0.0, 100.0, 300.0])
-        # manuscript_records stores all records (survived + dead)
-        assert process.manuscript_records is not None
-        assert len(process.manuscript_records) == 4
+        # records stores all records (survived + dead)
+        assert process.records is not None
+        assert len(process.records) == 4
         # epoch structure
         assert len(process.epoch_end_times) == 1
         assert float(process.epoch_end_times[0]) == pytest.approx(T)

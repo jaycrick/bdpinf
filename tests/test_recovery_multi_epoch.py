@@ -13,11 +13,11 @@ from typing import Any
 import numpy as np
 import pytest
 
-from inf_bp_texts.inference.fitting import (
+from bdpinf.inference.fitting import (
     ParameterConstraints,
     fit_birth_death_processes,
 )
-from inf_bp_texts.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death_process
 
 _MIN_SURVIVORS = 15
 _MAX_SEEDS = 20
@@ -36,7 +36,7 @@ def _simulate_two_epoch(
         times=_TIMES,
         random_seed=seed,
     )
-    surviving = df.surviving_manuscripts
+    surviving = df.surviving_records
     if surviving is None or len(surviving) < _MIN_SURVIVORS:
         return None
     return surviving["age"].to_numpy(dtype=np.float64)

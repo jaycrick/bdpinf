@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
-from inf_bp_texts import utils
+from bdpinf import utils
 
 
 class TestJsonSafe:

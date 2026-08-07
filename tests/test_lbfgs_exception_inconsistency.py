@@ -4,9 +4,9 @@ import time
 
 import numpy as np
 
-from inf_bp_texts.inference import ConvergenceConfig
-from inf_bp_texts.inference.fitting import fit_birth_death_processes
-from inf_bp_texts.simulation import simulate_bdp_ages_from_distributions
+from bdpinf.inference import ConvergenceConfig
+from bdpinf.inference.fitting import fit_birth_death_processes
+from bdpinf.simulation import simulate_bdp_ages_from_distributions
 
 
 class TestLbfgsExceptionInconsistency:

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from inf_bp_texts.visualization.plotting import (
+from bdpinf.visualization.plotting import (
     compute_consistency_bands,
     plot_parameter_consistency,
 )

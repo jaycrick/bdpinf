@@ -1,15 +1,15 @@
-"""Unit tests for the likelihood fns in the inf_bp_texts.inference.likelihood module."""
+"""Unit tests for the likelihood fns in the bdpinf.inference.likelihood module."""
 
 import jax
 import jax.numpy as jnp
 import pytest
 
-from inf_bp_texts.inference import (
+from bdpinf.inference import (
     calculate_unknown_spine_mixture_age_density,
     calculate_unknown_spine_mixture_birth_density,
     likelihood,
 )
-from inf_bp_texts.models.math_ages import (
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
@@ -261,14 +261,14 @@ class TestLikelihood:
         death_rates = jnp.array([0.2], dtype=jnp.float64)
         age_grid = jnp.array([0.0, 0.5, 1.5, 2.5], dtype=jnp.float64)
         times = jnp.array([3.0], dtype=jnp.float64)
-        num_manuscripts = 4
+        num_individuals = 4
 
         result = calculate_unknown_spine_mixture_age_density(
             birth_rates=birth_rates,
             death_rates=death_rates,
             age_grid=age_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         expected_values = []
@@ -291,8 +291,8 @@ class TestLikelihood:
                 ),
             )
             expected_values.append(
-                ((num_manuscripts - 1) * non_spine_density + spine_density)
-                / num_manuscripts,
+                ((num_individuals - 1) * non_spine_density + spine_density)
+                / num_individuals,
             )
 
         expected = jnp.stack(expected_values)
@@ -300,14 +300,14 @@ class TestLikelihood:
         assert bool(jnp.allclose(result, expected))
 
     def test_unknown_spine_mixture_age_density_rejects_nonpositive_n(self) -> None:
-        """Test the helper rejects invalid manuscript counts."""
+        """Test the helper rejects invalid individual counts."""
         with pytest.raises(ValueError):
             calculate_unknown_spine_mixture_age_density(
                 birth_rates=jnp.array([0.5], dtype=jnp.float64),
                 death_rates=jnp.array([0.2], dtype=jnp.float64),
                 age_grid=jnp.array([0.5], dtype=jnp.float64),
                 times=jnp.array([3.0], dtype=jnp.float64),
-                num_manuscripts=0,
+                num_individuals=0,
             )
 
     def test_log_likelihood_unknown_spine_formula_equivalence(self) -> None:
@@ -435,7 +435,7 @@ class TestLikelihood:
         birth_rates = jnp.array([0.5], dtype=jnp.float64)
         death_rates = jnp.array([0.2], dtype=jnp.float64)
         times = jnp.array([3.0], dtype=jnp.float64)
-        num_manuscripts = 5
+        num_individuals = 5
 
         T = float(times[-1])
         birth_time_grid = jnp.array([0.1, 0.5, 1.0, 1.5, 2.0, 2.5], dtype=jnp.float64)
@@ -445,7 +445,7 @@ class TestLikelihood:
             death_rates=death_rates,
             birth_time_grid=birth_time_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         age_grid = T - birth_time_grid
@@ -454,7 +454,7 @@ class TestLikelihood:
             death_rates=death_rates,
             age_grid=age_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         # age_grid[i] = T - birth_time_grid[i], so age_density[i] == birth_density[i]
@@ -465,7 +465,7 @@ class TestLikelihood:
         birth_rates = jnp.array([0.6], dtype=jnp.float64)
         death_rates = jnp.array([0.15], dtype=jnp.float64)
         times = jnp.array([2.5], dtype=jnp.float64)
-        num_manuscripts = 3
+        num_individuals = 3
         T = float(times[-1])
 
         b = 1.0
@@ -478,7 +478,7 @@ class TestLikelihood:
             death_rates=death_rates,
             birth_time_grid=birth_time_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         age_dens = calculate_unknown_spine_mixture_age_density(
@@ -486,7 +486,7 @@ class TestLikelihood:
             death_rates=death_rates,
             age_grid=age_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         assert bool(jnp.isclose(birth_dens[0], age_dens[0], rtol=1e-6))
@@ -499,7 +499,7 @@ class TestLikelihood:
                 death_rates=jnp.array([0.2], dtype=jnp.float64),
                 birth_time_grid=jnp.array([-0.5], dtype=jnp.float64),
                 times=jnp.array([3.0], dtype=jnp.float64),
-                num_manuscripts=5,
+                num_individuals=5,
             )
 
     def test_birth_density_rejects_birth_times_beyond_T(self) -> None:
@@ -511,31 +511,31 @@ class TestLikelihood:
                 death_rates=jnp.array([0.2], dtype=jnp.float64),
                 birth_time_grid=jnp.array([T + 0.5], dtype=jnp.float64),
                 times=jnp.array([T], dtype=jnp.float64),
-                num_manuscripts=5,
+                num_individuals=5,
             )
 
-    def test_birth_density_rejects_nonpositive_num_manuscripts(self) -> None:
-        """Test that birth density rejects invalid manuscript counts."""
+    def test_birth_density_rejects_nonpositive_num_individuals(self) -> None:
+        """Test that birth density rejects invalid individual counts."""
         with pytest.raises(
-            ValueError, match="num_manuscripts must be a positive integer"
+            ValueError, match="num_individuals must be a positive integer"
         ):
             calculate_unknown_spine_mixture_birth_density(
                 birth_rates=jnp.array([0.5], dtype=jnp.float64),
                 death_rates=jnp.array([0.2], dtype=jnp.float64),
                 birth_time_grid=jnp.array([1.0], dtype=jnp.float64),
                 times=jnp.array([3.0], dtype=jnp.float64),
-                num_manuscripts=0,
+                num_individuals=0,
             )
 
         with pytest.raises(
-            ValueError, match="num_manuscripts must be a positive integer"
+            ValueError, match="num_individuals must be a positive integer"
         ):
             calculate_unknown_spine_mixture_birth_density(
                 birth_rates=jnp.array([0.5], dtype=jnp.float64),
                 death_rates=jnp.array([0.2], dtype=jnp.float64),
                 birth_time_grid=jnp.array([1.0], dtype=jnp.float64),
                 times=jnp.array([3.0], dtype=jnp.float64),
-                num_manuscripts=-3,
+                num_individuals=-3,
             )
 
     def test_birth_density_non_negative(self) -> None:
@@ -543,7 +543,7 @@ class TestLikelihood:
         birth_rates = jnp.array([0.4], dtype=jnp.float64)
         death_rates = jnp.array([0.25], dtype=jnp.float64)
         times = jnp.array([4.0], dtype=jnp.float64)
-        num_manuscripts = 8
+        num_individuals = 8
 
         birth_time_grid = jnp.linspace(0, float(times[-1]), 20, dtype=jnp.float64)
 
@@ -552,7 +552,7 @@ class TestLikelihood:
             death_rates=death_rates,
             birth_time_grid=birth_time_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         assert bool(jnp.all(birth_density >= 0)), "Birth density should be non-negative"
@@ -562,7 +562,7 @@ class TestLikelihood:
         birth_rates = jnp.array([0.5], dtype=jnp.float64)
         death_rates = jnp.array([0.2], dtype=jnp.float64)
         times = jnp.array([3.0], dtype=jnp.float64)
-        num_manuscripts = 5
+        num_individuals = 5
 
         for grid_size in [1, 5, 10, 50]:
             birth_time_grid = jnp.linspace(
@@ -577,7 +577,7 @@ class TestLikelihood:
                 death_rates=death_rates,
                 birth_time_grid=birth_time_grid,
                 times=times,
-                num_manuscripts=num_manuscripts,
+                num_individuals=num_individuals,
             )
 
             assert birth_density.shape == birth_time_grid.shape, (
@@ -590,14 +590,14 @@ class TestLikelihood:
         death_rates = jnp.array([0.18], dtype=jnp.float64)
         birth_time_grid = jnp.array([0.5, 1.0, 1.5], dtype=jnp.float64)
         times = jnp.array([2.0], dtype=jnp.float64)
-        num_manuscripts = 4
+        num_individuals = 4
 
         result1 = calculate_unknown_spine_mixture_birth_density(
             birth_rates=birth_rates,
             death_rates=death_rates,
             birth_time_grid=birth_time_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         result2 = calculate_unknown_spine_mixture_birth_density(
@@ -605,13 +605,13 @@ class TestLikelihood:
             death_rates=death_rates,
             birth_time_grid=birth_time_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         assert bool(jnp.allclose(result1, result2))
 
-    def test_birth_density_with_single_manuscript(self) -> None:
-        """Test birth density with num_manuscripts=1 (degenerate case)."""
+    def test_birth_density_with_single_individual(self) -> None:
+        """Test birth density with num_individuals=1 (degenerate case)."""
         birth_rates = jnp.array([0.5], dtype=jnp.float64)
         death_rates = jnp.array([0.2], dtype=jnp.float64)
         birth_time_grid = jnp.array([0.5, 1.0, 1.5], dtype=jnp.float64)
@@ -622,7 +622,7 @@ class TestLikelihood:
             death_rates=death_rates,
             birth_time_grid=birth_time_grid,
             times=times,
-            num_manuscripts=1,
+            num_individuals=1,
         )
 
         assert birth_density.shape == birth_time_grid.shape
@@ -632,7 +632,7 @@ class TestLikelihood:
         """Test birth density consistency when evaluated at same points over different time ranges."""
         birth_rates = jnp.array([0.6], dtype=jnp.float64)
         death_rates = jnp.array([0.3], dtype=jnp.float64)
-        num_manuscripts = 5
+        num_individuals = 5
 
         times1 = jnp.array([4.0], dtype=jnp.float64)
         birth_time_grid1 = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float64)
@@ -645,7 +645,7 @@ class TestLikelihood:
             death_rates=death_rates,
             birth_time_grid=birth_time_grid1,
             times=times1,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         result2 = calculate_unknown_spine_mixture_birth_density(
@@ -653,7 +653,7 @@ class TestLikelihood:
             death_rates=death_rates,
             birth_time_grid=birth_time_grid2,
             times=times2,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         assert bool(jnp.all(result1 >= 0))
@@ -667,7 +667,7 @@ class TestLikelihood:
         death_rates = jnp.array([0.2], dtype=jnp.float64)
         T = 3.0
         times = jnp.array([T], dtype=jnp.float64)
-        num_manuscripts = 6
+        num_individuals = 6
 
         birth_time_grid = jnp.array([0.0, T], dtype=jnp.float64)
 
@@ -676,7 +676,7 @@ class TestLikelihood:
             death_rates=death_rates,
             birth_time_grid=birth_time_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         assert bool(jnp.all(jnp.isfinite(birth_density)))
@@ -686,14 +686,14 @@ class TestLikelihood:
         """Test that birth density works with both scalar and tensor rate inputs."""
         birth_time_grid = jnp.array([0.5, 1.0, 1.5], dtype=jnp.float64)
         times = jnp.array([2.0], dtype=jnp.float64)
-        num_manuscripts = 4
+        num_individuals = 4
 
         result_scalar = calculate_unknown_spine_mixture_birth_density(
             birth_rates=0.5,
             death_rates=0.2,
             birth_time_grid=birth_time_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         result_tensor = calculate_unknown_spine_mixture_birth_density(
@@ -701,7 +701,7 @@ class TestLikelihood:
             death_rates=jnp.array([0.2], dtype=jnp.float64),
             birth_time_grid=birth_time_grid,
             times=times,
-            num_manuscripts=num_manuscripts,
+            num_individuals=num_individuals,
         )
 
         assert bool(jnp.allclose(result_scalar, result_tensor))
@@ -723,7 +723,7 @@ class TestMixtureDensityNormalization:
             death_rates=death_rates,
             age_grid=age_grid,
             times=times,
-            num_manuscripts=5,
+            num_individuals=5,
         )
 
         assert density.shape == (n_grid,)
@@ -745,13 +745,13 @@ class TestMixtureDensityNormalization:
             death_rates=death_rates,
             age_grid=age_grid,
             times=times,
-            num_manuscripts=3,
+            num_individuals=3,
         )
         density_birth = calculate_unknown_spine_mixture_birth_density(
             birth_rates=birth_rates,
             death_rates=death_rates,
             birth_time_grid=birth_time_grid,
             times=times,
-            num_manuscripts=3,
+            num_individuals=3,
         )
         assert bool(jnp.allclose(density_age, density_birth, atol=1e-8))

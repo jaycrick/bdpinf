@@ -137,7 +137,7 @@ reference:
   - title: Utilities
     desc: Project-path resolution helper used by notebooks and scripts.
     contents:
-      - get_project_root
+      - find_project_root
 
 # Site URL
 # --------
@@ -165,10 +165,10 @@ jupyter: python3
 # CLI Documentation
 # -----------------
 # great-docs's CLI doc generator targets raw click.Command objects, not
-# typer.Typer instances directly. inf_bp_texts.cli:click_app is a small shim
+# typer.Typer instances directly. bdpinf.cli:click_app is a small shim
 # (typer.main.get_command(app)) that exposes the Typer app as a Click command
 # for this purpose. See docs/design/DOCS_TOOLING_EVALUATION.md.
 cli:
   enabled: true
-  module: inf_bp_texts.cli
+  module: bdpinf.cli
   name: click_app

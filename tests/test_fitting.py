@@ -12,9 +12,9 @@ import optax
 import pandas as pd
 import pytest
 
-from inf_bp_texts.inference import ConvergenceConfig
-from inf_bp_texts.inference import uncertainty as uncertainty_module
-from inf_bp_texts.inference.fitting import (
+from bdpinf.inference import ConvergenceConfig
+from bdpinf.inference import uncertainty as uncertainty_module
+from bdpinf.inference.fitting import (
     OptimizerAttemptResult,
     OptimizerRunResult,
     OptimizerStrategy,
@@ -30,9 +30,9 @@ from inf_bp_texts.inference.fitting import (
     fit_birth_death_processes,
     fit_from_data_frame,
 )
-from inf_bp_texts.inference.likelihood import negative_log_likelihood
-from inf_bp_texts.models import BirthDeathProcess
-from inf_bp_texts.models.validation import _validate_times_properties
+from bdpinf.inference.likelihood import negative_log_likelihood
+from bdpinf.models.validation import _validate_times_properties
+from bdpinf.process import BirthDeathProcess
 
 
 class TestFittingHelpers:
@@ -191,7 +191,7 @@ class TestFitting:
             assert result["death_rates"] > 0
 
     def test_fit_from_data_frame_individual_records(self) -> None:
-        """Test fitting with individual manuscript records."""
+        """Test fitting with individual individual records."""
         ages = []
         for age, count in [(100.0, 5), (200.0, 3), (300.0, 2), (400.0, 1)]:
             ages.extend([age] * count)
@@ -300,7 +300,7 @@ class TestFitting:
             )
 
         monkeypatch.setattr(
-            "inf_bp_texts.inference.fitting._run_optimizer_strategies",
+            "bdpinf.inference.fitting._run_optimizer_strategies",
             fake_run_optimizer_strategies,
         )
 
@@ -336,7 +336,7 @@ class TestFitting:
             epoch_end_times=1000.0,
         )
 
-        ages = process.manuscript_ages
+        ages = process.ages
         result = fit_birth_death_processes([ages], process.epoch_end_times[-1])
 
         assert result["success"]
@@ -351,12 +351,12 @@ class TestFitting:
         """Test fitting with custom age column name."""
         df = pd.DataFrame(
             {
-                "manuscript_age": [100.0, 200.0, 300.0, 400.0],
+                "creation_age": [100.0, 200.0, 300.0, 400.0],
                 "frequency": [1.0, 1.0, 1.0, 1.0],
             },
         )
 
-        result = fit_from_data_frame(df, age_column="manuscript_age", times=1000.0)
+        result = fit_from_data_frame(df, age_column="creation_age", times=1000.0)
 
         assert isinstance(result, dict)
         assert result["success"]
@@ -369,14 +369,14 @@ class TestFitting:
             epoch_end_times=500.0,
         )
 
-        original_ages = np.array(process.manuscript_ages)
+        original_ages = np.array(process.ages)
         original_creation_times = process.creation_times.copy()
         original_epoch_end_times = np.array(process.epoch_end_times)
 
         df = pd.DataFrame({"age": [100.0, 200.0, 300.0], "count": [1.0, 1.0, 1.0]})
         result = fit_from_data_frame(df, age_column="age", times=1000.0)
 
-        np.testing.assert_array_equal(np.array(process.manuscript_ages), original_ages)
+        np.testing.assert_array_equal(np.array(process.ages), original_ages)
         assert process.creation_times == original_creation_times
         np.testing.assert_array_equal(
             np.array(process.epoch_end_times), original_epoch_end_times
@@ -542,7 +542,7 @@ class TestConvergenceFlags:
             return sentinel_covariance
 
         monkeypatch.setattr(
-            "inf_bp_texts.inference.fitting.estimate_mle_covariance",
+            "bdpinf.inference.fitting.estimate_mle_covariance",
             fake_estimate_uncertainty,
         )
 
@@ -571,7 +571,7 @@ class TestConvergenceFlags:
             return np.eye(2, dtype=np.float64)
 
         monkeypatch.setattr(
-            "inf_bp_texts.inference.fitting.estimate_mle_covariance",
+            "bdpinf.inference.fitting.estimate_mle_covariance",
             fake_estimate_uncertainty,
         )
 
@@ -854,9 +854,9 @@ class TestFittingDiagnostics:
             )
 
         df = pd.read_csv(data_file)
-        manuscripts_with_dates = df.dropna(subset=["earlyYear", "lateYear"]).copy()
-        manuscripts_with_dates["midYear"] = (
-            manuscripts_with_dates["earlyYear"] + manuscripts_with_dates["lateYear"]
+        individuals_with_dates = df.dropna(subset=["earlyYear", "lateYear"]).copy()
+        individuals_with_dates["midYear"] = (
+            individuals_with_dates["earlyYear"] + individuals_with_dates["lateYear"]
         ) / 2
 
         epochs = [
@@ -870,18 +870,18 @@ class TestFittingDiagnostics:
 
         all_ages: list[float] = []
         for start_time, end_time in epochs:
-            manuscripts_epoch = manuscripts_with_dates[
-                (manuscripts_with_dates["midYear"] >= start_time)
-                & (manuscripts_with_dates["midYear"] < end_time)
+            individuals_epoch = individuals_with_dates[
+                (individuals_with_dates["midYear"] >= start_time)
+                & (individuals_with_dates["midYear"] < end_time)
             ].copy()
-            if len(manuscripts_epoch) == 0:
+            if len(individuals_epoch) == 0:
                 continue
 
             model = BirthDeathProcess(
-                creation_times=manuscripts_epoch["midYear"].tolist(),
+                creation_times=individuals_epoch["midYear"].tolist(),
                 epoch_end_times=end_time,
             )
-            all_ages.extend(model.manuscript_ages)
+            all_ages.extend(model.ages)
 
         assert len(all_ages) > 0, "No ages prepared from epoch split"
 
@@ -990,20 +990,19 @@ class TestFittingDiagnostics:
             )
 
     def test_actual_fit(self) -> None:
-        """Test that the full fitting function can run on the realistic dataset."""
+        """Test that the full fitting function can run on a realistic dataset."""
         project_root = Path(__file__).resolve().parents[1]
         data_file = project_root / "manuscript_analysis_cleaned.csv"
-        if data_file.exists():
-            df = pd.read_csv(data_file)
-        else:
-            pytest.fail(f"Expected data file not found: {data_file}")
+        if not data_file.exists():
+            pytest.skip(f"Diagnostic dataset not available: {data_file}")
+        df = pd.read_csv(data_file)
 
-        manuscripts_with_dates = df.dropna(subset=["earlyYear", "lateYear"]).copy()
-        manuscripts_with_dates["midYear"] = (
-            manuscripts_with_dates["earlyYear"] + manuscripts_with_dates["lateYear"]
+        individuals_with_dates = df.dropna(subset=["earlyYear", "lateYear"]).copy()
+        individuals_with_dates["midYear"] = (
+            individuals_with_dates["earlyYear"] + individuals_with_dates["lateYear"]
         ) / 2
-        manuscripts_with_dates["dateRange"] = (
-            manuscripts_with_dates["lateYear"] - manuscripts_with_dates["earlyYear"]
+        individuals_with_dates["dateRange"] = (
+            individuals_with_dates["lateYear"] - individuals_with_dates["earlyYear"]
         )
 
         epochs = [
@@ -1018,18 +1017,18 @@ class TestFittingDiagnostics:
         all_ages = []
 
         for start_time, end_time, _period_name in epochs:
-            manuscripts_epoch = manuscripts_with_dates[
-                (manuscripts_with_dates["midYear"] >= start_time)
-                & (manuscripts_with_dates["midYear"] < end_time)
+            individuals_epoch = individuals_with_dates[
+                (individuals_with_dates["midYear"] >= start_time)
+                & (individuals_with_dates["midYear"] < end_time)
             ].copy()
 
-            if len(manuscripts_epoch) > 0:
-                creation_times = manuscripts_epoch["midYear"].tolist()
+            if len(individuals_epoch) > 0:
+                creation_times = individuals_epoch["midYear"].tolist()
                 model = BirthDeathProcess(
                     creation_times=creation_times,
                     epoch_end_times=end_time,
                 )
-                ages = model.manuscript_ages
+                ages = model.ages
                 all_ages.extend(ages)
 
         epoch_ages_list = [np.array(all_ages)]

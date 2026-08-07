@@ -25,13 +25,13 @@ import numpy as np
 import pandas as pd
 from IPython.display import display
 
-from inf_bp_texts import get_project_root
-from inf_bp_texts.analysis import iqr_plotting_subset
-from inf_bp_texts.inference import load_recovery_results
-from inf_bp_texts.visualization import display_svg, save_chart
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf import find_project_root
+from bdpinf.analysis import iqr_plotting_subset
+from bdpinf.inference import load_recovery_results
+from bdpinf.visualization import display_svg, save_chart
+from bdpinf.visualization.altair_theme import PTOLQUAL
 
-figures_dir = get_project_root() / "figures" / "validation" / "multi_epoch"
+figures_dir = find_project_root() / "figures" / "validation" / "multi_epoch"
 figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
@@ -43,7 +43,7 @@ This prevents a two-epoch fit from being applied to samples that live entirely o
 Simulation and fitting for this study (1000 replicates, single-rate
 generative data fit with a two-epoch model) are precomputed by
 `scripts/generate_recovery_studies.py --study multi_epoch_single_rate` --- see
-`inf_bp_texts.analysis.multi_epoch_recovery.run_single_rate_replicate` for the
+`bdpinf.analysis.multi_epoch_recovery.run_single_rate_replicate` for the
 per-replicate simulate+fit logic --- and persisted to
 `recovery_samples/multi_epoch_single_rate.npz`.
 
@@ -55,7 +55,7 @@ death_rate = birth_rate - 0.4
 birth_rates_true = np.array([birth_rate, birth_rate], dtype=float)
 death_rates_true = np.array([death_rate, death_rate], dtype=float)
 
-recovery_samples_dir = get_project_root() / "recovery_samples"
+recovery_samples_dir = find_project_root() / "recovery_samples"
 loaded = load_recovery_results(recovery_samples_dir / "multi_epoch_single_rate.npz")
 results_df = loaded["results"]
 recovery_metadata = loaded["metadata"]

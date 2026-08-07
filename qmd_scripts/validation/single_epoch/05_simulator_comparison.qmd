@@ -40,7 +40,7 @@ The level grid and $R$ are **precomputed once per regime outside the timed bench
 so grid-selection cost does not inflate the splitting runtime comparison.
 
 **Spine labelling caveat.** The contour simulator marks the earliest-created surviving
-manuscript as the spine, while the splitting method marks `alive_ids[0]`
+individual as the spine, while the splitting method marks `alive_ids[0]`
 (insertion order).
 Both select a single surviving lineage; the visual difference is
 expected to be small.
@@ -57,28 +57,28 @@ from IPython.display import display
 from joblib import Parallel, delayed
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
-from inf_bp_texts import get_project_root
-from inf_bp_texts.analysis import (
+from bdpinf import find_project_root
+from bdpinf.analysis import (
     boundary_corrected_kde_on_support,
     proportion_not_at_upper,
     theoretical_age_density,
 )
-from inf_bp_texts.models.math_ages import (
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.models.math_extinction import calculate_extinction_pr
-from inf_bp_texts.simulation import (
+from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.simulation import (
     SplittingConfig,
     select_level_times_for_band,
     simulate_birth_death_process_from_contour_process,
     simulate_subcritical_survival_splitting,
 )
-from inf_bp_texts.utils import derive_worker_seeds
-from inf_bp_texts.visualization import save_chart
-from inf_bp_texts.visualization.altair_theme import PTOLQUAL
+from bdpinf.utils import derive_worker_seeds
+from bdpinf.visualization import save_chart
+from bdpinf.visualization.altair_theme import PTOLQUAL
 
-figures_dir = get_project_root() / "figures" / "validation" / "single_epoch"
+figures_dir = find_project_root() / "figures" / "validation" / "single_epoch"
 figures_dir.mkdir(parents=True, exist_ok=True)
 ```
 
@@ -90,7 +90,7 @@ def extract_ages_from_process(
     terminal_time: float,
 ) -> tuple[float | None, np.ndarray]:
     """Return (spine_age or None, finite non-spine ages) from a BirthDeathProcess."""
-    records = process.manuscript_records
+    records = process.records
     if records is None or len(records) == 0:
         return None, np.array([], dtype=np.float64)
     alive = records[records["death_time"].isna()]
@@ -141,7 +141,7 @@ for dr in DEATH_RATES:
     regime_grids.append(lvl)
     first_inc = float(lvl[1]) - float(lvl[0])
     # R = ceil(1 / pr_ext) for the first increment
-    from inf_bp_texts.simulation.splitting import (
+    from bdpinf.simulation.splitting import (
         _calculate_extinction_probability,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -415,7 +415,7 @@ for rd in regime_data:
     )
 
     # Y domains from both methods combined
-    from inf_bp_texts.analysis import robust_y_max
+    from bdpinf.analysis import robust_y_max
 
     ns_y_max = robust_y_max([c_ns_kde, s_ns_kde, ns_y])
     sp_y_max = robust_y_max([c_sp_kde, s_sp_kde, spine_y])

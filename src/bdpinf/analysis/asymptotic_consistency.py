@@ -10,9 +10,9 @@ from typing import Any
 
 import numpy as np
 
-from inf_bp_texts.analysis.spike_detection import bootstrap_seed, replicate_seed
-from inf_bp_texts.inference import ConvergenceConfig, fit_birth_death_processes
-from inf_bp_texts.simulation import (
+from bdpinf.analysis.spike_detection import bootstrap_seed, replicate_seed
+from bdpinf.inference import ConvergenceConfig, fit_birth_death_processes
+from bdpinf.simulation import (
     simulate_bdp_ages_from_distributions,
     simulate_birth_death_process,
 )
@@ -77,7 +77,7 @@ def sample_age_vector(
             random_seed=int(rep_seed),
             ensure_non_extinct=True,
         )
-        survivors = getattr(simulated_process, "surviving_manuscripts", None)
+        survivors = getattr(simulated_process, "surviving_records", None)
         if survivors is None and hasattr(simulated_process, "columns"):
             survivors = simulated_process[simulated_process["survived"]]
         if survivors is not None and len(survivors) > 0:

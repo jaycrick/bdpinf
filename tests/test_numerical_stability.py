@@ -5,12 +5,12 @@ import math
 import numpy as np
 import pytest
 
-from inf_bp_texts.models.math_ages import (
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.models.math_extinction import calculate_extinction_pr
-from inf_bp_texts.models.math_populations import calculate_populations_log_lik
+from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_populations import calculate_populations_log_lik
 
 
 class TestNumericalStability:
@@ -74,8 +74,8 @@ class TestScoreFunction:
 
     def test_mle_gradient_near_zero_at_truth(self) -> None:
         """At true parameters, NLL gradient should be near zero for large samples."""
-        from inf_bp_texts.inference.fitting import fit_birth_death_processes
-        from inf_bp_texts.simulation import simulate_birth_death_process
+        from bdpinf.inference.fitting import fit_birth_death_processes
+        from bdpinf.simulation import simulate_birth_death_process
 
         true_birth = 0.01
         true_death = 0.003

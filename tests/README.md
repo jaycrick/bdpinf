@@ -1,6 +1,6 @@
-# Tests for inf-bp-texts
+# Tests for bdpinf
 
-This directory contains the test suite for `inf_bp_texts`, covering models, inference,
+This directory contains the test suite for `bdpinf`, covering models, inference,
 simulation, data parsing, and supporting helpers.
 
 ## Running tests

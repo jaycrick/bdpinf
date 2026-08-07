@@ -11,11 +11,11 @@ Run explicitly with:
 import numpy as np
 import pytest
 
-from inf_bp_texts.inference import (
+from bdpinf.inference import (
     fit_birth_death_processes,
     fit_birth_death_processes_bayesian,
 )
-from inf_bp_texts.inference.bayesian import (
+from bdpinf.inference.bayesian import (
     BayesianMCMCConfig,
     BayesianModelConfig,
     BayesianPriorConfig,

@@ -5,13 +5,13 @@ from collections.abc import Callable
 import jax
 import jax.numpy as jnp
 
-from inf_bp_texts.inference import calculate_unknown_spine_mixture_age_density
-from inf_bp_texts.models.math_ages import (
+from bdpinf.inference import calculate_unknown_spine_mixture_age_density
+from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
-from inf_bp_texts.models.math_extinction import calculate_extinction_pr
-from inf_bp_texts.models.math_populations import calculate_populations_log_lik
+from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_populations import calculate_populations_log_lik
 
 
 def _pointwise_density_from_log_lik(
@@ -149,7 +149,7 @@ class TestProbabilityNormalization:
             death_rates=death_rates,
             age_grid=grid,
             times=times,
-            num_manuscripts=n,
+            num_individuals=n,
         )
         continuous_mass = float(jnp.trapezoid(mixture_cont, grid))
 
