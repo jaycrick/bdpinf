@@ -10,12 +10,12 @@ from bdpinf.inference.fitting import (
     fit_from_data_frame,
 )
 from bdpinf.inference.likelihood import log_likelihood
-from bdpinf.simulation import simulate_birth_death_process
-from bdpinf.simulation.simulator import simulate_bdp_ages_from_distributions
-from bdpinf.simulation.splitting import (
+from bdpinf.simulation import (
     SplittingConfig,
+    simulate_birth_death_process,
     simulate_subcritical_survival_splitting,
 )
+from bdpinf.simulation.simulator import simulate_bdp_ages_from_distributions
 
 
 def _as_float(value: object) -> float:

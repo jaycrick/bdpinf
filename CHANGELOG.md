@@ -35,6 +35,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added `itables` as a dependency: two validation notebooks use it for
   sortable/paginated interactive tables (missed in the initial split's
   dependency list).
+- **Breaking:** `simulate_birth_death_process_from_contour_process` and
+  `simulate_subcritical_survival_splitting` (plus `SplittingConfig`,
+  `select_level_times_for_band`) moved out of `simulation.simulator` /
+  `simulation.splitting` into the new standalone
+  [`bdsurv`](https://github.com/jaycrick/bdsurv) package, extracted so the
+  underlying simulation methodology can be published independently of this
+  package's inference stack. `bdpinf.simulation` (`simulation.conditioned`)
+  now re-exports thin adapters with the same names and signatures that wrap
+  `bdsurv`'s results back into `BirthDeathProcess`, so no caller-visible
+  behaviour changed; only the module `simulation.splitting` was removed
+  (`simulation.simulator` keeps every other simulator). `bdpinf` now depends
+  on `bdsurv`.
 
 ## [0.1.0] --- pre-split (monorepo inf-bp-texts)
 

@@ -11,7 +11,7 @@ import pandas as pd
 from bdpinf.visualization.altair_theme import PTOLQUAL
 
 if TYPE_CHECKING:
-    from bdpinf.simulation.splitting import ConditionedTrajectory
+    from bdpinf.simulation.conditioned import ConditionedTrajectory
 
 
 def _point(color: str) -> alt.OverlayMarkDef:
