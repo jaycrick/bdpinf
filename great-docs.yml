@@ -92,12 +92,14 @@ reference:
       - models.validation
 
   - title: Inference
-    desc: Maximum likelihood estimation and covariance.
+    desc: Likelihood, maximum likelihood estimation and covariance, Bayesian fitting.
     contents:
       - inference.fitting.fit_birth_death_processes
+      - name: inference.ConvergenceConfig
       - name: inference.fitting.ParameterConstraints
       - inference.likelihood.log_likelihood
-      - inference.likelihood.negative_log_likelihood
+      - inference.likelihood.resolve_spine_ages
+      - inference.fitting.fit_from_data_frame
       - inference.uncertainty
       - inference.bayesian
       - inference.persistence

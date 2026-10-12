@@ -1,12 +1,12 @@
 r"""Time-varying birth and death rate functions.
 
-A *rate function* maps calendar time :math:`t \in [0, T]` to a non-negative
+A *rate function* maps calendar time $t \in [0, T]$ to a non-negative
 rate.
 The age densities in :mod:`bdpinf.models.math_age_densities` need only three
 things from a rate:
 
-- its value :math:`w(t)` (``__call__``);
-- its exact integral :math:`\int_s^e w(t)\,dt` (``integral``);
+- its value $w(t)$ (``__call__``);
+- its exact integral $\int_s^e w(t)\,dt$ (``integral``);
 - the interior times at which it is not smooth (``breakpoints``),
   so that numerical quadrature can be split there.
 
@@ -33,11 +33,11 @@ __all__ = [
 
 @runtime_checkable
 class RateFunction(Protocol):
-    r"""Protocol for a non-negative rate :math:`w(t)` on :math:`[0, T]`."""
+    r"""Protocol for a non-negative rate $w(t)$ on $[0, T]$."""
 
     @property
     def end_time(self) -> jax.Array:
-        """Observation time :math:`T` (scalar)."""
+        """Observation time $T$ (scalar)."""
         ...
 
     @property
@@ -50,7 +50,7 @@ class RateFunction(Protocol):
         ...
 
     def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
-        r"""Exact :math:`\int_s^e w(t)\,dt` for ``0 <= s <= e <= T``."""
+        r"""Exact $\int_s^e w(t)\,dt$ for ``0 <= s <= e <= T``."""
         ...
 
 
@@ -92,7 +92,7 @@ def _linear_value(
 def _linear_cumulative(
     v0: jax.Array, v1: jax.Array, times: jax.Array, t: jax.Array
 ) -> jax.Array:
-    r"""Cumulative integral :math:`\int_0^t w`, with ``t`` clipped to ``[0, T]``."""
+    r"""Cumulative integral $\int_0^t w$, with ``t`` clipped to ``[0, T]``."""
     starts = _epoch_starts(times)
     dur = times - starts
     slope = (v1 - v0) / dur
@@ -138,7 +138,7 @@ class PiecewiseConstantRate:
         Rate in each epoch, shape ``(n_epochs,)``, non-negative.
     epoch_end_times : jax.Array
         Strictly increasing epoch end times, shape ``(n_epochs,)``.
-        The last entry is the observation time :math:`T`.
+        The last entry is the observation time $T$.
 
     """
 
@@ -158,7 +158,7 @@ class PiecewiseConstantRate:
 
     @property
     def end_time(self) -> jax.Array:
-        """Observation time :math:`T`."""
+        """Observation time $T$."""
         return self.epoch_end_times[-1]
 
     @property
@@ -171,7 +171,7 @@ class PiecewiseConstantRate:
         return self.values[_epoch_index(self.epoch_end_times, jnp.asarray(t))]
 
     def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
-        r"""Exact :math:`\int_s^e w`."""
+        r"""Exact $\int_s^e w$."""
         times = self.epoch_end_times
         return _linear_cumulative(self.values, self.values, times, jnp.asarray(e)) - (
             _linear_cumulative(self.values, self.values, times, jnp.asarray(s))
@@ -187,11 +187,11 @@ class PiecewiseConstantRate:
 class PiecewiseLinearRate:
     r"""Rate that is linear within each epoch, with optional jumps between epochs.
 
-    On epoch :math:`k = (\tau_{k-1}, \tau_k]` the rate interpolates linearly
-    from ``start_values[k]`` at :math:`\tau_{k-1}` to ``end_values[k]`` at
-    :math:`\tau_k`.
+    On epoch $k = (\tau_{k-1}, \tau_k]$ the rate interpolates linearly
+    from ``start_values[k]`` at $\tau_{k-1}$ to ``end_values[k]`` at
+    $\tau_k$.
     Setting ``start_values[k+1] != end_values[k]`` gives a jump at
-    :math:`\tau_k`; :meth:`continuous` builds the jump-free case.
+    $\tau_k$; :meth:`continuous` builds the jump-free case.
 
     Parameters
     ----------
@@ -235,7 +235,7 @@ class PiecewiseLinearRate:
 
     @property
     def end_time(self) -> jax.Array:
-        """Observation time :math:`T`."""
+        """Observation time $T$."""
         return self.epoch_end_times[-1]
 
     @property
@@ -250,7 +250,7 @@ class PiecewiseLinearRate:
         )
 
     def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
-        r"""Exact :math:`\int_s^e w`."""
+        r"""Exact $\int_s^e w$."""
         args = (self.start_values, self.end_values, self.epoch_end_times)
         return _linear_cumulative(*args, jnp.asarray(e)) - _linear_cumulative(
             *args, jnp.asarray(s)

@@ -1,18 +1,18 @@
 r"""Extinction probability calculations for birth-death processes.
 
 Notation follows the paper:
-:math:`\Gamma(0,t] = \int_0^t (\lambda - \mu)`,
-:math:`N(T) = \int_0^T \mu(t)\, e^{-\Gamma(0,t]}\,dt`,
-:math:`\mathcal W(T) = e^{\Gamma(0,T]}(1 + N(T))` and :math:`\pi(T) = 1/\mathcal W(T)`.
-The extinction probability is :math:`\Pr(Z_T = 0) = N(T) / (1 + N(T))`
+$\Gamma(0,t] = \int_0^t (\lambda - \mu)$,
+$N(T) = \int_0^T \mu(t)\, e^{-\Gamma(0,t]}\,dt$,
+$\mathcal W(T) = e^{\Gamma(0,T]}(1 + N(T))$ and $\pi(T) = 1/\mathcal W(T)$.
+The extinction probability is $\Pr(Z_T = 0) = N(T) / (1 + N(T))$
 .
-The repo's historical name for :math:`N(T)` is the *extinction numerator*
-(``ext_num``); it equals :math:`\mathcal W(T) - 1` only after the rescaling
-above, so :math:`\pi(T) = 1/(1 + N(T))` holds only when :math:`\Gamma(0,T] = 0`.
+The repo's historical name for $N(T)$ is the *extinction numerator*
+(``ext_num``); it equals $\mathcal W(T) - 1$ only after the rescaling
+above, so $\pi(T) = 1/(1 + N(T))$ holds only when $\Gamma(0,T] = 0$.
 
 The epoch-wise closed forms live in :mod:`bdpinf.models.math_nested`
 (:func:`~bdpinf.models.math_nested.log_extinction_numerator` gives
-:math:`\ln N(T)`); this module exposes the probability built on them.
+$\ln N(T)$); this module exposes the probability built on them.
 
 All inputs are assumed float64 (``jax_enable_x64`` is set in __init__.py).
 """
@@ -35,10 +35,10 @@ def calculate_extinction_pr(
     *,
     return_log_prob: bool = False,
 ) -> jax.Array:
-    r"""Extinction probability :math:`\Pr(Z_T = 0) = N/(1+N)`, or its log.
+    r"""Extinction probability $\Pr(Z_T = 0) = N/(1+N)$, or its log.
 
-    Evaluated as :math:`\ln N - \operatorname{softplus}(\ln N)`, which stays
-    accurate when :math:`N` is tiny.
+    Evaluated as $\ln N - \operatorname{softplus}(\ln N)$, which stays
+    accurate when $N$ is tiny.
 
     Parameters
     ----------
@@ -46,7 +46,7 @@ def calculate_extinction_pr(
         Non-negative epoch rates, shape (n_epochs,) float64.
     times : jax.Array | float
         Strictly increasing epoch end times, shape (n_epochs,); ``times[-1]``
-        is the observation time :math:`T`.
+        is the observation time $T$.
     return_log_prob : bool
         If True return log P(Z_T = 0). Default False.
 

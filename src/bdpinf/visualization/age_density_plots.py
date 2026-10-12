@@ -2,12 +2,12 @@ r"""Panels showing time-varying rates above the age densities they induce.
 
 Each scenario is a pair of :class:`~bdpinf.models.rate_functions.RateFunction`
 objects ``(birth, death)``.
-:func:`scenario_panel` stacks the rates against calendar time :math:`\tau`
-over the age density against :math:`a = T - \tau`, which makes the mirroring
+:func:`scenario_panel` stacks the rates against calendar time $\tau$
+over the age density against $a = T - \tau$, which makes the mirroring
 between the two axes visible.
 The *primary* curve is the one being studied (non-spine or spine age);
 the other can be drawn faintly for reference.
-The spine age has an atom at :math:`a = T`, drawn as a point on a stem whose
+The spine age has an atom at $a = T$, drawn as a point on a stem whose
 height is a probability mass rather than a density.
 """
 

@@ -2,14 +2,14 @@ r"""Population log-likelihood calculations for birth-death processes.
 
 Tavaré (2018) formula for P(Z_T = n | Z_0 = n0), written in the paper's
 notation (``sections/1_Intro.tex``, ``eq:pop-dist``): from one ancestor,
-:math:`\Pr(Z_T = 0) = \alpha = N/(1+N)` and, given survival,
-:math:`Z_T` is geometric with success probability :math:`\pi(T) = 1/\mathcal W(T)`,
-i.e. :math:`\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}`.
-With :math:`\beta = 1 - \pi` the code uses
-:math:`\ln\alpha = \ln N - \mathrm{softplus}(\ln N)`,
-:math:`\ln(1-\alpha) = -\mathrm{softplus}(\ln N)`,
-:math:`\ln(1-\beta) = \ln\pi = -\ln\mathcal W(T)` and
-:math:`\ln\beta = \ln(\mathcal W(T) - 1) - \ln\mathcal W(T)`,
+$\Pr(Z_T = 0) = \alpha = N/(1+N)$ and, given survival,
+$Z_T$ is geometric with success probability $\pi(T) = 1/\mathcal W(T)$,
+i.e. $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
+With $\beta = 1 - \pi$ the code uses
+$\ln\alpha = \ln N - \mathrm{softplus}(\ln N)$,
+$\ln(1-\alpha) = -\mathrm{softplus}(\ln N)$,
+$\ln(1-\beta) = \ln\pi = -\ln\mathcal W(T)$ and
+$\ln\beta = \ln(\mathcal W(T) - 1) - \ln\mathcal W(T)$,
 all from :mod:`bdpinf.models.math_nested`, so nothing is recovered through
 ``log1p(-beta)`` round trips.
 
@@ -64,7 +64,7 @@ def _safe_mul(count: jax.Array, log_value: jax.Array) -> jax.Array:
 def _population_logs(
     birth_rates: jax.Array, death_rates: jax.Array, times: jax.Array
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
-    r"""Return :math:`(\ln\alpha, \ln(1-\alpha), \ln\beta, \ln\pi)` at ``T``."""
+    r"""Return $(\ln\alpha, \ln(1-\alpha), \ln\beta, \ln\pi)$ at ``T``."""
     terms = nested_terms(birth_rates, death_rates, times)
     log_n = log_extinction_numerator(terms)
     softplus_n = jnp.logaddexp(0.0, log_n)
@@ -99,9 +99,9 @@ def _compute_populations_log_lik_multi_start(
     n0 : int
         Initial population (static compile-time constant).
     log_alpha, log_beta : jax.Array
-        Scalar float64 :math:`\ln\alpha` and :math:`\ln\beta`.
+        Scalar float64 $\ln\alpha$ and $\ln\beta$.
     log_one_minus : jax.Array
-        Scalar float64 :math:`\ln(1-\alpha) + \ln(1-\beta)`.
+        Scalar float64 $\ln(1-\alpha) + \ln(1-\beta)$.
 
     Returns
     -------
@@ -234,9 +234,9 @@ def population_geometric_parameter(
     *,
     _skip_normalization: bool = False,
 ) -> Float[Array, ""]:
-    r"""Geometric parameter :math:`\pi(T) = 1/\mathcal W(T)` of :math:`Z_T`.
+    r"""Geometric parameter $\pi(T) = 1/\mathcal W(T)$ of $Z_T$.
 
-    Given survival, :math:`Z_T` is geometric on :math:`\{1, 2, \dots\}`.
+    Given survival, $Z_T$ is geometric on $\{1, 2, \dots\}$.
 
     Parameters
     ----------
@@ -280,7 +280,7 @@ def calculate_populations_log_lik(
         Z_0. Default 1.
     condition_on_survival : bool
         If True and initial_population == 1, condition on non-extinction for
-        positive counts: :math:`\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}`.
+        positive counts: $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
 
     Returns
     -------

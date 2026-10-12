@@ -4,31 +4,31 @@ Implements the general-rate results of the paper (Theorems on the spine,
 non-spine and uniformly chosen individual's age) for any pair of
 :class:`~bdpinf.models.rate_functions.RateFunction` objects.
 
-Notation: :math:`\gamma = \lambda - \mu`,
-:math:`\Lambda(s,e] = \int_s^e \lambda`, :math:`M(s,e] = \int_s^e \mu`,
-:math:`\Gamma(s,e] = \Lambda(s,e] - M(s,e]`, and
+Notation: $\gamma = \lambda - \mu$,
+$\Lambda(s,e] = \int_s^e \lambda$, $M(s,e] = \int_s^e \mu$,
+$\Gamma(s,e] = \Lambda(s,e] - M(s,e]$, and
 
-.. math::
+$$
+\mathcal W(b) = e^{\Gamma(0,b]} + \int_0^b \mu(t) e^{\Gamma(t,b]}\,dt
+= 1 + \int_0^b \lambda(t) e^{\Gamma(t,b]}\,dt,
+\qquad \pi(b) = 1/\mathcal W(b).
+$$
 
-    \mathcal W(b) = e^{\Gamma(0,b]} + \int_0^b \mu(t) e^{\Gamma(t,b]}\,dt
-    = 1 + \int_0^b \lambda(t) e^{\Gamma(t,b]}\,dt,
-    \qquad \pi(b) = 1/\mathcal W(b).
-
-Using :math:`\mathcal W' = \gamma\mathcal W + \mu` the exponent in the
+Using $\mathcal W' = \gamma\mathcal W + \mu$ the exponent in the
 theorems satisfies
-:math:`\int_{T-a}^T (\mu\pi + \lambda) = \ln[\pi(T-a)/\pi(T)] + M(T-a,T]`.
-Writing :math:`L_w(s,e) = \int_s^e w(t) e^{\Gamma(t,e]}\,dt`, the densities
-become subtraction-free and need no division by :math:`\gamma` (so
-:math:`\lambda \equiv \mu` is handled exactly):
+$\int_{T-a}^T (\mu\pi + \lambda) = \ln[\pi(T-a)/\pi(T)] + M(T-a,T]$.
+Writing $L_w(s,e) = \int_s^e w(t) e^{\Gamma(t,e]}\,dt$, the densities
+become subtraction-free and need no division by $\gamma$ (so
+$\lambda \equiv \mu$ is handled exactly):
 
-- spine, :math:`0 < a < T`:
-  :math:`f^*(a) = \lambda(T-a)\, e^{-\Lambda(T-a,T]}\, L_\mu(T-a, T)`;
-- spine atom: :math:`\Pr(A^* = T) = \mathcal W(T)\, e^{-\Lambda(0,T]}`;
+- spine, $0 < a < T$:
+  $f^*(a) = \lambda(T-a)\, e^{-\Lambda(T-a,T]}\, L_\mu(T-a, T)$;
+- spine atom: $\Pr(A^* = T) = \mathcal W(T)\, e^{-\Lambda(0,T]}$;
 - non-spine:
-  :math:`f(a) = \lambda(T-a)\,\mathcal W(T-a)\, e^{-M(T-a,T]} / L_\lambda(0,T)`,
-  since :math:`\mathcal W(T) - 1 = L_\lambda(0,T)`.
+  $f(a) = \lambda(T-a)\,\mathcal W(T-a)\, e^{-M(T-a,T]} / L_\lambda(0,T)$,
+  since $\mathcal W(T) - 1 = L_\lambda(0,T)$.
 
-:math:`L_w` is evaluated by Gauss-Legendre quadrature on every segment
+$L_w$ is evaluated by Gauss-Legendre quadrature on every segment
 between rate breakpoints; its integrand is smooth there, so convergence is
 spectral for piecewise-polynomial (and any analytic) rates.
 All computation is in log space.
@@ -122,7 +122,7 @@ def _log_l(
     e: jax.Array,
     n_nodes: int,
 ) -> jax.Array:
-    r"""Scalar :math:`\ln L_w(s, e)` with :math:`L_w = \int_s^e w\,e^{\Gamma(t,e]}`."""
+    r"""Scalar $\ln L_w(s, e)$ with $L_w = \int_s^e w\,e^{\Gamma(t,e]}$."""
     x, w = _segments(s, e, _sorted_breakpoints(birth, death), n_nodes)
     gamma_te = birth.integral(x, e) - death.integral(x, e)
     return jax.nn.logsumexp(_safe_log(weight(x)) + gamma_te, b=w)
@@ -136,12 +136,12 @@ def log_nested_w_general(
     n_nodes: int = _DEFAULT_NODES,
     method: Method = "auto",
 ) -> jax.Array:
-    r"""Return :math:`\ln \mathcal W(b)`, where :math:`\pi(b) = 1/\mathcal W(b)`.
+    r"""Return $\ln \mathcal W(b)$, where $\pi(b) = 1/\mathcal W(b)$.
 
     Parameters
     ----------
     birth, death : RateFunction
-        Birth rate :math:`\lambda` and death rate :math:`\mu`, same end time.
+        Birth rate $\lambda$ and death rate $\mu$, same end time.
     b : jax.Array
         Times in ``[0, T]``, any shape.
     n_nodes : int
@@ -175,9 +175,9 @@ def spine_age_log_density(
     n_nodes: int = _DEFAULT_NODES,
     method: Method = "auto",
 ) -> jax.Array:
-    r"""Log density of the continuous part of the spine age :math:`A^*`, ``0 < a < T``.
+    r"""Log density of the continuous part of the spine age $A^*$, ``0 < a < T``.
 
-    The atom at :math:`a = T` is :func:`spine_age_log_atom`.
+    The atom at $a = T$ is :func:`spine_age_log_atom`.
     """
     exact = _exact_terms(birth, death, method)
     if exact is not None:
@@ -204,7 +204,7 @@ def spine_age_log_atom(
     n_nodes: int = _DEFAULT_NODES,
     method: Method = "auto",
 ) -> jax.Array:
-    r"""Log of :math:`\Pr(A^* = T) = \mathcal W(T) e^{-\Lambda(0,T]}`."""
+    r"""Log of $\Pr(A^* = T) = \mathcal W(T) e^{-\Lambda(0,T]}$."""
     exact = _exact_terms(birth, death, method)
     if exact is not None:
         return math_nested.spine_log_atom(exact)
@@ -222,7 +222,7 @@ def non_spine_age_log_density(
     n_nodes: int = _DEFAULT_NODES,
     method: Method = "auto",
 ) -> jax.Array:
-    r"""Log density of the non-spine age :math:`A`, ``0 < a < T``."""
+    r"""Log density of the non-spine age $A$, ``0 < a < T``."""
     exact = _exact_terms(birth, death, method)
     if exact is not None:
         return math_nested.non_spine_log_density(exact, ages)
@@ -297,7 +297,7 @@ def non_spine_age_cdf(
     *,
     n_nodes: int = _DEFAULT_NODES,
 ) -> jax.Array:
-    """CDF :math:`F_A(a)` of the non-spine age."""
+    """CDF $F_A(a)$ of the non-spine age."""
     end = birth.end_time
     a = jnp.minimum(jnp.asarray(ages, dtype=jnp.float64), end)
     return _integrate_age_density(
@@ -315,7 +315,7 @@ def spine_age_cdf(
     *,
     n_nodes: int = _DEFAULT_NODES,
 ) -> jax.Array:
-    """CDF :math:`F_{A^*}(a)` of the spine age, including the atom at ``T``."""
+    """CDF $F_{A^*}(a)$ of the spine age, including the atom at ``T``."""
     end = birth.end_time
     ages = jnp.asarray(ages, dtype=jnp.float64)
     cont = _integrate_age_density(
@@ -335,11 +335,11 @@ def random_individual_cdf(
     *,
     n_nodes: int = _DEFAULT_NODES,
 ) -> jax.Array:
-    r"""CDF :math:`F_{A^\dagger}` of the age of a uniformly chosen individual.
+    r"""CDF $F_{A^\dagger}$ of the age of a uniformly chosen individual.
 
-    The mixture :math:`w_A F_A + w_{A^*} F_{A^*}` with
-    :math:`w_{A^*} = -\pi(T)\ln\pi(T) / (1 - \pi(T))` and
-    :math:`w_A = 1 - w_{A^*}`.
+    The mixture $w_A F_A + w_{A^*} F_{A^*}$ with
+    $w_{A^*} = -\pi(T)\ln\pi(T) / (1 - \pi(T))$ and
+    $w_A = 1 - w_{A^*}$.
     """
     log_w_t = log_nested_w_general(birth, death, birth.end_time, n_nodes=n_nodes)
     pi_t = jnp.exp(-log_w_t)

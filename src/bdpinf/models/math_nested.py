@@ -1,45 +1,45 @@
-r"""Exact epoch-wise nested integral :math:`\mathcal W` and the age densities it gives.
+r"""Exact epoch-wise nested integral $\mathcal W$ and the age densities it gives.
 
 This is the piecewise-constant backend for the general-rate results of the paper
 (``sections/2_MainResults.tex``).
-For rates that are constant on each epoch :math:`(\tau_{k-1}, \tau_k]` every
+For rates that are constant on each epoch $(\tau_{k-1}, \tau_k]$ every
 quantity below has a closed form, evaluated here in O(K) once and then in
 O(log K) per age, entirely in log space and without subtraction.
 
 Notation (paper symbol, code name)
 ----------------------------------
-=========================================  ========================================
-:math:`T = \tau_K` (observation time)      ``times[-1]``
-:math:`\lambda_k, \mu_k`                   ``birth_rates``, ``death_rates``
-:math:`\gamma_k = \lambda_k - \mu_k`       ``growth``
-:math:`d_k = \tau_k - \tau_{k-1}`          ``durations``
-:math:`\Gamma(0, \tau_k]`                  ``gamma_end`` (``gamma_before``: k-1)
-:math:`\Lambda(s, T], M(s, T]`             ``lam_after``/``mu_after`` plus a partial
-:math:`N(b)=\int_0^b \mu e^{-\Gamma(0,t]}` ``log_n_*``
-:math:`L(b)=\int_0^b \lambda e^{-\Gamma(0,t]}`  ``log_l_*``
-:math:`\mathcal W(b)`                      :func:`log_nested_w`
-:math:`\pi(b) = 1/\mathcal W(b)`           ``exp(-log_nested_w(...))``
-:math:`L_\mu(s,T)`                         ``log_spine_after`` plus a partial epoch
-:math:`A` (non-spine age)                  :func:`non_spine_log_density`
-:math:`A^*` (spine age)                    :func:`spine_log_density`, atom at ``T``
-=========================================  ========================================
+| Paper symbol | Code name |
+| --- | --- |
+| $T = \tau_K$ (observation time) | ``times[-1]`` |
+| $\lambda_k, \mu_k$ | ``birth_rates``, ``death_rates`` |
+| $\gamma_k = \lambda_k - \mu_k$ | ``growth`` |
+| $d_k = \tau_k - \tau_{k-1}$ | ``durations`` |
+| $\Gamma(0, \tau_k]$ | ``gamma_end`` (``gamma_before``: k-1) |
+| $\Lambda(s, T], M(s, T]$ | ``lam_after``/``mu_after`` plus a partial |
+| $N(b)=\int_0^b \mu e^{-\Gamma(0,t]}$ | ``log_n_*`` |
+| $L(b)=\int_0^b \lambda e^{-\Gamma(0,t]}$ | ``log_l_*`` |
+| $\mathcal W(b)$ | `log_nested_w` |
+| $\pi(b) = 1/\mathcal W(b)$ | ``exp(-log_nested_w(...))`` |
+| $L_\mu(s,T)$ | ``log_spine_after`` plus a partial epoch |
+| $A$ (non-spine age) | `non_spine_log_density` |
+| $A^*$ (spine age) | `spine_log_density`, atom at ``T`` |
 
 Key relations (all exact):
 
-- :math:`\mathcal W(b) = e^{\Gamma(0,b]}\,(1 + N(b))`
-  and :math:`\mathcal W(b) - 1 = e^{\Gamma(0,b]} L(b)`.
-  Hence :math:`\pi(T) = 1/(1+\texttt{ext\_num})` only when :math:`\Gamma(0,T]=0`,
-  where ``ext_num`` is :math:`N(T)`.
-- :math:`\Pr(Z_T = 0) = N/(1+N)` and :math:`\Pr(Z_T = z \mid Z_T \ge 1)
-  = \pi(1-\pi)^{z-1}`.
-- Per epoch, with :math:`\kappa^-(g, d) = (1 - e^{-gd})/g` (equal to ``d`` at
-  :math:`g = 0`, so the critical case needs no special treatment),
-  :math:`N` and :math:`L` accumulate :math:`w_k e^{-\Gamma(0,\tau_{k-1}]}
-  \kappa^-(\gamma_k, d_k)` with :math:`w = \mu` and :math:`w = \lambda`.
-- Non-spine age: :math:`f(a) = \lambda(T-a)\,\mathcal W(T-a)\,e^{-M(T-a,T]}
-  / (\mathcal W(T) - 1)`.
-- Spine age: :math:`f^*(a) = \lambda(T-a)\,e^{-\Lambda(T-a,T]}\,L_\mu(T-a,T)`,
-  with atom :math:`\Pr(A^*=T) = \mathcal W(T)\,e^{-\Lambda(0,T]}`.
+- $\mathcal W(b) = e^{\Gamma(0,b]}\,(1 + N(b))$
+  and $\mathcal W(b) - 1 = e^{\Gamma(0,b]} L(b)$.
+  Hence $\pi(T) = 1/(1+\texttt{ext\_num})$ only when $\Gamma(0,T]=0$,
+  where ``ext_num`` is $N(T)$.
+- $\Pr(Z_T = 0) = N/(1+N)$ and $\Pr(Z_T = z \mid Z_T \ge 1)
+  = \pi(1-\pi)^{z-1}$.
+- Per epoch, with $\kappa^-(g, d) = (1 - e^{-gd})/g$ (equal to ``d`` at
+  $g = 0$, so the critical case needs no special treatment),
+  $N$ and $L$ accumulate $w_k e^{-\Gamma(0,\tau_{k-1}]}
+  \kappa^-(\gamma_k, d_k)$ with $w = \mu$ and $w = \lambda$.
+- Non-spine age: $f(a) = \lambda(T-a)\,\mathcal W(T-a)\,e^{-M(T-a,T]}
+  / (\mathcal W(T) - 1)$.
+- Spine age: $f^*(a) = \lambda(T-a)\,e^{-\Lambda(T-a,T]}\,L_\mu(T-a,T)$,
+  with atom $\Pr(A^*=T) = \mathcal W(T)\,e^{-\Lambda(0,T]}$.
 
 Zero rates are represented internally by the finite log-zero ``LOG_ZERO`` so
 that cumulative log-sums and their gradients stay finite;
@@ -155,12 +155,12 @@ def restore_neg_inf(x: jax.Array) -> jax.Array:
 
 
 def _log_kappa_minus(growth: jax.Array, duration: jax.Array) -> jax.Array:
-    r"""Return :math:`\ln\kappa^-(g, d)` with :math:`\kappa^- = (1-e^{-gd})/g`.
+    r"""Return $\ln\kappa^-(g, d)$ with $\kappa^- = (1-e^{-gd})/g$.
 
-    Writing :math:`\kappa^- = d\,(1-e^{-x})/x` with :math:`x = gd`:
-    for :math:`|x|` below ``_SERIES_THRESHOLD`` (including exactly critical
-    epochs) a short polynomial for :math:`(1-e^{-x})/x` is used, otherwise
-    :math:`\ln\bigl[(1-e^{-|x|})/|x|\bigr] + \max(-x, 0)`, which is stable for
+    Writing $\kappa^- = d\,(1-e^{-x})/x$ with $x = gd$:
+    for $|x|$ below ``_SERIES_THRESHOLD`` (including exactly critical
+    epochs) a short polynomial for $(1-e^{-x})/x$ is used, otherwise
+    $\ln\bigl[(1-e^{-|x|})/|x|\bigr] + \max(-x, 0)$, which is stable for
     either sign of ``g``.
     Returns ``LOG_ZERO`` when ``d = 0``.
     """
@@ -208,7 +208,7 @@ def nested_terms(
     death_rates: jax.Array | float,
     times: jax.Array | float,
 ) -> NestedTerms:
-    r"""Precompute the epoch-wise quantities behind :math:`\mathcal W`.
+    r"""Precompute the epoch-wise quantities behind $\mathcal W$.
 
     Concrete inputs are validated and coerced to 1-D float64 arrays;
     traced inputs (inside ``jax.jit``/``grad``) are assumed already valid.
@@ -324,27 +324,27 @@ def _log_w_from_row(row: _Row, u: jax.Array, *, single_epoch: bool) -> jax.Array
 
 
 def log_nested_w(terms: NestedTerms, b: jax.Array) -> jax.Array:
-    r"""Return :math:`\ln\mathcal W(b)` at times ``b`` (clipped to ``[0, T]``)."""
+    r"""Return $\ln\mathcal W(b)$ at times ``b`` (clipped to ``[0, T]``)."""
     b = jnp.clip(jnp.asarray(b, dtype=jnp.float64), 0.0, terms.times[-1])
     row = _row(terms, b)
     return _log_w_from_row(row, b - row.start, single_epoch=terms.table.shape[0] == 1)
 
 
 def log_nested_w_total(terms: NestedTerms) -> jax.Array:
-    r"""Return :math:`\ln\mathcal W(T)`, i.e. :math:`-\ln\pi(T)`."""
+    r"""Return $\ln\mathcal W(T)$, i.e. $-\ln\pi(T)$."""
     return terms.gamma_total + jnp.logaddexp(0.0, terms.log_n_total)
 
 
 def log_extinction_numerator(terms: NestedTerms) -> jax.Array:
-    r"""Return :math:`\ln N(T)` with :math:`N(T) = \int_0^T \mu e^{-\Gamma(0,t]}dt`.
+    r"""Return $\ln N(T)$ with $N(T) = \int_0^T \mu e^{-\Gamma(0,t]}dt$.
 
-    ``LOG_ZERO`` (not ``-inf``) when :math:`N(T) = 0`.
+    ``LOG_ZERO`` (not ``-inf``) when $N(T) = 0$.
     """
     return terms.log_n_total
 
 
 def log_nested_w_minus_one(terms: NestedTerms) -> jax.Array:
-    r"""Return :math:`\ln(\mathcal W(T) - 1) = \Gamma(0,T] + \ln L(T)`.
+    r"""Return $\ln(\mathcal W(T) - 1) = \Gamma(0,T] + \ln L(T)$.
 
     ``LOG_ZERO`` when there are no births.
     """
@@ -357,7 +357,7 @@ def log_nested_w_minus_one(terms: NestedTerms) -> jax.Array:
 
 
 def spine_log_atom(terms: NestedTerms) -> jax.Array:
-    r"""Log of :math:`\Pr(A^* = T) = \mathcal W(T)\,e^{-\Lambda(0,T]}`."""
+    r"""Log of $\Pr(A^* = T) = \mathcal W(T)\,e^{-\Lambda(0,T]}$."""
     return log_nested_w_total(terms) - terms.lam_total
 
 
@@ -412,7 +412,7 @@ def _densities(
 
 
 def non_spine_log_density(terms: NestedTerms, ages: jax.Array) -> jax.Array:
-    r"""Log density of the non-spine age :math:`A` at ``ages`` (no atom)."""
+    r"""Log density of the non-spine age $A$ at ``ages`` (no atom)."""
     out, _ = _densities(
         terms, ages, want_non_spine=True, want_spine=False, atom_at_boundary=False
     )
@@ -423,10 +423,10 @@ def non_spine_log_density(terms: NestedTerms, ages: jax.Array) -> jax.Array:
 def spine_log_density(
     terms: NestedTerms, ages: jax.Array, *, atom_at_boundary: bool = True
 ) -> jax.Array:
-    r"""Log density of :math:`A^*`.
+    r"""Log density of $A^*$.
 
     With ``atom_at_boundary`` (default) ages ``>= T`` return the log atom
-    :math:`\Pr(A^*=T)`; otherwise only the continuous density is evaluated.
+    $\Pr(A^*=T)$; otherwise only the continuous density is evaluated.
     """
     _, out = _densities(
         terms,

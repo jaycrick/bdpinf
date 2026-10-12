@@ -39,6 +39,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Removed unused API: `utils.ensure_directory`, `analysis.{compute_parameter_summary, extract_rate_arrays, summarize_fit_success, extract_epoch_parameter_arrays, first_failed_fits}`, `visualization.parameter_plots` and `inference.fit_birth_death_processes_bayesian_from_data_frame`.
 
+- Docstring math now uses `$...$` / `$$...$$` (inside raw docstrings) instead of Sphinx `:math:` roles: with `parser: numpy` great-docs left the roles as literal text, so no formula rendered in the API reference.
+
 - `calculate_unknown_spine_mixture_age_density` and the age samplers evaluate densities in one vectorised pass instead of one call per age.
 
 - Population and age likelihoods are computed from the paper's $\mathcal W$ (restart principle) in one $O(K+n\log K)$ pass; the time-reversal machinery was removed (`_reverse_time`, `calculate_log_lik_lifetimes`, `calculate_log_pr_extinction_given_initial_lifetimes`, `calculate_log_lik_initial_lifetimes_given_(non_)extinction`).

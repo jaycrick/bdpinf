@@ -42,7 +42,7 @@ def resolve_spine_ages(
     Host-side (not traced).
     An age ``np.isclose`` to the observation time ``T`` is the spine, and is
     *snapped to exactly* ``T`` so that it is scored with the atom
-    :math:`\Pr(A^*=T)` rather than the interior density.
+    $\Pr(A^*=T)$ rather than the interior density.
     A single age is the spine.
     Otherwise the spine is unknown and is marginalised over.
 
