@@ -1,7 +1,7 @@
 r"""Population log-likelihood calculations for birth-death processes.
 
 Tavaré (2018) formula for P(Z_T = n | Z_0 = n0), written in the paper's
-notation (``sections/1_Intro.tex``, ``eq:pop-dist``): from one ancestor,
+notation [paper: Eq. ?]: from one ancestor,
 $\Pr(Z_T = 0) = \alpha = N/(1+N)$ and, given survival,
 $Z_T$ is geometric with success probability $\pi(T) = 1/\mathcal W(T)$,
 i.e. $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.

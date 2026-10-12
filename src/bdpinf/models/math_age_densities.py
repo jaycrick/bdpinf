@@ -1,8 +1,8 @@
 r"""Age densities of a birth-death process with time-varying rates.
 
-Implements the general-rate results of the paper (Theorems on the spine,
-non-spine and uniformly chosen individual's age) for any pair of
-:class:`~bdpinf.models.rate_functions.RateFunction` objects.
+Implements the general-rate results of the paper (the spine, non-spine and
+uniformly chosen individual's age theorems, [paper: Theorems ?]) for any pair
+of :class:`~bdpinf.models.rate_functions.RateFunction` objects.
 
 Notation: $\gamma = \lambda - \mu$,
 $\Lambda(s,e] = \int_s^e \lambda$, $M(s,e] = \int_s^e \mu$,

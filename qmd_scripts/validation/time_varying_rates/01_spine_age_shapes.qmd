@@ -131,7 +131,7 @@ so it is comparable with the curve only as a visual cue for "how much mass sits 
 
 For constant rates the spine density is
 $\lambda\mu(e^{-\mu a}-e^{-\lambda a})/(\lambda-\mu)$,
-the paper's Corollary 2.
+the paper's constant-rate corollary [paper: Corollary ?].
 When $\lambda=\mu$ it is $\lambda^2ae^{-\lambda a}$, a Gamma(2) shape that starts at zero.
 In every case the density is zero at $a=0$,
 because the spine individual must have been born *before* the last instant.

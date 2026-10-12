@@ -1,7 +1,7 @@
 r"""Exact epoch-wise nested integral $\mathcal W$ and the age densities it gives.
 
 This is the piecewise-constant backend for the general-rate results of the paper
-(``sections/2_MainResults.tex``).
+[paper: Theorems ?].
 For rates that are constant on each epoch $(\tau_{k-1}, \tau_k]$ every
 quantity below has a closed form, evaluated here in O(K) once and then in
 O(log K) per age, entirely in log space and without subtraction.

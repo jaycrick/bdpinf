@@ -111,13 +111,20 @@ class BirthDeathProcess:
     ) -> None:
         """Initialize birth-death process with observation data.
 
-        Args:
-            creation_times: List of times when records were created
-            epoch_end_times: Scalar or vector of epoch end times
-            start_time: Start time of the observation period
-            initial_population: Initial population size (must be a positive integer)
-            birth_rates: Individual creation-rate vector (λ) - optional
-            death_rates: Individual loss-rate vector (μ) - optional
+        Parameters
+        ----------
+        creation_times
+            List of times when records were created
+        epoch_end_times
+            Scalar or vector of epoch end times
+        start_time
+            Start time of the observation period
+        initial_population
+            Initial population size (must be a positive integer)
+        birth_rates
+            Individual creation-rate vector (λ) - optional
+        death_rates
+            Individual loss-rate vector (μ) - optional
 
         """
         self.creation_times: list[float] = creation_times.copy()
@@ -720,8 +727,10 @@ class BirthDeathProcess:
     def add_individual(self, creation_time: float) -> None:
         """Add an individual with given creation time to the process.
 
-        Args:
-            creation_time: Time when the individual was created
+        Parameters
+        ----------
+        creation_time
+            Time when the individual was created
 
         """
         if creation_time < self.start_time:
@@ -742,8 +751,10 @@ class BirthDeathProcess:
     ) -> None:
         """Set epoch end times for the process.
 
-        Args:
-            epoch_end_times: Scalar end time or vector of epoch end times
+        Parameters
+        ----------
+        epoch_end_times
+            Scalar end time or vector of epoch end times
 
         """
         new_epoch_end_times = self._normalize_epoch_end_times(epoch_end_times)
@@ -809,10 +820,14 @@ class BirthDeathProcess:
         Use the fitting module directly to obtain parameters, then call this method
         to update the model state.
 
-        Args:
-            birth_rates: Fitted birth-rate vector (λ), one value per epoch
-            death_rates: Fitted death-rate vector (μ), one value per epoch
-            fit_results: Optional fit results dictionary from fitting module
+        Parameters
+        ----------
+        birth_rates
+            Fitted birth-rate vector (λ), one value per epoch
+        death_rates
+            Fitted death-rate vector (μ), one value per epoch
+        fit_results
+            Optional fit results dictionary from fitting module
 
         """
         self._birth_rates = self._normalize_rate_vector(

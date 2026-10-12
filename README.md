@@ -25,7 +25,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Clone the repository and install dependencies:
 
 ```sh
-git clone <repository-url>
+git clone https://github.com/jaycrick/bdpinf.git
 cd bdpinf
 uv sync
 ```
@@ -33,7 +33,7 @@ uv sync
 For development (includes testing and documentation tools):
 
 ```sh
-uv sync --all-groups
+uv sync --group dev
 ```
 
 ## Quick Start
@@ -123,23 +123,11 @@ concrete driver for the NT-manuscript dataset; see it for a worked example.
 
 ## Development
 
-Run tests:
+Setup, checks (tests, Ruff, basedpyright, prose linting) and the notebook and
+API-reference builds are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-```sh
-uv run pytest
-```
-
-Generate API reference docs:
-
-```sh
-uv run great-docs build
-```
-
-Preview the research-notebook site:
-
-```sh
-uv run quarto preview
-```
+Result numbers from the accompanying paper (in preparation) appear as
+`[paper: Theorem ?]` placeholders until they are fixed; search for `[paper:`.
 
 ### HPC / batch rendering
 

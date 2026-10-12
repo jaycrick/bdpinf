@@ -64,26 +64,48 @@ class FitKwargs(TypedDict, total=False):
 class ParameterConstraints:
     """Constraints for fitting: fixed parameters and equality groups.
 
+    Constraints shrink the optimised parameter space (which can help
+    convergence); the fitted result is always reported in the full space.
+    Fixed parameters stay in the likelihood but are not optimised, and
+    parameters in one equality group share a single fitted value.
+
+    Parameters are indexed birth rates first, then death rates.
+    With three epochs, indices 0-2 are ``birth_rates[0..2]`` and indices 3-5
+    are ``death_rates[0..2]``.
+
     Attributes
     ----------
     fixed_params : dict[int, float]
         Mapping from parameter index to fixed value.
-        Index i where i < n_epochs refers to birth rates,
-        i >= n_epochs refers to death rates at index (i - n_epochs).
     equality_groups : list[list[int]]
-        List of groups where each group contains parameter indices
-        that must be equal during fitting. Parameters in the same
-        group will share a single fitted value.
+        Groups of at least two parameter indices that must be equal.
+        A parameter may not appear in a group and in ``fixed_params``.
 
     Examples
     --------
-    Make first two birth rates equal (indices 0, 1) and fix death rate
-    at epoch 0 (index n_epochs) to 0.1:
+    Three epochs; fix the last death rate and pool the first two epochs'
+    birth rates and death rates:
 
-        >>> constraints = ParameterConstraints(
-        ...     fixed_params={5: 0.1},  # assuming n_epochs >= 2
-        ...     equality_groups=[[0, 1]]
-        ... )
+    >>> constraints = ParameterConstraints(
+    ...     fixed_params={5: 0.05},
+    ...     equality_groups=[[0, 1], [3, 4]],
+    ... )
+
+    Time-invariant rates over four epochs (two free parameters):
+
+    >>> n_epochs = 4
+    >>> constant = ParameterConstraints(
+    ...     equality_groups=[
+    ...         list(range(n_epochs)),
+    ...         list(range(n_epochs, 2 * n_epochs)),
+    ...     ]
+    ... )
+
+    Pass the object to
+    :func:`~bdpinf.inference.fitting.fit_birth_death_processes` as
+    ``param_constraints``; invalid constraints (out-of-range index, overlap
+    between fixed and grouped indices, group smaller than two) raise
+    ``ValueError`` from :meth:`validate`.
 
     """
 

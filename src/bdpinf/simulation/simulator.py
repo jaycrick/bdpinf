@@ -292,15 +292,20 @@ def simulate_birth_death_process(
     time points. The simulation runs until the final time is reached and
     records both creation times and survival status.
 
-    Args:
-        birth_rates: Birth rate(s) (λ) for individual creation. Either a single
-            float or an array of rates corresponding to time periods.
-        death_rates: Death rate(s) (μ) for individual loss. Either a single
-            float or an array of rates corresponding to time periods.
-        times: End time(s) for the simulation. Either a single float or an array
-            of time points at which rates change. Must be the same length as
-            birth_rates and death_rates if arrays are provided.
-        random_seed: Random seed for reproducibility
+    Parameters
+    ----------
+    birth_rates
+        Birth rate(s) (λ) for individual creation. Either a single
+        float or an array of rates corresponding to time periods.
+    death_rates
+        Death rate(s) (μ) for individual loss. Either a single
+        float or an array of rates corresponding to time periods.
+    times
+        End time(s) for the simulation. Either a single float or an array
+        of time points at which rates change. Must be the same length as
+        birth_rates and death_rates if arrays are provided.
+    random_seed
+        Random seed for reproducibility
 
     Returns
     -------
@@ -502,13 +507,19 @@ def simulate_bdp_ages_from_distributions(
     Conditional on a non-zero population, this function samples exactly one spine
     age and ``n-1`` non-spine ages on ``[0, T]``.
 
-    Args:
-        birth_rate: Scalar birth-rate tensor.
-        death_rate: Scalar death-rate tensor.
-        max_time: Scalar observation-time tensor.
-        rng: NumPy random number generator.
-        ensure_non_extinct: If True, force a non-zero population draw by sampling
-            from the conditional geometric component only.
+    Parameters
+    ----------
+    birth_rate
+        Scalar birth-rate tensor.
+    death_rate
+        Scalar death-rate tensor.
+    max_time
+        Scalar observation-time tensor.
+    rng
+        NumPy random number generator.
+    ensure_non_extinct
+        If True, force a non-zero population draw by sampling
+        from the conditional geometric component only.
 
     Returns
     -------
@@ -1013,18 +1024,24 @@ def simulate_birth_death_lifespans_arrays(
     as multilevel splitting.  For a full ``BirthDeathProcess`` object with
     genealogy use :func:`simulate_birth_death_lifespans` instead.
 
-    Args:
-        birth_rates: Per-individual birth rate(s) λ.  Scalar or 1-D array
-            (one value per epoch).
-        death_rates: Per-individual death rate(s) μ.  Same length as
-            ``birth_rates``.
-        times: Epoch end time(s).  Scalar or 1-D array strictly increasing.
-            The last entry is the terminal time T.
-        random_seed: Integer seed for JAX PRNG reproducibility, or ``None``
-            for a nondeterministic draw.
-        max_population: Maximum number of individuals that can be born.
-            Raises ``RuntimeError`` on overflow.  Recompiles the JIT kernel
-            whenever a new value is first used.
+    Parameters
+    ----------
+    birth_rates
+        Per-individual birth rate(s) λ.  Scalar or 1-D array
+        (one value per epoch).
+    death_rates
+        Per-individual death rate(s) μ.  Same length as
+        ``birth_rates``.
+    times
+        Epoch end time(s).  Scalar or 1-D array strictly increasing.
+        The last entry is the terminal time T.
+    random_seed
+        Integer seed for JAX PRNG reproducibility, or ``None``
+        for a nondeterministic draw.
+    max_population
+        Maximum number of individuals that can be born.
+        Raises ``RuntimeError`` on overflow.  Recompiles the JIT kernel
+        whenever a new value is first used.
 
     Returns
     -------
@@ -1117,17 +1134,25 @@ def simulate_birth_death_lifespans(
     additional ``birth_epoch`` column in its ``records`` table,
     recording the epoch in which each individual was born.
 
-    Args:
-        birth_rates: Birth rate(s) (λ). Scalar or 1-D array (one per epoch).
-        death_rates: Death rate(s) (μ). Same length as ``birth_rates``.
-        times: Epoch end time(s). Scalar or strictly-increasing 1-D array.
-        random_seed: Integer seed for reproducibility, or ``None``.
-        ensure_non_extinct: If ``True``, retry until at least one individual
-            survives to the terminal time.
-        max_retries: Maximum number of retry attempts when
-            ``ensure_non_extinct=True``.
-        max_population: Maximum total individuals that may be born; passed
-            to the JIT core as a static buffer size.
+    Parameters
+    ----------
+    birth_rates
+        Birth rate(s) (λ). Scalar or 1-D array (one per epoch).
+    death_rates
+        Death rate(s) (μ). Same length as ``birth_rates``.
+    times
+        Epoch end time(s). Scalar or strictly-increasing 1-D array.
+    random_seed
+        Integer seed for reproducibility, or ``None``.
+    ensure_non_extinct
+        If ``True``, retry until at least one individual
+        survives to the terminal time.
+    max_retries
+        Maximum number of retry attempts when
+        ``ensure_non_extinct=True``.
+    max_population
+        Maximum total individuals that may be born; passed
+        to the JIT core as a static buffer size.
 
     Returns
     -------
