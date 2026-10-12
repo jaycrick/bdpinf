@@ -123,7 +123,7 @@ class TestIntegration:
             800.0,
         ]
         # Use modular functions for lifecycle workflow
-        creation_times_extended = creation_times + [850.0, 900.0]
+        creation_times_extended = [*creation_times, 850.0, 900.0]
         assert len(creation_times_extended) == 12
         ages = [1000.0 - ct for ct in creation_times_extended]
         assert len(ages) == 12
@@ -302,7 +302,7 @@ class TestIntegration:
             higher_death_ll,
             lower_death_ll,
         ]
-        unique_values = len(set(float(ll) for ll in likelihoods))
+        unique_values = len({float(ll) for ll in likelihoods})
         assert unique_values == 5  # All different
 
     def test_data_quality_robustness(self) -> None:

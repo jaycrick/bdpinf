@@ -1,5 +1,7 @@
 """Tests for the lifespan-at-birth birth-death simulator."""
 
+from typing import ClassVar
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -155,9 +157,9 @@ class TestLifespanMultiEpoch:
     """
 
     # Short durations keep expected population manageable (E[N] < 100)
-    _T2 = [20.0, 40.0]
-    _B2 = [0.1, 0.15]
-    _D2 = [0.02, 0.03]
+    _T2: ClassVar[list[float]] = [20.0, 40.0]
+    _B2: ClassVar[list[float]] = [0.1, 0.15]
+    _D2: ClassVar[list[float]] = [0.02, 0.03]
 
     def test_two_epoch_returns_process(self) -> None:
         result = simulate_birth_death_lifespans(
@@ -302,14 +304,14 @@ class TestLifespanDeathTimeSampling:
         birth = jnp.float64(0.0)
 
         n = 2_000
-        samples = [
-            float(
-                _sample_piecewise_exponential_death_time(
-                    birth, dr, et, terminal, self._make_key(seed)
+        keys = jax.random.split(self._make_key(0), n)
+        samples = np.asarray(
+            jax.vmap(
+                lambda key: _sample_piecewise_exponential_death_time(
+                    birth, dr, et, terminal, key
                 )
-            )
-            for seed in range(n)
-        ]
+            )(keys)
+        )
         # Only finite (dead) samples contribute to the conditional mean
         dead = [s for s in samples if np.isfinite(s)]
         if len(dead) < 50:

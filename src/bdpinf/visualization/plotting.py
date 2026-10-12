@@ -92,7 +92,7 @@ def compute_consistency_bands(
                 "variance": float(summary_row[f"{parameter_name}_var"]),
             }
             if reps.size == 0:
-                bounds = {stat: (np.nan, np.nan) for stat in _CONSISTENCY_STATS}
+                bounds = dict.fromkeys(_CONSISTENCY_STATS, (np.nan, np.nan))
             else:
                 # Draw mean, then median, then variance resamples from the same
                 # generator (this ordering fixes the golden bootstrap values).

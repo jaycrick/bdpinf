@@ -14,34 +14,25 @@ repos:
         exclude_types: [html]
       - id: debug-statements
 
-  # Ruff linting
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.13
-    hooks:
-      - id: ruff-check
-        args: [--fix]
-      - id: ruff-format
-        args: [--diff]
-
-  # basedpyright type checking (strict mode; local hook uses venv install)
+  # Local hooks run through uv so ruff/basedpyright versions come from uv.lock
   - repo: local
     hooks:
+      - id: ruff-check
+        name: ruff check
+        language: system
+        entry: uv run ruff check --fix
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: uv run ruff format
+        types: [python]
       - id: basedpyright
         name: basedpyright
         language: system
         entry: uv run basedpyright --project pyproject.toml src/
         pass_filenames: false
-        types: [python]
-        files: ^src/
-
-  # toml-sort
-  - repo: https://github.com/pappasam/toml-sort
-    rev: v0.24.3
-    hooks:
-      - id: toml-sort
-        args: [--no-sort-tables, --sort-inline-arrays, --sort-inline-tables]
-        files: '\.toml$'
-        exclude: ^panache\.toml$
+        files: ^(src/|pyproject\.toml$)
 
   # panache: Markdown/Quarto linting and formatting
   - repo: https://github.com/jolars/panache-pre-commit

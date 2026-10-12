@@ -263,7 +263,7 @@ class TestBootstrapQuantileResampleDates:
             n_bootstrap=20,
             seed=_SEED,
         )
-        valid_set = set(int(x) for x in _ITEM_IDS)
+        valid_set = {int(x) for x in _ITEM_IDS}
         assert all(int(v) in valid_set for row in item_ids for v in row)
 
     def test_resampled_years_in_range(self) -> None:
@@ -372,7 +372,7 @@ class TestBootstrapQuantileResampleDates:
         bad_late[0] = 150  # actually valid; use original early-1 scenario:
         bad_late2 = _EARLY.copy()
         bad_late2[0] = _EARLY[0] - 50  # bad: late < early
-        item_ids, years = bootstrap_quantile_resample_dates(
+        item_ids, _years = bootstrap_quantile_resample_dates(
             _EARLY,
             bad_late2,
             _ITEM_IDS,
@@ -474,16 +474,20 @@ class TestSaveLoadBootstrapSamples:
         assert result["item_id_samples"].shape == ids.shape
 
     def test_file_not_found_raises(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            with pytest.raises(FileNotFoundError):
-                load_bootstrap_samples(Path(tmp) / "nonexistent.npz")
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            pytest.raises(FileNotFoundError),
+        ):
+            load_bootstrap_samples(Path(tmp) / "nonexistent.npz")
 
     def test_shape_mismatch_raises(self) -> None:
         ids, years = self._make_tiny()
         bad_years = years[:, :2]  # wrong shape
-        with tempfile.TemporaryDirectory() as tmp:
-            with pytest.raises(ValueError, match="shape"):
-                save_bootstrap_samples(ids, bad_years, Path(tmp) / "bad.npz")
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            pytest.raises(ValueError, match="shape"),
+        ):
+            save_bootstrap_samples(ids, bad_years, Path(tmp) / "bad.npz")
 
     def test_parent_dir_created(self) -> None:
         ids, years = self._make_tiny()

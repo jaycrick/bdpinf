@@ -322,10 +322,7 @@ def run_first_order_optimizer(
     record_every = int(strategy.solver_kwargs.get("record_every", 1))
     optimizer_name_lower = strategy.name.lower()
 
-    if optimizer_name_lower == "sgd":
-        tx = optax.sgd(lr)
-    else:
-        tx = optax.adam(lr)
+    tx = optax.sgd(lr) if optimizer_name_lower == "sgd" else optax.adam(lr)
 
     opt_state = tx.init(log_params)
     params = log_params

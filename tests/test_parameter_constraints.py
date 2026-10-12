@@ -86,10 +86,8 @@ class TestConstraintTransforms:
         assert float(full_params[0]) == pytest.approx(0.99)
         assert float(full_params[2]) == pytest.approx(0.88)
         # Free params should be in their positions
-        free_idx = 0
-        for i in [1, 3, 4, 5]:  # free indices
+        for free_idx, i in enumerate([1, 3, 4, 5]):  # free indices
             assert float(full_params[i]) == pytest.approx(float(free_params[free_idx]))
-            free_idx += 1
 
     def test_apply_constraints_with_equality(self) -> None:
         """Equal parameters should have same value."""

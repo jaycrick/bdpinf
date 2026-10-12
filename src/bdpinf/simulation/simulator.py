@@ -48,6 +48,7 @@ Examples
 
 """
 
+import contextlib
 import functools
 from collections.abc import Callable
 from typing import Any, NamedTuple
@@ -768,7 +769,7 @@ def _simulate_lifespans_core(
     def _cond(state: _LifespanLoopState) -> jax.Array:
         return (state.current_time < terminal_time) & ~state.overflow
 
-    def _body(state: _LifespanLoopState) -> _LifespanLoopState:  # noqa: PLR0914
+    def _body(state: _LifespanLoopState) -> _LifespanLoopState:
         (
             key,
             current_time,
@@ -968,10 +969,9 @@ def _reconstruct_genealogy(
                 parent_map[i] = alive_list[insert_pos - 1]
                 alive_list.insert(insert_pos, i)
         else:  # death
-            try:
+            # already removed is harmless (shouldn't happen in a valid simulation)
+            with contextlib.suppress(ValueError):
                 alive_list.remove(i)
-            except ValueError:
-                pass  # already removed (shouldn't happen in a valid simulation)
 
     # ---- Spine = alive_list[0] at termination ----
     spine_id = alive_list[0] if alive_list else None

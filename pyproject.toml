@@ -21,11 +21,11 @@ dependencies = [
   "vl-convert-python>=1.9.0.post1"
 ]
 
-# bdsurv is not yet published to PyPI; pin to the local sibling checkout until
-# the first release lands, then remove this override and rely on the PyPI
-# version pin above.
+# bdsurv is not yet published to PyPI; pin to a git revision (bump `rev` to
+# pick up bdsurv changes).  For local co-development, temporarily point this at
+# `{ path = "../bdsurv", editable = true }`.
 [tool.uv.sources]
-bdsurv = { path = "../bdsurv", editable = true }
+bdsurv = { git = "https://github.com/jaycrick/bdsurv.git", rev = "017c23b" }
 
 [dependency-groups]
 gpu = [
@@ -48,7 +48,6 @@ dev = [
   "quarto>=0.1.0",
   "ruff>=0.15.1",
   "scipy-stubs>=1.17.0.2",
-  "toml-sort>=0.24.3",
   "typer>=0.24.1",
   "typing-extensions>=4.15.0"
 ]
@@ -71,13 +70,8 @@ reportUnknownArgumentType = "none"
 reportUnknownParameterType = "none"
 reportAttributeAccessIssue = "none"
 reportIndexIssue = "none"
-reportOperatorIssue = "none"
-reportAbstractUsage = "none"
 reportArgumentType = "none"
-reportOptionalOperand = "none"
 reportReturnType = "none"
-reportGeneralTypeIssues = "none"
-reportUnusedExpression = "none"
 # lintquarto concatenates all cells into one temp .py file; the timing-bracket pattern
 # (import time in both the first and last cell) triggers this in every notebook.
 # ruff F811 catches genuine duplicate imports in src/, so suppressing here is safe.
@@ -87,7 +81,15 @@ reportDuplicateImport = "none"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["B", "D", "E", "F", "I", "UP", "W"]
+select = ["B", "C4", "D", "E", "F", "I", "PIE", "PT", "RUF", "SIM", "UP", "W"]
+
+ignore = [
+  "C408", # dict(key=value) is a fine way to build kwargs
+  "PT018", # composite asserts are fine; splitting them hurts readability
+  "RUF001", # math notation (λ, μ, ×, ·) is intentional in strings, docstrings, comments
+  "RUF002",
+  "RUF003"
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
@@ -103,7 +105,7 @@ convention = "numpy"
   "D101", # test classes are self-documenting via their names
   "D102", # test methods are self-documenting via their names
   "E501", # test strings and fixture data are allowed to be long
-  "S101" # asserts are the mechanism of the tests
+  "PT011" # TODO: add match= to broad pytest.raises during the test consolidation
 ]
 # lintquarto extracts qmd cells to temporary .py files in the same directory.
 # These rules are false positives or impractical to enforce in notebook code:
@@ -126,26 +128,13 @@ convention = "numpy"
   "I001"
 ]
 
-[tool.toml-sort]
-all = true
-ignore_case = true
-in_place = true
-no_sort_tables = true
-sort_first = ["key1", "key2"]
-sort_inline_arrays = true
-sort_inline_tables = true
-sort_table_keys = true
-
 [tool.pytest.ini_options]
-addopts = "-m \"not slow\" --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml --cov-fail-under=86"
+addopts = "-m \"not slow\" --cov --cov-report=term-missing --cov-fail-under=86"
 markers = [
   "recovery: simulate-then-fit parameter recovery tests (implies slow)",
   "regression: golden-value tests guarding against numerical drift",
   "slow: long-running tests that are skipped in regular runs"
 ]
-python_classes = ["Test*"]
-python_files = ["test_*.py"]
-python_functions = ["test_*"]
 testpaths = ["tests"]
 
 [tool.coverage.run]

@@ -86,7 +86,7 @@ class TestAltairTheme:
         assert saved.parent == nested
 
     def test_save_chart_fails_loudly_on_unknown_format(self, tmp_path: Path) -> None:
-        with pytest.raises(ValueError, match="format|fmt|nope|extension"):
+        with pytest.raises(ValueError, match=r"format|fmt|nope|extension"):
             save_chart(_sample_chart(), "out", output_dir=tmp_path, fmt="nope")
 
     def test_display_svg_renders_without_raising(self) -> None:

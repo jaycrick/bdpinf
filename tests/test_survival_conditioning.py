@@ -598,7 +598,7 @@ class TestConditionedSurvivalRecovery:
         ratio = max(conditioned_mean, forward_mean_prop) / max(
             min(conditioned_mean, forward_mean_prop), 1e-9
         )
-        assert ratio < 10.0, (  # noqa: PLR2004
+        assert ratio < 10.0, (
             f"Conditioned proportion {conditioned_mean:.3f} is implausible "
             f"compared to forward proportion {forward_mean_prop:.3f} (ratio={ratio:.1f})"
         )

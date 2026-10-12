@@ -473,7 +473,7 @@ def bench_fitter(
             f"{r['epochs']:>6} {r['n_ages']:>7}"
             f" {r['fitter_cold_s'] * 1000:>10.0f}"
             f" {r['fitter_warm_s'] * 1000:>10.0f}"
-            f" {str(r['lbfgs_iters']):>6}"
+            f" {r['lbfgs_iters']!s:>6}"
         )
 
     if speedup is not None:

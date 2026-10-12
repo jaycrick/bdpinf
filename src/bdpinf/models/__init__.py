@@ -21,6 +21,9 @@ from .math_populations import (
 from .rate_functions import PiecewiseConstantRate, PiecewiseLinearRate, RateFunction
 
 __all__ = [
+    "PiecewiseConstantRate",
+    "PiecewiseLinearRate",
+    "RateFunction",
     "calculate_ages_log_lik",
     "calculate_non_spine_ages_log_lik",
     "calculate_populations_log_lik",
@@ -32,7 +35,4 @@ __all__ = [
     "spine_age_cdf",
     "spine_age_log_atom",
     "spine_age_log_density",
-    "PiecewiseConstantRate",
-    "PiecewiseLinearRate",
-    "RateFunction",
 ]

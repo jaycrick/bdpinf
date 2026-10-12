@@ -221,7 +221,7 @@ def _simulate_era_core(
     def _cond(s: _EraLoopState) -> jax.Array:
         return (s.current_time < segment_end) & ~s.overflow
 
-    def _body(s: _EraLoopState) -> _EraLoopState:  # noqa: PLR0914
+    def _body(s: _EraLoopState) -> _EraLoopState:
         key, k_birth_dt, k_death_time = jax.random.split(s.key, 3)
 
         # ---- Next birth time (linear-rate exponential inter-arrival) ----
@@ -525,7 +525,7 @@ def sample_conditioned_survival_process(
     if not (len(dr) == len(et) == n_epochs):
         msg = "birth_rates, death_rates, and epoch_end_times must have the same length"
         raise ValueError(msg)
-    if n_epochs < 2:  # noqa: PLR2004
+    if n_epochs < 2:
         msg = "At least 2 epochs are required for conditioned sampling"
         raise ValueError(msg)
 
@@ -720,7 +720,7 @@ def sample_conditioned_survival_per_posterior(
     br_arr = np.asarray(posterior_birth_rates, dtype=np.float64)
     dr_arr = np.asarray(posterior_death_rates, dtype=np.float64)
 
-    if br_arr.ndim != 2 or dr_arr.ndim != 2:  # noqa: PLR2004
+    if br_arr.ndim != 2 or dr_arr.ndim != 2:
         msg = "posterior_birth_rates and posterior_death_rates must be 2-D arrays"
         raise ValueError(msg)
     if br_arr.shape != dr_arr.shape:
@@ -749,7 +749,7 @@ def sample_conditioned_survival_per_posterior(
                 random_seed=seed_i,
                 max_population=max_population,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             warnings.warn(
                 f"sample_conditioned_survival_per_posterior: draw {i} raised "
                 f"{type(exc).__name__}: {exc}",

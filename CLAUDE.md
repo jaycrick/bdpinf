@@ -37,7 +37,7 @@ This matches `wrap = "semantic"` in `panache.toml`.
 # Install dependencies
 uv sync --all-groups
 
-# Run tests (slow tests excluded by default; coverage ≥80% enforced)
+# Run tests (slow tests excluded by default; coverage ≥86% enforced)
 uv run pytest
 uv run pytest tests/test_fitting.py -v        # single file
 uv run pytest -m slow                          # run slow tests only

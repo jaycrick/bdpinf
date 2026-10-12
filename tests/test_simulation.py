@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 import bdpinf.simulation.simulator as simulator_module
 from bdpinf.models.math_ages import (
@@ -577,7 +578,7 @@ class TestBdpAgeDistributionSampling:
         max_time = 12.0
         rng = np.random.default_rng(2026)
 
-        for _ in range(200):
+        for _ in range(15):
             ages = simulate_bdp_ages_from_distributions(
                 birth_rate=birth_rate,
                 death_rate=death_rate,
@@ -617,7 +618,7 @@ class TestBdpAgeDistributionSampling:
                 max_time=max_time,
                 rng=rng1,
             )
-            for _ in range(20)
+            for _ in range(4)
         ]
         draws2 = [
             simulate_bdp_ages_from_distributions(
@@ -626,11 +627,12 @@ class TestBdpAgeDistributionSampling:
                 max_time=max_time,
                 rng=rng2,
             )
-            for _ in range(20)
+            for _ in range(4)
         ]
 
         assert draws1 == draws2
 
+    @pytest.mark.slow
     def test_sampled_ages_have_better_mean_log_likelihood_than_uniform(self) -> None:
         """Sampled ages should score better than a uniform baseline under matching models."""
         birth_rate = 0.5

@@ -388,7 +388,7 @@ class TestPopulationProbability:
         )
 
     @pytest.mark.parametrize(
-        "birth_rate,death_rate,time,n",
+        ("birth_rate", "death_rate", "time", "n"),
         [
             (0.1, 0.05, 100.0, 5),
             # (0.5, 0.3, 200.0, 10),  # This leads to beta_t = 1, excluded

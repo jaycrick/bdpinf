@@ -21,7 +21,8 @@ __compile_start = time.perf_counter()
 
 The application repo's `manuscript_survival_proportion.qmd` estimates the
 proportion of ever-created records still alive today via an analytic
-Horvitz--Thompson (HT) estimator. This library also provides a second,
+Horvitz--Thompson (HT) estimator.
+This library also provides a second,
 simulation-based estimator of the same quantity: the multilevel-splitting /
 sequential-ABC scheme in `bdpinf.simulation.survival_conditioning`.
 It conditions forward lifespan

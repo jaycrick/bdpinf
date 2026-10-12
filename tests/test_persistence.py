@@ -79,9 +79,11 @@ class TestSaveLoadRecoveryResults:
         assert len(loaded["results"]) == len(df)
 
     def test_file_not_found_raises(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            with pytest.raises(FileNotFoundError):
-                load_recovery_results(Path(tmp) / "nonexistent.npz")
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            pytest.raises(FileNotFoundError),
+        ):
+            load_recovery_results(Path(tmp) / "nonexistent.npz")
 
     def test_parent_dir_created(self) -> None:
         df = _make_df()
