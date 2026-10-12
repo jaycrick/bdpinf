@@ -306,8 +306,8 @@ class TestMultiEpochEqualsSingleEpoch:
     For functions that support array inputs (piecewise-constant epochs), when
     the rates are identical across epochs, the result should match the
     equivalent single-epoch case with the same total time. Where known
-    numerical differences exist (due to reflection/time-reversal branches),
-    we use a relaxed tolerance and document the behavior.
+    numerical differences exist, we use a relaxed tolerance and document the
+    behavior.
     """
 
     def test_extinction_pr_multi_equals_single(self) -> None:
@@ -477,11 +477,8 @@ class TestMultiEpochEqualsSingleEpoch:
         )
 
     def test_ages_log_lik_multi_equals_single_spine(self) -> None:
-        # Interior ages only — at-boundary (age=T) is excluded because the
-        # single-epoch direct formula and the multi-epoch reversed-time formula
-        # use different branch handling at the boundary (survival function vs
-        # density), producing a small but real numerical discrepancy there.
-        # The time-reversal identity is correct for all interior ages.
+        # Interior ages only: the age == T atom is a point mass and is checked
+        # separately.
         ages = jnp.array([15.0, 60.0, 100.0], dtype=jnp.float64)
         birth_rate_val, death_rate_val, final_time = (
             jnp.array([0.018], dtype=jnp.float64),

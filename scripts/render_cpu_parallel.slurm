@@ -25,14 +25,13 @@
 # Project-rendered (in _quarto.yml's `render:` list): output lands in
 # `_output/` automatically, no --execute-dir/mv needed.
 #
-# Resource sizing (see job 26813064, pre-split monorepo): 16 cpus / 32G / 6h
+# Resource sizing (based on job 26813064): a 16 cpus / 32G / 6h request
 # completed in 1:49:01 at 37.30% CPU efficiency (~6 cores average) and 61.90%
-# memory efficiency (19.81 GB peak). Right-sized to 8 cpus / 24G / 3h, leaving
-# headroom above both observed averages/peaks (mem-per-cpu raised from 2G to
-# 3G so the smaller cpu count doesn't undershoot the 19.81 GB peak). That job
-# didn't include qmd_scripts/validation/bayesian_multi_epoch/ (added here
-# post-split) or optimizer_comparison.qmd (moved to nt-manuscripts) --- retune
-# after measuring a real post-split run.
+# memory efficiency (19.81 GB peak). This job asks for 8 cpus / 24G / 3h,
+# leaving headroom above both observed averages/peaks (3G per cpu so the
+# smaller cpu count doesn't undershoot the 19.81 GB peak). Job 26813064 did
+# not render qmd_scripts/validation/bayesian_multi_epoch/, so retune after
+# measuring a run of the current notebook set.
 #SBATCH --job-name=render-cpu-parallel
 #SBATCH --account=punim1793
 #SBATCH --ntasks=1

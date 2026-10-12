@@ -90,10 +90,8 @@ class TestAltairTheme:
             save_chart(_sample_chart(), "out", output_dir=tmp_path, fmt="nope")
 
     def test_display_svg_renders_without_raising(self) -> None:
-        # vl-convert returns the SVG mimebundle entry as str, not bytes; this
-        # regression-tests that display_svg writes it into a text buffer
-        # (io.StringIO), not a bytes buffer, which previously raised
-        # "TypeError: a bytes-like object is required, not 'str'".
+        # vl-convert returns the SVG mimebundle entry as str, not bytes, so
+        # display_svg must write it into a text buffer (io.StringIO).
         display_svg(_sample_chart(), width=400, height=300)
 
     def test_save_chart_sizes_hconcat_children_not_wrapper(

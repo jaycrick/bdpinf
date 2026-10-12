@@ -4,11 +4,10 @@ Notation follows the paper:
 $\Gamma(0,t] = \int_0^t (\lambda - \mu)$,
 $N(T) = \int_0^T \mu(t)\, e^{-\Gamma(0,t]}\,dt$,
 $\mathcal W(T) = e^{\Gamma(0,T]}(1 + N(T))$ and $\pi(T) = 1/\mathcal W(T)$.
-The extinction probability is $\Pr(Z_T = 0) = N(T) / (1 + N(T))$
-.
-The repo's historical name for $N(T)$ is the *extinction numerator*
-(``ext_num``); it equals $\mathcal W(T) - 1$ only after the rescaling
-above, so $\pi(T) = 1/(1 + N(T))$ holds only when $\Gamma(0,T] = 0$.
+The extinction probability is $\Pr(Z_T = 0) = N(T) / (1 + N(T))$.
+In the code $N(T)$ is called the *extinction numerator* (``ext_num``); it
+equals $\mathcal W(T) - 1$ only after the rescaling above, so
+$\pi(T) = 1/(1 + N(T))$ holds only when $\Gamma(0,T] = 0$.
 
 The epoch-wise closed forms live in :mod:`bdpinf.models.math_nested`
 (:func:`~bdpinf.models.math_nested.log_extinction_numerator` gives

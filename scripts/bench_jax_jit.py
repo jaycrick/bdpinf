@@ -1,8 +1,8 @@
 """Post-JIT JAX benchmark for the birth-death process likelihood.
 
 Measures the speedup from explicit jax.jit compilation of the NLL function
-that the optimizer uses, across the same (epochs × n_ages) grid as the
-Phase 2a eager benchmark stored in _output/jax_torch_benchmarks.json.
+that the optimizer uses, against the same function run eagerly, across an
+(epochs × n_ages) grid.
 
 Results are keyed by `jax.default_backend()` ("cpu" or "gpu") and merged
 into the output file rather than overwritten, so a CPU run and a GPU run
@@ -47,7 +47,7 @@ from bdpinf.models.math_populations import calculate_populations_log_lik
 app = typer.Typer(add_completion=False)
 
 # ---------------------------------------------------------------------------
-# Benchmark grid — matches Phase 2a
+# Benchmark grid
 # ---------------------------------------------------------------------------
 
 EPOCH_CONFIGS = [1, 2, 6]

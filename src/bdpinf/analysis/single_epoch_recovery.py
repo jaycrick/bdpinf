@@ -1,11 +1,9 @@
 """Simulate-then-fit replicate logic for single-epoch bulk-inference recovery studies.
 
-Moved out of ``qmd_scripts/validation/single_epoch/06_bulk_inference.qmd`` (and
-the equivalent sampling step in ``04_bulk_inference_single_rate.qmd``) so the
-heavy per-replicate work can be run once by
+Used by ``06_bulk_inference.qmd``; the heavy per-replicate work is run once by
 ``scripts/generate_recovery_studies.py`` and persisted via
-:func:`~bdpinf.inference.save_recovery_results`, instead of re-running on
-every notebook render.
+:func:`~bdpinf.inference.save_recovery_results`, so notebook renders only load
+the results.
 """
 
 from typing import Any

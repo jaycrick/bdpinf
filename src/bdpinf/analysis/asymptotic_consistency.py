@@ -1,7 +1,7 @@
 """Sampling and fitting helpers for asymptotic-consistency validation.
 
-This module contains the sampling and fitting functions moved out of the
-Quarto script so they can be imported and tested independently.
+Sampling and fitting functions for the asymptotic-consistency notebook
+(``07_asymptotic_consistency.qmd``).
 """
 
 from collections.abc import Mapping

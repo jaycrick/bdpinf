@@ -379,8 +379,7 @@ class TestBirthDeathProcessGenealogy:
         assert lifetimes["mark"]["type"] == "rule"
         assert connectors["mark"]["type"] == "rule"
 
-        # y axis labelled by individual_id in DFS order (root 0 on top), the same
-        # ordering the previous Plotly ticktext produced.
+        # y axis labelled by individual_id in DFS order (root 0 on top).
         assert lifetimes["encoding"]["y"]["scale"]["domain"] == [
             "0",
             "2",

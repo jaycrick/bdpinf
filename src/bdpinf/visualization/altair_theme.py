@@ -124,7 +124,7 @@ def bdpinf_theme() -> alt.theme.ThemeConfig:
                 # Leave the inner data rectangle unfilled (the Vega-Lite default)
                 # rather than painting it BACKGROUND: config.background already
                 # tints the whole canvas, so the figure still reads as uniformly
-                # muted, but a single knob (background) now controls the look in
+                # muted, but a single knob (background) controls the look in
                 # every context — override it for a paper/slide or a transparent
                 # export and the whole figure recolours, with no orphaned grey
                 # data rectangle left behind.

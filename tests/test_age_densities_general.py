@@ -1,4 +1,4 @@
-"""Test general-rate age densities against closed forms, legacy code and Wolfram."""
+"""Test general-rate age densities against closed forms, the piecewise-constant path and Wolfram."""
 
 import jax
 import jax.numpy as jnp
@@ -120,7 +120,7 @@ class TestArrayWrappersAgainstQuadrature:
         )
 
     def test_atom_normalises_multi_epoch(self) -> None:
-        # The earlier time-reversal code returned 0.2057 here and summed to 0.890.
+        # The atom plus the continuous part must sum to one in every epoch layout.
         times = jnp.array([0.8, 1.7, _T])
         b = PiecewiseConstantRate(jnp.array([0.9, 1.6, 0.7]), times)
         d = PiecewiseConstantRate(jnp.array([1.2, 0.5, 1.0]), times)

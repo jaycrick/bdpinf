@@ -2,14 +2,13 @@
 
 `simulate_birth_death_process_from_contour_process` (exact contour-process
 reconstruction) and `simulate_subcritical_survival_splitting` (fixed-factor
-RESTART multilevel splitting) were extracted into the standalone `bdsurv`
-package so the simulation methodology could be published independently of
-this package's inference stack. `bdsurv` returns its own lightweight
-`SimulatedTree` (a records DataFrame plus rates and terminal time, with no
-dependency on this package) rather than `BirthDeathProcess`, since
-`BirthDeathProcess` pulls in `bdpinf.inference`. This module re-wraps
-`bdsurv`'s results into `BirthDeathProcess` so the rest of `bdpinf` sees the
-same canonical type as every other simulator here.
+RESTART multilevel splitting) are implemented in the standalone `bdsurv`
+package, which does not depend on this package's inference stack.
+`bdsurv` returns its own lightweight `SimulatedTree` (a records DataFrame plus
+rates and terminal time) rather than `BirthDeathProcess`, since
+`BirthDeathProcess` pulls in `bdpinf.inference`.
+This module wraps `bdsurv`'s results into `BirthDeathProcess` so the rest of
+`bdpinf` sees the same canonical type as every other simulator here.
 
 `SplittingConfig` and `select_level_times_for_band` carry no
 `BirthDeathProcess` dependency, so import them from `bdsurv` directly.

@@ -57,8 +57,8 @@ _GOLDEN_SPINE_LL_750 = -25.0902674713
 # Non-spine age log-lik at age=750
 _GOLDEN_NON_SPINE_LL_750 = -40.4957324571
 # Population log-lik at n=5: log[(1-alpha) pi (1-pi)^4], matching a 60-digit
-# decimal evaluation (-31.83258146374835...).  (An earlier value, -31.8330083712,
-# lost ~4e-4 to a 1 - pi round trip with pi(T) ~ 1e-13.)
+# decimal evaluation (-31.83258146374835...); evaluating through 1 - pi would
+# lose ~4e-4 here because pi(T) ~ 1e-13.
 _GOLDEN_POPULATIONS_LL_N5 = -31.8325814637
 # Combined log-likelihood for 10 fixed ages (unknown spine, unconditional counts)
 _GOLDEN_COMBINED_LL_10AGES = -381.6389410196

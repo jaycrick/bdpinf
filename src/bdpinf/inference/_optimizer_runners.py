@@ -1,6 +1,5 @@
 """LBFGS and first-order optimizer runner functions (JAX backend).
 
-Extracted from fitting.py to keep that module below 1000 lines.
 Depends only on _fit_types, stdlib, JAX, scipy, and optax.
 """
 

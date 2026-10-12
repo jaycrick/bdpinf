@@ -127,7 +127,7 @@ class TestNestedW:
 
 
 class TestBoundaryFixes:
-    """Regression tests for the multi-epoch ``age == T`` bugs of the time-reversal code."""
+    """Test the multi-epoch ``age == T`` atom and the density continuity at ``T``."""
 
     def test_spine_atom_equals_w_times_exp_minus_lambda(self) -> None:
         terms = _terms(_TIMES, _BIRTH, _DEATH)
@@ -135,7 +135,7 @@ class TestBoundaryFixes:
         lam_total = _lambda_int(_TIMES, _BIRTH, 0.0, _TIMES[-1])
         atom = float(jnp.exp(mn.spine_log_atom(terms)))
         assert atom == pytest.approx(w_t * math.exp(-lam_total), rel=1e-12)
-        assert atom == pytest.approx(0.315414, abs=1e-6)  # legacy returned 0.2057
+        assert atom == pytest.approx(0.315414, abs=1e-6)
 
     @pytest.mark.parametrize(("times", "birth", "death"), _PARAM_SETS)
     def test_density_plus_atom_is_one(

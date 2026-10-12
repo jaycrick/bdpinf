@@ -446,24 +446,13 @@ class TestSaveLoadBootstrapSamples:
         np.testing.assert_array_equal(result["item_id_samples"], ids)
         assert result["metadata"]["item_id_dtype"] == "uint32"
 
-    def test_legacy_doc_id_samples_key_still_loads(self) -> None:
-        # Pre-split files used the key "doc_id_samples" with a fixed uint16
-        # dtype and no schema_version. load_bootstrap_samples must still
-        # read them.
-        ids, years = self._make_tiny()
+    def test_file_without_item_id_samples_raises(self) -> None:
+        _, years = self._make_tiny()
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "legacy.npz"
-            np.savez_compressed(
-                path,
-                doc_id_samples=ids,
-                resampled_years=years,
-                subgroup=np.array("non_lectionary", dtype=object),
-                order_meta=np.array("sorted_by_midYear", dtype=object),
-            )
-            result = load_bootstrap_samples(path)
-        np.testing.assert_array_equal(result["item_id_samples"], ids)
-        assert result["metadata"]["schema_version"] == 1
-        assert result["metadata"]["item_id_dtype"] == "uint16"
+            path = Path(tmp) / "foreign.npz"
+            np.savez_compressed(path, resampled_years=years)
+            with pytest.raises(ValueError, match="item_id_samples"):
+                load_bootstrap_samples(path)
 
     def test_load_without_extension(self) -> None:
         ids, years = self._make_tiny()

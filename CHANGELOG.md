@@ -28,6 +28,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `models.math_age_densities`: `log_nested_w` and `age_log_densities` renamed `log_nested_w_general` and `age_log_densities_general` to stop clashing with `math_nested`.
 
+- `analysis.bootstrap_date_density.load_bootstrap_samples` no longer reads the old `doc_id_samples` key (schema < 2); regenerate old `bootstrap_samples/*.npz` files.
+
 - `unbias` renamed `condition_on_survival` everywhere; `log_likelihood()` now defaults to `True`, matching `BirthDeathProcess.log_likelihood()` and `fit_birth_death_processes()` (it was `False` in the free function).
   `calculate_populations_log_lik` keeps its unconditional default.
 

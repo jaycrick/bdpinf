@@ -616,10 +616,7 @@ def save_bootstrap_samples(
 def load_bootstrap_samples(path: str | Path) -> dict[str, Any]:
     """Load bootstrap KDE samples from a ``.npz`` file.
 
-    The file must have been written by :func:`save_bootstrap_samples`.  Files
-    written before the ``item_id_samples``/dynamic-dtype schema change (schema
-    version < 2, key ``doc_id_samples``, fixed ``uint16``) still load: the
-    legacy key is read as a fallback and its stored ``uint16`` dtype is kept.
+    The file must have been written by :func:`save_bootstrap_samples`.
 
     Parameters
     ----------
@@ -642,6 +639,9 @@ def load_bootstrap_samples(path: str | Path) -> dict[str, Any]:
     ------
     FileNotFoundError
         If the file does not exist (with or without ``.npz`` extension).
+    ValueError
+        If the file has no ``item_id_samples`` array, i.e. it was not written by
+        :func:`save_bootstrap_samples`.
     """
     p = Path(path)
     if not p.exists() and not p.with_suffix(".npz").exists():
@@ -657,9 +657,13 @@ def load_bootstrap_samples(path: str | Path) -> dict[str, Any]:
         v = data[key]
         return v[()] if v.ndim == 0 else (v.item() if v.size == 1 else v.tolist())
 
-    ids_key = "item_id_samples" if "item_id_samples" in data else "doc_id_samples"
-    ids_raw = np.asarray(data[ids_key])
-    default_dtype = str(ids_raw.dtype) if ids_key == "item_id_samples" else "uint16"
+    if "item_id_samples" not in data:
+        msg = (
+            f"{np_path} has no 'item_id_samples' array; "
+            "regenerate it with save_bootstrap_samples"
+        )
+        raise ValueError(msg)
+    ids_raw = np.asarray(data["item_id_samples"])
 
     metadata: dict[str, Any] = {
         "subgroup": str(_scalar("subgroup", "")),
@@ -668,8 +672,8 @@ def load_bootstrap_samples(path: str | Path) -> dict[str, Any]:
         "current_year": int(_scalar("current_year_meta", 2024)),
         "seed": int(_scalar("seed_meta", -1)),
         "order": str(_scalar("order_meta", "sorted_by_mid_value")),
-        "schema_version": int(_scalar("schema_version_meta", 1)),
-        "item_id_dtype": str(_scalar("item_id_dtype_meta", default_dtype)),
+        "schema_version": int(_scalar("schema_version_meta", _SCHEMA_VERSION)),
+        "item_id_dtype": str(_scalar("item_id_dtype_meta", str(ids_raw.dtype))),
     }
 
     return {

@@ -7,12 +7,10 @@
 # pending* job with the same --job-name to finish, so giving both the same
 # name chains them in submission order.
 #
-# A GPU render bucket (render_gpu.slurm) used to render the Bayesian
-# notebooks on a GPU node; it was removed after benchmarking showed CPU is
+# The Bayesian notebooks (qmd_scripts/validation/bayesian_multi_epoch/) render
+# on CPU alongside everything else via render_cpu_parallel.slurm: CPU is
 # 1.6x-8x faster than GPU on every config tested (see
-# docs/design/GPU_RENDERING_PROTOCOL.md). Those notebooks (now
-# qmd_scripts/validation/bayesian_multi_epoch/) render via
-# render_cpu_parallel.slurm alongside everything else.
+# docs/design/GPU_RENDERING_PROTOCOL.md).
 #
 # Usage (from the repo root, on an HPC login node):
 #   ./scripts/render_all.sh

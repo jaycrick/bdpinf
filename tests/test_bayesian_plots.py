@@ -198,13 +198,10 @@ class TestPosteriorRatesChart:
     def test_ridge_height_reflects_relative_spread(self) -> None:
         """A tightly concentrated category renders taller than a diffuse one.
 
-        Previously every ridge was peak-normalized independently, so all
-        ridges read as the same height regardless of spread. After switching
-        to area-normalization plus a shared figure-wide rescale
-        (:func:`_rescale_bins_to_global_peak`), a low-variance category's
+        Ridges are area-normalized and then rescaled by one figure-wide factor
+        (:func:`_rescale_bins_to_global_peak`), so a low-variance category's
         peak density is higher (its mass concentrates in fewer bins) than a
-        high-variance category's, so the low-variance ridge renders taller —
-        this is the spread information the flat-height ridges were hiding.
+        high-variance category's and the low-variance ridge renders taller.
         """
         rng = np.random.default_rng(13)
         tight = rng.normal(loc=1.0, scale=0.02, size=2000)
@@ -293,10 +290,9 @@ class TestPosteriorRatesChart:
     def test_x_axis_title_has_no_stray_field_names(self) -> None:
         """Regression test: layering used to comma-join distinct field titles.
 
-        Before the fix, the area's x title ("Rate per year") was joined with
-        the untitled median/CI-bar x-encodings' own field names ("rate",
-        "ci_low"), producing "Rate per year, rate, ci_low" in the exported
-        axis title.
+        All layers must carry the area's x title; otherwise Vega-Lite joins it
+        with the median/CI-bar field names ("rate", "ci_low") into an axis title
+        like "Rate per year, rate, ci_low".
         """
         rng = np.random.default_rng(5)
         panels = [

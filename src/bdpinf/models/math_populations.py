@@ -13,19 +13,17 @@ $\ln\beta = \ln(\mathcal W(T) - 1) - \ln\mathcal W(T)$,
 all from :mod:`bdpinf.models.math_nested`, so nothing is recovered through
 ``log1p(-beta)`` round trips.
 
-Control-flow notes vs the Phase 2a spike:
+Control flow is ``jit``- and ``grad``-safe:
 
-- Single-epoch critical/non-critical branch → merged via ``jnp.where`` so the
-  function is ``jit``- and ``grad``-safe.  Both branches are always computed and
-  the result is selected element-wise.
-- Host-side range guards on ``alpha_t`` / ``beta_t`` → replaced by
-  ``jnp.where``-selected ``-inf``.
-- Finiteness guards → ``jnp.where``-selected ``-inf``.
+- The critical/non-critical branch is merged with ``jnp.where``; both branches
+  are always computed and the result is selected element-wise.
+- Range and finiteness guards select ``-inf`` with ``jnp.where`` rather than
+  branching on host-side values.
 - The multi-start path (``initial_population > 1``) vectorizes over ``ns`` with
-  ``jax.vmap`` (previously a Python loop with per-element ``int()``/``bool()``
-  casts, which is not ``jit``-traceable); the inner sum over the fixed static
-  bound ``n0`` stays a ``jnp.arange(n0)`` vector op, JAX-compatible because
-  ``n0`` is a compile-time constant.
+  ``jax.vmap``, avoiding per-element ``int()``/``bool()`` casts that are not
+  ``jit``-traceable; the inner sum over the fixed static bound ``n0`` is a
+  ``jnp.arange(n0)`` vector op, JAX-compatible because ``n0`` is a
+  compile-time constant.
 
 All inputs are assumed float64 (``jax_enable_x64`` is set in ``__init__.py``).
 """

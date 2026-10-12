@@ -266,7 +266,7 @@ class TestFitting:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Failure payload should expose all attempts and drop legacy error fields."""
+        """Failure payload should expose all attempts and no top-level error fields."""
 
         def fake_run_optimizer_strategies(
             *args: object,

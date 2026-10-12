@@ -13,8 +13,7 @@ MIN_VARIANCE_SAMPLE_SIZE = 2
 def seed_from_parts(*parts: object) -> int:
     """Create a stable integer seed from arbitrary parts.
 
-    This replaces the previous internal `_seed_from_parts` and is used
-    across validation modules to derive deterministic RNG seeds.
+    Used across validation modules to derive deterministic RNG seeds.
     """
     seed_material = "|".join(
         (

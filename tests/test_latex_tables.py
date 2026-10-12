@@ -438,13 +438,10 @@ class TestSubsetFitsLatexHelpers:
         for t in tables.values():
             assert "Tradition" in t
 
-    def test_entity_noun_manuscript_reproduces_pre_split_caption(self) -> None:
-        """entity_noun="individual" must reproduce the byte-identical pre-split caption.
+    def test_entity_noun_individual_sets_caption_wording(self) -> None:
+        """entity_noun="individual" yields "individual half-lives" in the caption.
 
-        The monorepo's app-only captions hardcoded "individual half-lives"; after
-        the split that wording is parameterised via entity_noun. This is the
-        regression guard for the paper's .tex output — the app must pass
-        entity_noun="individual" and get exactly what it got before the split.
+        This is the wording used for the paper's .tex output.
         """
         tables = subset_fits_halflife_latex_by_epoch(
             self._fits(), self._epoch_names(), entity_noun="individual"

@@ -132,7 +132,7 @@ $$
 
 and the same sum with $\lambda_k$ in place of $\mu_k$ gives $L(b)$ with
 $\mathcal W(b)-1=e^{\Gamma(0,b]}L(b)$.
-The code keeps $N$'s historical name *extinction numerator* (`ext_num`);
+In the code $N$ is called the *extinction numerator* (`ext_num`);
 it is $\mathcal W$ only after the factor $e^{\Gamma}$,
 so $\pi(T)=1/(1+N(T))$ holds only when $\Gamma(0,T]=0$.
 Also $\Pr(Z_T=0)=N(T)/(1+N(T))$.
@@ -141,7 +141,6 @@ The code (`bdpinf.models.math_nested`) evaluates these cumulative sums in log sp
 (`cumlogsumexp` of positive terms, no subtraction) once per likelihood call,
 then each age costs one `searchsorted` and a few gathers.
 $L_\mu(s,T)$ uses the mirror-image suffix sum.
-No time reversal is needed.
 
 ### Population term
 

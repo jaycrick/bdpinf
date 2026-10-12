@@ -1,7 +1,7 @@
 """Simulate-then-fit replicate logic for multi-epoch bulk-inference recovery studies.
 
-Moved out of the three heaviest ``qmd_scripts/validation/multi_epoch`` bulk
-inference notebooks so the per-replicate simulate+fit work can be run once by
+Used by the bulk-inference notebooks in ``qmd_scripts/validation/multi_epoch``;
+the per-replicate simulate+fit work is run once by
 ``scripts/generate_recovery_studies.py`` and persisted via
 :func:`~bdpinf.inference.save_recovery_results`:
 

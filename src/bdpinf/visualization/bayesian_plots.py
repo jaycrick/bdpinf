@@ -267,27 +267,24 @@ def _ridgeline_layers(
 
     Notes
     -----
-    ``median_point`` and ``ci_bar`` previously left their x-encoding untitled,
-    so layering them with the area (whose x carries ``title=x_title``) made
-    Vega-Lite comma-join the three layers' distinct field titles into an axis
-    title like ``"Rate per year, rate, ci_low"``. Both now repeat
-    ``title=x_title`` so the merged axis title matches the area's.
+    ``median_point`` and ``ci_bar`` repeat ``title=x_title`` (as the area does)
+    because Vega-Lite otherwise comma-joins the layers' distinct field titles
+    into an axis title like ``"Rate per year, rate, ci_low"``.
 
     The area, median, and CI-bar legends each live on a *different* Vega-Lite
     encoding channel (``opacity``, ``shape``, ``color`` respectively).
-    Vega-Lite only merges legends that share both a channel and are present
-    in the same composed chart, so keeping each on its own channel avoids the
-    previous bug where the area and CI-bar shared the ``opacity`` channel:
-    Vega-Lite merged them into one legend and kept only the area's filled
-    square, discarding the CI-bar's intended ruled-line symbol (a known
-    limitation for composite marks like ``mark_errorbar``, which has no
-    legend-symbol equivalent of its own). Using distinct channels sidesteps
-    that merge entirely rather than trying to force one shared legend to
-    render two different symbol shapes. This still renders as one visual row
-    of legends (all ``orient="top"``) without duplicating per facet row,
-    since each field is constant across categories — the failure mode of the
-    previously-rejected ``resolve_legend(opacity="independent")`` only arises
-    from *independent* per-facet resolution, which we don't use here.
+    Vega-Lite only merges legends that share a channel within the same composed
+    chart, so each legend gets its own channel.
+    If the area and CI-bar shared ``opacity``, Vega-Lite would merge them into
+    one legend and keep only the area's filled square, discarding the CI-bar's
+    ruled-line symbol (composite marks like ``mark_errorbar`` have no
+    legend-symbol equivalent of their own).
+    Distinct channels avoid the merge rather than forcing one legend to render
+    two symbol shapes.
+    The legends still render as one row (all ``orient="top"``) without
+    duplicating per facet row, because each field is constant across
+    categories; ``resolve_legend(opacity="independent")`` would duplicate them,
+    since it resolves legends independently per facet.
     """
     _x_scale = alt.Scale(type="log") if log_scale else alt.Undefined
     _swatch_color = color_scale.range[0] if color_scale.range else "black"  # type: ignore[index]
@@ -639,9 +636,9 @@ def _prior_posterior_rows(
     Prior and posterior are each binned and area-normalized independently by
     :func:`_histogram_ridge_rows`, so the dashed prior outline and filled
     posterior ridge are directly comparable regardless of how many draws each
-    has (priors are a fixed 4000-quantile set; posteriors are MCMC draws) —
-    previously both were raw Vega-Lite bin counts sharing one y-scale, so a
-    much-larger prior draw count could dwarf or flatten the posterior ridge.
+    has (priors are a fixed 4000-quantile set; posteriors are MCMC draws);
+    raw bin counts on a shared y-scale would let a much larger prior draw count
+    dwarf or flatten the posterior ridge.
     The caller must still run :func:`_rescale_bins_to_global_peak` across all
     panels' combined rows so the tallest ridge (prior or posterior, in any
     panel) hits ``1.0`` — a concentrated posterior against a diffuse prior

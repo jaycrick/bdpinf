@@ -117,10 +117,9 @@ class TestEdgeCases:
         assert np.isfinite(ll)
 
     @pytest.mark.xfail(
-        reason="set_epoch_end_times now raises ValueError when the new epoch end"
-        " time is before an existing creation_time, instead of silently"
-        " filtering the individual out — pre-existing failure, to be sorted"
-        " through later"
+        reason="set_epoch_end_times raises ValueError when the new epoch end time"
+        " is before an existing creation_time, but this test expects the"
+        " individual to be filtered out; the intended behaviour is undecided"
     )
     def test_epoch_end_time_before_creation_time(self) -> None:
         """Test behavior when epoch end time is before creation_time."""

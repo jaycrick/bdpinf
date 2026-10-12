@@ -81,8 +81,8 @@ class TestLikelihood:
     def test_log_likelihood_extreme_survival_is_finite_and_exact(self) -> None:
         """A single age with pi(T) ~ e^{-2000} underflows in linear space only.
 
-        Earlier code returned ``-inf`` here; the log-space result is finite and
-        equals log P(Z_T=1) + log f*(a), evaluated with 80-digit decimals.
+        The log-space result is finite and equals log P(Z_T=1) + log f*(a),
+        evaluated with 80-digit decimals.
         """
         from decimal import Decimal, getcontext
 

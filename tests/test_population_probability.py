@@ -449,9 +449,9 @@ class TestPopulationProbability:
     def test_extreme_survival_cases_are_finite_and_exact(self) -> None:
         """pi(T) underflows in linear space here, yet the log pmf is finite and exact.
 
-        The earlier implementation formed ``1 - (1 - pi)`` and returned ``-inf``
-        for these cases; working with ``log pi = -log W(T)`` directly gives the
-        correct value, compared against a 80-digit decimal evaluation.
+        Working with ``log pi = -log W(T)`` directly (rather than forming
+        ``1 - (1 - pi)``, which underflows) gives the correct value, compared
+        against an 80-digit decimal evaluation.
         """
         boundary_cases = [
             (1.0, 0.5, 100.0, 10, "λ = 2μ case"),
@@ -576,11 +576,7 @@ class TestPopulationsLogPmf:
             )
 
     def test_pmf_initial_population_gt_one_is_jittable(self) -> None:
-        """Regression: the n0>1 path must trace under jax.jit/make_jaxpr.
-
-        Previously broke tracing via per-element int()/bool() materialization
-        in a Python loop.
-        """
+        """The n0>1 path must trace under jax.jit/make_jaxpr (no host-side casts)."""
         birth_rates = jnp.array([0.2])
         death_rates = jnp.array([0.1])
         ns = jnp.array([0.0, 1.0, 4.0, 5.0])
