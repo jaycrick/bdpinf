@@ -50,6 +50,7 @@ _LAYERS: dict[str, int] = {
     "bdpinf.analysis.subset_fitting": 7,
     "bdpinf.analysis.validation_helpers": 7,
     "bdpinf.analysis": 7,
+    "bdpinf.visualization.age_density_plots": 8,
     "bdpinf.visualization.age_fit_plot": 8,
     "bdpinf.visualization.altair_theme": 8,
     "bdpinf.visualization.bayesian_plots": 8,

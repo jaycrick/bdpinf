@@ -126,6 +126,7 @@ reference:
       - visualization.parameter_plots
       - visualization.plotting
       - visualization.age_fit_plot
+      - visualization.age_density_plots
       - visualization.correlation_plots
       - visualization.date_distribution_plots
 

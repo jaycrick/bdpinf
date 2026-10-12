@@ -4,6 +4,12 @@ This package contains plotting and visualization utilities for birth-death
 process models and their results.
 """
 
+from .age_density_plots import (
+    age_density_frame,
+    rate_frame,
+    scenario_panel,
+    scenario_row,
+)
 from .age_fit_plot import plot_creation_year_fit
 from .altair_theme import (
     DIVERGING_RDBU,
@@ -52,6 +58,10 @@ from .splitting_plots import (
 )
 
 __all__ = [
+    "age_density_frame",
+    "rate_frame",
+    "scenario_panel",
+    "scenario_row",
     "DIVERGING_RDBU",
     "PTOLQUAL",
     "THEME_NAME",

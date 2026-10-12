@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - `models.rate_functions` (`RateFunction`, `PiecewiseConstantRate`, `PiecewiseLinearRate`) and `models.math_age_densities`: spine, non-spine and random-individual age densities/CDFs for time-varying (piecewise-linear) birth and death rates, with a notebook of density shapes (`qmd_scripts/validation/time_varying_rates/`).
+- `visualization.age_density_plots` (`scenario_panel`, `scenario_row`, ...) and a non-spine age-shapes notebook (`02_non_spine_age_shapes.qmd`).
 
 ### Changed
 

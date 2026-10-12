@@ -214,6 +214,8 @@ All charts are built with Altair; there is no Plotly dependency.
 
 `bayesian_plots.py` --- reusable builders for the recurring Bayesian-notebook figures: `prior_posterior_chart`, `posterior_rates_chart`, `trace_chart`, `ppc_chart`.
 
+`age_density_plots.py` --- `rate_frame`, `age_density_frame`, `scenario_panel`, `scenario_row`: rates-above-age-density panels for time-varying-rate scenarios (non-spine or spine primary curve, optional faint secondary).
+
 `age_fit_plot.py` --- `plot_creation_year_fit`, `creation_year_fit_chart` (observed-vs-fitted creation-year overlay).
 
 `date_distribution_plots.py` --- `plot_date_range_kde_comparison`.

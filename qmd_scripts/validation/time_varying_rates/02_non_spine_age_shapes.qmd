@@ -1,0 +1,582 @@
+---
+title: "Time-Varying Rates: Shapes of the Non-Spine Age Density"
+subtitle: "How Birth and Death Rate Shapes Move the Age of an Ordinary Individual"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# ruff: noqa: E402
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+
+__compile_start = time.perf_counter()
+```
+
+## Overview
+
+Condition on at least one individual being alive at the observation time $T$.
+Of the $Z_T$ survivors, one is the *spine* individual (the ancestral lineage).
+The other $Z_T-1$ are *non-spine*, and their ages are i.i.d. with a single continuous density on $(0,T)$.
+That density is the primary object here.
+It has no atom, and (unlike the spine density) it is positive at $a=0$.
+
+Notation follows the paper:
+$\gamma=\lambda-\mu$,
+$\Lambda(s,e]=\int_s^e\lambda$,
+$M(s,e]=\int_s^e\mu$,
+$\Gamma(s,e]=\Lambda(s,e]-M(s,e]$,
+$\mathcal W(b)=1+\int_0^b\lambda(t)\,e^{\Gamma(t,b]}\,dt$,
+and $\pi(b)=1/\mathcal W(b)$.
+
+## The density used
+
+Using $\mathcal W'=\gamma\mathcal W+\mu$, the exponent $\int_{T-a}^T(\mu\pi+\lambda)$ in the theorem equals
+$\ln[\pi(T-a)/\pi(T)]+M(T-a,T]$.
+With $\mathcal W(T)-1=\int_0^T\lambda(t)\,e^{\Gamma(t,T]}\,dt$ the non-spine density becomes
+
+$$
+  \Pr(A\in da)=\frac{\lambda(T-a)\,\mathcal W(T-a)\,e^{-M(T-a,T]}}{\mathcal W(T)-1}\,da.
+$$
+
+Taking logs gives three additive terms,
+$\ln\lambda(T-a)$, $\ln\mathcal W(T-a)$ and $-M(T-a,T]$,
+plus the constant $-\ln(\mathcal W(T)-1)$.
+Each term has a different job:
+
+- $\ln\lambda(T-a)$ is the birth rate at the time the individual was born, so it carries the mirror image of the birth-rate shape;
+- $-M(T-a,T]$ is the (log) probability of surviving from birth to $T$, which falls with age;
+- $\ln\mathcal W(T-a)$ is the log of the expected population size at the birth time, given survival to that time, since $Z_b\mid Z_b\ge1$ is geometric with mean $\mathcal W(b)=1/\pi(b)$.
+  A larger population at birth time means more competing lineages for the same observation.
+
+Two consequences follow from the formula.
+
+1. The age has no atom, and $f(0)=\lambda(T)/(1-\pi(T))>0$.
+2. For *constant* rates $f$ is strictly decreasing.
+   The numerator of $f'$ has the sign of $-(\lambda-\mu)$ and the denominator $e^{\lambda T}-e^{\mu T}$ has the sign of $\lambda-\mu$.
+   So every hump, plateau or reversal in $f$ below is caused by time variation in the rates alone.
+
+The only rate-specific primitive is $\int_s^e w(t)\,e^{\Gamma(t,e]}\,dt$,
+which `bdpinf.models.math_age_densities` evaluates by Gauss--Legendre quadrature between rate breakpoints.
+
+## Setup
+
+```{python}
+# ruff: noqa: E402
+# bdpinf must be imported before jax so its JAX_PLATFORMS=cpu default
+# (see src/bdpinf/__init__.py) takes effect before jax reads the env var.
+from functools import partial
+
+import altair as alt
+import jax.numpy as jnp
+import numpy as np
+import pandas as pd
+from IPython.display import display
+
+from bdpinf import find_project_root
+from bdpinf.models.math_age_densities import (
+    log_nested_w,
+    non_spine_age_cdf,
+    non_spine_age_log_density,
+    random_individual_cdf,
+    spine_age_cdf,
+)
+from bdpinf.models.math_ages import calculate_non_spine_ages_log_lik
+from bdpinf.models.rate_functions import (
+    PiecewiseConstantRate,
+    PiecewiseLinearRate,
+    RateFunction,
+)
+from bdpinf.visualization import age_density_frame, save_chart, scenario_row
+from bdpinf.visualization.altair_theme import PTOLQUAL
+
+figures_dir = find_project_root() / "figures" / "validation" / "time_varying_rates"
+figures_dir.mkdir(parents=True, exist_ok=True)
+
+T = 3.0
+AGES = jnp.linspace(1e-3, T - 1e-3, 400)
+TIMES = jnp.array([T])
+```
+
+```{python}
+Scenario = tuple[RateFunction, RateFunction]
+
+
+def const(value: float) -> PiecewiseConstantRate:
+    return PiecewiseConstantRate.constant(value, T)
+
+
+def line(start: float, end: float) -> PiecewiseLinearRate:
+    """Linear rate from ``start`` at 0 to ``end`` at T."""
+    return PiecewiseLinearRate.continuous(jnp.array([start, end]), TIMES)
+
+
+tau = 1.2
+EPOCHS = jnp.array([tau, T])
+
+
+def kinked(v: float, s1: float, s2: float) -> PiecewiseLinearRate:
+    """Continuous rate with value ``v`` at ``tau`` and slopes ``s1``, ``s2``."""
+    return PiecewiseLinearRate.continuous(
+        jnp.array([v - s1 * tau, v, v + s2 * (T - tau)]), EPOCHS
+    )
+
+
+def jumping(
+    start: tuple[float, float], end: tuple[float, float]
+) -> PiecewiseLinearRate:
+    """Rate with ``start``/``end`` values per epoch, so it may jump at ``tau``."""
+    return PiecewiseLinearRate(
+        jnp.array([start[0], start[1]]), jnp.array([end[0], end[1]]), EPOCHS
+    )
+
+
+def hump(low: float, peak: float) -> PiecewiseLinearRate:
+    """Rate rising from ``low`` to ``peak`` at ``tau`` and back to ``low``."""
+    return PiecewiseLinearRate.continuous(jnp.array([low, peak, low]), EPOCHS)
+
+
+def density(lam: RateFunction, mu: RateFunction) -> np.ndarray:
+    return np.exp(np.asarray(non_spine_age_log_density(AGES, lam, mu)))
+
+
+non_spine_row = partial(scenario_row, primary="non_spine", ages=AGES)
+```
+
+In every panel below the rates are drawn against calendar time $\tau$ on top,
+and the non-spine density against age $a=T-\tau$ underneath (solid, yellow).
+The spine density is drawn faint and dashed (green, with its atom at $a=T$ as a stem)
+so the two age distributions can be compared directly.
+The stem's height is a probability mass, not a density.
+
+## Constant rates: the baseline
+
+```{python}
+constant_scenarios: dict[str, Scenario] = {
+    "supercritical (λ=1.3, μ=0.7)": (const(1.3), const(0.7)),
+    "critical (λ=μ=1.0)": (const(1.0), const(1.0)),
+    "subcritical (λ=0.6, μ=1.1)": (const(0.6), const(1.1)),
+}
+fig_constant = non_spine_row(constant_scenarios)
+display(fig_constant)
+save_chart(fig_constant, "vtv02_constant_baseline", output_dir=figures_dir)
+
+for name, (lam, mu) in constant_scenarios.items():
+    assert np.all(np.diff(density(lam, mu)) < 0), f"{name}: not strictly decreasing"
+```
+
+All three are strictly decreasing (checked in the cell above), as the sign argument predicts.
+Younger individuals are always the more probable ones for a non-spine draw under constant rates.
+
+## Linear rates
+
+One rate is held constant while the other changes linearly in $\tau$.
+A rate that is high near $\tau=T$ affects *young* ages, because $a=T-\tau$.
+
+```{python}
+fig_linear = non_spine_row(
+    {
+        "λ rising 0.4→1.6, μ=0.7": (line(0.4, 1.6), const(0.7)),
+        "λ falling 1.6→0.4, μ=0.7": (line(1.6, 0.4), const(0.7)),
+        "μ rising 0.2→1.4, λ=0.9": (const(0.9), line(0.2, 1.4)),
+        "μ falling 1.4→0.2, λ=0.9": (const(0.9), line(1.4, 0.2)),
+    }
+)
+display(fig_linear)
+save_chart(fig_linear, "vtv02_linear_one_rate", output_dir=figures_dir)
+```
+
+Both rates linear, including the mixed-sign slopes used in the Wolfram validation notebooks:
+
+```{python}
+fig_linear_both = non_spine_row(
+    {
+        "λ↑ μ↑": (line(1.2, 1.2 + 0.2 * T), line(0.7, 0.7 + 0.1 * T)),
+        "λ↓ μ↑": (line(1.2, 1.2 - 0.2 * T), line(0.7, 0.7 + 0.1 * T)),
+        "λ↑ μ↓": (line(1.2, 1.2 + 0.2 * T), line(0.7, 0.7 - 0.15 * T)),
+    }
+)
+display(fig_linear_both)
+save_chart(fig_linear_both, "vtv02_linear_both", output_dir=figures_dir)
+```
+
+## Piecewise-linear rates
+
+Kinks and jumps in the rates appear in the density at the mirrored ages $a=T-\tau_k$.
+A jump in $\lambda$ at $\tau_k$ is a jump in the density at $a=T-\tau_k$,
+because $\lambda(T-a)$ is a multiplicative factor of the density.
+A jump in $\mu$ only changes the *slope* there,
+because $\mathcal W$ and $e^{-M}$ are continuous in $a$.
+
+```{python}
+piecewise_scenarios: dict[str, Scenario] = {
+    "kink: rise then fall": (kinked(1.2, 0.3, -0.2), kinked(0.7, 0.15, -0.1)),
+    "kink: fall then rise": (kinked(1.2, -0.2, 0.3), kinked(0.7, -0.1, 0.2)),
+    "λ jumps up at τ=1.2": (jumping((0.6, 1.8), (0.9, 1.4)), const(0.8)),
+    "μ jumps up at τ=1.2": (const(1.0), jumping((0.3, 1.8), (0.6, 1.2))),
+    "hump in λ, flat μ": (hump(0.2, 2.0), const(0.9)),
+}
+fig_piecewise = non_spine_row(piecewise_scenarios)
+display(fig_piecewise)
+save_chart(fig_piecewise, "vtv02_piecewise_linear", output_dir=figures_dir)
+```
+
+```{python}
+age_jump = T - tau
+eps = 1e-6
+below, above = jnp.array([age_jump - eps]), jnp.array([age_jump + eps])
+for name in ("λ jumps up at τ=1.2", "μ jumps up at τ=1.2"):
+    lam, mu = piecewise_scenarios[name]
+    f_below = float(jnp.exp(non_spine_age_log_density(below, lam, mu))[0])
+    f_above = float(jnp.exp(non_spine_age_log_density(above, lam, mu))[0])
+    print(f"{name}: f(a=T-τ-ε)={f_below:.6f}, f(a=T-τ+ε)={f_above:.6f}")
+    one_sided_ratio = f_below / f_above
+    if name.startswith("λ"):
+        # λ falls from 1.8 to 0.9 across the jump, and λ(T-a) is a pure factor.
+        assert abs(one_sided_ratio - 2.0) < 1e-4, one_sided_ratio
+    else:
+        assert abs(one_sided_ratio - 1.0) < 1e-4, one_sided_ratio
+```
+
+The jump in $\lambda$ halves the density at $a=T-\tau=1.8$,
+because $\lambda$ falls from 1.8 to 0.9 across $\tau=1.2$ and $\lambda(T-a)$ is a pure factor.
+The step is small in absolute terms,
+since most of the non-spine mass is already at younger ages by $a=1.8$;
+the log decomposition below makes it easier to see.
+The jump in $\mu$ leaves the two one-sided values equal (the ratio is asserted to be 1)
+and only bends the curve.
+
+```{python}
+lam_hump, mu_hump = piecewise_scenarios["hump in λ, flat μ"]
+hump_density = density(lam_hump, mu_hump)
+mode_age = float(AGES[int(np.argmax(hump_density))])
+print(f"hump scenario: mode at a = {mode_age:.3f}")
+assert 0.1 < mode_age < T - 0.1, "expected an interior mode"
+```
+
+## Isolating the effect of shape
+
+Three birth-rate shapes share the same $\Lambda(0,T]=3$ and the same constant $\mu=0.7$.
+
+```{python}
+shapes: dict[str, Scenario] = {
+    "constant 1.0": (const(1.0), const(0.7)),
+    "rising 0.2→1.8": (line(0.2, 1.8), const(0.7)),
+    "falling 1.8→0.2": (line(1.8, 0.2), const(0.7)),
+}
+for name, (lam, _) in shapes.items():
+    total = float(lam.integral(jnp.array(0.0), jnp.array(T)))
+    assert abs(total - 3.0) < 1e-12, (name, total)
+
+matched = pd.concat(
+    [age_density_frame(k, *v, AGES, which="non_spine") for k, v in shapes.items()]
+)
+fig_matched = (
+    alt.Chart(matched)
+    .mark_line()
+    .encode(
+        x=alt.X("age:Q", title="non-spine age a"),
+        y=alt.Y("density:Q", title="density"),
+        color=alt.Color(
+            "scenario:N",
+            scale=alt.Scale(domain=list(shapes), range=PTOLQUAL[:3]),
+            title="birth-rate shape",
+        ),
+    )
+    .properties(width=480, height=280)
+)
+display(fig_matched)
+save_chart(fig_matched, "vtv02_matched_integrated_birth_rate", output_dir=figures_dir)
+```
+
+## Decomposing the log density
+
+The three additive terms show *why* a shape arises.
+Here for the jump in $\lambda$, the jump in $\mu$ and the hump in $\lambda$:
+
+```{python}
+def log_terms(lam: RateFunction, mu: RateFunction) -> dict[str, np.ndarray]:
+    s = T - AGES
+    end = jnp.array(T)
+    log_w_t = log_nested_w(lam, mu, end)
+    terms = {
+        "log λ(T−a)": jnp.log(lam(s)),
+        "log 𝒲(T−a)": log_nested_w(lam, mu, s),
+        "−M(T−a,T]": -mu.integral(s, end),
+        "constant": jnp.full_like(s, -jnp.log(jnp.expm1(log_w_t))),
+    }
+    total = sum(terms.values())
+    np.testing.assert_allclose(
+        total, non_spine_age_log_density(AGES, lam, mu), atol=1e-10
+    )
+    return {k: np.asarray(v) for k, v in terms.items()} | {"total": np.asarray(total)}
+
+
+decomp = pd.concat(
+    [
+        pd.DataFrame(
+            {"scenario": name, "age": np.asarray(AGES), "term": term, "value": vals}
+        )
+        for name in ("λ jumps up at τ=1.2", "μ jumps up at τ=1.2", "hump in λ, flat μ")
+        for term, vals in log_terms(*piecewise_scenarios[name]).items()
+    ]
+)
+term_order = ["log λ(T−a)", "log 𝒲(T−a)", "−M(T−a,T]", "constant", "total"]
+fig_decomp = (
+    alt.Chart(decomp)
+    .mark_line()
+    .encode(
+        x=alt.X("age:Q", title="non-spine age a"),
+        y=alt.Y("value:Q", title="log density term"),
+        color=alt.Color(
+            "term:N",
+            scale=alt.Scale(domain=term_order, range=[*PTOLQUAL[:4], "#000000"]),
+            title=None,
+        ),
+        strokeDash=alt.condition(
+            alt.datum.term == "total", alt.value([1, 0]), alt.value([5, 3])
+        ),
+    )
+    .properties(width=260, height=200)
+    .facet(
+        column=alt.Column(
+            "scenario:N",
+            title=None,
+            sort=["λ jumps up at τ=1.2", "μ jumps up at τ=1.2", "hump in λ, flat μ"],
+        )
+    )
+)
+display(fig_decomp)
+save_chart(fig_decomp, "vtv02_log_density_decomposition", output_dir=figures_dir)
+```
+
+On this scale the $\lambda$ jump is a step of $\ln 2$ in the first term alone,
+while the $\mu$ jump produces kinks (changes of slope) in the $\ln\mathcal W$ and $-M$ terms but no step.
+The cell asserts that the four terms sum to `non_spine_age_log_density` to $10^{-10}$.
+
+## Where the non-spine age sits among the age distributions
+
+A uniformly chosen individual is the spine with probability $w_{A^*}=-\pi(T)\ln\pi(T)/(1-\pi(T))$,
+and non-spine otherwise.
+
+```{python}
+kink_lam, kink_mu = piecewise_scenarios["kink: rise then fall"]
+cdf_frame = pd.concat(
+    [
+        pd.DataFrame(
+            {"age": np.asarray(AGES), "cdf": np.asarray(fn(AGES, kink_lam, kink_mu))}
+        ).assign(which=name)
+        for name, fn in [
+            ("non-spine A", non_spine_age_cdf),
+            ("spine A*", spine_age_cdf),
+            ("random A†", random_individual_cdf),
+        ]
+    ]
+)
+fig_cdf = (
+    alt.Chart(cdf_frame)
+    .mark_line()
+    .encode(
+        x=alt.X("age:Q", title="age a"),
+        y=alt.Y("cdf:Q", title="CDF"),
+        color=alt.Color(
+            "which:N",
+            scale=alt.Scale(
+                domain=["non-spine A", "spine A*", "random A†"],
+                range=[PTOLQUAL[3], PTOLQUAL[2], PTOLQUAL[0]],
+            ),
+            title=None,
+        ),
+    )
+    .properties(width=480, height=260, title="kink: rise then fall")
+)
+display(fig_cdf)
+save_chart(fig_cdf, "vtv02_age_cdfs", output_dir=figures_dir)
+
+
+def mixture_row(name: str, lam: RateFunction, mu: RateFunction) -> dict[str, object]:
+    log_w_t = log_nested_w(lam, mu, jnp.array(T))
+    pi_t = float(jnp.exp(-log_w_t))
+    w_spine = pi_t * float(log_w_t) / (1.0 - pi_t)
+    return {
+        "scenario": name,
+        "π(T)": pi_t,
+        "E[Z_T | Z_T≥1] = 1/π(T)": 1.0 / pi_t,
+        "w_A* (spine)": w_spine,
+        "w_A (non-spine)": 1.0 - w_spine,
+    }
+
+
+mixture_table = pd.DataFrame(
+    [
+        mixture_row(k, *v)
+        for k, v in {**constant_scenarios, **piecewise_scenarios}.items()
+    ]
+)
+display(mixture_table.round(4))
+```
+
+## Numerical checks
+
+Every check below is an `assert`, so the render fails if one breaks.
+
+1. Total mass: the non-spine CDF reaches 1 at $a=T$ in every scenario.
+2. Piecewise-constant rates agree with the existing time-reversal likelihood `calculate_non_spine_ages_log_lik`.
+3. Values match the Wolfram validation notebooks
+   (`AgeDist_LinearBoth.nb` and `AgeDist_PiecewiseLinearBoth.nb`), which use various horizons $T$.
+
+```{python}
+end = jnp.array([T])
+all_scenarios: dict[str, Scenario] = {
+    **constant_scenarios,
+    **piecewise_scenarios,
+    **shapes,
+}
+mass = pd.DataFrame(
+    {
+        "scenario": list(all_scenarios),
+        "non-spine mass": [
+            float(non_spine_age_cdf(end, *v)[0]) for v in all_scenarios.values()
+        ],
+    }
+)
+display(mass)
+assert np.allclose(mass["non-spine mass"], 1.0, atol=1e-9)
+```
+
+```{python}
+pc_times = jnp.array([0.8, 1.7, T])
+pc_b, pc_d = jnp.array([0.9, 1.6, 0.7]), jnp.array([1.2, 0.5, 1.0])
+legacy = calculate_non_spine_ages_log_lik(pc_b, pc_d, AGES, pc_times, return_array=True)
+new = non_spine_age_log_density(
+    AGES, PiecewiseConstantRate(pc_b, pc_times), PiecewiseConstantRate(pc_d, pc_times)
+)
+max_diff = float(jnp.max(jnp.abs(new - legacy)))
+print(f"max |new - legacy| non-spine: {max_diff:.2e}")
+assert max_diff < 1e-9
+
+
+def linear_both(la: float, lb: float, ma: float, mb: float, horizon: float):
+    times = jnp.array([horizon])
+    return (
+        PiecewiseLinearRate.continuous(jnp.array([la, la + lb * horizon]), times),
+        PiecewiseLinearRate.continuous(jnp.array([ma, ma + mb * horizon]), times),
+    )
+
+
+def kinked_both(
+    lv: float,
+    s1: float,
+    s2: float,
+    mv: float,
+    r1: float,
+    r2: float,
+    t1: float,
+    horizon: float,
+):
+    times = jnp.array([t1, horizon])
+    lam = PiecewiseLinearRate(
+        jnp.array([lv - s1 * t1, lv]),
+        jnp.array([lv, lv + s2 * (horizon - t1)]),
+        times,
+    )
+    mu = PiecewiseLinearRate(
+        jnp.array([mv - r1 * t1, mv]),
+        jnp.array([mv, mv + r2 * (horizon - t1)]),
+        times,
+    )
+    return lam, mu
+
+
+# (rates, age, Wolfram value of the non-spine density)
+wolfram_cases = [
+    (
+        "LinearBoth ↑↑, T=2.5",
+        linear_both(1.2, 0.2, 0.7, 0.1, 2.5),
+        0.9,
+        0.35126706726992174,
+    ),
+    (
+        "LinearBoth ↓↑, T=2.5",
+        linear_both(1.2, -0.2, 0.7, 0.1, 2.5),
+        0.9,
+        0.4751603899370419,
+    ),
+    (
+        "LinearBoth ↑↓, T=2.5",
+        linear_both(1.2, 0.2, 0.7, -0.15, 2.5),
+        0.9,
+        0.36397983001209344,
+    ),
+    (
+        "LinearBoth, T=3",
+        linear_both(0.9, 0.1, 1.4, -0.2, 3.0),
+        1.7,
+        0.11179687923431426,
+    ),
+    (
+        "PiecewiseLinearBoth 1, T=2.5",
+        kinked_both(1.2, 0.3, -0.2, 0.7, 0.15, -0.1, 0.9, 2.5),
+        1.2,
+        0.3430933066148787,
+    ),
+    (
+        "PiecewiseLinearBoth 2, T=2.5",
+        kinked_both(1.2, -0.2, 0.3, 0.7, -0.1, 0.2, 0.9, 2.5),
+        1.2,
+        0.20160504844794294,
+    ),
+    (
+        "PiecewiseLinearBoth 3, T=3",
+        kinked_both(0.9, 0.15, -0.1, 1.4, -0.2, 0.1, 1.2, 3.0),
+        1.7,
+        0.12436152684240974,
+    ),
+]
+golden = pd.DataFrame(
+    {
+        "case": [c[0] for c in wolfram_cases],
+        "bdpinf": [
+            float(jnp.exp(non_spine_age_log_density(jnp.array([c[2]]), *c[1]))[0])
+            for c in wolfram_cases
+        ],
+        "Wolfram": [c[3] for c in wolfram_cases],
+    }
+)
+golden["abs diff"] = (golden["bdpinf"] - golden["Wolfram"]).abs()
+display(golden)
+assert np.allclose(golden["bdpinf"], golden["Wolfram"], rtol=1e-9)
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+import time
+from pathlib import Path
+
+doc_name = "validation_time_varying_rates_non_spine_age_shapes.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```
