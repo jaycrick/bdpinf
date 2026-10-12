@@ -11,9 +11,8 @@ dependency on this package) rather than `BirthDeathProcess`, since
 `bdsurv`'s results into `BirthDeathProcess` so the rest of `bdpinf` sees the
 same canonical type as every other simulator here.
 
-`SplittingConfig` and `select_level_times_for_band` need no adaptation --
-they carry no `BirthDeathProcess`/`SimulatedTree` dependency -- and are
-re-exported unchanged.
+`SplittingConfig` and `select_level_times_for_band` carry no
+`BirthDeathProcess` dependency, so import them from `bdsurv` directly.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from __future__ import annotations
 import dataclasses
 
 import numpy as np
-from bdsurv import SplittingConfig, select_level_times_for_band
+from bdsurv import SplittingConfig
 from bdsurv import simulate_birth_death_process_from_contour_process as _contour
 from bdsurv import simulate_subcritical_survival_splitting as _splitting
 from bdsurv.splitting import SplittingSimulationResult
@@ -31,8 +30,6 @@ from bdpinf.process import BirthDeathProcess
 
 __all__ = [
     "ConditionedTrajectory",
-    "SplittingConfig",
-    "select_level_times_for_band",
     "simulate_birth_death_process_from_contour_process",
     "simulate_subcritical_survival_splitting",
 ]

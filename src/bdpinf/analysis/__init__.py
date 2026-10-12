@@ -39,7 +39,6 @@ from .single_epoch import (
     extract_alive_ages,
 )
 from .single_epoch_recovery import (
-    fit_single_epoch_replicate,
     run_single_epoch_recovery_replicate,
     sample_single_epoch_ages,
 )
@@ -96,7 +95,6 @@ __all__ = [
     "date_range_density",
     "explode_date_ranges",
     "extract_alive_ages",
-    "fit_single_epoch_replicate",
     "fit_single_model",
     "fit_subset",
     "fit_subset_bayesian",

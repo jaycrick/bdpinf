@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from bdsurv import SplittingConfig
 
 from bdpinf.inference.fitting import (
     ParameterConstraints,
@@ -11,7 +12,6 @@ from bdpinf.inference.fitting import (
 )
 from bdpinf.inference.likelihood import log_likelihood
 from bdpinf.simulation import (
-    SplittingConfig,
     simulate_birth_death_process,
     simulate_subcritical_survival_splitting,
 )

@@ -14,6 +14,7 @@ inference notebooks so the per-replicate simulate+fit work can be run once by
   :class:`~bdpinf.inference.fitting.ParameterConstraints`.
 """
 
+import dataclasses
 from typing import Any
 
 import numpy as np
@@ -29,7 +30,6 @@ from bdpinf.analysis.validation_helpers import (
 )
 from bdpinf.inference.fitting import (
     ParameterConstraints,
-    fit_birth_death_processes,
 )
 from bdpinf.simulation import simulate_birth_death_process
 
@@ -139,22 +139,15 @@ def fit_zero_birth_replicate(
     constraints: ParameterConstraints,
 ) -> dict[str, Any] | None:
     """Fit one age vector under the structural-zero-birth constraint set."""
-    if len(ages) == 0:
-        return None
-
-    try:
-        result = fit_birth_death_processes(
-            list_of_ages=[np.asarray(ages, dtype=np.float64)],
-            times=np.asarray(config.times, dtype=np.float64)
-            if isinstance(config.times, np.ndarray)
-            else config.times,
-            is_ordered=config.is_ordered,
+    result = fit_single_model(
+        np.asarray(ages, dtype=np.float64),
+        dataclasses.replace(
+            config,
             perturb_initial_params_std=config.perturb_initial_params_std or 0.0,
-            random_seed=config.random_seed,
-            condition_on_survival=config.condition_on_survival,
             param_constraints=constraints,
-        )
-    except Exception:
+        ),
+    )
+    if result is None:
         return None
 
     if result.get("success", False):

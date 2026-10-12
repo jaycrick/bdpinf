@@ -8,14 +8,17 @@ heavy per-replicate work can be run once by
 every notebook render.
 """
 
-from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from bdpinf.analysis.validation_helpers import get_selected_attempt
-from bdpinf.inference import ConvergenceConfig, fit_birth_death_processes
+from bdpinf.analysis.validation_helpers import (
+    FitModelConfig,
+    fit_single_model,
+    get_selected_attempt,
+)
+from bdpinf.inference import ConvergenceConfig
 from bdpinf.simulation import simulate_bdp_ages_from_distributions
 
 _DEFAULT_OPTIMIZER_KWARGS: dict[str, dict[str, Any]] = {
@@ -48,36 +51,6 @@ def sample_single_epoch_ages(
     )
 
 
-def fit_single_epoch_replicate(
-    ages: NDArray[np.float64],
-    birth_rate: float,
-    death_rate: float,
-    time_span: float,
-    *,
-    optimizers: Sequence[str] = ("lbfgs", "adam"),
-    optimizer_kwargs: dict[str, dict[str, Any]] | None = None,
-    convergence_config: ConvergenceConfig | None = None,
-) -> dict[str, Any] | None:
-    """Fit a single-epoch model to one age vector; ``None`` on failure or empty ages."""
-    if len(ages) == 0:
-        return None
-
-    try:
-        return fit_birth_death_processes(
-            list_of_ages=[ages],
-            times=time_span,
-            is_ordered=True,
-            perturb_initial_params_std=0.0,
-            initial_birth_rates=np.array([birth_rate], dtype=float),
-            initial_death_rates=np.array([death_rate], dtype=float),
-            optimizers=list(optimizers),
-            optimizer_kwargs=optimizer_kwargs or _DEFAULT_OPTIMIZER_KWARGS,
-            convergence_config=convergence_config or _DEFAULT_CONVERGENCE_CONFIG,
-        )
-    except Exception:
-        return None
-
-
 def run_single_epoch_recovery_replicate(
     simulation_index: int,
     seed: int,
@@ -95,7 +68,20 @@ def run_single_epoch_recovery_replicate(
         simulation_index,
         ages,
         time_span,
-        fit_single_epoch_replicate(ages, birth_rate, death_rate, time_span),
+        fit_single_model(
+            ages,
+            FitModelConfig(
+                times=time_span,
+                is_ordered=True,
+                perturb_initial_params_std=0.0,
+                initial_birth_rates=np.array([birth_rate], dtype=float),
+                initial_death_rates=np.array([death_rate], dtype=float),
+                optimizers=("lbfgs", "adam"),
+                optimizer_kwargs=_DEFAULT_OPTIMIZER_KWARGS,
+                convergence_config=_DEFAULT_CONVERGENCE_CONFIG,
+                condition_on_survival=True,
+            ),
+        ),
     )
 
 

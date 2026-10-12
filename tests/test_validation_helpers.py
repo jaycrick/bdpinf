@@ -110,10 +110,12 @@ class TestValidationHelpers:
         result = fit_single_model(np.array([], dtype=np.float64), config)
         assert result is None
 
-    def test_fit_model_config_defaults_to_unbias_true(self) -> None:
+    def test_fit_model_config_defaults_to_condition_on_survival(self) -> None:
         assert FitModelConfig(times=1000.0).condition_on_survival is True
 
-    def test_fit_single_model_forwards_unbias_default(self, monkeypatch) -> None:
+    def test_fit_single_model_forwards_condition_on_survival_default(
+        self, monkeypatch
+    ) -> None:
         captured: dict[str, object] = {}
 
         def fake_fit_birth_death_processes(**kwargs):
@@ -133,6 +135,46 @@ class TestValidationHelpers:
 
         assert result == {"success": True}
         assert captured["condition_on_survival"] is True
+
+    def test_fit_single_model_forwards_optional_settings(self, monkeypatch) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_fit(**kwargs):
+            captured.update(kwargs)
+            return {"success": True}
+
+        monkeypatch.setattr(
+            validation_helpers_module, "fit_birth_death_processes", fake_fit
+        )
+        constraints = vh.ParameterConstraints(fixed_params={1: 1e-12})
+
+        fit_single_model(
+            np.array([1.0, 2.0], dtype=np.float64),
+            FitModelConfig(
+                times=10.0, optimizers=("lbfgs",), param_constraints=constraints
+            ),
+        )
+
+        assert captured["optimizers"] == ["lbfgs"]
+        assert captured["param_constraints"] is constraints
+
+    def test_fit_single_model_logs_and_returns_none_on_exception(
+        self, monkeypatch, caplog
+    ) -> None:
+        def boom(**kwargs):
+            raise RuntimeError("optimizer blew up")
+
+        monkeypatch.setattr(
+            validation_helpers_module, "fit_birth_death_processes", boom
+        )
+
+        with caplog.at_level("WARNING"):
+            result = fit_single_model(
+                np.array([1.0], dtype=np.float64), FitModelConfig(times=10.0)
+            )
+
+        assert result is None
+        assert "optimizer blew up" in caplog.text
 
     def test_iqr_plotting_subset_removes_row_outliers(self) -> None:
         plotting_data, mask = iqr_plotting_subset(

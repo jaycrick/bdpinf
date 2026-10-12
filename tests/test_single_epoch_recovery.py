@@ -48,55 +48,6 @@ class TestSampleSingleEpochAges:
         np.testing.assert_array_equal(np.sort(ages), [1.0, 2.0, 3.0])
 
 
-class TestFitSingleEpochReplicate:
-    """Test fit_single_epoch_replicate."""
-
-    def test_empty_ages_returns_none(self) -> None:
-        result = ser.fit_single_epoch_replicate(
-            np.array([], dtype=np.float64),
-            birth_rate=0.5,
-            death_rate=0.1,
-            time_span=15.0,
-        )
-        assert result is None
-
-    def test_success_delegates_to_fit_birth_death_processes(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        captured: dict[str, Any] = {}
-
-        def fake_fit(**kwargs: Any) -> dict[str, Any]:
-            captured.update(kwargs)
-            return _fake_success_result(0.5, 0.1)
-
-        monkeypatch.setattr(ser, "fit_birth_death_processes", fake_fit)
-
-        ages = np.array([1.0, 2.0, 3.0])
-        result = ser.fit_single_epoch_replicate(
-            ages, birth_rate=0.5, death_rate=0.1, time_span=15.0
-        )
-
-        assert result is not None
-        assert result["success"] is True
-        assert captured["times"] == 15.0
-        assert captured["is_ordered"] is True
-        assert captured["perturb_initial_params_std"] == 0.0
-        np.testing.assert_array_equal(captured["initial_birth_rates"], [0.5])
-        np.testing.assert_array_equal(captured["initial_death_rates"], [0.1])
-        assert captured["optimizers"] == ["lbfgs", "adam"]
-
-    def test_exception_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def fake_fit(**kwargs: Any) -> dict[str, Any]:
-            raise RuntimeError("optimizer blew up")
-
-        monkeypatch.setattr(ser, "fit_birth_death_processes", fake_fit)
-
-        result = ser.fit_single_epoch_replicate(
-            np.array([1.0]), birth_rate=0.5, death_rate=0.1, time_span=15.0
-        )
-        assert result is None
-
-
 class TestRunSingleEpochRecoveryReplicate:
     """Test run_single_epoch_recovery_replicate."""
 
@@ -110,7 +61,7 @@ class TestRunSingleEpochRecoveryReplicate:
             return _fake_success_result(0.48, 0.09, optimizer="adam")
 
         monkeypatch.setattr(ser, "sample_single_epoch_ages", fake_sample)
-        monkeypatch.setattr(ser, "fit_single_epoch_replicate", fake_fit)
+        monkeypatch.setattr(ser, "fit_single_model", fake_fit)
 
         row = ser.run_single_epoch_recovery_replicate(
             simulation_index=7, seed=123, birth_rate=0.5, death_rate=0.1, time_span=15.0
@@ -125,6 +76,32 @@ class TestRunSingleEpochRecoveryReplicate:
         assert row["death_rate"] == pytest.approx(0.09)
         assert row["optimizer"] == "adam"
 
+    def test_fit_is_configured_from_true_rates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def fake_fit(ages: Any, config: Any) -> dict[str, Any]:
+            captured["config"] = config
+            return _fake_success_result(0.5, 0.1)
+
+        monkeypatch.setattr(
+            ser, "sample_single_epoch_ages", lambda *a, **k: np.array([1.0, 2.0])
+        )
+        monkeypatch.setattr(ser, "fit_single_model", fake_fit)
+
+        ser.run_single_epoch_recovery_replicate(
+            simulation_index=0, seed=0, birth_rate=0.5, death_rate=0.1, time_span=15.0
+        )
+
+        config = captured["config"]
+        assert config.times == 15.0
+        assert config.is_ordered is True
+        assert config.perturb_initial_params_std == 0.0
+        np.testing.assert_array_equal(config.initial_birth_rates, [0.5])
+        np.testing.assert_array_equal(config.initial_death_rates, [0.1])
+        assert list(config.optimizers) == ["lbfgs", "adam"]
+
     def test_non_boundary_replicate_row(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def fake_sample(*args: Any, **kwargs: Any) -> np.ndarray:
             return np.array([1.0, 2.0, 3.0])  # max < time_span
@@ -133,7 +110,7 @@ class TestRunSingleEpochRecoveryReplicate:
             return _fake_success_result(0.5, 0.1)
 
         monkeypatch.setattr(ser, "sample_single_epoch_ages", fake_sample)
-        monkeypatch.setattr(ser, "fit_single_epoch_replicate", fake_fit)
+        monkeypatch.setattr(ser, "fit_single_model", fake_fit)
 
         row = ser.run_single_epoch_recovery_replicate(
             simulation_index=0, seed=0, birth_rate=0.5, death_rate=0.1, time_span=15.0
@@ -159,7 +136,7 @@ class TestRunSingleEpochRecoveryReplicate:
         monkeypatch.setattr(
             ser, "sample_single_epoch_ages", lambda *a, **k: np.array([1.0, 2.0])
         )
-        monkeypatch.setattr(ser, "fit_single_epoch_replicate", lambda *a, **k: None)
+        monkeypatch.setattr(ser, "fit_single_model", lambda *a, **k: None)
 
         row = ser.run_single_epoch_recovery_replicate(
             simulation_index=0, seed=0, birth_rate=0.5, death_rate=0.1, time_span=15.0

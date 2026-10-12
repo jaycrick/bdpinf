@@ -1,6 +1,7 @@
 """Tests for the asymptotic consistency analysis helpers."""
 
 import numpy as np
+import pytest
 
 import bdpinf.analysis.asymptotic_consistency as ac
 
@@ -8,54 +9,23 @@ import bdpinf.analysis.asymptotic_consistency as ac
 class TestAsymptoticConsistency:
     """Test asymptotic consistency sampling and fitting helpers."""
 
-    def test_sample_age_vector_calls_simulation(self, monkeypatch):
-        # monkeypatch distribution and process simulations to controlled outputs
-        def fake_simulate_bdp_ages_from_distributions(*args, **kwargs):
-            return {"spine": [0.1, 0.2], "non_spine": [0.3]}
-
-        def fake_simulate_birth_death_process(*args, **kwargs):
-            import pandas as pd
-
-            return pd.DataFrame({"survived": [True, False], "age": [0.5, 1.0]})
-
-        monkeypatch.setattr(
-            ac,
-            "simulate_bdp_ages_from_distributions",
-            fake_simulate_bdp_ages_from_distributions,
-        )
-        monkeypatch.setattr(
-            ac,
-            "simulate_birth_death_process",
-            fake_simulate_birth_death_process,
-        )
-
-        regime_dist = {
+    @pytest.mark.parametrize("sampling", ["distribution", "process"])
+    def test_sample_age_vector_is_reproducible_and_in_range(self, sampling):
+        regime = {
             "name": "R",
-            "sampling": "distribution",
-            "birth_rate": 1.0,
-            "death_rate": 0.5,
+            "sampling": sampling,
+            "birth_rate": 0.5,
+            "death_rate": 0.2,
         }
-        ages = ac.sample_age_vector(
-            regime_dist,
-            observation_time=1.0,
-            simulation_index=0,
-            seed=42,
-        )
-        assert isinstance(ages, np.ndarray) and ages.size == 3
+        kwargs = {"observation_time": 4.0, "simulation_index": 0, "seed": 42}
 
-        regime_proc = {
-            "name": "R",
-            "sampling": "process",
-            "birth_rate": 1.0,
-            "death_rate": 0.5,
-        }
-        ages2 = ac.sample_age_vector(
-            regime_proc,
-            observation_time=1.0,
-            simulation_index=0,
-            seed=42,
-        )
-        assert isinstance(ages2, np.ndarray) and ages2.size == 1
+        ages = ac.sample_age_vector(regime, **kwargs)
+
+        assert ages.size > 0  # ensure_non_extinct
+        assert np.all((ages >= 0.0) & (ages <= 4.0))
+        np.testing.assert_array_equal(ages, ac.sample_age_vector(regime, **kwargs))
+        other = ac.sample_age_vector(regime, **{**kwargs, "simulation_index": 1})
+        assert other.size != ages.size or not np.array_equal(other, ages)
 
     def test_reproduce_replicate_monkeypatched_fit(self, monkeypatch):
         # stub fit function to return predictable result

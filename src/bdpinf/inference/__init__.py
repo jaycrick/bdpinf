@@ -13,6 +13,7 @@ from .bayesian import (
     mle_init_log_rates,
 )
 from .fitting import (
+    ParameterConstraints,
     fit_birth_death_processes,
     fit_from_data_frame,
     get_crude_parameter_estimates,
@@ -38,6 +39,7 @@ __all__ = [
     "BayesianModelConfig",
     "BayesianPriorConfig",
     "ConvergenceConfig",
+    "ParameterConstraints",
     "calculate_unknown_spine_mixture_age_density",
     "calculate_unknown_spine_mixture_birth_density",
     "confidence_intervals_from_log_covariance",

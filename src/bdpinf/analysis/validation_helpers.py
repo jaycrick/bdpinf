@@ -1,6 +1,7 @@
 """Shared helpers for validation notebooks and scripts."""
 
-from collections.abc import Callable, Mapping
+import logging
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -8,7 +9,10 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import gaussian_kde
 
-from bdpinf.inference import fit_birth_death_processes
+from bdpinf.inference import ConvergenceConfig, fit_birth_death_processes
+from bdpinf.inference.fitting import ParameterConstraints
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -22,13 +26,21 @@ class FitModelConfig:
     initial_birth_rates: NDArray[np.float64] | None = None
     initial_death_rates: NDArray[np.float64] | None = None
     condition_on_survival: bool = True
+    optimizers: Sequence[str] | None = None
+    optimizer_kwargs: dict[str, dict[str, Any]] | None = None
+    convergence_config: ConvergenceConfig | None = None
+    param_constraints: ParameterConstraints | None = None
 
 
 def fit_single_model(
     ages: NDArray[np.float64],
     config: FitModelConfig,
 ) -> dict[str, Any] | None:
-    """Fit one model from a single age vector; return None on failure."""
+    """Fit one model from a single age vector.
+
+    Returns ``None`` for empty ``ages`` or when the fit raises; the exception is
+    logged at warning level so failed replicates stay visible.
+    """
     if len(ages) == 0:
         return None
 
@@ -46,10 +58,21 @@ def fit_single_model(
     if config.initial_death_rates is not None:
         fit_kwargs["initial_death_rates"] = config.initial_death_rates
     fit_kwargs["condition_on_survival"] = config.condition_on_survival
+    if config.optimizers is not None:
+        fit_kwargs["optimizers"] = list(config.optimizers)
+    if config.optimizer_kwargs is not None:
+        fit_kwargs["optimizer_kwargs"] = config.optimizer_kwargs
+    if config.convergence_config is not None:
+        fit_kwargs["convergence_config"] = config.convergence_config
+    if config.param_constraints is not None:
+        fit_kwargs["param_constraints"] = config.param_constraints
 
     try:
         return fit_birth_death_processes(**fit_kwargs)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "fit_birth_death_processes raised %s: %s", type(exc).__name__, exc
+        )
         return None
 
 

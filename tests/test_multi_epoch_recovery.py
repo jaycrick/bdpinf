@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 import bdpinf.analysis.multi_epoch_recovery as mer
+import bdpinf.analysis.validation_helpers as vh
 from bdpinf.analysis.validation_helpers import FitModelConfig
 from bdpinf.inference.fitting import ParameterConstraints
 
@@ -218,7 +219,7 @@ class TestFitZeroBirthReplicate:
                 "death_rates": np.array([0.11, 0.11]),
             }
 
-        monkeypatch.setattr(mer, "fit_birth_death_processes", fake_fit)
+        monkeypatch.setattr(vh, "fit_birth_death_processes", fake_fit)
 
         result = mer.fit_zero_birth_replicate(
             np.array([1.0, 2.0]), self._CONFIG, self._CONSTRAINTS
@@ -230,7 +231,7 @@ class TestFitZeroBirthReplicate:
         def fake_fit(**kwargs: Any) -> dict[str, Any]:
             raise RuntimeError("optimizer blew up")
 
-        monkeypatch.setattr(mer, "fit_birth_death_processes", fake_fit)
+        monkeypatch.setattr(vh, "fit_birth_death_processes", fake_fit)
 
         result = mer.fit_zero_birth_replicate(
             np.array([1.0]), self._CONFIG, self._CONSTRAINTS

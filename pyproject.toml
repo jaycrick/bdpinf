@@ -68,6 +68,8 @@ reportUnknownMemberType = "none"
 reportUnknownVariableType = "none"
 reportUnknownArgumentType = "none"
 reportUnknownParameterType = "none"
+# The next four hide ~40 stub-quality errors (Altair chart unions, jax.core,
+# optax, scan carries), not bugs; re-check after upstream stubs improve.
 reportAttributeAccessIssue = "none"
 reportIndexIssue = "none"
 reportArgumentType = "none"

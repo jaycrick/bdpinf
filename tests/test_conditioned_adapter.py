@@ -2,12 +2,12 @@
 
 import numpy as np
 import pytest
+from bdsurv import SplittingConfig
 from bdsurv._extinction import pr_extinction
 
 from bdpinf.models.math_extinction import calculate_extinction_pr
 from bdpinf.process import BirthDeathProcess
 from bdpinf.simulation import (
-    SplittingConfig,
     simulate_birth_death_process_from_contour_process,
     simulate_subcritical_survival_splitting,
 )
