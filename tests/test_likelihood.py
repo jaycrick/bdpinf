@@ -84,15 +84,30 @@ class TestLikelihood:
 
         assert bool(jnp.isclose(result, expected))
 
-    def test_log_likelihood_negative_branch(self) -> None:
-        """Test log_likelihood returns -inf when population log-likelihood is non-finite."""
+    def test_log_likelihood_extreme_survival_is_finite_and_exact(self) -> None:
+        """A single age with pi(T) ~ e^{-2000} underflows in linear space only.
+
+        Earlier code returned ``-inf`` here; the log-space result is finite and
+        equals log P(Z_T=1) + log f*(a), evaluated with 80-digit decimals.
+        """
+        from decimal import Decimal, getcontext
+
+        getcontext().prec = 80
+        lam, mu, t, a = Decimal(1000), Decimal("0.1"), Decimal(2), Decimal(1)
+        gamma = lam - mu
+        w = (lam * (gamma * t).exp() - mu) / gamma
+        n_t = (-gamma * t).exp() * w - 1
+        log_pop = (1 / (1 + n_t) / w).ln()  # (1 - alpha) * pi, z = 1
+        f_spine = lam * mu * ((-mu * a).exp() - (-lam * a).exp()) / gamma
+        expected = float(log_pop + f_spine.ln())
+
         result = likelihood.log_likelihood(
             birth_rates=jnp.array([1000.0], dtype=jnp.float64),
             death_rates=jnp.array([0.1], dtype=jnp.float64),
             ages=jnp.array([1.0], dtype=jnp.float64),
             times=jnp.array([2.0], dtype=jnp.float64),
         )
-        assert bool(jnp.isneginf(result))
+        assert float(result) == pytest.approx(expected, rel=1e-12)
 
     def test_log_likelihood_invalid_params(self) -> None:
         """Test log_likelihood returns -inf for invalid parameters (e.g., neg rates)."""

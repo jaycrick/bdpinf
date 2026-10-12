@@ -763,6 +763,21 @@ class BirthDeathProcess:
             self._epoch_end_times = previous_epoch_end_times
             raise
 
+    def _likelihood_ages(self) -> tuple[jax.Array, jax.Array | None]:
+        """Return ``(ages, spine_ages)`` for the likelihood calls.
+
+        When exactly one spine is labelled (``from_age_samples`` stores the
+        spine first), it is passed explicitly so that the labelled spine is
+        used instead of re-detecting it from the ages.
+        Otherwise the spine is left to the likelihood's own resolution.
+        """
+        ages = self.ages
+        n_spine = 0 if self._spine_ages is None else len(self._spine_ages)
+        n_non_spine = 0 if self._non_spine_ages is None else len(self._non_spine_ages)
+        if n_spine == 1 and len(ages) == n_spine + n_non_spine:
+            return ages[1:], ages[:1]
+        return ages, None
+
     def log_likelihood(self, unbias: bool = True) -> jax.Array:
         """Compute log-likelihood directly from the current model state.
 
@@ -776,11 +791,13 @@ class BirthDeathProcess:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
 
+        ages, spine_ages = self._likelihood_ages()
         return _log_likelihood(
             birth_rates=self._birth_rates,
             death_rates=self._death_rates,
-            ages=self.ages,
+            ages=ages,
             times=self.adjusted_epoch_end_times,
+            spine_ages=spine_ages,
             unbias=unbias,
         )
 
@@ -790,11 +807,13 @@ class BirthDeathProcess:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
 
+        ages, spine_ages = self._likelihood_ages()
         return _negative_log_likelihood(
             birth_rates=self._birth_rates,
             death_rates=self._death_rates,
-            ages=self.ages,
+            ages=ages,
             times=self.adjusted_epoch_end_times,
+            spine_ages=spine_ages,
             unbias=unbias,
         )
 

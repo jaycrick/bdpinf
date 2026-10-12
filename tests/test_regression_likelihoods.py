@@ -54,9 +54,14 @@ _GOLDEN_SPINE_LL_750 = -25.0902674713
 # Non-spine age log-lik at age=750
 _GOLDEN_NON_SPINE_LL_750 = -40.4957324571
 # Population log-lik at n=5
-_GOLDEN_POPULATIONS_LL_N5 = -31.8330083712
+# Updated from -31.8330083712: the old value lost ~4e-4 to the 1 - pi round trip
+# (pi(T) ~ 1e-13 here).  The new value is log[(1-alpha) pi (1-pi)^4] from the
+# paper's W(T), matching a 60-digit decimal evaluation (-31.83258146374835...).
+_GOLDEN_POPULATIONS_LL_N5 = -31.8325814637
 # Combined log-likelihood for 10 fixed ages
-_GOLDEN_COMBINED_LL_10AGES = -381.6393679271
+# Updated from -381.6393679271: same ~4.27e-4 population-term precision gain as
+# _GOLDEN_POPULATIONS_LL_N5 (the age terms are unchanged).
+_GOLDEN_COMBINED_LL_10AGES = -381.6389410196
 
 _ATOL = 1e-4
 

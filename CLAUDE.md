@@ -135,10 +135,11 @@ Key methods: `log_likelihood()`, `update_parameters()`, `plot_genealogy_tree()`,
 
 Three submodules contain pure functions (no class state):
 - `math_extinction.py` --- `calculate_extinction_pr()`: probability population dies by time T
-- `math_ages.py` --- `calculate_spine_ages_log_lik()`, `calculate_non_spine_ages_log_lik()`, `_reverse_time()`
+- `math_nested.py` --- the paper's nested integral $\mathcal W(b)=1/\pi(b)$ in closed form per epoch, plus $N(T)$, $L_\mu(s,T)$ and the non-spine/spine age densities, all in log space (restart principle; no time reversal)
+- `math_ages.py` --- `calculate_spine_ages_log_lik()`, `calculate_non_spine_ages_log_lik()` (thin wrappers over `math_nested`)
 - `math_populations.py` --- `calculate_populations_log_lik()`: probability of observed population counts
 
-`_reverse_time()` --- **time-reversal trick**: transforms multi-epoch non-spine ages into an extinction-conditioned backward-time problem, avoiding exponential complexity in the number of epochs.
+**Restart principle**: $\mathcal W$ obeys $\mathcal W'=\gamma\mathcal W+\mu$, so for piecewise-constant rates it has an exact epoch-wise recursion; the age densities follow from $\pi=1/\mathcal W$ at two points, in $O(K+n\log K)$ with no genealogy-ordering sum and no time reversal.
 
 `rate_functions.py` --- `RateFunction` protocol plus `PiecewiseConstantRate` and `PiecewiseLinearRate` (jumps allowed; `.continuous(knots, times)` for jump-free); JAX pytrees exposing `__call__`, exact `integral(s, e)` and `breakpoints`.
 New rate families (sin/cos, splines, rational) only need to satisfy this protocol.
@@ -265,8 +266,8 @@ Use this in notebooks and scripts instead of hardcoded relative paths.
 
 2. **Pure math functions, not methods**: `math_extinction.py`, `math_ages.py`, `math_populations.py` contain only free functions with no class state, keeping the math testable and composable independently of `BirthDeathProcess`.
 
-3. **Time-reversal for multi-epoch efficiency**: The non-spine likelihood is reformulated as an extinction-conditioned backward-time integral.
-   This avoids summing over all possible genealogy orderings (exponential in epoch count) and reduces it to a single pass.
+3. **Nested-integral formulation for multi-epoch efficiency**: Population and age likelihoods are written in the paper's $\mathcal W(b)=1/\pi(b)$ (exact per-epoch recursion), which avoids summing over genealogy orderings (exponential in epoch count) and replaces the earlier time-reversal reduction with a single $O(K+n\log K)$ pass.
+   Names follow the paper: $\Gamma,\Lambda,M$ for the rate integrals, $N(T)$ (code: *extinction numerator*), $A$ non-spine age, $A^*$ spine age, $T$ observation time.
 
 4. **`ParameterConstraints` as first-class input**: Equality groups and fixed parameters are validated early and applied throughout the optimizer loop --- reducing effective dimension of the search space for parsimonious models.
 

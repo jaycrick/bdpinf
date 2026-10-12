@@ -5,16 +5,80 @@ birth-death process models, used in parameter fitting and model evaluation.
 """
 
 import warnings
+from typing import Literal, NamedTuple
 
+import jax
 import jax.numpy as jnp
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 from bdpinf.models.math_ages import (
     calculate_non_spine_ages_log_lik,
     calculate_spine_ages_log_lik,
 )
+from bdpinf.models.math_nested import (
+    age_log_densities,
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
+)
 from bdpinf.models.math_populations import calculate_populations_log_lik
+from bdpinf.models.validation import normalize_and_validate_inputs
 from bdpinf.utils import ensure_1d_tensor, ensure_1d_tensors
+
+
+class SpineResolution(NamedTuple):
+    """Outcome of :func:`resolve_spine_ages`."""
+
+    spine_ages: NDArray[np.float64] | None
+    non_spine_ages: NDArray[np.float64]
+    use_unknown_spine: bool
+
+
+def resolve_spine_ages(
+    ages: ArrayLike,
+    end_time: float,
+    *,
+    multiple_terminal: Literal["raise", "marginalize"] = "raise",
+) -> SpineResolution:
+    r"""Split ``ages`` into a spine and non-spine ages when no spine is labelled.
+
+    Host-side (not traced).
+    An age ``np.isclose`` to the observation time ``T`` is the spine, and is
+    *snapped to exactly* ``T`` so that it is scored with the atom
+    :math:`\Pr(A^*=T)` rather than the interior density.
+    A single age is the spine.
+    Otherwise the spine is unknown and is marginalised over.
+
+    Parameters
+    ----------
+    ages : array-like
+        All observed ages, with no spine labelled.
+    end_time : float
+        Observation time ``T`` (``times[-1]``).
+    multiple_terminal : {"raise", "marginalize"}
+        What to do if more than one age is at ``T``: raise ``ValueError``
+        (the model assumes a unique spine) or treat the spine as unknown.
+
+    """
+    ages_np = np.asarray(ages, dtype=np.float64)
+    if ages_np.size == 0:
+        return SpineResolution(None, ages_np, True)
+    at_final = np.isclose(ages_np, end_time)
+    n_terminal = int(at_final.sum())
+    if n_terminal > 1 and multiple_terminal == "raise":
+        msg = (
+            "More than one age equals the final observation time. "
+            "Exactly one spine is assumed; provide explicit spine_ages."
+        )
+        raise ValueError(msg)
+    if n_terminal == 1:
+        return SpineResolution(
+            np.full(1, end_time, dtype=np.float64), ages_np[~at_final], False
+        )
+    if ages_np.size == 1:
+        return SpineResolution(ages_np.copy(), ages_np[:0], False)
+    return SpineResolution(None, ages_np, True)
 
 
 def log_likelihood(
@@ -116,7 +180,7 @@ def log_likelihood(
 
     See Also
     --------
-        calculate_populations_log_likelihood, calculate_ages_log_likelihood
+        calculate_populations_log_lik, calculate_ages_log_lik
 
     """
     _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
@@ -198,21 +262,10 @@ def log_likelihood(
         return _ninf
 
     if spine_ages is None and not is_ordered and len(ages) > 0:
-        # Host-side boundary detection (data-dependent, not traced)
-        at_final_time = np.isclose(np.array(ages, dtype=np.float64), float(times[-1]))
-        num_terminal_ages = int(at_final_time.sum())
-        if num_terminal_ages > 1:
-            msg = (
-                "More than one age equals the final observation time. "
-                "Exactly one spine is assumed; provide explicit spine_ages."
-            )
-            raise ValueError(msg)
-        if num_terminal_ages == 1:
-            spine_ages = ages[jnp.array(at_final_time)]
-            ages = ages[jnp.array(~at_final_time)]
-        elif len(ages) == 1:
-            spine_ages = ages
-            ages = ages[:0]
+        resolved = resolve_spine_ages(ages, float(times[-1]))
+        if resolved.spine_ages is not None:
+            spine_ages = jnp.asarray(resolved.spine_ages)
+            ages = jnp.asarray(resolved.non_spine_ages)
 
     use_unknown_spine_marginal = (not is_ordered) and (spine_ages is None)
 
@@ -323,47 +376,29 @@ def _log_likelihood_core(
     ages_log_lik = jnp.float64(0.0)
     n_non_spine = len(non_spine_ages)  # static shape
 
+    if skip_normalization is False:
+        # Eager callers (``log_likelihood``) keep the shared input validation.
+        birth_rates, death_rates, times = normalize_and_validate_inputs(
+            birth_rates, death_rates, times
+        )
+    terms = nested_terms(birth_rates, death_rates, times)
+
     if use_unknown_spine_marginal and n_non_spine > 0:
-        # Unknown-spine marginal: all ages are spine candidates; integrate out
-        # the spine position via logsumexp.
-        non_spine_ll = calculate_non_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            non_spine_ages,
-            times=times,
-            return_array=True,
-            _skip_normalization=skip_normalization,
-        )
-        spine_ll = calculate_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages=non_spine_ages,
-            times=times,
-            return_array=True,
-            _skip_normalization=skip_normalization,
-        )
-        a = spine_ll - non_spine_ll
-        log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a.max()))) + a.max()
-        ages_log_lik = (
-            non_spine_ll.sum() - jnp.log(jnp.float64(n_non_spine)) + log_sum_exp
-        )
+        # Unknown-spine marginal (paper: P(Z_T) * sum_j f*(a_j) prod_{i!=j} f(a_i),
+        # up to the 1/n for the uniformly chosen spine): every age is a spine
+        # candidate; both densities come from one shared pass.
+        log_f, log_f_spine = age_log_densities(terms, non_spine_ages)
+        a = log_f_spine - log_f
+        a_max = jax.lax.stop_gradient(jnp.max(a))
+        log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a_max))) + a_max
+        ages_log_lik = log_f.sum() - jnp.log(jnp.float64(n_non_spine)) + log_sum_exp
     else:
         # Known or pre-resolved spine.
         if spine_ages is not None:
-            ages_log_lik = ages_log_lik + calculate_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                ages=spine_ages,
-                times=times,
-                _skip_normalization=skip_normalization,
-            )
+            ages_log_lik = ages_log_lik + spine_log_density(terms, spine_ages).sum()
         if n_non_spine > 0:
-            ages_log_lik = ages_log_lik + calculate_non_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                non_spine_ages,
-                times=times,
-                _skip_normalization=skip_normalization,
+            ages_log_lik = (
+                ages_log_lik + non_spine_log_density(terms, non_spine_ages).sum()
             )
 
     total = log_P_n_T + ages_log_lik

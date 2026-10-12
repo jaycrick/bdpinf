@@ -35,6 +35,7 @@ from ._optimizer_runners import (
 from .likelihood import (
     _log_likelihood_core,  # pyright: ignore[reportPrivateUsage]
     negative_log_likelihood,
+    resolve_spine_ages,
 )
 from .uncertainty import estimate_mle_covariance
 
@@ -586,26 +587,18 @@ def _run_optimizer_strategies(
     _jit_times = times_tensor
 
     if spine_ages_tensor is None and len(non_spine_ages) > 0:
-        ages_np = np.array(non_spine_ages, dtype=np.float64)
-        t_final = float(times_tensor[-1])
-        at_final = np.isclose(ages_np, t_final)
-        n_terminal = int(at_final.sum())
-        if n_terminal == 1:
-            _jit_spine: jax.Array | None = jnp.array(
-                ages_np[at_final],
-                dtype=jnp.float64,
-            )
-            _jit_non_spine = jnp.array(ages_np[~at_final], dtype=jnp.float64)
-            _use_unknown_spine = False
-        elif len(ages_np) == 1 and n_terminal == 0:
-            _jit_spine = non_spine_ages
-            _jit_non_spine = jnp.array([], dtype=jnp.float64)
-            _use_unknown_spine = False
-        else:
-            # Unknown spine: marginalize over all ages.
-            _jit_spine = None
-            _jit_non_spine = non_spine_ages
-            _use_unknown_spine = True
+        resolved = resolve_spine_ages(
+            non_spine_ages,
+            float(times_tensor[-1]),
+            multiple_terminal="marginalize",
+        )
+        _jit_spine: jax.Array | None = (
+            None
+            if resolved.spine_ages is None
+            else jnp.asarray(resolved.spine_ages, dtype=jnp.float64)
+        )
+        _jit_non_spine = jnp.asarray(resolved.non_spine_ages, dtype=jnp.float64)
+        _use_unknown_spine = resolved.use_unknown_spine
     else:
         _jit_spine = spine_ages_tensor
         _jit_non_spine = non_spine_ages

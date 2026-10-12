@@ -87,10 +87,6 @@ from bdpinf.models.math_age_densities import (
     spine_age_log_atom,
     spine_age_log_density,
 )
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
-)
 from bdpinf.models.rate_functions import (
     PiecewiseConstantRate,
     PiecewiseLinearRate,
@@ -351,8 +347,8 @@ Three independent checks support the figures above.
 
 1. Total mass: each scenario's spine CDF and non-spine CDF reach 1 at $a=T$
    (the spine CDF includes the atom).
-2. Piecewise-constant rates agree with the existing multi-epoch time-reversal
-   likelihood `calculate_*_ages_log_lik` on the interior of $(0,T)$.
+2. For piecewise-constant rates the exact epoch-wise backend (`bdpinf.models.math_nested`)
+   agrees with Gauss--Legendre quadrature of the same theorems to $10^{-10}$.
 3. Values match the Wolfram validation notebooks
    (`AgeDist_LinearBoth.nb`, `AgeDist_PiecewiseLinearBoth.nb`).
 
@@ -385,25 +381,16 @@ assert np.allclose(mass_table[["spine mass", "non-spine mass"]], 1.0, atol=1e-9)
 ```{python}
 pc_times = jnp.array([0.8, 1.7, T])
 pc_b, pc_d = jnp.array([0.9, 1.6, 0.7]), jnp.array([1.2, 0.5, 1.0])
-legacy_spine = calculate_spine_ages_log_lik(
-    pc_b, pc_d, AGES, pc_times, return_array=True
-)
-legacy_non_spine = calculate_non_spine_ages_log_lik(
-    pc_b, pc_d, AGES, pc_times, return_array=True
-)
 new_b, new_d = (PiecewiseConstantRate(v, pc_times) for v in (pc_b, pc_d))
-print(
-    "max |new - legacy| spine:     ",
-    float(jnp.max(jnp.abs(spine_age_log_density(AGES, new_b, new_d) - legacy_spine))),
-)
-print(
-    "max |new - legacy| non-spine: ",
-    float(
-        jnp.max(
-            jnp.abs(non_spine_age_log_density(AGES, new_b, new_d) - legacy_non_spine)
-        )
-    ),
-)
+for name, fn in [
+    ("spine", spine_age_log_density),
+    ("non-spine", non_spine_age_log_density),
+]:
+    exact = fn(AGES, new_b, new_d)
+    oracle = fn(AGES, new_b, new_d, method="quadrature", n_nodes=48)
+    max_diff = float(jnp.max(jnp.abs(exact - oracle)))
+    print(f"max |exact - quadrature| {name}: {max_diff:.2e}")
+    assert max_diff < 1e-10
 
 T_WL = 2.5  # the Wolfram notebooks use T = 2.5
 wl_times = jnp.array([T_WL])

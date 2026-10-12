@@ -1,6 +1,7 @@
 """Test cases for calculate_populations_log_lik based on the Arley & Borchsenius formula."""
 
 import math
+from decimal import Decimal, getcontext
 
 import jax
 import jax.numpy as jnp
@@ -15,6 +16,18 @@ from bdpinf.models import (
 )
 from bdpinf.models.math_extinction import calculate_extinction_pr
 from bdpinf.process import BirthDeathProcess
+
+
+def _exact_log_pmf(lam: float, mu: float, t: float, n: int) -> float:
+    """Log P(Z_T = n | Z_0 = 1) = log[(1 - alpha) pi (1 - pi)^(n - 1)], 80 digits."""
+    getcontext().prec = 80
+    lam_d, mu_d, t_d = Decimal(lam), Decimal(mu), Decimal(t)
+    gamma = lam_d - mu_d
+    w = (lam_d * (gamma * t_d).exp() - mu_d) / gamma
+    pi = 1 / w
+    n_t = (-gamma * t_d).exp() * w - 1
+    alpha = n_t / (1 + n_t)
+    return float(((1 - alpha) * pi * (1 - pi) ** (n - 1)).ln())
 
 
 class TestPopulationProbability:
@@ -433,11 +446,13 @@ class TestPopulationProbability:
             "Boundary case should be handled gracefully"
         )
 
-    def test_beta_equals_one_cases(self) -> None:
-        """Test cases where β_t = 1 (should return -inf)."""
-        # These are mathematically valid cases that lead to beta_t = 1
-        # They should return -inf because log(1 - beta_t) = log(0) = -∞
+    def test_extreme_survival_cases_are_finite_and_exact(self) -> None:
+        """pi(T) underflows in linear space here, yet the log pmf is finite and exact.
 
+        The earlier implementation formed ``1 - (1 - pi)`` and returned ``-inf``
+        for these cases; working with ``log pi = -log W(T)`` directly gives the
+        correct value, compared against a 80-digit decimal evaluation.
+        """
         boundary_cases = [
             (1.0, 0.5, 100.0, 10, "λ = 2μ case"),
             (0.1, 0.05, 1000.0, 10, "Long time case"),
@@ -451,9 +466,9 @@ class TestPopulationProbability:
                 times=time,
                 ns=n,
             )
-            assert float(result) == float("-inf"), (
-                f"Case '{description}' should return -inf due to β_t = 1"
-            )
+            assert float(result) == pytest.approx(
+                _exact_log_pmf(birth_rate, death_rate, time, n), rel=1e-12
+            ), description
 
 
 class TestPopulationsLogPmf:

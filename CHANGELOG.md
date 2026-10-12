@@ -9,9 +9,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `models.rate_functions` (`RateFunction`, `PiecewiseConstantRate`, `PiecewiseLinearRate`) and `models.math_age_densities`: spine, non-spine and random-individual age densities/CDFs for time-varying (piecewise-linear) birth and death rates, with a notebook of density shapes (`qmd_scripts/validation/time_varying_rates/`).
 - `visualization.age_density_plots` (`scenario_panel`, `scenario_row`, ...) and a non-spine age-shapes notebook (`02_non_spine_age_shapes.qmd`).
+- `models.math_nested`: exact epoch-wise nested integral $\mathcal W(b)=1/\pi(b)$, $N(T)$ and the age densities in the paper's notation, all in log space; `inference.likelihood.resolve_spine_ages` shared by `log_likelihood`, `fit_birth_death_processes` and the Bayesian model.
+
+### Fixed
+
+- `models.math_ages`: multi-epoch spine-age atom at `age == T` (the previous value included a spurious factor $1-q(T)$, so density plus atom summed to less than 1; one-epoch results were unaffected), and the non-spine density at `age == T`, which now continues the interior density.
+  Fitted rates can change slightly for multi-epoch data that contain a surviving founder.
+- Spine ages within `isclose` tolerance of `T` are snapped to exactly `T` so they receive the atom (previously the interior density).
+- `models.math_populations`: the population term is no longer evaluated through `1 - pi(T)`, which lost up to ~4e-4 in the log-likelihood when $\pi(T)\sim10^{-13}$ and returned `-inf` where $\pi(T)$ underflows (e.g. $\lambda=2\mu$, $T=100$ now gives the correct finite value); the multi-start ($Z_0>1$) probability of $Z_T=0$ is now $\alpha^{n_0}$.
+- `BirthDeathProcess.log_likelihood` uses the labelled spine (when exactly one) instead of re-detecting it.
 
 ### Changed
 
+- Population and age likelihoods are computed from the paper's $\mathcal W$ (restart principle) in one $O(K+n\log K)$ pass; the time-reversal machinery was removed (`_reverse_time`, `calculate_log_lik_lifetimes`, `calculate_log_pr_extinction_given_initial_lifetimes`, `calculate_log_lik_initial_lifetimes_given_(non_)extinction`).
+  Public likelihood signatures are unchanged.
+  The NumPyro model now calls the shared likelihood core.
 - **Breaking:** split out of the `inf-bp-texts` monorepo into this
   standalone, domain-free `bdpinf` package (import name `bdpinf`).
   The NT

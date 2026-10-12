@@ -85,7 +85,6 @@ from bdpinf.models.math_age_densities import (
     random_individual_cdf,
     spine_age_cdf,
 )
-from bdpinf.models.math_ages import calculate_non_spine_ages_log_lik
 from bdpinf.models.rate_functions import (
     PiecewiseConstantRate,
     PiecewiseLinearRate,
@@ -425,7 +424,7 @@ display(mixture_table.round(4))
 Every check below is an `assert`, so the render fails if one breaks.
 
 1. Total mass: the non-spine CDF reaches 1 at $a=T$ in every scenario.
-2. Piecewise-constant rates agree with the existing time-reversal likelihood `calculate_non_spine_ages_log_lik`.
+2. For piecewise-constant rates the exact epoch-wise backend (`bdpinf.models.math_nested`) agrees with Gauss--Legendre quadrature of the same theorem to $10^{-10}$.
 3. Values match the Wolfram validation notebooks
    (`AgeDist_LinearBoth.nb` and `AgeDist_PiecewiseLinearBoth.nb`), which use various horizons $T$.
 
@@ -451,13 +450,15 @@ assert np.allclose(mass["non-spine mass"], 1.0, atol=1e-9)
 ```{python}
 pc_times = jnp.array([0.8, 1.7, T])
 pc_b, pc_d = jnp.array([0.9, 1.6, 0.7]), jnp.array([1.2, 0.5, 1.0])
-legacy = calculate_non_spine_ages_log_lik(pc_b, pc_d, AGES, pc_times, return_array=True)
-new = non_spine_age_log_density(
-    AGES, PiecewiseConstantRate(pc_b, pc_times), PiecewiseConstantRate(pc_d, pc_times)
+new_b, new_d = (
+    PiecewiseConstantRate(pc_b, pc_times),
+    PiecewiseConstantRate(pc_d, pc_times),
 )
-max_diff = float(jnp.max(jnp.abs(new - legacy)))
-print(f"max |new - legacy| non-spine: {max_diff:.2e}")
-assert max_diff < 1e-9
+exact = non_spine_age_log_density(AGES, new_b, new_d)
+oracle = non_spine_age_log_density(AGES, new_b, new_d, method="quadrature", n_nodes=48)
+max_diff = float(jnp.max(jnp.abs(exact - oracle)))
+print(f"max |exact - quadrature| non-spine: {max_diff:.2e}")
+assert max_diff < 1e-10
 
 
 def linear_both(la: float, lb: float, ma: float, mb: float, horizon: float):

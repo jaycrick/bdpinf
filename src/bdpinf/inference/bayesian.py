@@ -43,11 +43,10 @@ from numpy.typing import NDArray
 from numpyro.infer import MCMC, NUTS
 
 from bdpinf.inference.fitting import ParameterConstraints
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
+from bdpinf.inference.likelihood import (
+    _log_likelihood_core,  # pyright: ignore[reportPrivateUsage]
+    resolve_spine_ages,
 )
-from bdpinf.models.math_populations import calculate_populations_log_lik
 from bdpinf.models.validation import normalize_and_validate_inputs
 
 logger = logging.getLogger(__name__)
@@ -388,65 +387,20 @@ class BayesianLikelihoodModel:
         times_jax = jnp.asarray(md.times)
         ns_jax = jnp.asarray(md.ns)
 
-        # Population log-likelihood (skip normalization — data pre-validated)
-        log_P_n_T = calculate_populations_log_lik(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
+        # Same shared core as the MLE hot path (population + ages, with the
+        # spine marginalised when unknown); data are pre-validated.
+        total_log_lik = _log_likelihood_core(
+            birth_rates,
+            death_rates,
+            non_spine_ages=jnp.asarray(md.non_spine_ages),
+            spine_ages=jnp.asarray(md.spine_ages) if md.has_spine else None,
             times=times_jax,
             ns=ns_jax,
             initial_population=md.initial_population,
             unbias=md.unbias,
-            _skip_normalization=True,
+            use_unknown_spine_marginal=md.use_unknown_spine_marginal,
+            skip_normalization=True,
         )
-
-        # Ages log-likelihood.  All Python-level branching uses pre-computed
-        # flags (Python bools/ints) to avoid abstract-value errors.
-        ages_log_lik = jnp.float64(0.0)
-
-        if md.use_unknown_spine_marginal and md.n_non_spine_ages > 0:
-            ages_jax = jnp.asarray(md.non_spine_ages)
-            n_ages = md.n_non_spine_ages
-            non_spine_ll = calculate_non_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                ages_jax,
-                times=times_jax,
-                return_array=True,
-                _skip_normalization=True,
-            )
-            spine_ll = calculate_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                ages=ages_jax,
-                times=times_jax,
-                return_array=True,
-                _skip_normalization=True,
-            )
-            sum_log_f = non_spine_ll.sum()
-            a = spine_ll - non_spine_ll
-            log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a.max()))) + a.max()
-            ages_log_lik = sum_log_f - jnp.log(jnp.float64(n_ages)) + log_sum_exp
-
-        elif md.has_spine:
-            spine_jax = jnp.asarray(md.spine_ages)
-            ages_log_lik = ages_log_lik + calculate_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                ages=spine_jax,
-                times=times_jax,
-                _skip_normalization=True,
-            )
-            if md.n_non_spine_ages > 0:
-                ages_jax = jnp.asarray(md.non_spine_ages)
-                ages_log_lik = ages_log_lik + calculate_non_spine_ages_log_lik(
-                    birth_rates,
-                    death_rates,
-                    ages_jax,
-                    times=times_jax,
-                    _skip_normalization=True,
-                )
-
-        total_log_lik = log_P_n_T + ages_log_lik
         safe_log_lik = jnp.where(
             jnp.isfinite(total_log_lik),
             total_log_lik,
@@ -532,24 +486,10 @@ def _prepare_age_inputs(
         return all_ages, spine_np, np.asarray(ns, dtype=np.int32), False
 
     # Boundary detection: age at final time → inferred spine
-    use_unknown_spine = True
-    if all_ages.size > 0:
-        at_final = np.isclose(all_ages, end_time)
-        n_terminal = int(at_final.sum())
-        if n_terminal > 1:
-            msg = (
-                "More than one age equals the final observation time. "
-                "Exactly one spine is assumed; provide explicit spine_ages."
-            )
-            raise ValueError(msg)
-        if n_terminal == 1:
-            spine_np = all_ages[at_final]
-            all_ages = all_ages[~at_final]
-            use_unknown_spine = False
-        elif all_ages.size == 1:
-            spine_np = all_ages.copy()
-            all_ages = np.empty(0, dtype=np.float64)
-            use_unknown_spine = False
+    resolved = resolve_spine_ages(all_ages, end_time)
+    spine_np = resolved.spine_ages
+    all_ages = resolved.non_spine_ages
+    use_unknown_spine = resolved.use_unknown_spine
 
     ns = population_sizes if population_sizes is not None else inferred_ns
     return all_ages, spine_np, np.asarray(ns, dtype=np.int32), use_unknown_spine

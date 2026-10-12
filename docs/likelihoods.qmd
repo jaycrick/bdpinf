@@ -1,6 +1,6 @@
 ---
-title: "Non-Spine Age Likelihood"
-subtitle: "Formulation, Multi-Epoch Reduction, and Numerical Stability"
+title: "Age and Population Likelihoods"
+subtitle: "Formulation in Terms of the Nested Integral W, Multi-Epoch Recursion, and Numerical Stability"
 ---
 
 ## Overview
@@ -66,87 +66,86 @@ $$
   }.
 $$
 
-### Multi-epoch formula
+### Limiting case ($\lambda = \mu$)
+
+When $\lambda = \mu$ the single-epoch denominator is zero.
+The paper's form below needs no limit: the critical case is exact, with
+
+$$
+  f(t)=\frac{1+\lambda(T-t)}{T}e^{-\lambda t}.
+$$
+
+## General rates and the nested integral $\mathcal W$
+
+The multi-epoch likelihood follows the paper (`sections/2_MainResults.tex`).
+Write $\gamma=\lambda-\mu$, $\Lambda(s,e]=\int_s^e\lambda$, $M(s,e]=\int_s^e\mu$ and $\Gamma(s,e]=\int_s^e\gamma$.
+The nested integral and its reciprocal are
+
+$$
+  \mathcal W(b)=e^{\Gamma(0,b]}+\int_0^b\mu(t)\,e^{\Gamma(t,b]}\,dt
+  =1+\int_0^b\lambda(t)\,e^{\Gamma(t,b]}\,dt,
+  \qquad \pi(b)=\frac1{\mathcal W(b)},
+$$
+
+so that $\mathcal W'=\gamma\mathcal W+\mu$ with $\mathcal W(0)=1$.
+Given at least one individual alive at $T$, the population is geometric,
+$\Pr(Z_T=z\mid Z_T\ge1)=\pi(T)\,(1-\pi(T))^{z-1}$.
+
+Using $\mathcal W'=\gamma\mathcal W+\mu$, the exponent in the paper's age theorems satisfies
+$\int_{T-a}^T(\mu\pi+\lambda)=\ln[\pi(T-a)/\pi(T)]+M(T-a,T]$.
+With $L_\mu(s,T)=\int_s^T\mu(t)\,e^{\Gamma(t,T]}\,dt$ the age densities are
 
 $$
   \begin{align}
-  \mathbf{t}^\text{shift} &:= (t_1 - b, \dots, t_n - b) \\
-  \mathbf{t}^\text{trunc} &:= (t_j^\text{shift} - b, \dots, t_n^\text{shift} - b) \\
-  \boldsymbol{\lambda}^\text{trunc} &:= (\lambda_j, \dots, \lambda_n) \\
-  \boldsymbol{\mu}^\text{trunc} &:= (\mu_j, \dots, \mu_n)
+  f(a) &= \frac{\lambda(T-a)\,\mathcal W(T-a)\,e^{-M(T-a,T]}}{\mathcal W(T)-1}
+    && \text{non-spine age } A,\\
+  f^*(a) &= \lambda(T-a)\,e^{-\Lambda(T-a,T]}\,L_\mu(T-a,T)
+    && \text{spine age } A^*,\ 0<a<T,\\
+  \Pr(A^*=T) &= \mathcal W(T)\,e^{-\Lambda(0,T]}
+    && \text{atom at the oldest age.}
   \end{align}
 $$
-where $j = \min\{i: t_i > b\}$
+
+None of these involves a subtraction or a division by $\gamma$.
+
+### Piecewise-constant rates (exact)
+
+On epochs $(\tau_{k-1},\tau_k]$ with $d_k=\tau_k-\tau_{k-1}$ and $\gamma_k=\lambda_k-\mu_k$,
+$\mathcal W$ follows the *restart principle*:
 
 $$
-  \operatorname{ISWBT}(b, \boldsymbol{\lambda}, \boldsymbol{\mu}, \mathbf{t})
-  = \mu_j P_0(
-      \boldsymbol{\lambda}^\text{trunc},
-      \boldsymbol{\mu}^\text{trunc},
-      \mathbf{t}^\text{trunc}
-  )
-$$
-where
-$$
-  P_0(
-      \boldsymbol{\lambda}^\text{trunc},
-      \boldsymbol{\mu}^\text{trunc},
-      \mathbf{t}^\text{trunc}
-  )
-  = 1 - \frac{1}{1 + \operatorname{PEN}(
-      \boldsymbol{\lambda}^\text{trunc},
-      \boldsymbol{\mu}^\text{trunc},
-      \mathbf{t}^\text{trunc}
-  )}
-$$
-and
-$$
-  \operatorname{PEN}(
-      \boldsymbol{\lambda}^\text{trunc},
-      \boldsymbol{\mu}^\text{trunc},
-      \mathbf{t}^\text{trunc}
-  ) =
+  \mathcal W(\tau_k)=e^{\gamma_kd_k}\,\mathcal W(\tau_{k-1})+\mu_k\,\frac{e^{\gamma_kd_k}-1}{\gamma_k},
+  \qquad \mathcal W(0)=1,
 $$
 
-Then
-
-### Limiting case ($\lambda \approx \mu$)
-
-When $\lambda = \mu$, the denominator is zero.
-The
-implementation uses the limiting form
+and for $b$ inside epoch $k$ replace $d_k$ by $b-\tau_{k-1}$.
+Equivalently, with $\kappa^-(g,d)=(1-e^{-gd})/g$ (equal to $d$ at $g=0$),
 
 $$
-  f(t)=\frac{1+\lambda(T-t)}{T}e^{-\lambda t}
+  N(b)=\int_0^b\mu\,e^{-\Gamma(0,t]}dt=\sum_k\mu_k\,e^{-\Gamma(0,\tau_{k-1}]}\,\kappa^-(\gamma_k,d_k),
+  \qquad \mathcal W(b)=e^{\Gamma(0,b]}\bigl(1+N(b)\bigr),
 $$
 
-which is smooth as $\lambda \to \mu$.
+and the same sum with $\lambda_k$ in place of $\mu_k$ gives $L(b)$ with
+$\mathcal W(b)-1=e^{\Gamma(0,b]}L(b)$.
+The code keeps $N$'s historical name *extinction numerator* (`ext_num`);
+it is $\mathcal W$ only after the factor $e^{\Gamma}$,
+so $\pi(T)=1/(1+N(T))$ holds only when $\Gamma(0,T]=0$.
+Also $\Pr(Z_T=0)=N(T)/(1+N(T))$.
 
-## Multi-epoch formula (piecewise-constant rates)
+The code (`bdpinf.models.math_nested`) evaluates these cumulative sums in log space
+(`cumlogsumexp` of positive terms, no subtraction) once per likelihood call,
+then each age costs one `searchsorted` and a few gathers.
+$L_\mu(s,T)$ uses the mirror-image suffix sum.
+No time reversal is needed.
 
-For $K$ epochs with end times $T_1 < T_2 < \dots < T_K$, the function uses a
-**time-reversal transformation** to reduce the multi-epoch non-spine likelihood to an
-extinction-conditioned likelihood of initial lifetimes:
+### Population term
 
-$$
-  \log L(\{t_i\})
-  = \log L_{\text{ext}}(\{t_i\}; \tilde{\lambda}, \tilde{\mu}, \tilde{T}).
-$$
-
-The reversed parameters are constructed as
-
-$$
-  \tilde{T}_k = T_K - T_{K-k},
-$$
-
-$$
-  \tilde{\lambda}_k = \mu_{K-k+1}, \qquad \tilde{\mu}_k = \lambda_{K-k+1}.
-$$
-
-In code this is done by reversing the rate arrays and using the reversed epoch
-boundaries.
-This transformation enables reuse of the extinction-conditioned lifetime
-likelihood for the multi-epoch case.
+The population-count term is $\ln\Pr(Z_T=z)=\ln(1-\alpha)+\ln\pi+(z-1)\ln\beta$ with
+$\alpha=N/(1+N)$ and $\beta=1-\pi$;
+given survival, $\ln\Pr(Z_T=z\mid Z_T\ge1)=-z\ln\mathcal W(T)+(z-1)\ln(\mathcal W(T)-1)$.
+The code uses $\ln\pi=-\ln\mathcal W(T)$ and $\ln\beta=\ln(\mathcal W(T)-1)-\ln\mathcal W(T)$ directly,
+so it never forms $1-\beta$ (which loses precision when $\pi(T)\ll1$).
 
 ## Numerical stability and validation
 
@@ -156,11 +155,10 @@ The function performs input checks and returns $-\infty$ on numerical invalidity
 - non-increasing epoch times raise a `ValueError`,
 - non-finite intermediate values return $-\infty$.
 
-For multi-epoch calculations, differences between the single-epoch formula and the
-time-reversal reduction can appear if the transformed calculation is numerically
-sensitive.
-This is the primary source of single vs multi-epoch discrepancies when
-rates are identical.
+Zero rates are legitimate (no births in an epoch gives density zero for ages born then).
+Internally a finite log-zero keeps cumulative log-sums and gradients finite,
+and public results are mapped back to $-\infty$.
+Multi-epoch rates that repeat the same value across epochs agree with the single-epoch formula to machine precision.
 
 ## Example
 
@@ -181,7 +179,7 @@ log_lik = calculate_non_spine_ages_log_lik(birth_rates_val, death_rates_val, age
 
 - `calculate_spine_ages_log_lik`: spine age likelihood (includes boundary mass at $t=T$).
 - `calculate_ages_log_lik`: dispatches to spine or non-spine likelihood.
-- `calculate_log_lik_initial_lifetimes_given_extinction`: used in the multi-epoch path.
+- `bdpinf.models.math_nested`: the exact epoch-wise $\mathcal W$, $N$, $L_\mu$ and age densities behind all of these.
 
 ## Unknown Spine (Default Inference Path)
 

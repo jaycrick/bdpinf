@@ -98,27 +98,32 @@ class TestConstantRates:
         )
 
 
-class TestLegacyTimeReversal:
-    def test_multi_epoch_piecewise_constant_matches_existing_likelihood(self) -> None:
+class TestArrayWrappersAgainstQuadrature:
+    """The array-in ``calculate_*`` wrappers share the exact backend; check it independently."""
+
+    def test_multi_epoch_wrappers_match_quadrature_oracle(self) -> None:
         times = jnp.array([0.8, 1.7, _T])
         b_vals = jnp.array([0.9, 1.6, 0.7])
         d_vals = jnp.array([1.2, 0.5, 1.0])
         b = PiecewiseConstantRate(b_vals, times)
         d = PiecewiseConstantRate(d_vals, times)
-        legacy_non_spine = calculate_non_spine_ages_log_lik(
-            b_vals, d_vals, _AGES, times, return_array=True
-        )
-        legacy_spine = calculate_spine_ages_log_lik(
-            b_vals, d_vals, _AGES, times, return_array=True
+        np.testing.assert_allclose(
+            calculate_non_spine_ages_log_lik(
+                b_vals, d_vals, _AGES, times, return_array=True
+            ),
+            non_spine_age_log_density(_AGES, b, d, method="quadrature", n_nodes=48),
+            atol=1e-10,
         )
         np.testing.assert_allclose(
-            non_spine_age_log_density(_AGES, b, d), legacy_non_spine, atol=1e-10
-        )
-        np.testing.assert_allclose(
-            spine_age_log_density(_AGES, b, d), legacy_spine, atol=1e-10
+            calculate_spine_ages_log_lik(
+                b_vals, d_vals, _AGES, times, return_array=True
+            ),
+            spine_age_log_density(_AGES, b, d, method="quadrature", n_nodes=48),
+            atol=1e-10,
         )
 
-    def test_atom_normalises_multi_epoch_where_legacy_boundary_does_not(self) -> None:
+    def test_atom_normalises_multi_epoch(self) -> None:
+        # The earlier time-reversal code returned 0.2057 here and summed to 0.890.
         times = jnp.array([0.8, 1.7, _T])
         b = PiecewiseConstantRate(jnp.array([0.9, 1.6, 0.7]), times)
         d = PiecewiseConstantRate(jnp.array([1.2, 0.5, 1.0]), times)

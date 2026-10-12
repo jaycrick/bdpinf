@@ -23,6 +23,7 @@ _LAYERS: dict[str, int] = {
     "bdpinf.models.math_populations": 2,
     "bdpinf.models.math_ages": 2,
     "bdpinf.models.rate_functions": 1,
+    "bdpinf.models.math_nested": 1,
     "bdpinf.models.math_age_densities": 2,
     "bdpinf.models": 2,
     "bdpinf.inference._fit_types": 3,
