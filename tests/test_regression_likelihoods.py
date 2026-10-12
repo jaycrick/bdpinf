@@ -1,9 +1,11 @@
 """Regression tests: golden-value freeze for core likelihood functions.
 
 These tests record the numerical output of key mathematical functions at
-canonical parameter values. Any change to the output — including intentional
-numerical-stability improvements — triggers a failure and forces the author
-to update the golden value with an explanatory comment.
+canonical parameter values. Every golden value was recomputed independently
+from the integral definitions with scipy quadrature (see
+``test_integral_definitions.py`` for the same oracle), so a failure means the
+implementation drifted, not that the golden is stale. Update a golden only
+after re-deriving it independently, and say how in a comment.
 
 Usage
 -----
@@ -42,7 +44,7 @@ _AGES_10 = np.array(
 )
 
 # ---------------------------------------------------------------------------
-# Golden values — computed 2026-06-09 from the initial implementation
+# Golden values (single epoch), verified against quadrature of the definitions
 # ---------------------------------------------------------------------------
 # Supercritical (λ=0.05, μ=0.03, T=1500): Pr(ext) converges to μ/λ = 0.6 for large T
 _GOLDEN_EXTINCTION_SUPERCRITICAL = 0.6000000000
@@ -54,17 +56,15 @@ _GOLDEN_EXTINCTION_CRITICAL = 0.9868421053
 _GOLDEN_SPINE_LL_750 = -25.0902674713
 # Non-spine age log-lik at age=750
 _GOLDEN_NON_SPINE_LL_750 = -40.4957324571
-# Population log-lik at n=5
-# Updated from -31.8330083712: the old value lost ~4e-4 to the 1 - pi round trip
-# (pi(T) ~ 1e-13 here).  The new value is log[(1-alpha) pi (1-pi)^4] from the
-# paper's W(T), matching a 60-digit decimal evaluation (-31.83258146374835...).
+# Population log-lik at n=5: log[(1-alpha) pi (1-pi)^4], matching a 60-digit
+# decimal evaluation (-31.83258146374835...).  (An earlier value, -31.8330083712,
+# lost ~4e-4 to a 1 - pi round trip with pi(T) ~ 1e-13.)
 _GOLDEN_POPULATIONS_LL_N5 = -31.8325814637
-# Combined log-likelihood for 10 fixed ages
-# Updated from -381.6393679271: same ~4.27e-4 population-term precision gain as
-# _GOLDEN_POPULATIONS_LL_N5 (the age terms are unchanged).
+# Combined log-likelihood for 10 fixed ages (unknown spine, unconditional counts)
 _GOLDEN_COMBINED_LL_10AGES = -381.6389410196
 
-_ATOL = 1e-4
+# Goldens are quoted to 10 decimals; independent quadrature agrees to ~1e-10.
+_ATOL = 1e-8
 
 # ---------------------------------------------------------------------------
 # Canonical parameter set (two-epoch, supercritical → subcritical)
@@ -81,7 +81,7 @@ _AGES_10_MULTI = np.array(
 )
 
 # ---------------------------------------------------------------------------
-# Multi-epoch golden values — computed 2026-06-15 from the initial implementation
+# Multi-epoch golden values, verified against quadrature of the definitions
 # ---------------------------------------------------------------------------
 # Spine age log-lik at age=300, 2-epoch
 _GOLDEN_SPINE_LL_300_MULTI = -6.9630921864
@@ -90,10 +90,6 @@ _GOLDEN_NON_SPINE_LL_300_MULTI = -7.6053693664
 # Population log-lik at ns=[3,5], 2-epoch
 _GOLDEN_POPULATIONS_LL_NS_2_MULTI = -18.6682576565
 # Combined log-likelihood (unknown-spine marginalisation) for 10 ages, 2-epoch.
-# Updated 2026-06-18: fixed calculate_log_lik_initial_lifetimes_given_extinction
-# which previously called calculate_log_pr_extinction_given_initial_lifetimes
-# without as_array=True, so the return_array=True path (used inside
-# log_likelihood) received a scalar SUM instead of per-lifetime values.
 _GOLDEN_COMBINED_LL_10AGES_MULTI = -177.7867323299
 
 
@@ -158,12 +154,12 @@ class TestRegressionLikelihoods:
             ages=_AGES_10,
             times=1500.0,
         )
-        assert abs(float(result) - _GOLDEN_COMBINED_LL_10AGES) < _ATOL
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_COMBINED_LL_10AGES, atol=_ATOL, rtol=0.0
+        )
 
     # ------------------------------------------------------------------
     # Multi-epoch golden tests (two-epoch parameter set)
-    # These are the reference numbers that Phase 2 (NumPyro/JAX) must
-    # match within _ATOL before that backend is trusted.
     # ------------------------------------------------------------------
 
     def test_spine_ages_log_lik_golden_single_age_multi_epoch(self) -> None:
@@ -203,4 +199,6 @@ class TestRegressionLikelihoods:
             ages=_AGES_10_MULTI,
             times=_TIMES_2,
         )
-        assert abs(float(result) - _GOLDEN_COMBINED_LL_10AGES_MULTI) < _ATOL
+        np.testing.assert_allclose(
+            float(result), _GOLDEN_COMBINED_LL_10AGES_MULTI, atol=_ATOL, rtol=0.0
+        )

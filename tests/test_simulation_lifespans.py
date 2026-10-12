@@ -137,15 +137,20 @@ class TestLifespanSimulation:
             )
 
     def test_invalid_lengths_raises(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"birth_rates, death_rates, and times must have the same lengt",
+        ):
             simulate_birth_death_lifespans([0.1, 0.2], [0.05], [100.0, 200.0])
 
     def test_non_positive_birth_rate_raises(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"Birth rates and death rates must be positive"
+        ):
             simulate_birth_death_lifespans(0.0, 0.05, 100.0)
 
     def test_non_positive_times_raises(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"Times must be positive"):
             simulate_birth_death_lifespans(0.1, 0.02, -1.0)
 
 
@@ -223,7 +228,7 @@ class TestLifespanMultiEpoch:
         assert p1.creation_times == p2.creation_times
 
     def test_non_increasing_times_raises(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"Times must be strictly increasing"):
             simulate_birth_death_lifespans([0.1, 0.15], [0.02, 0.03], [40.0, 20.0])
 
 

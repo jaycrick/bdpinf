@@ -43,11 +43,11 @@ class TestPopulationProbability:
     def test_input_validation(self) -> None:
         """Test that invalid inputs return -inf."""
         # Negative birth rate
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"birth_rates must be non-negative"):
             calculate_populations_log_lik(-0.1, 0.05, times=100.0, ns=10)
 
         # Negative death rate
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"death_rates must be non-negative"):
             calculate_populations_log_lik(0.1, -0.05, times=100.0, ns=10)
 
         # Zero death rate
@@ -59,10 +59,10 @@ class TestPopulationProbability:
         assert float(result) == float("-inf")
 
         # Negative time
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"times must be positive"):
             calculate_populations_log_lik(0.1, 0.05, times=-100.0, ns=10)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"times must be positive"):
             calculate_populations_log_lik(0.1, 0.05, times=0.0, ns=10)
 
     def test_zero_birth_rate_n_zero(self) -> None:

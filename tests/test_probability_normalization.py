@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 from bdpinf.inference import calculate_unknown_spine_mixture_age_density
 from bdpinf.models.math_extinction import calculate_extinction_pr
@@ -101,6 +102,34 @@ class TestProbabilityNormalization:
 
         total_mass = continuous_mass + terminal_mass
         assert abs(total_mass - 1.0) < 2e-3
+
+    @pytest.mark.parametrize(
+        ("birth", "death", "ends"),
+        [
+            ([0.3], [0.3], [3.0]),  # exactly critical
+            ([0.3, 0.2, 0.1], [0.3, 0.3, 0.3], [1.0, 2.0, 3.0]),  # critical first epoch
+            ([0.5, 0.1], [0.2, 0.0], [1.5, 3.0]),  # zero death rate in last epoch
+        ],
+    )
+    def test_age_densities_integrate_to_one_in_edge_cases(
+        self, birth: list[float], death: list[float], ends: list[float]
+    ) -> None:
+        """Both age distributions are normalised for critical and zero-rate epochs."""
+        terms = nested_terms(jnp.array(birth), jnp.array(death), jnp.array(ends))
+        t_end = ends[-1]
+        grid = jnp.linspace(0.0, t_end - 1e-9, num=8001, dtype=jnp.float64)
+
+        non_spine_mass = float(
+            jnp.trapezoid(jnp.exp(non_spine_log_density(terms, grid)), grid)
+        )
+        spine_mass = float(
+            jnp.trapezoid(
+                jnp.exp(spine_log_density(terms, grid, atom_at_boundary=False)), grid
+            )
+        ) + float(jnp.exp(spine_log_density(terms, jnp.array([t_end]))).sum())
+
+        assert non_spine_mass == pytest.approx(1.0, abs=2e-3)
+        assert spine_mass == pytest.approx(1.0, abs=2e-3)
 
     def test_extinction_probability_matches_population_zero_mass(self) -> None:
         """Pr(Z_T = 0) should equal p_0(T) from population probabilities."""

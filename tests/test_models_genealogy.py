@@ -69,5 +69,7 @@ class TestModelsGenealogy:
                 "is_spine",
             ]
         )
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"records must contain exactly one root individual"
+        ):
             genealogy_dfs_order(empty, start_time=0.0, simulation_end_time=_T)

@@ -65,7 +65,9 @@ class TestDateDensity:
     def test_explode_rejects_mismatched_lengths(self) -> None:
         early = np.array([100, 200], dtype=np.int64)
         late = np.array([110], dtype=np.int64)
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"early and late must have the same shape"
+        ):
             explode_date_ranges(early, late)
 
     # -----------------------------------------------------------------

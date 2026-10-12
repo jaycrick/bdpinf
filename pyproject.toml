@@ -106,8 +106,7 @@ convention = "numpy"
 "tests/*" = [
   "D101", # test classes are self-documenting via their names
   "D102", # test methods are self-documenting via their names
-  "E501", # test strings and fixture data are allowed to be long
-  "PT011" # TODO: add match= to broad pytest.raises during the test consolidation
+  "E501" # test strings and fixture data are allowed to be long
 ]
 # lintquarto extracts qmd cells to temporary .py files in the same directory.
 # These rules are false positives or impractical to enforce in notebook code:

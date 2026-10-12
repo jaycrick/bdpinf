@@ -2,6 +2,7 @@
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 from bdpinf.inference import (
@@ -102,6 +103,28 @@ class TestLikelihood:
             condition_on_survival=False,
         )
         assert float(result) == pytest.approx(expected, rel=1e-12)
+
+    def test_gradient_matches_finite_differences(self) -> None:
+        """jax.grad of the log-likelihood agrees with central differences."""
+        ages = jnp.array([0.3, 0.9, 1.4, 1.8, 2.6], dtype=jnp.float64)
+        times = jnp.array([1.5, 3.0], dtype=jnp.float64)
+
+        def f(log_params: jax.Array) -> jax.Array:
+            return likelihood.log_likelihood(
+                birth_rates=log_params[:2],
+                death_rates=log_params[2:],
+                ages=ages,
+                times=times,
+                log_scale_params=True,
+            )
+
+        x = jnp.log(jnp.array([0.4, 0.25, 0.3, 0.35], dtype=jnp.float64))
+        grad = jax.grad(f)(x)
+        h = 1e-6
+        numeric = jnp.stack(
+            [(f(x.at[i].add(h)) - f(x.at[i].add(-h))) / (2 * h) for i in range(4)]
+        )
+        np.testing.assert_allclose(grad, numeric, rtol=1e-6, atol=1e-8)
 
     def test_log_likelihood_invalid_params(self) -> None:
         """Test log_likelihood returns -inf for invalid parameters (e.g., neg rates)."""
@@ -220,7 +243,10 @@ class TestLikelihood:
     def test_log_likelihood_value_errors(self) -> None:
         """Test log_likelihood raises ValueError for invalid argument combinations."""
         # Both is_ordered and spine_ages
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"Cannot have both is_ordered=True and spine_ages provided\.",
+        ):
             likelihood.log_likelihood(
                 birth_rates=jnp.array([0.5], dtype=jnp.float64),
                 death_rates=jnp.array([0.2], dtype=jnp.float64),
@@ -229,7 +255,7 @@ class TestLikelihood:
                 is_ordered=True,
                 spine_ages=jnp.array([0.5], dtype=jnp.float64),
             )
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"Observation times must be positive\."):
             likelihood.log_likelihood(
                 birth_rates=jnp.array([0.5], dtype=jnp.float64),
                 death_rates=jnp.array([0.2], dtype=jnp.float64),
@@ -237,7 +263,9 @@ class TestLikelihood:
                 times=jnp.array([0.0], dtype=jnp.float64),
             )
         # ages out of range
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"Ages must be in the range \[0, 2\.0\]\."
+        ):
             likelihood.log_likelihood(
                 birth_rates=jnp.array([0.5], dtype=jnp.float64),
                 death_rates=jnp.array([0.2], dtype=jnp.float64),
@@ -285,7 +313,9 @@ class TestLikelihood:
 
     def test_unknown_spine_mixture_age_density_rejects_nonpositive_n(self) -> None:
         """Test the helper rejects invalid individual counts."""
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=r"num_individuals must be a positive integer\."
+        ):
             calculate_unknown_spine_mixture_age_density(
                 birth_rates=jnp.array([0.5], dtype=jnp.float64),
                 death_rates=jnp.array([0.2], dtype=jnp.float64),

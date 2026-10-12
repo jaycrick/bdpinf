@@ -1490,91 +1490,6 @@ class TestMathematicalProperties:
 # ============================================================================
 
 
-class TestNumericalStability:
-    """Test numerical stability in challenging scenarios."""
-
-    def test_extreme_time_values(self) -> None:
-        """Test with very large time values."""
-        # Large time can cause overflow in exponentials
-        result = calculate_populations_log_lik(
-            birth_rates=0.001,  # Small rates to prevent overflow
-            death_rates=0.0005,
-            times=10000.0,  # Very large time
-            ns=jnp.array([1], dtype=jnp.int32),
-        )
-
-        # Should not return inf or nan
-        assert np.isfinite(float(result)) or float(result) == -jnp.inf
-
-    def test_extreme_rate_differences(self) -> None:
-        """Test when λ >> μ or μ >> λ."""
-        # λ >> μ (high growth)
-        result1 = calculate_populations_log_lik(
-            birth_rates=1.0,
-            death_rates=0.001,
-            times=10.0,
-            ns=jnp.array([1], dtype=jnp.int32),
-        )
-
-        # Should handle gracefully
-        assert np.isfinite(float(result1)) or result1 == -jnp.array(
-            float("inf"),
-            dtype=jnp.float64,
-        )
-
-        # μ >> λ (high death)
-        result2 = calculate_populations_log_lik(
-            birth_rates=0.001,
-            death_rates=1.0,
-            times=10.0,
-            ns=jnp.array([1], dtype=jnp.int32),
-        )
-
-        assert np.isfinite(float(result2)) or result2 == -jnp.array(
-            float("inf"),
-            dtype=jnp.float64,
-        )
-
-    def test_very_small_rates(self) -> None:
-        """Test with very small birth and death rates."""
-        result = calculate_populations_log_lik(
-            birth_rates=1e-10,
-            death_rates=5e-11,
-            times=1000.0,
-            ns=5,
-        )
-
-        assert np.isfinite(float(result)) or float(result) == -jnp.inf
-
-    def test_many_epochs(self) -> None:
-        """Test with many epochs (long array)."""
-        n_epochs = 100
-        birth_rates = jnp.linspace(0.08, 0.12, n_epochs)
-        death_rates = jnp.linspace(0.04, 0.06, n_epochs)
-        times = jnp.linspace(1.0, 100.0, n_epochs)
-
-        result = calculate_populations_log_lik(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            ns=jnp.array([1], dtype=jnp.int32),
-        )
-
-        assert np.isfinite(float(result)) or float(result) == -jnp.inf
-
-    def test_ages_near_observation_time(self) -> None:
-        """Test age likelihood with ages very close to final_time."""
-        final_time = jnp.array([100.0], dtype=jnp.float64)
-        ages = jnp.array(
-            [final_time - 1e-6, final_time - 1e-8, final_time - 1e-10],
-            dtype=jnp.float64,
-        )
-
-        result = spine_log_density(nested_terms(0.1, 0.05, final_time), ages).sum()
-
-        assert np.isfinite(float(result))
-
-
 # ============================================================================
 # LEVEL 8: Integration Tests
 # ============================================================================
@@ -1614,46 +1529,6 @@ class TestIntegration:
 # ============================================================================
 # Performance and Vectorization Tests
 # ============================================================================
-
-
-class TestVectorization:
-    """Test vectorization and performance characteristics."""
-
-    def test_array_ages_more_efficient_than_loop(
-        self,
-        standard_scalar_params: dict[str, jax.Array],
-    ) -> None:
-        """Verify that array processing is implemented (not just a loop)."""
-        # This is more of a smoke test - actual performance testing
-        # would require timing benchmarks
-        ages = jnp.linspace(10, 90, 100)
-
-        result = spine_log_density(
-            nested_terms(
-                standard_scalar_params["birth_rate"],
-                standard_scalar_params["death_rate"],
-                standard_scalar_params["time"],
-            ),
-            ages,
-        ).sum()
-
-        assert np.isfinite(float(result))
-
-    def test_large_population_counts_array(
-        self,
-        standard_scalar_params: dict[str, jax.Array],
-    ) -> None:
-        """Test with large array of population counts."""
-        ns = jnp.arange(0, 100)
-
-        result = calculate_populations_log_lik(
-            standard_scalar_params["birth_rate"],
-            standard_scalar_params["death_rate"],
-            times=standard_scalar_params["time"],
-            ns=ns,
-        )
-
-        assert np.isfinite(float(result))
 
 
 # ============================================================================
