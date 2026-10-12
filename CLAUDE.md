@@ -26,6 +26,11 @@ Do not split a feature into separate per-prefix commits (e.g. one `:zap:` for th
 Add a bullet under `## [Unreleased]` --- one line describing the change and which module it affects.
 No need to touch `CHANGELOG.md` for pure tooling/CI changes (`:tv:`) or test-only commits (`:cop:`).
 
+## Prose style
+
+Write prose in `.qmd`, `.md` files and docstrings with semantic line breaks (one thought per line; see the `sembr` skill, enabled for this project in `.claude/settings.json`).
+This matches `wrap = "semantic"` in `panache.toml`.
+
 ## Commands
 
 ```bash
@@ -134,6 +139,13 @@ Three submodules contain pure functions (no class state):
 - `math_populations.py` --- `calculate_populations_log_lik()`: probability of observed population counts
 
 `_reverse_time()` --- **time-reversal trick**: transforms multi-epoch non-spine ages into an extinction-conditioned backward-time problem, avoiding exponential complexity in the number of epochs.
+
+`rate_functions.py` --- `RateFunction` protocol plus `PiecewiseConstantRate` and `PiecewiseLinearRate` (jumps allowed; `.continuous(knots, times)` for jump-free); JAX pytrees exposing `__call__`, exact `integral(s, e)` and `breakpoints`.
+New rate families (sin/cos, splines, rational) only need to satisfy this protocol.
+
+`math_age_densities.py` --- general-rate spine, non-spine and uniformly-chosen-individual age densities/CDFs in the paper's notation (`spine_age_log_density`, `spine_age_log_atom`, `non_spine_age_log_density`, `random_individual_cdf`, `log_nested_w`).
+All reduce to one primitive, $L_w(s,e)=\int_s^e w(t)e^{\Gamma(t,e]}dt$, evaluated by Gauss--Legendre quadrature between breakpoints; no division by $\lambda-\mu$, so the critical case is exact.
+Not yet wired into `BirthDeathProcess`, fitting or simulation.
 
 Numerical derivatives used during optimization (Hessian/Jacobian for the MLE covariance) live in `inference/uncertainty.py` via `jax.hessian`/`jax.jacobian`.
 

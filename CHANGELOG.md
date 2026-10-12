@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `models.rate_functions` (`RateFunction`, `PiecewiseConstantRate`, `PiecewiseLinearRate`) and `models.math_age_densities`: spine, non-spine and random-individual age densities/CDFs for time-varying (piecewise-linear) birth and death rates, with a notebook of density shapes (`qmd_scripts/validation/time_varying_rates/`).
+
 ### Changed
 
 - **Breaking:** split out of the `inf-bp-texts` monorepo into this
@@ -41,11 +45,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `simulation.splitting` into the new standalone
   [`bdsurv`](https://github.com/jaycrick/bdsurv) package, extracted so the
   underlying simulation methodology can be published independently of this
-  package's inference stack. `bdpinf.simulation` (`simulation.conditioned`)
+  package's inference stack.
+  `bdpinf.simulation` (`simulation.conditioned`)
   now re-exports thin adapters with the same names and signatures that wrap
   `bdsurv`'s results back into `BirthDeathProcess`, so no caller-visible
   behaviour changed; only the module `simulation.splitting` was removed
-  (`simulation.simulator` keeps every other simulator). `bdpinf` now depends
+  (`simulation.simulator` keeps every other simulator).
+  `bdpinf` now depends
   on `bdsurv`.
 
 ## [0.1.0] --- pre-split (monorepo inf-bp-texts)

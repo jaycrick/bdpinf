@@ -59,6 +59,10 @@ website:
             file: qmd_scripts/validation/bayesian_multi_epoch/03_bulk_inference.qmd
           - text: "Diagnostics + benchmark"
             file: qmd_scripts/validation/bayesian_multi_epoch/04_diagnostics_benchmark.qmd
+      - text: "Validation: Time-Varying Rates"
+        menu:
+          - text: "Spine-age shapes"
+            file: qmd_scripts/validation/time_varying_rates/01_spine_age_shapes.qmd
       - text: "Docs"
         menu:
           - text: "Likelihoods"
