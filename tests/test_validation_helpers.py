@@ -21,7 +21,10 @@ from bdpinf.analysis import (
     theoretical_age_density,
 )
 from bdpinf.analysis import validation_helpers as vh
-from bdpinf.models.math_ages import calculate_non_spine_ages_log_lik
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+)
 
 
 class TestValidationHelpers:
@@ -300,7 +303,9 @@ class TestNewValidationHelpers:
         times = jnp.array([T], dtype=jnp.float64)
 
         def log_lik_fn(age: jax.Array) -> jax.Array:
-            return calculate_non_spine_ages_log_lik(birth_rate, death_rate, age, times)
+            return non_spine_log_density(
+                nested_terms(birth_rate, death_rate, times), age
+            ).sum()
 
         x_grid, y_vals = theoretical_age_density(
             log_lik_fn, support_upper=T, n_grid=1000

@@ -6,9 +6,10 @@ import numpy as np
 import pytest
 
 import bdpinf.simulation.simulator as simulator_module
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
 )
 from bdpinf.process import BirthDeathProcess
 from bdpinf.simulation import simulate_birth_death_process
@@ -672,30 +673,18 @@ class TestBdpAgeDistributionSampling:
             dtype=jnp.float64,
         )
 
-        sampled_spine_mean_ll = calculate_spine_ages_log_lik(
-            birth_rates=birth_rate,
-            death_rates=death_rate,
-            ages=sampled_spine_arr,
-            times=max_time,
-        ) / len(sampled_spine)
-        baseline_spine_mean_ll = calculate_spine_ages_log_lik(
-            birth_rates=birth_rate,
-            death_rates=death_rate,
-            ages=baseline_spine_arr,
-            times=max_time,
-        ) / len(sampled_spine)
-        sampled_non_spine_mean_ll = calculate_non_spine_ages_log_lik(
-            birth_rates=birth_rate,
-            death_rates=death_rate,
-            ages=sampled_non_spine_arr,
-            times=max_time,
-        ) / len(sampled_non_spine)
-        baseline_non_spine_mean_ll = calculate_non_spine_ages_log_lik(
-            birth_rates=birth_rate,
-            death_rates=death_rate,
-            ages=baseline_non_spine_arr,
-            times=max_time,
-        ) / len(sampled_non_spine)
+        sampled_spine_mean_ll = spine_log_density(
+            nested_terms(birth_rate, death_rate, max_time), sampled_spine_arr
+        ).sum() / len(sampled_spine)
+        baseline_spine_mean_ll = spine_log_density(
+            nested_terms(birth_rate, death_rate, max_time), baseline_spine_arr
+        ).sum() / len(sampled_spine)
+        sampled_non_spine_mean_ll = non_spine_log_density(
+            nested_terms(birth_rate, death_rate, max_time), sampled_non_spine_arr
+        ).sum() / len(sampled_non_spine)
+        baseline_non_spine_mean_ll = non_spine_log_density(
+            nested_terms(birth_rate, death_rate, max_time), baseline_non_spine_arr
+        ).sum() / len(sampled_non_spine)
 
         assert jnp.isfinite(sampled_spine_mean_ll)
         assert jnp.isfinite(sampled_non_spine_mean_ll)

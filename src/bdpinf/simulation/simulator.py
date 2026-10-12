@@ -60,11 +60,13 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
-)
 from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_nested import (
+    NestedTerms,
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
+)
 from bdpinf.models.math_populations import population_geometric_parameter
 from bdpinf.process import BirthDeathProcess
 
@@ -77,6 +79,7 @@ class _NonSpineSamplingContext(NamedTuple):
     max_time: float
     denom_lambda: float
     envelope_constant: float
+    terms: NestedTerms
 
 
 def _as_scalar_float(value: object, *, name: str) -> float:
@@ -150,17 +153,10 @@ def _sample_spine_ages(
 
     continuous_mass = max(1.0 - boundary_mass, np.finfo(float).tiny)
 
-    _b = jnp.array([birth_rate], dtype=jnp.float64)
-    _d = jnp.array([death_rate], dtype=jnp.float64)
-    _t = jnp.array([max_time], dtype=jnp.float64)
+    terms = nested_terms(birth_rate, death_rate, max_time)
 
     def normalized_continuous_density(age: float) -> float:
-        log_lik = calculate_spine_ages_log_lik(
-            birth_rates=_b,
-            death_rates=_d,
-            ages=jnp.array([age], dtype=jnp.float64),
-            times=_t,
-        )
+        log_lik = spine_log_density(terms, age).sum()
         if not bool(jnp.isfinite(log_lik)):
             return 0.0
         density = float(jnp.exp(log_lik))
@@ -220,6 +216,7 @@ def _build_non_spine_sampling_context(
         max_time=max_time,
         denom_lambda=denom_lambda,
         envelope_constant=envelope_constant,
+        terms=nested_terms(birth_rate, death_rate, max_time),
     )
 
 
@@ -237,12 +234,7 @@ def _sample_single_non_spine_age(
             -context.birth_rate * candidate_age,
         )
         proposal_density /= context.denom_lambda
-        log_lik = calculate_non_spine_ages_log_lik(
-            birth_rates=jnp.array([context.birth_rate], dtype=jnp.float64),
-            death_rates=jnp.array([context.death_rate], dtype=jnp.float64),
-            ages=jnp.array([float(candidate_age)], dtype=jnp.float64),
-            times=jnp.array([context.max_time], dtype=jnp.float64),
-        )
+        log_lik = non_spine_log_density(context.terms, float(candidate_age)).sum()
         if not bool(jnp.isfinite(log_lik)):
             continue
         target_density = float(jnp.exp(log_lik))

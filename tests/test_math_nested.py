@@ -9,7 +9,7 @@ import pytest
 
 from bdpinf.models import math_nested as mn
 from bdpinf.models.math_age_densities import (
-    age_log_densities,
+    age_log_densities_general,
     non_spine_age_log_density,
     spine_age_log_atom,
     spine_age_log_density,
@@ -207,7 +207,7 @@ class TestAgreementWithQuadrature:
         b = PiecewiseConstantRate(jnp.array(_BIRTH), jnp.array(_TIMES))
         d = PiecewiseConstantRate(jnp.array(_DEATH), jnp.array(_TIMES))
         ages = jnp.linspace(0.05, 2.4, 11)
-        non_spine, spine = age_log_densities(ages, b, d)
+        non_spine, spine = age_log_densities_general(ages, b, d)
         np.testing.assert_allclose(non_spine, non_spine_age_log_density(ages, b, d))
         np.testing.assert_allclose(spine, spine_age_log_density(ages, b, d))
 

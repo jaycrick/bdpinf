@@ -4,7 +4,10 @@ import numpy as np
 from numpy.testing import assert_allclose
 
 from bdpinf.inference.likelihood import log_likelihood, negative_log_likelihood
-from bdpinf.models.math_ages import calculate_ages_log_lik
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+)
 from bdpinf.models.math_populations import calculate_populations_log_lik
 from bdpinf.process import BirthDeathProcess
 
@@ -575,18 +578,17 @@ class TestLogLikelihood:
             times=times,
         )
 
-        all_non_spine_result = calculate_populations_log_lik(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            ns=np.array([len(ages)]),
-            initial_population=1,
-        ) + calculate_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times=times,
-            are_spines=False,
+        all_non_spine_result = (
+            calculate_populations_log_lik(
+                birth_rates=birth_rates,
+                death_rates=death_rates,
+                times=times,
+                ns=np.array([len(ages)]),
+                initial_population=1,
+            )
+            + non_spine_log_density(
+                nested_terms(birth_rates, death_rates, times), ages
+            ).sum()
         )
 
         assert not np.isclose(

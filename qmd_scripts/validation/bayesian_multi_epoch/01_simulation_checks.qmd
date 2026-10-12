@@ -54,9 +54,9 @@ for i in range(num_sims):
     rows.append(
         {
             "replicate": i,
-            "n_total": int(len(sim)),
-            "n_survivors": int(len(alive)),
-            "n_deaths": int(len(extinct)) if extinct is not None else 0,
+            "n_total": len(sim),
+            "n_survivors": len(alive),
+            "n_deaths": len(extinct) if extinct is not None else 0,
             "mean_age": float(np.mean(ages)) if len(ages) else np.nan,
         }
     )

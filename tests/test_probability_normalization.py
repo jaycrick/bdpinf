@@ -6,32 +6,26 @@ import jax
 import jax.numpy as jnp
 
 from bdpinf.inference import calculate_unknown_spine_mixture_age_density
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
-)
 from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_nested import (
+    NestedTerms,
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
+)
 from bdpinf.models.math_populations import calculate_populations_log_lik
 
 
 def _pointwise_density_from_log_lik(
-    log_lik_fn: Callable[..., jax.Array],
+    log_density_fn: Callable[[NestedTerms, jax.Array], jax.Array],
     birth_rates: jax.Array,
     death_rates: jax.Array,
     times: jax.Array,
     grid: jax.Array,
 ) -> jax.Array:
-    """Evaluate exp(log-likelihood) at each point in a 1D grid."""
-    vals = []
-    for age in grid:
-        log_val = log_lik_fn(
-            birth_rates,
-            death_rates,
-            jnp.array([float(age)], dtype=jnp.float64),
-            times,
-        )
-        vals.append(jnp.exp(log_val))
-    return jnp.stack(vals)
+    """Evaluate exp(log-density) on a 1D grid."""
+    terms = nested_terms(birth_rates, death_rates, times)
+    return jnp.exp(log_density_fn(terms, grid))
 
 
 class TestProbabilityNormalization:
@@ -65,7 +59,7 @@ class TestProbabilityNormalization:
 
         grid = jnp.linspace(0.0, float(times[-1]), num=4000, dtype=jnp.float64)
         density_vals = _pointwise_density_from_log_lik(
-            calculate_non_spine_ages_log_lik,
+            non_spine_log_density,
             birth_rates,
             death_rates,
             times,
@@ -88,7 +82,7 @@ class TestProbabilityNormalization:
         grid = jnp.linspace(0.0, t_end - eps, num=4000, dtype=jnp.float64)
 
         cont_density_vals = _pointwise_density_from_log_lik(
-            calculate_spine_ages_log_lik,
+            spine_log_density,
             birth_rates,
             death_rates,
             times,
@@ -98,12 +92,10 @@ class TestProbabilityNormalization:
 
         terminal_mass = float(
             jnp.exp(
-                calculate_spine_ages_log_lik(
-                    birth_rates=birth_rates,
-                    death_rates=death_rates,
-                    ages=jnp.array([t_end], dtype=jnp.float64),
-                    times=times,
-                ),
+                spine_log_density(
+                    nested_terms(birth_rates, death_rates, times),
+                    jnp.array([t_end], dtype=jnp.float64),
+                ).sum(),
             )
         )
 
@@ -155,12 +147,10 @@ class TestProbabilityNormalization:
 
         spine_terminal_mass = float(
             jnp.exp(
-                calculate_spine_ages_log_lik(
-                    birth_rates=birth_rates,
-                    death_rates=death_rates,
-                    ages=jnp.array([t_end], dtype=jnp.float64),
-                    times=times,
-                ),
+                spine_log_density(
+                    nested_terms(birth_rates, death_rates, times),
+                    jnp.array([t_end], dtype=jnp.float64),
+                ).sum(),
             )
         )
         total_mass = continuous_mass + spine_terminal_mass / n
@@ -195,7 +185,7 @@ class TestProbabilityNormalization:
 
         grid = jnp.linspace(0.0, float(times[-1]), num=4000, dtype=jnp.float64)
         density_vals = _pointwise_density_from_log_lik(
-            calculate_non_spine_ages_log_lik,
+            non_spine_log_density,
             birth_rates,
             death_rates,
             times,

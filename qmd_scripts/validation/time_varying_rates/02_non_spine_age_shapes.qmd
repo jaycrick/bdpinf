@@ -79,7 +79,7 @@ from IPython.display import display
 
 from bdpinf import find_project_root
 from bdpinf.models.math_age_densities import (
-    log_nested_w,
+    log_nested_w_general,
     non_spine_age_cdf,
     non_spine_age_log_density,
     random_individual_cdf,
@@ -301,10 +301,10 @@ Here for the jump in $\lambda$, the jump in $\mu$ and the hump in $\lambda$:
 def log_terms(lam: RateFunction, mu: RateFunction) -> dict[str, np.ndarray]:
     s = T - AGES
     end = jnp.array(T)
-    log_w_t = log_nested_w(lam, mu, end)
+    log_w_t = log_nested_w_general(lam, mu, end)
     terms = {
         "log λ(T−a)": jnp.log(lam(s)),
-        "log 𝒲(T−a)": log_nested_w(lam, mu, s),
+        "log 𝒲(T−a)": log_nested_w_general(lam, mu, s),
         "−M(T−a,T]": -mu.integral(s, end),
         "constant": jnp.full_like(s, -jnp.log(jnp.expm1(log_w_t))),
     }
@@ -398,7 +398,7 @@ save_chart(fig_cdf, "vtv02_age_cdfs", output_dir=figures_dir)
 
 
 def mixture_row(name: str, lam: RateFunction, mu: RateFunction) -> dict[str, object]:
-    log_w_t = log_nested_w(lam, mu, jnp.array(T))
+    log_w_t = log_nested_w_general(lam, mu, jnp.array(T))
     pi_t = float(jnp.exp(-log_w_t))
     w_spine = pi_t * float(log_w_t) / (1.0 - pi_t)
     return {

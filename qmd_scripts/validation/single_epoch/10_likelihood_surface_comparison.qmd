@@ -38,9 +38,10 @@ import pandas as pd
 from IPython.display import display
 
 from bdpinf import find_project_root
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
 )
 from bdpinf.visualization import save_chart
 
@@ -69,7 +70,7 @@ death_rate_grid = np.linspace(0.002, 0.03, 70)
 
 
 def compute_surface(
-    log_lik_fn: Callable[..., Any],
+    log_density_fn: Callable[..., Any],
 ) -> tuple[np.ndarray, np.ndarray, tuple[float, float], tuple[float, float]]:
     single_vals = np.full(
         (len(death_rate_grid), len(birth_rate_grid)), np.nan, dtype=np.float64
@@ -80,16 +81,16 @@ def compute_surface(
         for j, lam in enumerate(birth_rate_grid):
             lam_t = jnp.array([lam])
             death_rate_t = jnp.array([mu])
-            single = log_lik_fn(lam_t, death_rate_t, ages, T)
+            single = log_density_fn(nested_terms(lam_t, death_rate_t, T), ages).sum()
             if j == 0 and i == 0:
                 print(f"{jnp.full(n_epochs, lam)} and {lam_t}")
                 print(f"{jnp.full(n_epochs, lam).shape} and {ages.shape}")
-            multi = log_lik_fn(
-                jnp.full(n_epochs, lam),
-                jnp.full(n_epochs, mu),
+            multi = log_density_fn(
+                nested_terms(
+                    jnp.full(n_epochs, lam), jnp.full(n_epochs, mu), multi_times
+                ),
                 ages,
-                multi_times,
-            )
+            ).sum()
             single_vals[i, j] = float(single)
             multi_vals[i, j] = float(multi)
 
@@ -110,14 +111,14 @@ def compute_surface(
     non_spine_multi_vals,
     non_spine_single_max,
     non_spine_multi_max,
-) = compute_surface(calculate_non_spine_ages_log_lik)
+) = compute_surface(non_spine_log_density)
 
 (
     spine_single_vals,
     spine_multi_vals,
     spine_single_max,
     spine_multi_max,
-) = compute_surface(calculate_spine_ages_log_lik)
+) = compute_surface(spine_log_density)
 
 (
     non_spine_single_max,
@@ -223,20 +224,22 @@ spine_multi_line = []
 for lam in birth_rate_grid:
     lam_t = jnp.array([lam])
     death_rate_t = jnp.array([mu_fixed])
-    non_spine_single = calculate_non_spine_ages_log_lik(lam_t, death_rate_t, ages, T)
-    non_spine_multi = calculate_non_spine_ages_log_lik(
-        jnp.full(n_epochs, lam),
-        jnp.full(n_epochs, mu_fixed),
+    non_spine_single = non_spine_log_density(
+        nested_terms(lam_t, death_rate_t, T), ages
+    ).sum()
+    non_spine_multi = non_spine_log_density(
+        nested_terms(
+            jnp.full(n_epochs, lam), jnp.full(n_epochs, mu_fixed), multi_times
+        ),
         ages,
-        multi_times,
-    )
-    spine_single = calculate_spine_ages_log_lik(lam_t, death_rate_t, ages, T)
-    spine_multi = calculate_spine_ages_log_lik(
-        jnp.full(n_epochs, lam),
-        jnp.full(n_epochs, mu_fixed),
+    ).sum()
+    spine_single = spine_log_density(nested_terms(lam_t, death_rate_t, T), ages).sum()
+    spine_multi = spine_log_density(
+        nested_terms(
+            jnp.full(n_epochs, lam), jnp.full(n_epochs, mu_fixed), multi_times
+        ),
         ages,
-        multi_times,
-    )
+    ).sum()
     non_spine_single_line.append(float(non_spine_single))
     non_spine_multi_line.append(float(non_spine_multi))
     spine_single_line.append(float(spine_single))
@@ -281,22 +284,28 @@ save_chart(line_fig, "vse10_slice", width=300, height=200, output_dir=figures_di
 ## Single point check
 
 ```{python}
-non_spine_single = calculate_non_spine_ages_log_lik(
-    birth_rate_val, death_rate_val, ages, T
-)
-non_spine_multi = calculate_non_spine_ages_log_lik(
-    jnp.full(n_epochs, float(birth_rate_val[0])),
-    jnp.full(n_epochs, float(death_rate_val[0])),
+non_spine_single = non_spine_log_density(
+    nested_terms(birth_rate_val, death_rate_val, T), ages
+).sum()
+non_spine_multi = non_spine_log_density(
+    nested_terms(
+        jnp.full(n_epochs, float(birth_rate_val[0])),
+        jnp.full(n_epochs, float(death_rate_val[0])),
+        multi_times,
+    ),
     ages,
-    multi_times,
-)
-spine_single = calculate_spine_ages_log_lik(birth_rate_val, death_rate_val, ages, T)
-spine_multi = calculate_spine_ages_log_lik(
-    jnp.full(n_epochs, float(birth_rate_val[0])),
-    jnp.full(n_epochs, float(death_rate_val[0])),
+).sum()
+spine_single = spine_log_density(
+    nested_terms(birth_rate_val, death_rate_val, T), ages
+).sum()
+spine_multi = spine_log_density(
+    nested_terms(
+        jnp.full(n_epochs, float(birth_rate_val[0])),
+        jnp.full(n_epochs, float(death_rate_val[0])),
+        multi_times,
+    ),
     ages,
-    multi_times,
-)
+).sum()
 (
     float(non_spine_single),
     float(non_spine_multi),

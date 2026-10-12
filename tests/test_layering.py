@@ -21,7 +21,6 @@ _LAYERS: dict[str, int] = {
     "bdpinf.models.validation": 1,
     "bdpinf.models.math_extinction": 2,
     "bdpinf.models.math_populations": 2,
-    "bdpinf.models.math_ages": 2,
     "bdpinf.models.rate_functions": 1,
     "bdpinf.models.math_nested": 1,
     "bdpinf.models.math_age_densities": 2,

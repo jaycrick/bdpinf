@@ -21,9 +21,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `models.math_ages` removed: use `models.math_nested` (`nested_terms(birth, death, times)` then `non_spine_log_density` / `spine_log_density`, `.sum()` for a log-likelihood).
+  `nested_terms` and the density functions now validate concrete (non-traced) inputs.
+
+- `models.math_extinction`: only `calculate_extinction_pr` remains (dropped `pr_extinction_numerator`, `log_pr_extinction_numerator`, the unused `_integrand_surv_from_weighted_birth_time` and the `_skip_normalization` kwarg).
+
+- `models.math_age_densities`: `log_nested_w` and `age_log_densities` renamed `log_nested_w_general` and `age_log_densities_general` to stop clashing with `math_nested`.
+
+- `calculate_unknown_spine_mixture_age_density` and the age samplers evaluate densities in one vectorised pass instead of one call per age.
+
 - Population and age likelihoods are computed from the paper's $\mathcal W$ (restart principle) in one $O(K+n\log K)$ pass; the time-reversal machinery was removed (`_reverse_time`, `calculate_log_lik_lifetimes`, `calculate_log_pr_extinction_given_initial_lifetimes`, `calculate_log_lik_initial_lifetimes_given_(non_)extinction`).
   Public likelihood signatures are unchanged.
   The NumPyro model now calls the shared likelihood core.
+
 - **Breaking:** split out of the `inf-bp-texts` monorepo into this
   standalone, domain-free `bdpinf` package (import name `bdpinf`).
   The NT
@@ -49,9 +59,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
        `output_dir` is omitted, resolution now goes module default
        (`set_figure_dir`/`get_figure_dir`) → `$BDPINF_FIGURE_DIR` env var →
        `Path.cwd() / "figures"`.
+
 - Added `itables` as a dependency: two validation notebooks use it for
   sortable/paginated interactive tables (missed in the initial split's
   dependency list).
+
 - **Breaking:** `simulate_birth_death_process_from_contour_process` and
   `simulate_subcritical_survival_splitting` (plus `SplittingConfig`,
   `select_level_times_for_band`) moved out of `simulation.simulator` /

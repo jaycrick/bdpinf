@@ -1,6 +1,4 @@
-"""Tests for the math_extinction, math_ages, and math_populations modules."""
-
-import math
+"""Tests for the math_extinction, math_nested, and math_populations modules."""
 
 import jax
 import jax.numpy as jnp
@@ -8,15 +6,13 @@ import numpy as np
 import pytest
 import scipy
 
-from bdpinf.models.math_ages import (
-    calculate_ages_log_lik,
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
-)
 from bdpinf.models.math_extinction import (
-    _integrand_surv_from_weighted_birth_time,
     calculate_extinction_pr,
-    pr_extinction_numerator,
+)
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
 )
 from bdpinf.models.math_populations import (
     calculate_populations_log_lik,
@@ -194,22 +190,16 @@ class TestMultiEpochNumericalAccuracy:
 
         # Age in first epoch
         age_epoch1 = jnp.array([30.0], dtype=jnp.float64)
-        result1 = calculate_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            age_epoch1,
-            times,
-        )
+        result1 = spine_log_density(
+            nested_terms(birth_rates, death_rates, times), age_epoch1
+        ).sum()
         assert np.isfinite(float(result1))
 
         # Age in second epoch
         age_epoch2 = jnp.array([70.0], dtype=jnp.float64)
-        result2 = calculate_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            age_epoch2,
-            times,
-        )
+        result2 = spine_log_density(
+            nested_terms(birth_rates, death_rates, times), age_epoch2
+        ).sum()
         assert np.isfinite(float(result2))
 
     def test_multi_epoch_non_spine_age_array(self) -> None:
@@ -226,7 +216,9 @@ class TestMultiEpochNumericalAccuracy:
         # Ages spanning both epochs
         ages = jnp.array([20.0, 60.0, 120.0, 180.0], dtype=jnp.float64)
 
-        result = calculate_non_spine_ages_log_lik(birth_rates, death_rates, ages, times)
+        result = non_spine_log_density(
+            nested_terms(birth_rates, death_rates, times), ages
+        ).sum()
 
         # Should return finite sum
         assert np.isfinite(float(result))
@@ -285,21 +277,16 @@ class TestMultiEpochConsistency:
         ages = jnp.array([20.0, 80.0, 150.0], dtype=jnp.float64)
 
         # Compute for array
-        result_array = calculate_non_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times=times,
-        )
+        result_array = non_spine_log_density(
+            nested_terms(birth_rates, death_rates, times), ages
+        ).sum()
 
         # Compute individually and sum
         result_sum = sum(
-            calculate_non_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
+            non_spine_log_density(
+                nested_terms(birth_rates, death_rates, times),
                 jnp.array([age], dtype=jnp.float64),
-                times=times,
-            )
+            ).sum()
             for age in ages
         )
 
@@ -369,27 +356,6 @@ class TestMultiEpochEqualsSingleEpoch:
         multi = population_geometric_parameter(birth_rates, death_rates, times)
         np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
 
-    def testpr_extinction_numerator_multi_equals_single(self) -> None:
-        birth_rate_val, death_rate_val, times = (
-            jnp.array([0.015], dtype=jnp.float64),
-            jnp.array([0.01], dtype=jnp.float64),
-            jnp.array([100.0], dtype=jnp.float64),
-        )
-        single = pr_extinction_numerator(birth_rate_val, death_rate_val, times)
-        times = jnp.array([25.0, 50.0, 75.0, 100.0], dtype=jnp.float64)
-        birth_rates = jnp.full(
-            (4,),
-            birth_rate_val.item(),
-            dtype=birth_rate_val.dtype,
-        )
-        death_rates = jnp.full(
-            (4,),
-            death_rate_val.item(),
-            dtype=death_rate_val.dtype,
-        )
-        multi = pr_extinction_numerator(birth_rates, death_rates, times)
-        np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
-
     def test_non_spine_ages_log_lik_multi_equals_single(self) -> None:
         ages = jnp.array([15.0, 60.0, 95.0], dtype=jnp.float64)
         birth_rate_val, death_rate_val, times = (
@@ -398,12 +364,9 @@ class TestMultiEpochEqualsSingleEpoch:
             jnp.array([120.0], dtype=jnp.float64),
         )
         # Single-epoch via scalar
-        single = calculate_non_spine_ages_log_lik(
-            birth_rate_val,
-            death_rate_val,
-            ages,
-            times,
-        )
+        single = non_spine_log_density(
+            nested_terms(birth_rate_val, death_rate_val, times), ages
+        ).sum()
         # Multi-epoch via arrays with identical rates
         times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
         birth_rates = jnp.full(
@@ -416,7 +379,9 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
         )
-        multi = calculate_non_spine_ages_log_lik(birth_rates, death_rates, ages, times)
+        multi = non_spine_log_density(
+            nested_terms(birth_rates, death_rates, times), ages
+        ).sum()
         assert np.isfinite(float(single))
         assert np.isfinite(float(multi))
         np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
@@ -428,12 +393,9 @@ class TestMultiEpochEqualsSingleEpoch:
             jnp.array([0.009], dtype=jnp.float64),
             jnp.array([120.0], dtype=jnp.float64),
         )
-        single = calculate_spine_ages_log_lik(
-            birth_rate_val,
-            death_rate_val,
-            ages,
-            final_time,
-        )
+        single = spine_log_density(
+            nested_terms(birth_rate_val, death_rate_val, final_time), ages
+        ).sum()
         times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
         birth_rates = jnp.full(
             (3,),
@@ -445,7 +407,9 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
         )
-        multi = calculate_spine_ages_log_lik(birth_rates, death_rates, ages, times)
+        multi = spine_log_density(
+            nested_terms(birth_rates, death_rates, times), ages
+        ).sum()
         assert np.isfinite(float(single))
         assert np.isfinite(float(multi))
         np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
@@ -456,14 +420,10 @@ class TestMultiEpochEqualsSingleEpoch:
         death_rates = jnp.array([0.009], dtype=jnp.float64)
         times = jnp.array([120.0], dtype=jnp.float64)
 
-        per_age = calculate_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times,
-            return_array=True,
-        )
-        summed = calculate_spine_ages_log_lik(birth_rates, death_rates, ages, times)
+        per_age = spine_log_density(nested_terms(birth_rates, death_rates, times), ages)
+        summed = spine_log_density(
+            nested_terms(birth_rates, death_rates, times), ages
+        ).sum()
 
         assert per_age.shape == ages.shape
         np.testing.assert_allclose(
@@ -477,13 +437,9 @@ class TestMultiEpochEqualsSingleEpoch:
             jnp.array([0.01], dtype=jnp.float64),
             jnp.array([120.0], dtype=jnp.float64),
         )
-        single = calculate_ages_log_lik(
-            birth_rate_val,
-            death_rate_val,
-            ages,
-            times,
-            are_spines=False,
-        )
+        single = non_spine_log_density(
+            nested_terms(birth_rate_val, death_rate_val, times), ages
+        ).sum()
         times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
         birth_rates = jnp.full(
             (3,),
@@ -495,13 +451,9 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
         )
-        multi = calculate_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times,
-            are_spines=False,
-        )
+        multi = non_spine_log_density(
+            nested_terms(birth_rates, death_rates, times), ages
+        ).sum()
         assert np.isfinite(float(single))
         assert np.isfinite(float(multi))
         np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
@@ -512,19 +464,12 @@ class TestMultiEpochEqualsSingleEpoch:
         death_rates = jnp.array([0.01], dtype=jnp.float64)
         times = jnp.array([120.0], dtype=jnp.float64)
 
-        per_age = calculate_non_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times,
-            return_array=True,
+        per_age = non_spine_log_density(
+            nested_terms(birth_rates, death_rates, times), ages
         )
-        summed = calculate_non_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times,
-        )
+        summed = non_spine_log_density(
+            nested_terms(birth_rates, death_rates, times), ages
+        ).sum()
 
         assert per_age.shape == ages.shape
         np.testing.assert_allclose(
@@ -543,13 +488,9 @@ class TestMultiEpochEqualsSingleEpoch:
             jnp.array([0.009], dtype=jnp.float64),
             jnp.array([120.0], dtype=jnp.float64),
         )
-        single = calculate_ages_log_lik(
-            birth_rate_val,
-            death_rate_val,
-            ages,
-            final_time,
-            are_spines=True,
-        )
+        single = spine_log_density(
+            nested_terms(birth_rate_val, death_rate_val, final_time), ages
+        ).sum()
         times = jnp.array([30.0, 90.0, 120.0], dtype=jnp.float64)
         birth_rates = jnp.full(
             (3,),
@@ -561,49 +502,11 @@ class TestMultiEpochEqualsSingleEpoch:
             death_rate_val.item(),
             dtype=death_rate_val.dtype,
         )
-        multi = calculate_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times,
-            are_spines=True,
-        )
+        multi = spine_log_density(
+            nested_terms(birth_rates, death_rates, times), ages
+        ).sum()
         assert np.isfinite(float(single))
         assert np.isfinite(float(multi))
-        np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
-
-    def test_integrand_surv_from_weighted_birth_time_multi_equals_single(
-        self,
-    ) -> None:
-        birth_time = 30.0
-        birth_rate_val, death_rate_val, final_time = (
-            jnp.array([0.02], dtype=jnp.float64),
-            jnp.array([0.01], dtype=jnp.float64),
-            jnp.array([120.0], dtype=jnp.float64),
-        )
-        single = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rate_val,
-            death_rate_val,
-            final_time,
-        )
-        times = jnp.array([40.0, 80.0, 120.0], dtype=jnp.float64)
-        birth_rates = jnp.full(
-            (3,),
-            birth_rate_val.item(),
-            dtype=birth_rate_val.dtype,
-        )
-        death_rates = jnp.full(
-            (3,),
-            death_rate_val.item(),
-            dtype=death_rate_val.dtype,
-        )
-        multi = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
         np.testing.assert_allclose(np.array(multi), np.array(single), rtol=1.3e-6)
 
 
@@ -714,12 +617,9 @@ class TestNumericalAccuracy:
         final_time = jnp.array([10.0], dtype=jnp.float64)
         age = jnp.array([0.0], dtype=jnp.float64)
 
-        result = calculate_spine_ages_log_lik(
-            birth_rate_val,
-            death_rate_val,
-            age,
-            final_time,
-        )
+        result = spine_log_density(
+            nested_terms(birth_rate_val, death_rate_val, final_time), age
+        ).sum()
 
         # Should return -inf
         assert float(result) == -jnp.inf
@@ -812,28 +712,6 @@ class TestNumericalAccuracy:
 
         np.testing.assert_allclose(np.array(result), np.array(expected), rtol=1.3e-6)
 
-    def testpr_extinction_numerator_simple(self) -> None:
-        """Test pr_extinction_numerator for simple case.
-
-        Private function test: Validates that function returns a positive finite value.
-        The exact formula is complex and involves integration - we validate properties.
-        """
-        birth_rate_val = jnp.array([0.2], dtype=jnp.float64)
-        death_rate_val = jnp.array([0.1], dtype=jnp.float64)
-        final_time = jnp.array([10.0], dtype=jnp.float64)
-
-        result = pr_extinction_numerator(
-            birth_rate_val,
-            death_rate_val,
-            final_time,
-        )
-
-        # Should be positive and finite
-        assert np.isfinite(float(result))
-        assert result > 0
-        # For λ > μ, numerator should be between 0 and 1
-        assert 0 < result < 1
-
     def test_non_spine_age_density_known_values(self) -> None:
         """Test non-spine age density against manually computed values.
 
@@ -857,12 +735,9 @@ class TestNumericalAccuracy:
         density = numerator / denominator
         expected = jnp.log(density)
 
-        result = calculate_non_spine_ages_log_lik(
-            birth_rate_val,
-            death_rate_val,
-            age,
-            final_time,
-        )
+        result = non_spine_log_density(
+            nested_terms(birth_rate_val, death_rate_val, final_time), age
+        ).sum()
 
         np.testing.assert_allclose(np.array(result), np.array(expected), rtol=1.3e-6)
 
@@ -1228,12 +1103,14 @@ class TestSpineAgesLogLikelihood:
         sample_ages_scalar: jax.Array,
     ) -> None:
         """Test with single age value."""
-        result = calculate_spine_ages_log_lik(
-            standard_scalar_params["birth_rate"],
-            standard_scalar_params["death_rate"],
+        result = spine_log_density(
+            nested_terms(
+                standard_scalar_params["birth_rate"],
+                standard_scalar_params["death_rate"],
+                standard_scalar_params["time"],
+            ),
             sample_ages_scalar,
-            standard_scalar_params["time"],
-        )
+        ).sum()
 
         assert np.isfinite(float(result))
 
@@ -1243,12 +1120,14 @@ class TestSpineAgesLogLikelihood:
         sample_ages_array: jax.Array,
     ) -> None:
         """Test with array of ages."""
-        result = calculate_spine_ages_log_lik(
-            standard_scalar_params["birth_rate"],
-            standard_scalar_params["death_rate"],
+        result = spine_log_density(
+            nested_terms(
+                standard_scalar_params["birth_rate"],
+                standard_scalar_params["death_rate"],
+                standard_scalar_params["time"],
+            ),
             sample_ages_array,
-            standard_scalar_params["time"],
-        )
+        ).sum()
 
         # Should return summed log-likelihood
         assert np.isfinite(float(result))
@@ -1259,12 +1138,14 @@ class TestSpineAgesLogLikelihood:
     ) -> None:
         """Test age exactly equal to observation timefinal_time."""
         final_time = standard_scalar_params["time"]
-        result = calculate_spine_ages_log_lik(
-            standard_scalar_params["birth_rate"],
-            standard_scalar_params["death_rate"],
-            final_time,  # Age = final_time (boundary case)
+        result = spine_log_density(
+            nested_terms(
+                standard_scalar_params["birth_rate"],
+                standard_scalar_params["death_rate"],
+                final_time,
+            ),
             final_time,
-        )
+        ).sum()
 
         assert np.isfinite(float(result))
 
@@ -1274,12 +1155,14 @@ class TestSpineAgesLogLikelihood:
         sample_ages_scalar: jax.Array,
     ) -> None:
         """Test numerical stability when λ ≈ μ."""
-        result = calculate_spine_ages_log_lik(
-            nearly_equal_params["birth_rate"],
-            nearly_equal_params["death_rate"],
+        result = spine_log_density(
+            nested_terms(
+                nearly_equal_params["birth_rate"],
+                nearly_equal_params["death_rate"],
+                nearly_equal_params["time"],
+            ),
             sample_ages_scalar,
-            nearly_equal_params["time"],
-        )
+        ).sum()
 
         assert np.isfinite(float(result))
 
@@ -1292,12 +1175,14 @@ class TestSpineAgesLogLikelihood:
             ValueError,
             match=r"ages must be in \[0, .*\]. Got ages:",
         ):  # age > final_time
-            calculate_spine_ages_log_lik(
-                standard_scalar_params["birth_rate"],
-                standard_scalar_params["death_rate"],
-                standard_scalar_params["time"] + 10.0,  # age > final_time
-                standard_scalar_params["time"],
-            )
+            spine_log_density(
+                nested_terms(
+                    standard_scalar_params["birth_rate"],
+                    standard_scalar_params["death_rate"],
+                    standard_scalar_params["time"],
+                ),
+                standard_scalar_params["time"] + 10.0,
+            ).sum()
 
     def test_negative_age_returns_minus_inf(
         self,
@@ -1308,12 +1193,14 @@ class TestSpineAgesLogLikelihood:
             ValueError,
             match=r"ages must be in \[0, .*\]. Got ages:",
         ):  # Negative age
-            calculate_spine_ages_log_lik(
-                standard_scalar_params["birth_rate"],
-                standard_scalar_params["death_rate"],
-                -10.0,  # Negative age
-                standard_scalar_params["time"],
-            )
+            spine_log_density(
+                nested_terms(
+                    standard_scalar_params["birth_rate"],
+                    standard_scalar_params["death_rate"],
+                    standard_scalar_params["time"],
+                ),
+                -10.0,
+            ).sum()
 
 
 # ============================================================================
@@ -1327,24 +1214,28 @@ class TestNonSpineAgesLogLikelihood:
     def test_scalar_params_scalar_age(self, sample_ages_scalar: jax.Array) -> None:
         """Test with scalar parameters and single age."""
         # For single-epoch case, wrap scalars in arrays of length 1
-        result = calculate_non_spine_ages_log_lik(
-            birth_rates=jnp.array([0.1], dtype=jnp.float64),
-            death_rates=jnp.array([0.05], dtype=jnp.float64),
-            ages=sample_ages_scalar,
-            times=jnp.array([100.0], dtype=jnp.float64),
-        )
+        result = non_spine_log_density(
+            nested_terms(
+                jnp.array([0.1], dtype=jnp.float64),
+                jnp.array([0.05], dtype=jnp.float64),
+                jnp.array([100.0], dtype=jnp.float64),
+            ),
+            sample_ages_scalar,
+        ).sum()
 
         assert np.isfinite(float(result))
 
     def test_scalar_params_array_ages(self, sample_ages_array: jax.Array) -> None:
         """Test with scalar parameters and array of ages."""
         # For single-epoch case, wrap scalars in arrays of length 1
-        result = calculate_non_spine_ages_log_lik(
-            birth_rates=jnp.array([0.1], dtype=jnp.float64),
-            death_rates=jnp.array([0.05], dtype=jnp.float64),
-            ages=sample_ages_array,
-            times=jnp.array([100.0], dtype=jnp.float64),
-        )
+        result = non_spine_log_density(
+            nested_terms(
+                jnp.array([0.1], dtype=jnp.float64),
+                jnp.array([0.05], dtype=jnp.float64),
+                jnp.array([100.0], dtype=jnp.float64),
+            ),
+            sample_ages_array,
+        ).sum()
 
         assert np.isfinite(float(result))
 
@@ -1356,34 +1247,40 @@ class TestNonSpineAgesLogLikelihood:
         # Use ages within the valid time range
         max_time = standard_array_params["times"][-1]
         ages = jnp.array([10.0, 50.0, max_time - 10.0], dtype=jnp.float64)
-        result = calculate_non_spine_ages_log_lik(
-            birth_rates=standard_array_params["birth_rates"],
-            death_rates=standard_array_params["death_rates"],
-            ages=ages,
-            times=standard_array_params["times"],
-        )
+        result = non_spine_log_density(
+            nested_terms(
+                standard_array_params["birth_rates"],
+                standard_array_params["death_rates"],
+                standard_array_params["times"],
+            ),
+            ages,
+        ).sum()
 
         assert np.isfinite(float(result))
 
     def test_single_epoch(self, sample_ages_scalar: jax.Array) -> None:
         """Test with single epoch (single-element arrays)."""
-        result = calculate_non_spine_ages_log_lik(
-            birth_rates=jnp.array([0.1], dtype=jnp.float64),
-            death_rates=jnp.array([0.05], dtype=jnp.float64),
-            ages=sample_ages_scalar,
-            times=jnp.array([100.0], dtype=jnp.float64),
-        )
+        result = non_spine_log_density(
+            nested_terms(
+                jnp.array([0.1], dtype=jnp.float64),
+                jnp.array([0.05], dtype=jnp.float64),
+                jnp.array([100.0], dtype=jnp.float64),
+            ),
+            sample_ages_scalar,
+        ).sum()
 
         assert np.isfinite(float(result))
 
     def test_critical_case(self, sample_ages_scalar: jax.Array) -> None:
         """Test numerical stability when λ ≈ μ."""
-        result = calculate_non_spine_ages_log_lik(
-            birth_rates=jnp.array([0.1], dtype=jnp.float64),
-            death_rates=jnp.array([0.1 + 1e-13], dtype=jnp.float64),
-            ages=sample_ages_scalar,
-            times=jnp.array([100.0], dtype=jnp.float64),
-        )
+        result = non_spine_log_density(
+            nested_terms(
+                jnp.array([0.1], dtype=jnp.float64),
+                jnp.array([0.1 + 1e-13], dtype=jnp.float64),
+                jnp.array([100.0], dtype=jnp.float64),
+            ),
+            sample_ages_scalar,
+        ).sum()
 
         assert np.isfinite(float(result))
 
@@ -1391,12 +1288,14 @@ class TestNonSpineAgesLogLikelihood:
         """Test that invalid ages return -inf."""
         # Age > T
         with pytest.raises(ValueError, match=r"ages must be in \[0, .*\]. Got ages:"):
-            calculate_non_spine_ages_log_lik(
-                birth_rates=jnp.array([0.1], dtype=jnp.float64),
-                death_rates=jnp.array([0.05], dtype=jnp.float64),
-                ages=150.0,  # age > times[-1]
-                times=jnp.array([100.0], dtype=jnp.float64),
-            )
+            non_spine_log_density(
+                nested_terms(
+                    jnp.array([0.1], dtype=jnp.float64),
+                    jnp.array([0.05], dtype=jnp.float64),
+                    jnp.array([100.0], dtype=jnp.float64),
+                ),
+                150.0,
+            ).sum()
 
     def test_shape_mismatch_raises_error(
         self,
@@ -1404,15 +1303,17 @@ class TestNonSpineAgesLogLikelihood:
     ) -> None:
         """Test that parameter shape mismatches raise ValueError."""
         with pytest.raises(ValueError, match="matching lengths"):
-            calculate_non_spine_ages_log_lik(
-                birth_rates=jnp.array([0.1, 0.15], dtype=jnp.float64),
-                death_rates=jnp.array(
-                    [0.05],
-                    dtype=jnp.float64,
-                ),  # Different shape
-                ages=sample_ages_scalar,
-                times=jnp.array([50.0, 100.0], dtype=jnp.float64),
-            )
+            non_spine_log_density(
+                nested_terms(
+                    jnp.array([0.1, 0.15], dtype=jnp.float64),
+                    jnp.array(
+                        [0.05],
+                        dtype=jnp.float64,
+                    ),
+                    jnp.array([50.0, 100.0], dtype=jnp.float64),
+                ),
+                sample_ages_scalar,
+            ).sum()
 
     def test_non_monotonic_times_raises_error(
         self,
@@ -1420,15 +1321,17 @@ class TestNonSpineAgesLogLikelihood:
     ) -> None:
         """Test that non-monotonic times raise ValueError."""
         with pytest.raises(ValueError, match="strictly increasing"):
-            calculate_non_spine_ages_log_lik(
-                birth_rates=jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64),
-                death_rates=jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64),
-                ages=sample_ages_scalar,
-                times=jnp.array(
-                    [50.0, 100.0, 90.0],
-                    dtype=jnp.float64,
-                ),  # Not monotonic
-            )
+            non_spine_log_density(
+                nested_terms(
+                    jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64),
+                    jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64),
+                    jnp.array(
+                        [50.0, 100.0, 90.0],
+                        dtype=jnp.float64,
+                    ),
+                ),
+                sample_ages_scalar,
+            ).sum()
 
 
 # ============================================================================
@@ -1445,41 +1348,42 @@ class TestAgesLogLikelihood:
         sample_ages_scalar: jax.Array,
     ) -> None:
         """Test that are_spines=True routes to spine implementation."""
-        result = calculate_ages_log_lik(
-            standard_scalar_params["birth_rate"],
-            standard_scalar_params["death_rate"],
+        result = spine_log_density(
+            nested_terms(
+                standard_scalar_params["birth_rate"],
+                standard_scalar_params["death_rate"],
+                standard_scalar_params["time"],
+            ),
             sample_ages_scalar,
-            standard_scalar_params["time"],
-            are_spines=True,
-        )
+        ).sum()
 
         # Should match spine calculation
-        expected = calculate_spine_ages_log_lik(
-            standard_scalar_params["birth_rate"],
-            standard_scalar_params["death_rate"],
+        expected = spine_log_density(
+            nested_terms(
+                standard_scalar_params["birth_rate"],
+                standard_scalar_params["death_rate"],
+                standard_scalar_params["time"],
+            ),
             sample_ages_scalar,
-            standard_scalar_params["time"],
-        )
+        ).sum()
 
         np.testing.assert_allclose(np.array(result), np.array(expected), rtol=1.3e-6)
 
     def test_non_spine_routing(self, sample_ages_scalar: jax.Array) -> None:
         """Test that are_spines=False routes to non-spine implementation."""
-        result = calculate_ages_log_lik(
-            birth_rates=0.1,
-            death_rates=0.05,
-            ages=sample_ages_scalar,
-            times=100.0,
-            are_spines=False,
-        )
+        result = non_spine_log_density(
+            nested_terms(0.1, 0.05, 100.0), sample_ages_scalar
+        ).sum()
 
         # Should match non-spine calculation (using array inputs)
-        expected = calculate_non_spine_ages_log_lik(
-            birth_rates=jnp.array([0.1], dtype=jnp.float64),
-            death_rates=jnp.array([0.05], dtype=jnp.float64),
-            ages=sample_ages_scalar,
-            times=jnp.array([100.0], dtype=jnp.float64),
-        )
+        expected = non_spine_log_density(
+            nested_terms(
+                jnp.array([0.1], dtype=jnp.float64),
+                jnp.array([0.05], dtype=jnp.float64),
+                jnp.array([100.0], dtype=jnp.float64),
+            ),
+            sample_ages_scalar,
+        ).sum()
 
         np.testing.assert_allclose(np.array(result), np.array(expected), rtol=1.3e-6)
 
@@ -1666,12 +1570,7 @@ class TestNumericalStability:
             dtype=jnp.float64,
         )
 
-        result = calculate_spine_ages_log_lik(
-            birth_rates=0.1,
-            death_rates=0.05,
-            ages=ages,
-            times=final_time,
-        )
+        result = spine_log_density(nested_terms(0.1, 0.05, final_time), ages).sum()
 
         assert np.isfinite(float(result))
 
@@ -1690,19 +1589,23 @@ class TestIntegration:
         sample_ages_scalar: jax.Array,
     ) -> None:
         """Test that spine and non-spine give different results (different formulas)."""
-        spine_result = calculate_spine_ages_log_lik(
-            standard_scalar_params["birth_rate"],
-            standard_scalar_params["death_rate"],
+        spine_result = spine_log_density(
+            nested_terms(
+                standard_scalar_params["birth_rate"],
+                standard_scalar_params["death_rate"],
+                standard_scalar_params["time"],
+            ),
             sample_ages_scalar,
-            standard_scalar_params["time"],
-        )
+        ).sum()
 
-        non_spine_result = calculate_non_spine_ages_log_lik(
-            jnp.array([standard_scalar_params["birth_rate"]], dtype=jnp.float64),
-            jnp.array([standard_scalar_params["death_rate"]], dtype=jnp.float64),
+        non_spine_result = non_spine_log_density(
+            nested_terms(
+                jnp.array([standard_scalar_params["birth_rate"]], dtype=jnp.float64),
+                jnp.array([standard_scalar_params["death_rate"]], dtype=jnp.float64),
+                jnp.array([standard_scalar_params["time"]], dtype=jnp.float64),
+            ),
             sample_ages_scalar,
-            jnp.array([standard_scalar_params["time"]], dtype=jnp.float64),
-        )
+        ).sum()
 
         # These should be different (different conditioning)
         assert not np.isclose(float(spine_result), float(non_spine_result))
@@ -1725,12 +1628,14 @@ class TestVectorization:
         # would require timing benchmarks
         ages = jnp.linspace(10, 90, 100)
 
-        result = calculate_spine_ages_log_lik(
-            standard_scalar_params["birth_rate"],
-            standard_scalar_params["death_rate"],
+        result = spine_log_density(
+            nested_terms(
+                standard_scalar_params["birth_rate"],
+                standard_scalar_params["death_rate"],
+                standard_scalar_params["time"],
+            ),
             ages,
-            standard_scalar_params["time"],
-        )
+        ).sum()
 
         assert np.isfinite(float(result))
 
@@ -1754,297 +1659,3 @@ class TestVectorization:
 # ============================================================================
 # Private Helper Function Tests
 # ============================================================================
-
-
-class TestIntegrandSurvFromWeightedBirthTime:
-    """Test the _integrand_surv_from_weighted_birth_time private helper function.
-
-    This function is used in calculating survival probabilities and returns a
-    Python float for use in numerical integration.
-    """
-
-    def test_basic_single_epoch(self) -> None:
-        """Test basic functionality with a single epoch."""
-        birth_time = 5.0
-        birth_rates = jnp.array([0.1], dtype=jnp.float64)
-        death_rates = jnp.array([0.05], dtype=jnp.float64)
-        times = jnp.array([100.0], dtype=jnp.float64)
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-
-        # Result should be finite and non-negative
-        assert math.isfinite(result)
-        assert result >= 0
-
-    def test_basic_multiple_epochs(self) -> None:
-        """Test with multiple epochs."""
-        birth_time = 25.0
-        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
-        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-
-        assert math.isfinite(result)
-        assert result >= 0
-
-    def test_birth_time_at_zero(self) -> None:
-        """Test when birth_time is 0 (start of process)."""
-        birth_time = 0.0
-        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
-        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-
-        assert math.isfinite(result)
-        assert result >= 0
-
-    def test_birth_time_equals_first_epoch_end(self) -> None:
-        """Test edge case when birth_time equals first epoch end time."""
-        birth_time = 50.0
-        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
-        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
-
-        # After subtracting birth_time, times becomes [0.0, 50.0]
-        # valid_indices will be where times > 0, so only index 1
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-
-        assert math.isfinite(result)
-        assert result >= 0
-
-    def test_birth_time_beyond_all_epochs_returns_zero(self) -> None:
-        """Test that birth_time beyond all epochs returns 0.0."""
-        birth_time = 150.0  # Beyond all epochs
-        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
-        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-        assert result == 0.0
-
-    def test_birth_time_slightly_beyond_last_epoch(self) -> None:
-        """Test birth_time just beyond the last epoch time."""
-        birth_time = 100.1
-        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
-        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
-
-        # After subtracting birth_time, times becomes negative, no valid indices
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-        assert result == 0.0
-
-    def test_birth_time_within_first_epoch(self) -> None:
-        """Test normal case with birth_time within first epoch."""
-        birth_time = 10.0
-        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
-        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-
-        assert math.isfinite(result)
-        assert result >= 0
-
-    def test_birth_time_within_middle_epoch(self) -> None:
-        """Test birth_time within a middle epoch."""
-        birth_time = 75.0
-        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
-        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
-
-        # After subtracting, times becomes [-25.0, 25.0, 75.0]
-        # valid_indices will be [1, 2]
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-
-        assert math.isfinite(result)
-        assert result >= 0
-
-    def test_scalar_inputs_converted_to_arrays(self) -> None:
-        """Test that scalar inputs are properly converted to arrays."""
-        birth_time = 10.0
-        birth_rates = jnp.array([0.1], dtype=jnp.float64)
-        death_rates = jnp.array([0.05], dtype=jnp.float64)
-        times = jnp.array([100.0], dtype=jnp.float64)
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-
-        assert math.isfinite(result)
-        assert result >= 0
-
-    def test_result_proportional_to_birth_rate(self) -> None:
-        """Test that result is proportional to the first valid birth rate."""
-        birth_time = 10.0
-        birth_rates1 = jnp.array([0.1, 0.15], dtype=jnp.float64)
-        birth_rates2 = jnp.array(
-            [0.2, 0.15],
-            dtype=jnp.float64,
-        )  # Double the first rate
-        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
-
-        result1 = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates1,
-            death_rates,
-            times,
-        )
-        result2 = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates2,
-            death_rates,
-            times,
-        )
-
-        # Result should scale with birth rate
-        # (approximately, given extinction prob is also affected)
-        assert result2 > result1
-
-    def test_array_length_mismatch_times_longer(self) -> None:
-        """Test when times array is longer than birth_rates/death_rates arrays.
-
-        JAX silently clamps out-of-bounds indices rather than raising IndexError,
-        so this call returns some float (may be numerically wrong) rather than
-        erroring — we just verify it doesn't crash.
-        """
-        birth_time = 10.0
-        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)  # Length 2
-        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)  # Length 2
-        times = jnp.array(
-            [50.0, 100.0, 150.0],
-            dtype=jnp.float64,
-        )  # Length 3 - MISMATCH!
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-        assert isinstance(result, float)
-
-    def test_array_length_mismatch_rates_longer(self) -> None:
-        """Test when birth_rates/death_rates arrays are longer than times array."""
-        birth_time = 10.0
-        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
-        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-        assert result >= 0
-
-    def test_birth_and_death_rates_different_lengths(self) -> None:
-        """Test when birth_rates and death_rates have different lengths."""
-        birth_time = 10.0
-        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)  # Length 2
-        death_rates = jnp.array(
-            [0.05, 0.06, 0.055],
-            dtype=jnp.float64,
-        )  # Length 3 - MISMATCH!
-        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-        assert result >= 0
-
-    def test_integration_context_array_length_issue(self) -> None:
-        """Test scenario that mimics the integration context where error occurred.
-
-        The original numpy/torch implementation raised IndexError when times has
-        more elements than rate arrays. JAX silently clamps OOB indices, so the
-        function returns a float instead of raising.
-        """
-        lifetime = 100.0
-        birth_rates = jnp.array([0.1, 0.15], dtype=jnp.float64)
-        death_rates = jnp.array([0.05, 0.06], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0], dtype=jnp.float64)
-        birth_time = 25.0
-
-        # times has an extra element vs rate arrays (length mismatch)
-        bad_times = jnp.concatenate(
-            [times, jnp.array([lifetime], dtype=jnp.float64)],
-        )  # Length 3!
-
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            bad_times,
-        )
-        assert isinstance(result, float)
-
-    def test_valid_indices_logic_with_partial_truncation(self) -> None:
-        """Test that valid_indices correctly handles partial epoch truncation."""
-        # When birth_time is within epochs, valid_indices should be a subset
-        birth_time = 60.0
-        birth_rates = jnp.array([0.1, 0.15, 0.12], dtype=jnp.float64)
-        death_rates = jnp.array([0.05, 0.06, 0.055], dtype=jnp.float64)
-        times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
-
-        # After subtracting birth_time, times becomes [-10.0, 40.0, 90.0]
-        # valid_indices should be [1, 2] (where times > 0)
-        # Accessing birth_rates[[1, 2]] should work fine
-        result = _integrand_surv_from_weighted_birth_time(
-            birth_time,
-            birth_rates,
-            death_rates,
-            times,
-        )
-
-        assert math.isfinite(result)
-        assert result >= 0

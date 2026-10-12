@@ -45,8 +45,8 @@ from bdpinf.models import math_nested
 from bdpinf.models.rate_functions import PiecewiseConstantRate, RateFunction
 
 __all__ = [
-    "age_log_densities",
-    "log_nested_w",
+    "age_log_densities_general",
+    "log_nested_w_general",
     "non_spine_age_cdf",
     "non_spine_age_log_density",
     "random_individual_cdf",
@@ -128,7 +128,7 @@ def _log_l(
     return jax.nn.logsumexp(_safe_log(weight(x)) + gamma_te, b=w)
 
 
-def log_nested_w(
+def log_nested_w_general(
     birth: RateFunction,
     death: RateFunction,
     b: jax.Array,
@@ -209,7 +209,7 @@ def spine_age_log_atom(
     if exact is not None:
         return math_nested.spine_log_atom(exact)
     end = birth.end_time
-    return log_nested_w(
+    return log_nested_w_general(
         birth, death, end, n_nodes=n_nodes, method="quadrature"
     ) - birth.integral(jnp.zeros_like(end), end)
 
@@ -233,7 +233,9 @@ def non_spine_age_log_density(
         s = end - a
         return (
             _safe_log(birth(s))
-            + log_nested_w(birth, death, s, n_nodes=n_nodes, method="quadrature")
+            + log_nested_w_general(
+                birth, death, s, n_nodes=n_nodes, method="quadrature"
+            )
             - death.integral(s, end)
             - log_norm
         )
@@ -243,7 +245,7 @@ def non_spine_age_log_density(
     )
 
 
-def age_log_densities(
+def age_log_densities_general(
     ages: jax.Array,
     birth: RateFunction,
     death: RateFunction,
@@ -339,7 +341,7 @@ def random_individual_cdf(
     :math:`w_{A^*} = -\pi(T)\ln\pi(T) / (1 - \pi(T))` and
     :math:`w_A = 1 - w_{A^*}`.
     """
-    log_w_t = log_nested_w(birth, death, birth.end_time, n_nodes=n_nodes)
+    log_w_t = log_nested_w_general(birth, death, birth.end_time, n_nodes=n_nodes)
     pi_t = jnp.exp(-log_w_t)
     w_spine = pi_t * log_w_t / -jnp.expm1(-log_w_t)
     return (1.0 - w_spine) * non_spine_age_cdf(

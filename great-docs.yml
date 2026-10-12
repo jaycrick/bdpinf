@@ -79,7 +79,6 @@ reference:
     contents:
       - models.math_extinction
       - models.math_nested
-      - models.math_ages
       - models.math_age_densities
       - models.rate_functions
       - models.math_populations

@@ -5,11 +5,12 @@ import math
 import numpy as np
 import pytest
 
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
-)
 from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
+)
 from bdpinf.models.math_populations import calculate_populations_log_lik
 
 
@@ -33,7 +34,7 @@ class TestNumericalStability:
         t = np.array([T])
         # Age very close to T (created near time 0)
         spine_ages = np.array([T - 1e-6])
-        ll = calculate_spine_ages_log_lik(lam, mu, spine_ages, t)
+        ll = spine_log_density(nested_terms(lam, mu, t), spine_ages).sum()
         assert math.isfinite(float(ll)), f"Expected finite log-lik, got {ll}"
 
     def test_populations_log_lik_large_n_is_finite(self) -> None:
@@ -53,7 +54,7 @@ class TestNumericalStability:
         mu = np.array([0.003])
         t = np.array([500.0])
         empty_ages = np.array([])
-        ll = calculate_non_spine_ages_log_lik(lam, mu, empty_ages, t)
+        ll = non_spine_log_density(nested_terms(lam, mu, t), empty_ages).sum()
         assert float(ll) == pytest.approx(0.0), f"Expected 0.0, got {ll}"
 
     def test_log_lik_very_small_rates_is_finite(self) -> None:
@@ -62,7 +63,7 @@ class TestNumericalStability:
         mu = np.array([1e-7])
         t = np.array([100.0])
         spine_ages = np.array([50.0])
-        ll = calculate_spine_ages_log_lik(lam, mu, spine_ages, t)
+        ll = spine_log_density(nested_terms(lam, mu, t), spine_ages).sum()
         assert math.isfinite(float(ll)) or float(ll) == float("-inf"), (
             f"Expected finite or -inf, got {ll}"
         )

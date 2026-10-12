@@ -37,9 +37,10 @@ import typer
 import bdpinf  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
 from bdpinf import get_project_root
 from bdpinf.inference import fit_birth_death_processes
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
 )
 from bdpinf.models.math_populations import calculate_populations_log_lik
 
@@ -108,20 +109,12 @@ def _make_nll_fn(
             unbias=True,
             _skip_normalization=True,
         )
-        spine_ll = calculate_spine_ages_log_lik(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            ages=spine_ages,
-            times=times,
-            _skip_normalization=True,
-        )
-        non_spine_ll = calculate_non_spine_ages_log_lik(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            ages=non_spine_ages,
-            times=times,
-            _skip_normalization=True,
-        )
+        spine_ll = spine_log_density(
+            nested_terms(birth_rates, death_rates, times), spine_ages
+        ).sum()
+        non_spine_ll = non_spine_log_density(
+            nested_terms(birth_rates, death_rates, times), non_spine_ages
+        ).sum()
         return -(pop_ll + spine_ll + non_spine_ll)
 
     return nll

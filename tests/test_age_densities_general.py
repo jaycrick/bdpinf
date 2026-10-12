@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from bdpinf.models.math_age_densities import (
-    log_nested_w,
+    log_nested_w_general,
     non_spine_age_cdf,
     non_spine_age_log_density,
     random_individual_cdf,
@@ -14,9 +14,10 @@ from bdpinf.models.math_age_densities import (
     spine_age_log_atom,
     spine_age_log_density,
 )
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
 )
 from bdpinf.models.rate_functions import PiecewiseConstantRate, PiecewiseLinearRate
 
@@ -108,16 +109,12 @@ class TestArrayWrappersAgainstQuadrature:
         b = PiecewiseConstantRate(b_vals, times)
         d = PiecewiseConstantRate(d_vals, times)
         np.testing.assert_allclose(
-            calculate_non_spine_ages_log_lik(
-                b_vals, d_vals, _AGES, times, return_array=True
-            ),
+            non_spine_log_density(nested_terms(b_vals, d_vals, times), _AGES),
             non_spine_age_log_density(_AGES, b, d, method="quadrature", n_nodes=48),
             atol=1e-10,
         )
         np.testing.assert_allclose(
-            calculate_spine_ages_log_lik(
-                b_vals, d_vals, _AGES, times, return_array=True
-            ),
+            spine_log_density(nested_terms(b_vals, d_vals, times), _AGES),
             spine_age_log_density(_AGES, b, d, method="quadrature", n_nodes=48),
             atol=1e-10,
         )
@@ -165,7 +162,7 @@ class TestWolframGoldenValues:
 
     def test_linear_both_nested_w(self) -> None:
         b, d = _linear_both(1.2, 0.2, 0.7, 0.1)
-        w = float(jnp.exp(log_nested_w(b, d, jnp.array(2.0))))
+        w = float(jnp.exp(log_nested_w_general(b, d, jnp.array(2.0))))
         assert w == pytest.approx(6.439292686758441, rel=1e-10)
 
     def test_piecewise_linear_both(self) -> None:
@@ -177,7 +174,7 @@ class TestWolframGoldenValues:
         assert float(jnp.exp(spine_age_log_density(a, b, d))[0]) == pytest.approx(
             0.31050420949098767, abs=1e-9
         )
-        w = float(jnp.exp(log_nested_w(b, d, jnp.array(_T))))
+        w = float(jnp.exp(log_nested_w_general(b, d, jnp.array(_T))))
         assert w == pytest.approx(5.661968424654191, rel=1e-10)
 
 

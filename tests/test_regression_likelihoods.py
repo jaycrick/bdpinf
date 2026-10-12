@@ -21,11 +21,12 @@ import numpy as np
 import pytest
 
 from bdpinf.inference.likelihood import log_likelihood
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
-)
 from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
+)
 from bdpinf.models.math_populations import calculate_populations_log_lik
 
 # ---------------------------------------------------------------------------
@@ -123,13 +124,15 @@ class TestRegressionLikelihoods:
         )
 
     def test_spine_ages_log_lik_golden_single_age(self) -> None:
-        result = calculate_spine_ages_log_lik(_BIRTH, _DEATH, _AGE_750, _TIMES)
+        result = spine_log_density(nested_terms(_BIRTH, _DEATH, _TIMES), _AGE_750).sum()
         np.testing.assert_allclose(
             float(result), _GOLDEN_SPINE_LL_750, atol=_ATOL, rtol=0.0
         )
 
     def test_non_spine_ages_log_lik_golden_single_age(self) -> None:
-        result = calculate_non_spine_ages_log_lik(_BIRTH, _DEATH, _AGE_750, _TIMES)
+        result = non_spine_log_density(
+            nested_terms(_BIRTH, _DEATH, _TIMES), _AGE_750
+        ).sum()
         np.testing.assert_allclose(
             float(result), _GOLDEN_NON_SPINE_LL_750, atol=_ATOL, rtol=0.0
         )
@@ -158,15 +161,17 @@ class TestRegressionLikelihoods:
     # ------------------------------------------------------------------
 
     def test_spine_ages_log_lik_golden_single_age_multi_epoch(self) -> None:
-        result = calculate_spine_ages_log_lik(_BIRTH_2, _DEATH_2, _AGE_300, _TIMES_2)
+        result = spine_log_density(
+            nested_terms(_BIRTH_2, _DEATH_2, _TIMES_2), _AGE_300
+        ).sum()
         np.testing.assert_allclose(
             float(result), _GOLDEN_SPINE_LL_300_MULTI, atol=_ATOL, rtol=0.0
         )
 
     def test_non_spine_ages_log_lik_golden_single_age_multi_epoch(self) -> None:
-        result = calculate_non_spine_ages_log_lik(
-            _BIRTH_2, _DEATH_2, _AGE_300, _TIMES_2
-        )
+        result = non_spine_log_density(
+            nested_terms(_BIRTH_2, _DEATH_2, _TIMES_2), _AGE_300
+        ).sum()
         np.testing.assert_allclose(
             float(result), _GOLDEN_NON_SPINE_LL_300_MULTI, atol=_ATOL, rtol=0.0
         )

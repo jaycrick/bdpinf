@@ -51,6 +51,8 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
+from bdpinf.models.validation import normalize_and_validate_inputs
+
 __all__ = [
     "LOG_ZERO",
     "NestedTerms",
@@ -190,19 +192,45 @@ def _shift_left(x: jax.Array, fill: float) -> jax.Array:
 # ---------------------------------------------------------------------------
 
 
+def _is_concrete(*arrays: object) -> bool:
+    """Return whether host-side validation of ``arrays`` is possible.
+
+    False if any input is a tracer (``grad``/``vmap``) or if we are inside a
+    ``jit``/``while_loop`` trace, where even closed-over constants turn into
+    tracers as soon as they meet a ``jnp`` op.
+    """
+    traced = isinstance(jnp.zeros(()), jax.core.Tracer)
+    return not traced and not any(isinstance(a, jax.core.Tracer) for a in arrays)
+
+
 def nested_terms(
-    birth_rates: jax.Array, death_rates: jax.Array, times: jax.Array
+    birth_rates: jax.Array | float,
+    death_rates: jax.Array | float,
+    times: jax.Array | float,
 ) -> NestedTerms:
     r"""Precompute the epoch-wise quantities behind :math:`\mathcal W`.
 
+    Concrete inputs are validated and coerced to 1-D float64 arrays;
+    traced inputs (inside ``jax.jit``/``grad``) are assumed already valid.
+
     Parameters
     ----------
-    birth_rates, death_rates : jax.Array
+    birth_rates, death_rates : jax.Array | float
         Non-negative epoch rates, shape ``(n_epochs,)`` float64.
-    times : jax.Array
+    times : jax.Array | float
         Strictly increasing epoch end times, shape ``(n_epochs,)``.
 
+    Raises
+    ------
+    ValueError
+        If the inputs have mismatched lengths, negative rates, or times that
+        are not strictly increasing and positive.
+
     """
+    if _is_concrete(birth_rates, death_rates, times):
+        birth_rates, death_rates, times = normalize_and_validate_inputs(
+            birth_rates, death_rates, times
+        )
     starts = _shift_right(times, 0.0)
     durations = times - starts
     growth = birth_rates - death_rates
@@ -342,6 +370,8 @@ def _densities(
     atom_at_boundary: bool,
 ) -> tuple[jax.Array | None, jax.Array | None]:
     """Shared single pass behind the public density functions."""
+    if _is_concrete(ages, terms.times):
+        normalize_and_validate_inputs(times=terms.times, ages=ages)  # checks only
     ages = jnp.asarray(ages, dtype=jnp.float64)
     end = terms.times[-1]
     s = jnp.clip(end - ages, 0.0, end)

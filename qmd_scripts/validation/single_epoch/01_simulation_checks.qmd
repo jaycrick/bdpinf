@@ -46,11 +46,12 @@ from bdpinf.analysis import (
     robust_y_max,
     theoretical_age_density,
 )
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
-)
 from bdpinf.models.math_extinction import calculate_extinction_pr
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
+)
 from bdpinf.models.math_populations import calculate_populations_log_pmf
 from bdpinf.simulation import (
     simulate_bdp_ages_from_distributions,
@@ -443,9 +444,7 @@ spine_grid_lifespans, spine_kde_lifespans = boundary_corrected_kde_on_support(
 
 
 def _spine_log_lik(age: float) -> float:
-    return calculate_spine_ages_log_lik(
-        birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
-    )
+    return spine_log_density(nested_terms(birth_rate, death_rate, time_span), age).sum()
 
 
 spine_theory_x, spine_theory_y = theoretical_age_density(
@@ -469,9 +468,9 @@ non_spine_grid_lifespans, non_spine_kde_lifespans = boundary_corrected_kde_on_su
 
 
 def _non_spine_log_lik(age: float) -> float:
-    return calculate_non_spine_ages_log_lik(
-        birth_rates=birth_rate, death_rates=death_rate, ages=age, times=time_span
-    )
+    return non_spine_log_density(
+        nested_terms(birth_rate, death_rate, time_span), age
+    ).sum()
 
 
 non_spine_theory_x, non_spine_theory_y = theoretical_age_density(

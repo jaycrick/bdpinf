@@ -11,12 +11,12 @@ stability safeguards in implementation.
 
 Core function:
 
-- `calculate_non_spine_ages_log_lik(birth_rates, death_rates, ages_t, times)`
+- `bdpinf.models.math_nested.non_spine_log_density(nested_terms(birth_rates, death_rates, times), ages_t)`
 
 ## Purpose
 
 Given observed individual ages $t_i$ at a final observation time $T$, the function
-returns the summed log-likelihood under a birth-death process with birth rate
+returns the per-age log-density (sum it for the log-likelihood) under a birth-death process with birth rate
 $\lambda$ and death rate $\mu$.
 
 The implementation supports:
@@ -165,20 +165,20 @@ Multi-epoch rates that repeat the same value across epochs agree with the single
 ```python
 import jax.numpy as jnp
 
-from bdpinf.models import calculate_non_spine_ages_log_lik
+from bdpinf.models.math_nested import nested_terms, non_spine_log_density
 
 ages = jnp.array([15.0, 60.0, 95.0])
 birth_rates_val = jnp.array([0.02])
 death_rates_val = jnp.array([0.01])
 T = jnp.array([120.0])
 
-log_lik = calculate_non_spine_ages_log_lik(birth_rates_val, death_rates_val, ages, T)
+terms = nested_terms(birth_rates_val, death_rates_val, T)
+log_lik = non_spine_log_density(terms, ages).sum()
 ```
 
 ## Related functions
 
-- `calculate_spine_ages_log_lik`: spine age likelihood (includes boundary mass at $t=T$).
-- `calculate_ages_log_lik`: dispatches to spine or non-spine likelihood.
+- `spine_log_density`: spine age density (ages $\ge T$ get the boundary mass at $t=T$).
 - `bdpinf.models.math_nested`: the exact epoch-wise $\mathcal W$, $N$, $L_\mu$ and age densities behind all of these.
 
 ## Unknown Spine (Default Inference Path)

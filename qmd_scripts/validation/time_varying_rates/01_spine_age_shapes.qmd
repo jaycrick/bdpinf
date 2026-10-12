@@ -79,7 +79,7 @@ from IPython.display import display
 
 from bdpinf import find_project_root
 from bdpinf.models.math_age_densities import (
-    log_nested_w,
+    log_nested_w_general,
     non_spine_age_cdf,
     non_spine_age_log_density,
     random_individual_cdf,
@@ -403,7 +403,7 @@ golden = pd.DataFrame(
         "bdpinf": [
             float(jnp.exp(non_spine_age_log_density(a_wl, wl_b, wl_d))[0]),
             float(jnp.exp(spine_age_log_density(a_wl, wl_b, wl_d))[0]),
-            float(jnp.exp(log_nested_w(wl_b, wl_d, jnp.array(2.0)))),
+            float(jnp.exp(log_nested_w_general(wl_b, wl_d, jnp.array(2.0)))),
         ],
         "Wolfram": [0.35126706726992174, 0.40656350086630205, 6.439292686758441],
     }

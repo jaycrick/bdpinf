@@ -12,10 +12,6 @@ import jax.numpy as jnp
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
-)
 from bdpinf.models.math_nested import (
     age_log_densities,
     nested_terms,
@@ -180,7 +176,7 @@ def log_likelihood(
 
     See Also
     --------
-        calculate_populations_log_lik, calculate_ages_log_lik
+        calculate_populations_log_lik
 
     """
     _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
@@ -457,34 +453,17 @@ def calculate_unknown_spine_mixture_age_density(
         times,
     )
 
-    mixture_log_density_vals: list[jnp.ndarray] = []
     log_n = jnp.log(jnp.float64(num_individuals))
     if num_individuals > 1:
         log_n_minus_one = jnp.log(jnp.float64(num_individuals - 1))
     else:
         log_n_minus_one = jnp.array(-jnp.inf, dtype=jnp.float64)
 
-    for age in age_grid:
-        age_arr = jnp.atleast_1d(jnp.asarray([age], dtype=jnp.float64))
-        log_non_spine = calculate_non_spine_ages_log_lik(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            ages=age_arr,
-            times=times,
-        )
-        log_spine = calculate_spine_ages_log_lik(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            ages=age_arr,
-            times=times,
-        )
-
-        ab = jnp.stack([log_n_minus_one + log_non_spine, log_spine])
-        log_mixture_numerator = jnp.log(jnp.sum(jnp.exp(ab - ab.max()))) + ab.max()
-        mixture_log_density_vals.append(log_mixture_numerator - log_n)
-
-    mixture_log_density = jnp.stack(mixture_log_density_vals)
-    return jnp.exp(mixture_log_density)
+    log_non_spine, log_spine = age_log_densities(
+        nested_terms(birth_rates, death_rates, times), age_grid
+    )
+    ab = jnp.stack([log_n_minus_one + log_non_spine, log_spine])
+    return jnp.exp(jax.scipy.special.logsumexp(ab, axis=0) - log_n)
 
 
 def calculate_unknown_spine_mixture_birth_density(

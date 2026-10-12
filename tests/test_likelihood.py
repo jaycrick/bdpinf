@@ -9,9 +9,10 @@ from bdpinf.inference import (
     calculate_unknown_spine_mixture_birth_density,
     likelihood,
 )
-from bdpinf.models.math_ages import (
-    calculate_non_spine_ages_log_lik,
-    calculate_spine_ages_log_lik,
+from bdpinf.models.math_nested import (
+    nested_terms,
+    non_spine_log_density,
+    spine_log_density,
 )
 
 
@@ -22,27 +23,18 @@ def _expected_unknown_spine_age_log_lik(
     times: jax.Array,
 ) -> jax.Array:
     """Compute the unknown-spine age log-likelihood via stable log-sum-exp."""
-    sum_log_f = calculate_non_spine_ages_log_lik(
-        birth_rates,
-        death_rates,
-        ages,
-        times=times,
-    )
+    sum_log_f = non_spine_log_density(
+        nested_terms(birth_rates, death_rates, times), ages
+    ).sum()
     a_terms = []
     for age in ages:
         age_tensor = jnp.array([float(age)], dtype=jnp.float64)
-        log_g = calculate_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            age_tensor,
-            times=times,
-        )
-        log_f = calculate_non_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            age_tensor,
-            times=times,
-        )
+        log_g = spine_log_density(
+            nested_terms(birth_rates, death_rates, times), age_tensor
+        ).sum()
+        log_f = non_spine_log_density(
+            nested_terms(birth_rates, death_rates, times), age_tensor
+        ).sum()
         a_terms.append(log_g - log_f)
 
     return (
@@ -175,18 +167,12 @@ class TestLikelihood:
                 ns=jnp.array([2], dtype=jnp.int32),
                 initial_population=1,
             )
-            + calculate_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                ages=spine_ages,
-                times=times,
-            )
-            + calculate_non_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                ages,
-                times=times,
-            )
+            + spine_log_density(
+                nested_terms(birth_rates, death_rates, times), spine_ages
+            ).sum()
+            + non_spine_log_density(
+                nested_terms(birth_rates, death_rates, times), ages
+            ).sum()
         )
 
         assert bool(jnp.isclose(result, expected))
@@ -214,18 +200,14 @@ class TestLikelihood:
                 ns=jnp.array([2], dtype=jnp.int32),
                 initial_population=1,
             )
-            + calculate_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
-                ages=jnp.array([1.0], dtype=jnp.float64),
-                times=times,
-            )
-            + calculate_non_spine_ages_log_lik(
-                birth_rates,
-                death_rates,
+            + spine_log_density(
+                nested_terms(birth_rates, death_rates, times),
+                jnp.array([1.0], dtype=jnp.float64),
+            ).sum()
+            + non_spine_log_density(
+                nested_terms(birth_rates, death_rates, times),
                 jnp.array([0.5], dtype=jnp.float64),
-                times=times,
-            )
+            ).sum()
         )
 
         assert bool(jnp.isclose(result, expected))
@@ -290,20 +272,14 @@ class TestLikelihood:
         for age in age_grid:
             age_tensor = jnp.array([float(age)], dtype=jnp.float64)
             non_spine_density = jnp.exp(
-                calculate_non_spine_ages_log_lik(
-                    birth_rates,
-                    death_rates,
-                    age_tensor,
-                    times=times,
-                ),
+                non_spine_log_density(
+                    nested_terms(birth_rates, death_rates, times), age_tensor
+                ).sum(),
             )
             spine_density = jnp.exp(
-                calculate_spine_ages_log_lik(
-                    birth_rates,
-                    death_rates,
-                    age_tensor,
-                    times=times,
-                ),
+                spine_log_density(
+                    nested_terms(birth_rates, death_rates, times), age_tensor
+                ).sum(),
             )
             expected_values.append(
                 ((num_individuals - 1) * non_spine_density + spine_density)
@@ -392,17 +368,17 @@ class TestLikelihood:
             times=times,
         )
 
-        all_non_spine = likelihood.calculate_populations_log_lik(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            times=times,
-            ns=jnp.array([3], dtype=jnp.int32),
-            initial_population=1,
-        ) + calculate_non_spine_ages_log_lik(
-            birth_rates,
-            death_rates,
-            ages,
-            times=times,
+        all_non_spine = (
+            likelihood.calculate_populations_log_lik(
+                birth_rates=birth_rates,
+                death_rates=death_rates,
+                times=times,
+                ns=jnp.array([3], dtype=jnp.int32),
+                initial_population=1,
+            )
+            + non_spine_log_density(
+                nested_terms(birth_rates, death_rates, times), ages
+            ).sum()
         )
 
         assert not bool(jnp.isclose(observed, all_non_spine))
