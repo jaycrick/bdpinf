@@ -30,7 +30,7 @@ from bdpinf.inference.fitting import (
     fit_birth_death_processes,
     fit_from_data_frame,
 )
-from bdpinf.inference.likelihood import negative_log_likelihood
+from bdpinf.inference.likelihood import log_likelihood
 from bdpinf.models.validation import _validate_times_properties
 from bdpinf.process import BirthDeathProcess
 
@@ -113,7 +113,9 @@ class TestFitting:
 
     def test_fit_birth_death_processes_defaults_to_unbias_true(self) -> None:
         assert (
-            inspect.signature(fit_birth_death_processes).parameters["unbias"].default
+            inspect.signature(fit_birth_death_processes)
+            .parameters["condition_on_survival"]
+            .default
             is True
         )
 
@@ -900,7 +902,7 @@ class TestFittingDiagnostics:
         log_params_initial = jnp.log(initial_params)
         constraints = ParameterConstraints()
         initial_nll = float(
-            negative_log_likelihood(
+            -log_likelihood(
                 birth_rates=log_params_initial[: len(times_tensor)],
                 death_rates=log_params_initial[len(times_tensor) :],
                 ages=non_spine_ages,

@@ -10,7 +10,6 @@ from .bayesian import (
     BayesianModelConfig,
     BayesianPriorConfig,
     fit_birth_death_processes_bayesian,
-    fit_birth_death_processes_bayesian_from_data_frame,
     mle_init_log_rates,
 )
 from .fitting import (
@@ -22,7 +21,6 @@ from .likelihood import (
     calculate_unknown_spine_mixture_age_density,
     calculate_unknown_spine_mixture_birth_density,
     log_likelihood,
-    negative_log_likelihood,
 )
 from .persistence import (
     load_posterior_samples,
@@ -46,14 +44,12 @@ __all__ = [
     "estimate_mle_covariance",
     "fit_birth_death_processes",
     "fit_birth_death_processes_bayesian",
-    "fit_birth_death_processes_bayesian_from_data_frame",
     "fit_from_data_frame",
     "get_crude_parameter_estimates",
     "load_posterior_samples",
     "load_recovery_results",
     "log_likelihood",
     "mle_init_log_rates",
-    "negative_log_likelihood",
     "save_posterior_samples",
     "save_recovery_results",
 ]

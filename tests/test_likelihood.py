@@ -67,6 +67,7 @@ class TestLikelihood:
             times=times,
             ns=jnp.array([1], dtype=jnp.int32),
             initial_population=1,
+            condition_on_survival=True,
         ) + _expected_unknown_spine_age_log_lik(
             birth_rates=birth_rates,
             death_rates=death_rates,
@@ -98,6 +99,7 @@ class TestLikelihood:
             death_rates=jnp.array([0.1], dtype=jnp.float64),
             ages=jnp.array([1.0], dtype=jnp.float64),
             times=jnp.array([2.0], dtype=jnp.float64),
+            condition_on_survival=False,
         )
         assert float(result) == pytest.approx(expected, rel=1e-12)
 
@@ -134,6 +136,7 @@ class TestLikelihood:
             times=times,
             ns=jnp.array([1], dtype=jnp.int32),
             initial_population=1,
+            condition_on_survival=True,
         ) + _expected_unknown_spine_age_log_lik(
             birth_rates=birth_rates,
             death_rates=death_rates,
@@ -166,6 +169,7 @@ class TestLikelihood:
                 times=times,
                 ns=jnp.array([2], dtype=jnp.int32),
                 initial_population=1,
+                condition_on_survival=True,
             )
             + spine_log_density(
                 nested_terms(birth_rates, death_rates, times), spine_ages
@@ -199,6 +203,7 @@ class TestLikelihood:
                 times=times,
                 ns=jnp.array([2], dtype=jnp.int32),
                 initial_population=1,
+                condition_on_survival=True,
             )
             + spine_log_density(
                 nested_terms(birth_rates, death_rates, times),
@@ -239,18 +244,6 @@ class TestLikelihood:
                 ages=jnp.array([-1.0], dtype=jnp.float64),
                 times=jnp.array([2.0], dtype=jnp.float64),
             )
-
-    def test_negative_log_likelihood(self) -> None:
-        """Test negative_log_likelihood returns negated log_likelihood value."""
-        kwargs = {
-            "birth_rates": jnp.array([0.5], dtype=jnp.float64),
-            "death_rates": jnp.array([0.2], dtype=jnp.float64),
-            "ages": jnp.array([1.0], dtype=jnp.float64),
-            "times": jnp.array([2.0], dtype=jnp.float64),
-        }
-        result = likelihood.negative_log_likelihood(**kwargs)
-        expected = -likelihood.log_likelihood(**kwargs)
-        assert bool(jnp.isclose(result, expected))
 
     def test_unknown_spine_mixture_age_density_matches_manual_formula(self) -> None:
         """Test the exported mixture-density helper matches the manual formula."""
@@ -321,6 +314,7 @@ class TestLikelihood:
             times=times,
             ns=jnp.array([3], dtype=jnp.int32),
             initial_population=1,
+            condition_on_survival=True,
         ) + _expected_unknown_spine_age_log_lik(
             birth_rates=birth_rates,
             death_rates=death_rates,
@@ -375,6 +369,7 @@ class TestLikelihood:
                 times=times,
                 ns=jnp.array([3], dtype=jnp.int32),
                 initial_population=1,
+                condition_on_survival=True,
             )
             + non_spine_log_density(
                 nested_terms(birth_rates, death_rates, times), ages

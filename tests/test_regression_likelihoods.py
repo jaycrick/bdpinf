@@ -139,7 +139,12 @@ class TestRegressionLikelihoods:
 
     def test_populations_log_lik_golden_n_equals_5(self) -> None:
         result = calculate_populations_log_lik(
-            _BIRTH, _DEATH, _NS_5, _TIMES, initial_population=1, unbias=False
+            _BIRTH,
+            _DEATH,
+            _NS_5,
+            _TIMES,
+            initial_population=1,
+            condition_on_survival=False,
         )
         np.testing.assert_allclose(
             float(result), _GOLDEN_POPULATIONS_LL_N5, atol=_ATOL, rtol=0.0
@@ -147,6 +152,7 @@ class TestRegressionLikelihoods:
 
     def test_combined_log_likelihood_golden_ten_ages(self) -> None:
         result = log_likelihood(
+            condition_on_survival=False,
             birth_rates=_BIRTH,
             death_rates=_DEATH,
             ages=_AGES_10,
@@ -178,7 +184,12 @@ class TestRegressionLikelihoods:
 
     def test_populations_log_lik_golden_ns_2_multi_epoch(self) -> None:
         result = calculate_populations_log_lik(
-            _BIRTH_2, _DEATH_2, _NS_2, _TIMES_2, initial_population=1, unbias=False
+            _BIRTH_2,
+            _DEATH_2,
+            _NS_2,
+            _TIMES_2,
+            initial_population=1,
+            condition_on_survival=False,
         )
         np.testing.assert_allclose(
             float(result), _GOLDEN_POPULATIONS_LL_NS_2_MULTI, atol=_ATOL, rtol=0.0
@@ -186,6 +197,7 @@ class TestRegressionLikelihoods:
 
     def test_combined_log_likelihood_golden_ten_ages_multi_epoch(self) -> None:
         result = log_likelihood(
+            condition_on_survival=False,
             birth_rates=_BIRTH_2,
             death_rates=_DEATH_2,
             ages=_AGES_10_MULTI,

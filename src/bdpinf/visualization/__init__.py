@@ -37,13 +37,6 @@ from .bayesian_plots import (
 )
 from .correlation_plots import correlation_heatmap_chart, posterior_rate_correlation
 from .date_distribution_plots import plot_date_range_kde_comparison
-from .parameter_plots import (
-    BoxPlotStyle,
-    KdePlotConfig,
-    compute_boxplot_summary,
-    create_kde_density_plot,
-    create_parameter_box_plot,
-)
 from .plotting import (
     convergence_chart,
     rate_ci_panel,
@@ -61,18 +54,13 @@ __all__ = [
     "DIVERGING_RDBU",
     "PTOLQUAL",
     "THEME_NAME",
-    "BoxPlotStyle",
-    "KdePlotConfig",
     "PriorPosteriorPanel",
     "PriorPosteriorRatePanel",
     "RatePanel",
     "TracePanel",
     "age_density_frame",
-    "compute_boxplot_summary",
     "convergence_chart",
     "correlation_heatmap_chart",
-    "create_kde_density_plot",
-    "create_parameter_box_plot",
     "display_svg",
     "get_figure_dir",
     "plot_conditioned_trajectories",

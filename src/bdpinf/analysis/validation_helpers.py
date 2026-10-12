@@ -21,7 +21,7 @@ class FitModelConfig:
     random_seed: int | None = None
     initial_birth_rates: NDArray[np.float64] | None = None
     initial_death_rates: NDArray[np.float64] | None = None
-    unbias: bool = True
+    condition_on_survival: bool = True
 
 
 def fit_single_model(
@@ -45,79 +45,12 @@ def fit_single_model(
         fit_kwargs["initial_birth_rates"] = config.initial_birth_rates
     if config.initial_death_rates is not None:
         fit_kwargs["initial_death_rates"] = config.initial_death_rates
-    fit_kwargs["unbias"] = config.unbias
+    fit_kwargs["condition_on_survival"] = config.condition_on_survival
 
     try:
         return fit_birth_death_processes(**fit_kwargs)
     except Exception:
         return None
-
-
-def first_failed_fits(
-    fitted_models: list[dict[str, Any] | None],
-    ages_by_fit: list[NDArray[np.float64]],
-    start_index: int = 0,
-    max_items: int = 3,
-) -> list[dict[str, Any]]:
-    """Return failed-fit metadata sorted by population size descending."""
-
-    def _failure_reason(model: dict[str, Any] | None) -> str:
-        if model is None:
-            return "fit returned None (empty ages or fitting exception)"
-
-        optimization_result = model.get("optimization_result")
-        if isinstance(optimization_result, dict):
-            attempts = optimization_result.get("attempts")
-            if isinstance(attempts, list) and len(attempts) > 0:
-                selected_attempt_index = optimization_result.get(
-                    "selected_attempt_index",
-                )
-                selected_attempt: dict[str, Any] | None = None
-
-                if isinstance(selected_attempt_index, int) and (
-                    0 <= selected_attempt_index < len(attempts)
-                ):
-                    selected = attempts[selected_attempt_index]
-                    if isinstance(selected, dict):
-                        selected_attempt = selected
-
-                if selected_attempt is None:
-                    first_attempt = attempts[0]
-                    if isinstance(first_attempt, dict):
-                        selected_attempt = first_attempt
-
-                if selected_attempt is not None:
-                    exception_type = selected_attempt.get("exception_type")
-                    exception_message = selected_attempt.get("exception")
-                    if exception_type and exception_message:
-                        return f"{exception_type}: {exception_message}"
-                    if exception_message:
-                        return str(exception_message)
-
-            if optimization_result.get("converged") is False:
-                return "optimizer did not converge"
-
-        return "fit marked unsuccessful without error details"
-
-    failed: list[dict[str, Any]] = []
-    for idx, model in enumerate(fitted_models):
-        is_failure = model is None or not model.get("success", False)
-        if not is_failure:
-            continue
-
-        failed_ages = np.asarray(ages_by_fit[idx], dtype=np.float64)
-        failed.append(
-            {
-                "local_index": idx,
-                "simulation_index": idx + start_index,
-                "population": len(failed_ages),
-                "ages": failed_ages,
-                "reason": _failure_reason(model),
-            },
-        )
-
-    failed.sort(key=lambda item: (-int(item["population"]), int(item["local_index"])))
-    return failed[:max_items]
 
 
 def iqr_plotting_subset(
@@ -464,54 +397,6 @@ def get_selected_attempt(result: dict[str, Any]) -> dict[str, Any] | None:
             return dict(attempts[selected_attempt_index])
         return dict(attempts[0])
     return None
-
-
-def extract_epoch_parameter_arrays(
-    models: list[dict[str, Any] | None],
-) -> dict[str, NDArray[np.float64]]:
-    """Extract per-epoch birth and death rate arrays from a list of fit results.
-
-    Parameters
-    ----------
-    models : list[dict[str, Any] | None]
-        List of fit result dicts as returned by ``fit_birth_death_processes``.
-        ``None`` entries and unsuccessful fits are skipped.
-
-    Returns
-    -------
-    dict[str, NDArray[np.float64]]
-        Dictionary with keys ``"epoch_1_birth"``, ``"epoch_1_death"``,
-        ``"epoch_2_birth"``, ``"epoch_2_death"``. Each value is a float64
-        array of the corresponding rate across successful fits (empty if none).
-
-    """
-    successful = [m for m in models if m is not None and m.get("success", False)]
-    empty: NDArray[np.float64] = np.array([], dtype=np.float64)
-    if not successful:
-        return {
-            "epoch_1_birth": empty,
-            "epoch_1_death": empty,
-            "epoch_2_birth": empty,
-            "epoch_2_death": empty,
-        }
-    return {
-        "epoch_1_birth": np.asarray(
-            [float(np.atleast_1d(m["birth_rates"])[0]) for m in successful],
-            dtype=np.float64,
-        ),
-        "epoch_1_death": np.asarray(
-            [float(np.atleast_1d(m["death_rates"])[0]) for m in successful],
-            dtype=np.float64,
-        ),
-        "epoch_2_birth": np.asarray(
-            [float(np.atleast_1d(m["birth_rates"])[1]) for m in successful],
-            dtype=np.float64,
-        ),
-        "epoch_2_death": np.asarray(
-            [float(np.atleast_1d(m["death_rates"])[1]) for m in successful],
-            dtype=np.float64,
-        ),
-    }
 
 
 def has_ages_in_each_epoch(

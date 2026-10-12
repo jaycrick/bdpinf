@@ -17,9 +17,6 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from bdpinf.inference.likelihood import log_likelihood as _log_likelihood
-from bdpinf.inference.likelihood import (
-    negative_log_likelihood as _negative_log_likelihood,
-)
 from bdpinf.models.genealogy import genealogy_dfs_order as _genealogy_dfs_order
 from bdpinf.models.validation import (
     ValidationConfig,
@@ -72,7 +69,7 @@ class BirthDeathProcess:
         a preorder DFS ordering for the rooted genealogy used by the
         serializer and plotting helpers. Pass an instance directly to
         :func:`bdpinf.visualization.genealogy.plot_genealogy_tree` to render it.
-    - `log_likelihood` / `negative_log_likelihood`: compute the likelihood
+    - `log_likelihood`: compute the likelihood
         given per-epoch `birth_rates` and `death_rates` (stored internally as
         `jax.Array`).
     - `update_parameters`: update the model parameters after fitting.
@@ -778,7 +775,7 @@ class BirthDeathProcess:
             return ages[1:], ages[:1]
         return ages, None
 
-    def log_likelihood(self, unbias: bool = True) -> jax.Array:
+    def log_likelihood(self, condition_on_survival: bool = True) -> jax.Array:
         """Compute log-likelihood directly from the current model state.
 
         Raises
@@ -798,23 +795,7 @@ class BirthDeathProcess:
             ages=ages,
             times=self.adjusted_epoch_end_times,
             spine_ages=spine_ages,
-            unbias=unbias,
-        )
-
-    def negative_log_likelihood(self, unbias: bool = True) -> jax.Array:
-        """Compute negative log-likelihood directly from the current model state."""
-        if self._birth_rates is None or self._death_rates is None:
-            msg = "birth_rates and death_rates must be set before likelihood calls"
-            raise ValueError(msg)
-
-        ages, spine_ages = self._likelihood_ages()
-        return _negative_log_likelihood(
-            birth_rates=self._birth_rates,
-            death_rates=self._death_rates,
-            ages=ages,
-            times=self.adjusted_epoch_end_times,
-            spine_ages=spine_ages,
-            unbias=unbias,
+            condition_on_survival=condition_on_survival,
         )
 
     def update_parameters(

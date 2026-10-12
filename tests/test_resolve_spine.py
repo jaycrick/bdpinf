@@ -73,7 +73,7 @@ class TestProcessUsesLabelledSpine:
             ages=jnp.array([2.0, 4.0, 6.5]),
             times=jnp.array([5.0, _T]),
             spine_ages=jnp.array([7.0]),
-            unbias=True,
+            condition_on_survival=True,
         )
         assert float(process.log_likelihood()) == pytest.approx(float(explicit))
         unknown = log_likelihood(
@@ -81,6 +81,6 @@ class TestProcessUsesLabelledSpine:
             jnp.array(death),
             ages=jnp.array([7.0, 2.0, 4.0, 6.5]),
             times=jnp.array([5.0, _T]),
-            unbias=True,
+            condition_on_survival=True,
         )
         assert float(process.log_likelihood()) != pytest.approx(float(unknown))

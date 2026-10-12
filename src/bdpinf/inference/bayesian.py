@@ -31,14 +31,13 @@ import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, TypedDict, Unpack
+from typing import Any, TypedDict
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import numpyro
 import numpyro.distributions as dist
-import pandas as pd
 from numpy.typing import NDArray
 from numpyro.infer import MCMC, NUTS
 
@@ -199,7 +198,7 @@ class BayesianModelConfig:
         ``None``.
     initial_population : int
         Size of the ancestral population at time 0.
-    unbias : bool
+    condition_on_survival : bool
         Condition on non-extinction when computing the population likelihood.
     rng_seed : int | None
         Seed for the JAX PRNG (reproducibility).
@@ -219,7 +218,7 @@ class BayesianModelConfig:
     spine_ages: jax.Array | NDArray[np.float64] | None = None
     population_sizes: jax.Array | NDArray[np.float64] | None = None
     initial_population: int = 1
-    unbias: bool = True
+    condition_on_survival: bool = True
     rng_seed: int | None = None
     constraints: ParameterConstraints | None = None
     init_log_rates: jax.Array | NDArray[np.float64] | None = None
@@ -258,7 +257,7 @@ class BayesianModelData:
     spine_ages: NDArray[np.float64] | None  # explicit or auto-detected
     ns: NDArray[np.int32]  # population sizes per epoch
     initial_population: int
-    unbias: bool
+    condition_on_survival: bool
     # Prior arrays for the free parameters only (already sliced to free indices)
     free_prior_locs: NDArray[np.float64]  # shape [n_free]
     free_prior_scales: NDArray[np.float64]  # shape [n_free]
@@ -397,7 +396,7 @@ class BayesianLikelihoodModel:
             times=times_jax,
             ns=ns_jax,
             initial_population=md.initial_population,
-            unbias=md.unbias,
+            condition_on_survival=md.condition_on_survival,
             use_unknown_spine_marginal=md.use_unknown_spine_marginal,
             skip_normalization=True,
         )
@@ -646,7 +645,7 @@ def fit_birth_death_processes_bayesian(
         Observation time(s) — one value per epoch.
     model_config : BayesianModelConfig | None
         Model options: ordered inputs, spine ages, population sizes, initial
-        population, unbias, constraints, and RNG seed.  Defaults to
+        population, condition_on_survival, constraints, and RNG seed.  Defaults to
         ``BayesianModelConfig()``.
     mcmc_config : BayesianMCMCConfig | None
         NUTS/MCMC configuration.  Defaults to ``BayesianMCMCConfig()``.
@@ -748,7 +747,7 @@ def fit_birth_death_processes_bayesian(
         spine_ages=spine_np,
         ns=ns_np,
         initial_population=model_config.initial_population,
-        unbias=model_config.unbias,
+        condition_on_survival=model_config.condition_on_survival,
         free_prior_locs=free_prior_locs,
         free_prior_scales=free_prior_scales,
         constraints=constraints,
@@ -851,57 +850,3 @@ def fit_birth_death_processes_bayesian(
         },
         "n_epochs": n_epochs,
     }
-
-
-def fit_birth_death_processes_bayesian_from_data_frame(
-    df: pd.DataFrame,
-    times: float | NDArray[np.float64] | jax.Array,
-    *,
-    age_column: str | None = None,
-    **fit_kwargs: Unpack[BayesianFitKwargs],
-) -> dict[str, Any]:
-    """Run Bayesian birth-death inference from a DataFrame age column.
-
-    Automatically detects an ``age``, ``ages``, or ``age_*`` column if
-    ``age_column`` is not specified.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame containing age observations.
-    times : float | ndarray | jax.Array
-        Observation time(s).
-    age_column : str | None
-        Column name containing ages.  Auto-detected if ``None``.
-    **fit_kwargs : BayesianFitKwargs
-        Forwarded to :func:`fit_birth_death_processes_bayesian`.
-
-    Returns
-    -------
-    dict[str, Any]
-        Same return schema as :func:`fit_birth_death_processes_bayesian`.
-
-    """
-    if age_column is None or age_column not in df.columns:
-        exact_matches = [col for col in df.columns if col in ("age", "ages")]
-        prefix_matches = [col for col in df.columns if col.startswith("age_")]
-        candidates = exact_matches or prefix_matches
-        if not candidates:
-            msg = (
-                f"Column '{age_column if age_column is not None else 'of ages'}' "
-                "not found, and no 'age', 'ages', or 'age_*' columns were found."
-            )
-            raise ValueError(msg)
-        if len(candidates) > 1:
-            msg = f"Multiple age columns found: {candidates}"
-            raise ValueError(msg)
-        age_column = candidates[0]
-
-    ages_array = df[age_column].to_numpy(dtype=np.float64, copy=True)
-    times_array = np.asarray(times, dtype=np.float64)
-
-    return fit_birth_death_processes_bayesian(
-        list_of_ages=[ages_array],
-        times=times_array,
-        **fit_kwargs,
-    )

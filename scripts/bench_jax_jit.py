@@ -106,7 +106,7 @@ def _make_nll_fn(
             times=times,
             ns=ns,
             initial_population=1,
-            unbias=True,
+            condition_on_survival=True,
             _skip_normalization=True,
         )
         spine_ll = spine_log_density(
@@ -402,7 +402,7 @@ def bench_fitter(
             _fit_kwargs: dict[str, Any] = {
                 "optimizers": ["LBFGS"],
                 "estimate_uncertainty": False,
-                "unbias": True,
+                "condition_on_survival": True,
             }
 
             # Cold: first call — includes JIT compilation on the first optimizer step

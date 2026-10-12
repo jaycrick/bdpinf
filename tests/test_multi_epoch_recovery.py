@@ -195,7 +195,9 @@ class TestSimulateZeroBirthSecondEpoch:
 class TestFitZeroBirthReplicate:
     """Test fit_zero_birth_replicate."""
 
-    _CONFIG = FitModelConfig(times=np.array([7.5, 15.0]), is_ordered=True, unbias=True)
+    _CONFIG = FitModelConfig(
+        times=np.array([7.5, 15.0]), is_ordered=True, condition_on_survival=True
+    )
     _CONSTRAINTS = ParameterConstraints(
         fixed_params={1: 1e-12}, equality_groups=[[2, 3]]
     )

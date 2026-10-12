@@ -226,7 +226,7 @@ class TestPopulation:
                 *_arrays(times, birth, death)[:2],
                 counts,
                 jnp.array(times),
-                unbias=True,
+                condition_on_survival=True,
             )
         )
         want = sum(-z * log_w + (z - 1) * log_w1 for z in (1, 4, 9))

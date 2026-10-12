@@ -28,6 +28,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `models.math_age_densities`: `log_nested_w` and `age_log_densities` renamed `log_nested_w_general` and `age_log_densities_general` to stop clashing with `math_nested`.
 
+- `unbias` renamed `condition_on_survival` everywhere; `log_likelihood()` now defaults to `True`, matching `BirthDeathProcess.log_likelihood()` and `fit_birth_death_processes()` (it was `False` in the free function).
+  `calculate_populations_log_lik` keeps its unconditional default.
+
+- `negative_log_likelihood` (free function and `BirthDeathProcess` method) removed; negate `log_likelihood`.
+
+- Removed unused API: `utils.ensure_directory`, `analysis.{compute_parameter_summary, extract_rate_arrays, summarize_fit_success, extract_epoch_parameter_arrays, first_failed_fits}`, `visualization.parameter_plots` and `inference.fit_birth_death_processes_bayesian_from_data_frame`.
+
 - `calculate_unknown_spine_mixture_age_density` and the age samplers evaluate densities in one vectorised pass instead of one call per age.
 
 - Population and age likelihoods are computed from the paper's $\mathcal W$ (restart principle) in one $O(K+n\log K)$ pass; the time-reversal machinery was removed (`_reverse_time`, `calculate_log_lik_lifetimes`, `calculate_log_pr_extinction_given_initial_lifetimes`, `calculate_log_lik_initial_lifetimes_given_(non_)extinction`).

@@ -104,7 +104,7 @@ class TestPopulationProbability:
             death_rate,
             times=time,
             ns=n,
-            unbias=True,
+            condition_on_survival=True,
         )
 
         expected = math.log1p(-beta_t) + (n - 1) * math.log(beta_t)

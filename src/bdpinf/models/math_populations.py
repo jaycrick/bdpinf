@@ -263,7 +263,7 @@ def calculate_populations_log_lik(
     times: Float[Array, " epochs"],
     *,
     initial_population: int = 1,
-    unbias: bool = False,
+    condition_on_survival: bool = False,
     _skip_normalization: bool = False,
 ) -> Float[Array, ""]:
     r"""Log P(Z_T = n) summed over provided counts.
@@ -278,7 +278,7 @@ def calculate_populations_log_lik(
         Shape (m,) float64 (or int64-valued float64) population counts.
     initial_population : int
         Z_0. Default 1.
-    unbias : bool
+    condition_on_survival : bool
         If True and initial_population == 1, condition on non-extinction for
         positive counts: :math:`\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}`.
 
@@ -298,7 +298,7 @@ def calculate_populations_log_lik(
             birth_rates, death_rates, times
         )
 
-    if not unbias:
+    if not condition_on_survival:
         log_pr = calculate_populations_log_pmf(
             birth_rates,
             death_rates,
@@ -309,7 +309,8 @@ def calculate_populations_log_lik(
         )
         return jnp.where(jnp.all(jnp.isfinite(log_pr)), log_pr.sum(), _ninf)
 
-    # unbias=True path (initial_population==1 only): condition on non-extinction.
+    # condition_on_survival=True path (initial_population==1 only):
+    # condition on non-extinction.
     log_alpha, _, log_beta, log_pi = _population_logs(birth_rates, death_rates, times)
     zero_mask = ns == 0
     log_term3 = jnp.where(ns == 1, _zero, _safe_mul(ns - 1.0, log_beta))

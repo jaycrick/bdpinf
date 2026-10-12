@@ -85,7 +85,7 @@ base_fit_kwargs = dict(
     is_ordered=True,
     perturb_initial_params_std=0.0,
     random_seed=NOTEBOOK_SEED,
-    unbias=True,
+    condition_on_survival=True,
 )
 
 configs = []

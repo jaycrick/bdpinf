@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import jax.scipy.special
 
-from .likelihood import negative_log_likelihood
+from .likelihood import log_likelihood
 
 
 def _is_positive_definite(matrix: jax.Array) -> bool:
@@ -69,14 +69,14 @@ def estimate_mle_covariance(
     spine_ages_tensor: jax.Array | None,
     population_sizes_tensor: jax.Array,
     initial_population: int,
-    unbias: bool = True,
+    condition_on_survival: bool = True,
 ) -> jax.Array:
     """Estimate covariance of fitted log-parameters using the Hessian."""
     theta_hat = jnp.array(free_log_params, dtype=jnp.float64)
 
     def objective(theta_free: jax.Array) -> jax.Array:
         full_log_params = full_log_params_fn(theta_free)
-        return negative_log_likelihood(
+        return -log_likelihood(
             birth_rates=full_log_params[:n_epochs],
             death_rates=full_log_params[n_epochs:],
             ages=non_spine_ages,
@@ -84,7 +84,7 @@ def estimate_mle_covariance(
             spine_ages=spine_ages_tensor,
             ns=population_sizes_tensor,
             initial_population=initial_population,
-            unbias=unbias,
+            condition_on_survival=condition_on_survival,
             is_ordered=False,
             log_scale_params=True,
         )

@@ -23,7 +23,7 @@ __compile_start = time.perf_counter()
 import numpy as np
 
 from bdpinf.analysis import FitModelConfig, fit_single_model
-from bdpinf.inference import negative_log_likelihood
+from bdpinf.inference import log_likelihood
 from bdpinf.inference.fitting import get_crude_parameter_estimates
 from bdpinf.simulation import simulate_birth_death_process
 ```
@@ -62,7 +62,7 @@ else:
     spine_ages = None
     non_spine_ages = ages
 
-initial_nll = negative_log_likelihood(
+initial_nll = -log_likelihood(
     birth_rates=init_birth,
     death_rates=init_death,
     ages=non_spine_ages,

@@ -15,7 +15,7 @@ import optax
 from numpy.typing import NDArray
 
 from bdpinf.models.validation import (
-    normalize_and_validate_inputs as _jax_normalize,
+    normalize_and_validate_inputs,
 )
 from bdpinf.utils import ensure_1d_tensor
 
@@ -34,16 +34,10 @@ from ._optimizer_runners import (
 )
 from .likelihood import (
     _log_likelihood_core,  # pyright: ignore[reportPrivateUsage]
-    negative_log_likelihood,
+    log_likelihood,
     resolve_spine_ages,
 )
 from .uncertainty import estimate_mle_covariance
-
-
-def normalize_and_validate_inputs(**kwargs: object) -> tuple[jax.Array, ...]:
-    """Validate via the JAX layer and return JAX arrays."""
-    return tuple(_jax_normalize(**kwargs))
-
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +52,7 @@ class FitKwargs(TypedDict, total=False):
     population_sizes: jax.Array | NDArray[np.float64] | None
     initial_population: int
     optimizers: Sequence[str] | str
-    unbias: bool
+    condition_on_survival: bool
     optimizer_kwargs: dict[str, dict[str, Any]] | None
     perturb_initial_params_std: float
     random_seed: int | None
@@ -250,7 +244,7 @@ def fit_birth_death_processes(
     optimizer_kwargs: dict[str, dict[str, Any]] | None = None,
     perturb_initial_params_std: float = 0.0,
     random_seed: int | None = None,
-    unbias: bool = True,
+    condition_on_survival: bool = True,
     convergence_config: ConvergenceConfig | None = None,
     param_constraints: ParameterConstraints | None = None,
     estimate_uncertainty: bool = True,
@@ -292,7 +286,7 @@ def fit_birth_death_processes(
         If True (default), estimate uncertainty via the observed Fisher
         information (Hessian of NLL in free log-parameter space). The returned
         covariance is in the full log-parameter space.
-    unbias : bool
+    condition_on_survival : bool
         If True (default), use the conditional non-extinction population mass
         for positive counts when evaluating the likelihood.
 
@@ -362,7 +356,7 @@ def fit_birth_death_processes(
         spine_ages_tensor=spine_ages_tensor,
         population_sizes_tensor=population_sizes_tensor,
         initial_population=initial_population,
-        unbias=unbias,
+        condition_on_survival=condition_on_survival,
         convergence_config=convergence_config,
         param_constraints=param_constraints,
     )
@@ -387,7 +381,7 @@ def fit_birth_death_processes(
         spine_ages_tensor=spine_ages_tensor,
         population_sizes_tensor=population_sizes_tensor,
         initial_population=initial_population,
-        unbias=unbias,
+        condition_on_survival=condition_on_survival,
     )
     if finalized is None:
         return {
@@ -435,7 +429,7 @@ def fit_birth_death_processes(
             spine_ages_tensor=spine_ages_tensor,
             population_sizes_tensor=population_sizes_tensor,
             initial_population=initial_population,
-            unbias=unbias,
+            condition_on_survival=condition_on_survival,
         )
         result["uncertainty"] = np.array(covariance)
 
@@ -562,7 +556,7 @@ def _run_optimizer_strategies(
     initial_population: int,
     convergence_config: ConvergenceConfig,
     param_constraints: ParameterConstraints | None = None,
-    unbias: bool = True,
+    condition_on_survival: bool = True,
 ) -> OptimizerRunResult:
     """Run optimizers sequentially until convergence; return params and metadata."""
     if param_constraints is None:
@@ -579,7 +573,7 @@ def _run_optimizer_strategies(
     log_params = log_params_initial
 
     # ------------------------------------------------------------------
-    # Host-side spine pre-resolution (mirrors log_likelihood lines 216-232).
+    # Host-side spine pre-resolution (same resolution as ``log_likelihood``).
     # We resolve all data-dependent and host-side branches here once so the
     # jitted NLL core sees only static-shape, concrete closure constants.
     # ------------------------------------------------------------------
@@ -627,7 +621,7 @@ def _run_optimizer_strategies(
             times=_jit_times,
             ns=_jit_ns,
             initial_population=initial_population,
-            unbias=unbias,
+            condition_on_survival=condition_on_survival,
             use_unknown_spine_marginal=_use_unknown_spine,
             skip_normalization=True,
         )
@@ -1040,10 +1034,10 @@ def _finalize_fit(
     spine_ages_tensor: jax.Array | None,
     population_sizes_tensor: jax.Array,
     initial_population: int = 1,
-    unbias: bool = True,
+    condition_on_survival: bool = True,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], float, float] | None:
     """Convert log params to original scale; return rates + final likelihoods."""
-    final_nll = negative_log_likelihood(
+    final_nll = -log_likelihood(
         birth_rates=log_params[:n_epochs],
         death_rates=log_params[n_epochs:],
         ages=non_spine_ages,
@@ -1051,7 +1045,7 @@ def _finalize_fit(
         spine_ages=spine_ages_tensor,
         ns=population_sizes_tensor,
         initial_population=initial_population,
-        unbias=unbias,
+        condition_on_survival=condition_on_survival,
         is_ordered=False,
         log_scale_params=True,
     )

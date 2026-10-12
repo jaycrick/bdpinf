@@ -57,7 +57,6 @@ _LAYERS: dict[str, int] = {
     "bdpinf.visualization.correlation_plots": 8,
     "bdpinf.visualization.date_distribution_plots": 8,
     "bdpinf.visualization.genealogy": 8,
-    "bdpinf.visualization.parameter_plots": 8,
     "bdpinf.visualization.plotting": 8,
     "bdpinf.visualization.splitting_plots": 8,
     "bdpinf.visualization": 8,

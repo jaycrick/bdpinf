@@ -123,7 +123,6 @@ reference:
       - visualization.genealogy.plot_genealogy_tree
       - visualization.bayesian_plots
       - visualization.splitting_plots
-      - visualization.parameter_plots
       - visualization.plotting
       - visualization.age_fit_plot
       - visualization.age_density_plots

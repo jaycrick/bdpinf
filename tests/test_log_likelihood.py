@@ -3,7 +3,7 @@
 import numpy as np
 from numpy.testing import assert_allclose
 
-from bdpinf.inference.likelihood import log_likelihood, negative_log_likelihood
+from bdpinf.inference.likelihood import log_likelihood
 from bdpinf.models.math_nested import (
     nested_terms,
     non_spine_log_density,
@@ -168,7 +168,7 @@ class TestLogLikelihood:
 
         # Use log-scale parameters as expected by negative_log_likelihood
         ages = process.ages
-        result = negative_log_likelihood(
+        result = -log_likelihood(
             np.log(0.01),
             np.log(0.005),
             ages=ages,
@@ -192,7 +192,7 @@ class TestLogLikelihood:
         # Use log-scale parameters as expected by negative_log_likelihood
         birth_rate, death_rate = 0.01, 0.005
         ages = process.ages
-        result = negative_log_likelihood(
+        result = -log_likelihood(
             birth_rate,
             death_rate,
             ages=ages,
@@ -524,7 +524,7 @@ class TestLogLikelihood:
         final_time = 400.0
 
         # Single epoch
-        result_single = negative_log_likelihood(
+        result_single = -log_likelihood(
             birth_rates=birth_rate,
             death_rates=death_rate,
             ages=ages,
@@ -536,7 +536,7 @@ class TestLogLikelihood:
         birth_rates_multi = np.array([birth_rate, birth_rate])
         death_rates_multi = np.array([death_rate, death_rate])
 
-        result_multi = negative_log_likelihood(
+        result_multi = -log_likelihood(
             birth_rates=birth_rates_multi,
             death_rates=death_rates_multi,
             ages=ages,

@@ -2,17 +2,11 @@
 
 from collections.abc import Callable
 from numbers import Integral, Real
-from pathlib import Path
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
-
-
-def ensure_directory(path: str) -> None:
-    """Ensure a directory exists, creating it if necessary."""
-    Path(path).mkdir(parents=True, exist_ok=True)
 
 
 def format_ordinal(n: int) -> str:

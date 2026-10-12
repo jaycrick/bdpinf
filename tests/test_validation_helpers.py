@@ -11,8 +11,6 @@ from bdpinf.analysis import (
     boundary_corrected_kde_at_zero,
     boundary_corrected_kde_on_support,
     build_hist_bins,
-    extract_epoch_parameter_arrays,
-    first_failed_fits,
     fit_single_model,
     get_selected_attempt,
     has_ages_in_each_epoch,
@@ -107,69 +105,13 @@ class TestValidationHelpers:
         assert x_weighted is not None and y_weighted is not None
         np.testing.assert_allclose(y_weighted, y_unweighted, rtol=1e-10)
 
-    def test_first_failed_fits_returns_original_indices(self) -> None:
-        fitted_models = [
-            {"success": True},
-            None,
-            {
-                "success": False,
-                "optimization_result": {
-                    "converged": False,
-                    "selected_attempt_index": 0,
-                    "attempts": [
-                        {
-                            "exception_type": "RuntimeError",
-                            "exception": "boom",
-                        },
-                    ],
-                },
-            },
-            {"success": True},
-            {
-                "success": False,
-                "optimization_result": {
-                    "converged": False,
-                    "selected_attempt_index": 0,
-                    "attempts": [
-                        {
-                            "exception_type": None,
-                            "exception": None,
-                        },
-                    ],
-                },
-            },
-        ]
-        ages = [
-            np.array([1.0]),
-            np.array([2.0, 3.0]),
-            np.array([4.0]),
-            np.array([5.0]),
-            np.array([6.0, 7.0, 8.0]),
-        ]
-
-        failed = first_failed_fits(
-            fitted_models=fitted_models,
-            ages_by_fit=ages,
-            start_index=10,
-            max_items=3,
-        )
-
-        assert len(failed) == 3
-        assert [item["simulation_index"] for item in failed] == [14, 11, 12]
-        assert [item["population"] for item in failed] == [3, 2, 1]
-        assert [item["reason"] for item in failed] == [
-            "optimizer did not converge",
-            "fit returned None (empty ages or fitting exception)",
-            "RuntimeError: boom",
-        ]
-
     def test_fit_single_model_handles_empty_input(self) -> None:
         config = FitModelConfig(times=1000.0)
         result = fit_single_model(np.array([], dtype=np.float64), config)
         assert result is None
 
     def test_fit_model_config_defaults_to_unbias_true(self) -> None:
-        assert FitModelConfig(times=1000.0).unbias is True
+        assert FitModelConfig(times=1000.0).condition_on_survival is True
 
     def test_fit_single_model_forwards_unbias_default(self, monkeypatch) -> None:
         captured: dict[str, object] = {}
@@ -190,7 +132,7 @@ class TestValidationHelpers:
         )
 
         assert result == {"success": True}
-        assert captured["unbias"] is True
+        assert captured["condition_on_survival"] is True
 
     def test_iqr_plotting_subset_removes_row_outliers(self) -> None:
         plotting_data, mask = iqr_plotting_subset(
@@ -234,42 +176,6 @@ class TestNewValidationHelpers:
         ages = np.array([100.0, 200.0])
         times = np.array([300.0, 1000.0])
         assert has_ages_in_each_epoch(ages, times) is False
-
-    def test_extract_epoch_parameter_arrays_keys_present(self) -> None:
-        models = [
-            {
-                "success": True,
-                "birth_rates": np.array([0.05, 0.03]),
-                "death_rates": np.array([0.02, 0.01]),
-            },
-        ]
-        result = extract_epoch_parameter_arrays(models)
-        assert set(result.keys()) == {
-            "epoch_1_birth",
-            "epoch_1_death",
-            "epoch_2_birth",
-            "epoch_2_death",
-        }
-        assert result["epoch_1_birth"][0] == pytest.approx(0.05)
-        assert result["epoch_2_death"][0] == pytest.approx(0.01)
-
-    def test_extract_epoch_parameter_arrays_excludes_none_and_failures(self) -> None:
-        models = [
-            None,
-            {
-                "success": False,
-                "birth_rates": np.array([0.05, 0.03]),
-                "death_rates": np.array([0.02, 0.01]),
-            },
-            {
-                "success": True,
-                "birth_rates": np.array([0.04, 0.02]),
-                "death_rates": np.array([0.01, 0.005]),
-            },
-        ]
-        result = extract_epoch_parameter_arrays(models)
-        assert len(result["epoch_1_birth"]) == 1
-        assert result["epoch_1_birth"][0] == pytest.approx(0.04)
 
     def test_build_hist_bins_covers_full_range(self) -> None:
         result = build_hist_bins(

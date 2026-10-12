@@ -86,7 +86,7 @@ def log_likelihood(
     spine_ages: object | None = None,
     ns: object | None = None,
     initial_population: int = 1,
-    unbias: bool = False,
+    condition_on_survival: bool = True,
     is_ordered: bool = False,
     log_scale_params: bool = False,
 ) -> jnp.ndarray:
@@ -154,6 +154,10 @@ def log_likelihood(
         a single population with one count per provided age is assumed.
     initial_population: int
         Initial population size.
+    condition_on_survival : bool, optional
+        If True (default), condition the population-count term on the process
+        not having gone extinct by ``T`` (the observed individuals imply survival).
+        Only affects the count term, and only for ``initial_population == 1``.
     is_ordered : bool, optional
         If True, the first element of ages is treated as a spine and the rest as
         ordinary observations. Cannot be used together with spine_ages. When False
@@ -281,7 +285,7 @@ def log_likelihood(
         times=times,
         ns=ns_arr,
         initial_population=initial_population,
-        unbias=unbias,
+        condition_on_survival=condition_on_survival,
         use_unknown_spine_marginal=use_unknown_spine_marginal,
         skip_normalization=False,
     )
@@ -296,7 +300,7 @@ def _log_likelihood_core(
     ns: jnp.ndarray,
     *,
     initial_population: int = 1,
-    unbias: bool = False,
+    condition_on_survival: bool = True,
     use_unknown_spine_marginal: bool = True,
     skip_normalization: bool = True,
 ) -> jnp.ndarray:
@@ -333,7 +337,7 @@ def _log_likelihood_core(
         (closure JAX arrays are abstract inside ``jax.jit``).
     initial_population : int
         Initial population size (static, Python int).
-    unbias : bool
+    condition_on_survival : bool
         Condition on non-extinction for positive counts (static, Python bool).
     use_unknown_spine_marginal : bool
         If True, ``non_spine_ages`` contains all ages and the spine position
@@ -361,7 +365,7 @@ def _log_likelihood_core(
         times=times,
         ns=ns,
         initial_population=initial_population,
-        unbias=unbias,
+        condition_on_survival=condition_on_survival,
         _skip_normalization=skip_normalization,
     )
 
@@ -518,65 +522,4 @@ def calculate_unknown_spine_mixture_birth_density(
         age_grid=age_grid,
         times=times,
         num_individuals=num_individuals,
-    )
-
-
-def negative_log_likelihood(
-    birth_rates: object,
-    death_rates: object,
-    ages: object,
-    times: object,
-    *,
-    spine_ages: object | None = None,
-    ns: object | None = None,
-    initial_population: int = 1,
-    unbias: bool = False,
-    is_ordered: bool = False,
-    log_scale_params: bool = False,
-) -> jnp.ndarray:
-    """Compute the negative log-likelihood for use with numerical optimizers.
-
-    This function is a thin wrapper around log_likelihood that negates its
-    value so it can be minimized by optimizers.
-    It expects the model's birth and death rates
-    (or their logarithms, see log_scale_params).
-
-    Parameters
-    ----------
-    birth_rates : float | jax.Array
-        Birth rate parameter(s) λ > 0, or log(λ) if log_scale_params is True.
-    death_rates : float | jax.Array
-        Death rate parameter(s) μ > 0, or log(μ) if log_scale_params is True.
-    ages : jax.Array | float
-        Ages of observed individuals (or a single age).
-    times : jax.Array | float
-        Observation times (> 0) at which the population/ages are observed.
-    spine_ages : jax.Array | None, optional
-        Optional spine ages required by some likelihood formulations.
-    ns : jax.Array | None, optional
-        Optional counts/weights associated with each age.
-    initial_population: int
-        Initial population size.
-    is_ordered : bool, default False
-        If True, interpret ``ages`` as ordered-event data.
-    log_scale_params : bool, default False
-        If True, parameters are provided in log-space.
-
-    Returns
-    -------
-    jnp.ndarray
-        The negative log-likelihood (i.e. -log_likelihood).
-
-    """
-    return -log_likelihood(
-        birth_rates=birth_rates,
-        death_rates=death_rates,
-        ages=ages,
-        times=times,
-        spine_ages=spine_ages,
-        ns=ns,
-        initial_population=initial_population,
-        unbias=unbias,
-        is_ordered=is_ordered,
-        log_scale_params=log_scale_params,
     )

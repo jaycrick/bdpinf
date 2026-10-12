@@ -151,7 +151,7 @@ def fit_zero_birth_replicate(
             is_ordered=config.is_ordered,
             perturb_initial_params_std=config.perturb_initial_params_std or 0.0,
             random_seed=config.random_seed,
-            unbias=config.unbias,
+            condition_on_survival=config.condition_on_survival,
             param_constraints=constraints,
         )
     except Exception:
