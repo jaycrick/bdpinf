@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `qmd_scripts/validation/survival_conditioned_simulation/` (`01_simulator_comparison`, `02_subcritical_splitting`): the `bdsurv` simulator-comparison notebooks, moved here so `bdsurv` no longer depends on `bdpinf`.
 - `models.rate_functions` (`RateFunction`, `PiecewiseConstantRate`, `PiecewiseLinearRate`) and `models.math_age_densities`: spine, non-spine and random-individual age densities/CDFs for time-varying (piecewise-linear) birth and death rates, with a notebook of density shapes (`qmd_scripts/validation/time_varying_rates/`).
 - `visualization.age_density_plots` (`scenario_panel`, `scenario_row`, ...) and a non-spine age-shapes notebook (`02_non_spine_age_shapes.qmd`).
 - `models.math_nested`: exact epoch-wise nested integral $\mathcal W(b)=1/\pi(b)$, $N(T)$ and the age densities in the paper's notation, all in log space; `inference.likelihood.resolve_spine_ages` shared by `log_likelihood`, `fit_birth_death_processes` and the Bayesian model.

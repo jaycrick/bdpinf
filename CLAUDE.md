@@ -141,14 +141,15 @@ See `docs/design/DOCS_TOOLING_EVALUATION.md` for why this is two sites rather th
 
 ### Directory taxonomy
 
-  | Path                                           | Purpose                                     | File naming                                                |
-  | ---------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------- |
-  | `qmd_scripts/validation/single_epoch/`         | Recover known params from synthetic data    | `<nn>_<topic>.qmd` (e.g. `01_simulation_checks.qmd`)       |
-  | `qmd_scripts/validation/multi_epoch/`          | Same, multi-epoch                           | `<nn>_<topic>.qmd` (e.g. `03_bulk_inference.qmd`)          |
-  | `qmd_scripts/validation/bayesian_multi_epoch/` | Bayesian validation                         | `<nn>_<topic>.qmd`; slow (multi-chain NUTS), render on CPU |
-  | `qmd_scripts/validation/time_varying_rates/`   | Age-density shapes under time-varying rates | `<nn>_<topic>.qmd`                                         |
-  | `docs/*.qmd`                                   | Prose/math documentation                    | no executable cells                                        |
-  | `great-docs.yml`                               | API reference config                        | **drives the separate great-docs site, see above**         |
+  | Path                                                      | Purpose                                     | File naming                                                |
+  | --------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------- |
+  | `qmd_scripts/validation/single_epoch/`                    | Recover known params from synthetic data    | `<nn>_<topic>.qmd` (e.g. `01_simulation_checks.qmd`)       |
+  | `qmd_scripts/validation/multi_epoch/`                     | Same, multi-epoch                           | `<nn>_<topic>.qmd` (e.g. `03_bulk_inference.qmd`)          |
+  | `qmd_scripts/validation/bayesian_multi_epoch/`            | Bayesian validation                         | `<nn>_<topic>.qmd`; slow (multi-chain NUTS), render on CPU |
+  | `qmd_scripts/validation/survival_conditioned_simulation/` | `bdsurv` simulators vs `bdpinf` theory      | `<nn>_<topic>.qmd`                                         |
+  | `qmd_scripts/validation/time_varying_rates/`              | Age-density shapes under time-varying rates | `<nn>_<topic>.qmd`                                         |
+  | `docs/*.qmd`                                              | Prose/math documentation                    | no executable cells                                        |
+  | `great-docs.yml`                                          | API reference config                        | **drives the separate great-docs site, see above**         |
 
 Real-data analyses live in the application repo (`nt-manuscripts`), not here.
 
@@ -173,6 +174,7 @@ Every executable notebook follows this structure:
   figures/
     validation/single_epoch/         # prefix vse01_, vse05_, vse06_
     validation/multi_epoch/          # prefix vme01_, vme03_, vme04_, vme05_
+    validation/survival_conditioned_simulation/   # prefix vsc01_
     validation/time_varying_rates/   # prefix per notebook
   ```
   In each notebook, set `figures_dir = find_project_root() / "figures" / "<mirror-subpath>"` and pass `output_dir=figures_dir` to every `save_chart` / `save_chart_html` call.
