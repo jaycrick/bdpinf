@@ -28,11 +28,11 @@ Their numerical values (for example $\mathcal W(T)=5.661968424654191$ for the ki
 
 The explicit scores were differentiated in Mathematica with `D[Log[...], {{l, m}}]` and translated to NumPy.
 
-| ages | value rel. diff | gradient rel. diff | autodiff eval (ms) | explicit eval (ms) |
-| ---- | --------------- | ------------------ | ------------------ | ------------------ |
-| 79 | 9e-16 | 5e-14 | 0.044 | 0.043 |
-| 1218 | 5e-16 | 6e-14 | 0.074 | 0.095 |
-| 11443 | 2e-16 | 3e-13 | 0.44 | 0.57 |
+  | ages  | value rel. diff | gradient rel. diff | autodiff eval (ms) | explicit eval (ms) |
+  | ----- | --------------- | ------------------ | ------------------ | ------------------ |
+  | 79    | 9e-16           | 5e-14              | 0.044              | 0.043              |
+  | 1218  | 5e-16           | 6e-14              | 0.074              | 0.095              |
+  | 11443 | 2e-16           | 3e-13              | 0.44               | 0.57               |
 
 The two agree to rounding error, which independently validates both.
 Per-evaluation cost is the same.
@@ -43,18 +43,18 @@ The 2 ms is not worth a second implementation that only exists for one parameter
 
 Selected rows (151 ages; "PL K" is continuous piecewise linear with $K$ epochs, so $K+1$ knots per rate).
 
-| model | params | variant | compile (s) | run (ms) | max rel. err. vs finite differences |
-| ----- | ------ | ------- | ----------- | -------- | ------------------------------------- |
-| PC K=1 | 2 | gradient, reverse | 0.30 | 0.040 | 3e-10 |
-| PC K=1 | 2 | Hessian, fwd-over-rev | 0.70 | 0.059 | 2e-8 |
-| PC K=1 | 2 | Hessian, fwd-over-fwd | 0.54 | 0.056 | 2e-8 |
-| PC K=3 | 6 | Hessian, fwd-over-rev | 0.95 | 0.17 | 1e-8 |
-| PC K=3 | 6 | Hessian, fwd-over-fwd | 1.00 | 0.14 | 1e-8 |
-| PL K=2 | 6 | gradient, reverse | 1.5 | 0.42 | 1e-9 |
-| PL K=2 | 6 | Hessian, fwd-over-rev | 2.9 | 1.0 | 3e-8 |
-| PL K=2 | 6 | Hessian, fwd-over-fwd | 1.5 | 1.3 | 3e-8 |
-| PL K=4 | 10 | Hessian, fwd-over-rev | 3.2 | 1.4 | 1e-8 |
-| PL K=4 | 10 | Hessian, fwd-over-fwd | 1.8 | 3.0 | 1e-8 |
+  | model  | params | variant               | compile (s) | run (ms) | max rel. err. vs finite differences |
+  | ------ | ------ | --------------------- | ----------- | -------- | ----------------------------------- |
+  | PC K=1 | 2      | gradient, reverse     | 0.30        | 0.040    | 3e-10                               |
+  | PC K=1 | 2      | Hessian, fwd-over-rev | 0.70        | 0.059    | 2e-8                                |
+  | PC K=1 | 2      | Hessian, fwd-over-fwd | 0.54        | 0.056    | 2e-8                                |
+  | PC K=3 | 6      | Hessian, fwd-over-rev | 0.95        | 0.17     | 1e-8                                |
+  | PC K=3 | 6      | Hessian, fwd-over-fwd | 1.00        | 0.14     | 1e-8                                |
+  | PL K=2 | 6      | gradient, reverse     | 1.5         | 0.42     | 1e-9                                |
+  | PL K=2 | 6      | Hessian, fwd-over-rev | 2.9         | 1.0      | 3e-8                                |
+  | PL K=2 | 6      | Hessian, fwd-over-fwd | 1.5         | 1.3      | 3e-8                                |
+  | PL K=4 | 10     | Hessian, fwd-over-rev | 3.2         | 1.4      | 1e-8                                |
+  | PL K=4 | 10     | Hessian, fwd-over-fwd | 1.8         | 3.0      | 1e-8                                |
 
 Run time is a millisecond or less for every variant; compilation is the cost, and it grows with the size of the traced graph (not with the number of quadrature nodes).
 Forward-over-forward halves the compile time of the piecewise-linear Hessians at a small run-time cost, which is the right trade for a Hessian that is evaluated tens of times.
@@ -64,11 +64,11 @@ Fusing value, gradient and Hessian into one jitted function did not reduce compi
 
 Absolute error in the log-likelihood against a 512-node reference, for continuous piecewise-linear rates (segment length 3).
 
-| scenario (knot values up to) | 8 nodes | 16 | 32 | 64 |
-| ---------------------------- | ------- | -- | -- | -- |
-| moderate (1.6) | 1e-12 | 6e-14 | 1e-13 | 6e-14 |
-| steep (8) | 1e-7 | 0 | 2e-13 | 1e-13 |
-| extreme (80) | 0.25 | 8e-5 | 2e-12 | 2e-12 |
+  | scenario (knot values up to) | 8 nodes | 16    | 32    | 64    |
+  | ---------------------------- | ------- | ----- | ----- | ----- |
+  | moderate (1.6)               | 1e-12   | 6e-14 | 1e-13 | 6e-14 |
+  | steep (8)                    | 1e-7    | 0     | 2e-13 | 1e-13 |
+  | extreme (80)                 | 0.25    | 8e-5  | 2e-12 | 2e-12 |
 
 32 nodes is safe well beyond realistic rates and costs 0.3 ms per evaluation.
 It is **not** safe without limit: with fitted rates of order $10^3$ over a segment of length 5 (a boundary solution the optimiser can wander towards), a single panel of 32 nodes cannot resolve $e^{-\Gamma}$ and the likelihood is wrong, while the exact piecewise-constant backend is unaffected.
@@ -81,20 +81,20 @@ Ten simulated datasets per scenario; every solver starts from the same moment es
 The gap columns are best minus achieved log-likelihood.
 Seconds are warm (compiled objective reused).
 
-| scenario | solver | reached best | median gap | max gap | median evaluations | median seconds |
-| -------- | ------ | ------------ | ---------- | ------- | ------------------ | -------------- |
-| constant | Newton (trust-exact) | 10/10 | 6e-14 | 1e-5 | 6 | 0.003 |
-| constant | L-BFGS-B | 10/10 | 5e-11 | 2e-8 | 11 | 0.003 |
-| constant | root of score | 10/10 | 0 | 4e-13 | 12 | 0.001 |
-| constant, $\mu=0.02$ | Newton | 5/10 | 1e-4 | 6e-4 | 10 | 0.005 |
-| constant, $\mu=0.02$ | L-BFGS-B | 7/10 | 3e-5 | 1e-3 | 24 | 0.005 |
-| constant, $\mu=0.02$ | root of score | 10/10 | 0 | 0 | 87 | 0.011 |
-| two epochs | Newton | 10/10 | 6e-6 | 2e-5 | 14 | 0.006 |
-| two epochs | L-BFGS-B | 10/10 | 4e-8 | 7e-7 | 41 | 0.007 |
-| two epochs | root of score | 6/10 | 0 | **296** | 127 | 0.012 |
-| linear birth, constant death | Newton | 9/10 | 0 | 5e-12 | 14 | 0.085 |
-| linear birth, constant death | L-BFGS-B | 9/10 | 1e-10 | **7e7** | 36 | 0.070 |
-| linear birth, constant death | root of score | 0/10 | -- | -- | 26 | 0.036 |
+  | scenario                     | solver               | reached best | median gap | max gap | median evaluations | median seconds |
+  | ---------------------------- | -------------------- | ------------ | ---------- | ------- | ------------------ | -------------- |
+  | constant                     | Newton (trust-exact) | 10/10        | 6e-14      | 1e-5    | 6                  | 0.003          |
+  | constant                     | L-BFGS-B             | 10/10        | 5e-11      | 2e-8    | 11                 | 0.003          |
+  | constant                     | root of score        | 10/10        | 0          | 4e-13   | 12                 | 0.001          |
+  | constant, $\mu=0.02$         | Newton               | 5/10         | 1e-4       | 6e-4    | 10                 | 0.005          |
+  | constant, $\mu=0.02$         | L-BFGS-B             | 7/10         | 3e-5       | 1e-3    | 24                 | 0.005          |
+  | constant, $\mu=0.02$         | root of score        | 10/10        | 0          | 0       | 87                 | 0.011          |
+  | two epochs                   | Newton               | 10/10        | 6e-6       | 2e-5    | 14                 | 0.006          |
+  | two epochs                   | L-BFGS-B             | 10/10        | 4e-8       | 7e-7    | 41                 | 0.007          |
+  | two epochs                   | root of score        | 6/10         | 0          | **296** | 127                | 0.012          |
+  | linear birth, constant death | Newton               | 9/10         | 0          | 5e-12   | 14                 | 0.085          |
+  | linear birth, constant death | L-BFGS-B             | 9/10         | 1e-10      | **7e7** | 36                 | 0.070          |
+  | linear birth, constant death | root of score        | 0/10         | --         | --      | 26                 | 0.036          |
 
 Reading the table:
 
@@ -112,11 +112,11 @@ The mirror-image mode $\lambda\leftrightarrow\mu$ (ages are symmetric in the two
 
 The same fifteen simulated datasets (one to three epochs) were fitted with the previous L-BFGS-then-Adam fitter and with `fit`.
 
-| | previous | new |
-| --- | --- | --- |
-| total time (15 fits) | 95 s | 17.5 s |
-| median per fit | 5.4 s | 1.1 s (8 ms once compiled) |
-| log-likelihood | -- | never lower by more than $6\times10^{-6}$; higher by 0.1--0.4 on four boundary cases where the previous fitter stopped early |
+  |                      | previous | new                                                                                                                          |
+  | -------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+  | total time (15 fits) | 95 s     | 17.5 s                                                                                                                       |
+  | median per fit       | 5.4 s    | 1.1 s (8 ms once compiled)                                                                                                   |
+  | log-likelihood       | --       | never lower by more than $6\times10^{-6}$; higher by 0.1--0.4 on four boundary cases where the previous fitter stopped early |
 
 The remaining time is compilation: roughly 1 s per model structure and array-size bucket.
 Repeated fits of the same structure (bootstrap, profile likelihood, recovery replicates) cost milliseconds.

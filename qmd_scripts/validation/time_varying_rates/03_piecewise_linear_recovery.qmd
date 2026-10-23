@@ -159,7 +159,9 @@ so use the profile likelihood for the end knot of the birth rate on one replicat
 data, result = fits[0]
 low, high = profile_likelihood_interval(result, data, "birth.knot2")
 wald_low, wald_high = result.confidence_intervals()["birth.knot2"]
-print(f"estimate        {result.params['birth.knot2']:.3f} (true {true_birth_knots[2]})")
+print(
+    f"estimate        {result.params['birth.knot2']:.3f} (true {true_birth_knots[2]})"
+)
 print(f"profile 95% CI  [{low:.3f}, {high:.3f}]")
 print(f"Wald 95% CI     [{wald_low:.3f}, {wald_high:.3f}]")
 ```
