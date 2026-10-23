@@ -171,7 +171,7 @@ wheels = [
 
 [[package]]
 name = "bdpinf"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "altair" },
@@ -218,7 +218,7 @@ gpu = [
 [package.metadata]
 requires-dist = [
     { name = "altair", specifier = ">=6.0.0" },
-    { name = "bdsurv", git = "https://github.com/jaycrick/bdsurv.git?rev=017c23b" },
+    { name = "bdsurv", git = "https://github.com/jaycrick/bdsurv.git?rev=e22adb8" },
     { name = "beartype", specifier = ">=0.19.0" },
     { name = "itables", specifier = ">=2.7.0" },
     { name = "jax", specifier = ">=0.4.38" },
@@ -261,7 +261,7 @@ gpu = [
 [[package]]
 name = "bdsurv"
 version = "0.1.0"
-source = { git = "https://github.com/jaycrick/bdsurv.git?rev=017c23b#017c23b605803cfd7e332c21995584d137200dc5" }
+source = { git = "https://github.com/jaycrick/bdsurv.git?rev=e22adb8#e22adb8706e8eaad697efb36b299e2b8034675e8" }
 dependencies = [
     { name = "numpy" },
     { name = "pandas" },

@@ -1,6 +1,6 @@
 [project]
 name = "bdpinf"
-version = "0.1.0"
+version = "0.2.0"
 description = "Inference, simulation, and visualisation for linear birth-death (branching) processes."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -25,7 +25,7 @@ dependencies = [
 # pick up bdsurv changes).  For local co-development, temporarily point this at
 # `{ path = "../bdsurv", editable = true }`.
 [tool.uv.sources]
-bdsurv = { git = "https://github.com/jaycrick/bdsurv.git", rev = "017c23b" }
+bdsurv = { git = "https://github.com/jaycrick/bdsurv.git", rev = "e22adb8" }
 
 [dependency-groups]
 gpu = [

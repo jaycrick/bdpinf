@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] --- 2026-10-23
+
+**Breaking:** the fitting API is replaced (see Removed); `bdsurv` pin moved to `e22adb8`.
+
 ### Added
 
 - `inference.fit`, `FitResult`, `AgeData`, `BirthDeathModel`, `PiecewiseConstant`, `PiecewiseLinear`, `Constraints`: fit any rate-function family (piecewise constant, continuous or jump-form piecewise linear, room for sinusoids) by maximum likelihood, with a trust-region Newton optimiser on jitted JAX gradients and Hessians, constraints by parameter name, multi-start (including the birth/death mirror start), moment-estimator initial values, and `profile_likelihood_interval`.
