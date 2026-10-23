@@ -524,7 +524,7 @@ class TestNumericalAccuracy:
         birth_rate_val = jnp.array([0.1], dtype=jnp.float64)
         final_time = jnp.array([100.0], dtype=jnp.float64)
 
-        # Expected: alpha_t = 0.1 * 100 / (1 + 0.1 * 100) = 10 / 11 ≈ 0.909091
+        # Expected: extinction_pr = 0.1 * 100 / (1 + 0.1 * 100) = 10 / 11 ≈ 0.909091
         expected = birth_rate_val * final_time / (1 + birth_rate_val * final_time)
 
         result = calculate_extinction_pr(birth_rate_val, birth_rate_val, final_time)
@@ -538,15 +538,15 @@ class TestNumericalAccuracy:
         death_rate_val = jnp.array([0.1], dtype=jnp.float64)
         final_time = jnp.array([10.0], dtype=jnp.float64)
 
-        # Compute expected alpha_t manually
+        # Compute expected extinction_pr manually
         growth = (birth_rate_val - death_rate_val) * final_time  # 1.0
         exp_growth = jnp.exp(growth)  # e^1.0 ≈ 2.71828
-        alpha_t = (
+        extinction_pr = (
             death_rate_val
             * (exp_growth - 1)
             / (birth_rate_val * exp_growth - death_rate_val)
         )
-        expected_log_prob = jnp.log(alpha_t)
+        expected_log_prob = jnp.log(extinction_pr)
 
         result = calculate_populations_log_lik(
             birth_rate_val,
@@ -564,9 +564,9 @@ class TestNumericalAccuracy:
         birth_rate_val = jnp.array([0.1], dtype=jnp.float64)
         final_time = jnp.array([50.0], dtype=jnp.float64)
 
-        # Expected: alpha_t = 0.1 * 50 / (1 + 0.1 * 50) = 5/6
-        alpha_t = birth_rate_val * final_time / (1 + birth_rate_val * final_time)
-        expected = jnp.log(alpha_t)
+        # Expected: extinction_pr = 0.1 * 50 / (1 + 0.1 * 50) = 5/6
+        extinction_pr = birth_rate_val * final_time / (1 + birth_rate_val * final_time)
+        expected = jnp.log(extinction_pr)
 
         result = calculate_populations_log_lik(
             birth_rate_val,
@@ -583,17 +583,17 @@ class TestNumericalAccuracy:
         death_rate_val = jnp.array([0.2], dtype=jnp.float64)
         final_time = jnp.array([5.0], dtype=jnp.float64)
 
-        # Compute alpha_t and beta_t
+        # Compute extinction_pr and one_minus_pi
         growth = (birth_rate_val - death_rate_val) * final_time
         exp_growth = jnp.exp(growth)
-        alpha_t = (
+        extinction_pr = (
             death_rate_val
             * (exp_growth - 1)
             / (birth_rate_val * exp_growth - death_rate_val)
         )
-        beta_t = (birth_rate_val / death_rate_val) * alpha_t
+        one_minus_pi = (birth_rate_val / death_rate_val) * extinction_pr
 
-        expected = jnp.log(1 - alpha_t) + jnp.log(1 - beta_t)
+        expected = jnp.log(1 - extinction_pr) + jnp.log(1 - one_minus_pi)
 
         result = calculate_populations_log_lik(
             birth_rate_val,
@@ -993,7 +993,7 @@ class TestPopulationsLogLikelihood:
             ns=jnp.array([0], dtype=jnp.int32),
         )
 
-        # P(n=0) = alpha_t, so log P should be finite and negative
+        # P(n=0) = extinction_pr, so log P should be finite and negative
         assert np.isfinite(float(result))
         assert result < 0
 
@@ -1416,19 +1416,19 @@ class TestMathematicalProperties:
         birth_rates = jnp.array([0.1, 0.1, 0.1], dtype=jnp.float64)
         times = jnp.array([50.0, 100.0, 150.0], dtype=jnp.float64)
 
-        alpha_1 = calculate_extinction_pr(
+        extinction_pr_1 = calculate_extinction_pr(
             birth_rates,
             jnp.array([0.05, 0.05, 0.05], dtype=jnp.float64),
             times,
         )
-        alpha_2 = calculate_extinction_pr(
+        extinction_pr_2 = calculate_extinction_pr(
             birth_rates,
             jnp.array([0.08, 0.08, 0.08], dtype=jnp.float64),
             times,
         )
 
         # Higher death rate → higher extinction probability
-        assert 0 < alpha_1 < alpha_2 < 1
+        assert 0 < extinction_pr_1 < extinction_pr_2 < 1
 
     def test_consistency_scalar_vs_single_element_array(self) -> None:
         """Test that scalar and single-element array give same results."""

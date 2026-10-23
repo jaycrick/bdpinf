@@ -17,7 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `models.math_ages`: multi-epoch spine-age atom at `age == T` (the previous value included a spurious factor $1-q(T)$, so density plus atom summed to less than 1; one-epoch results were unaffected), and the non-spine density at `age == T`, which now continues the interior density.
   Fitted rates can change slightly for multi-epoch data that contain a surviving founder.
 - Spine ages within `isclose` tolerance of `T` are snapped to exactly `T` so they receive the atom (previously the interior density).
-- `models.math_populations`: the population term is no longer evaluated through `1 - pi(T)`, which lost up to \~4e-4 in the log-likelihood when $\pi(T)\sim10^{-13}$ and returned `-inf` where $\pi(T)$ underflows (e.g. $\lambda=2\mu$, $T=100$ now gives the correct finite value); the multi-start ($Z_0>1$) probability of $Z_T=0$ is now $\alpha^{n_0}$.
+- `models.math_populations`: the population term is no longer evaluated through `1 - pi(T)`, which lost up to \~4e-4 in the log-likelihood when $\pi(T)\sim10^{-13}$ and returned `-inf` where $\pi(T)$ underflows (e.g. $\lambda=2\mu$, $T=100$ now gives the correct finite value); the multi-start ($Z_0>1$) probability of $Z_T=0$ is now $P_0(T)^{n_0}$.
 - `BirthDeathProcess.log_likelihood` uses the labelled spine (when exactly one) instead of re-detecting it.
 
 ### Changed

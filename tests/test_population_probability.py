@@ -19,15 +19,15 @@ from bdpinf.process import BirthDeathProcess
 
 
 def _exact_log_pmf(lam: float, mu: float, t: float, n: int) -> float:
-    """Log P(Z_T = n | Z_0 = 1) = log[(1 - alpha) pi (1 - pi)^(n - 1)], 80 digits."""
+    """Log P(Z_T = n | Z_0 = 1) = log[(1 - extinction_pr) pi (1 - pi)^(n - 1)], 80 digits."""
     getcontext().prec = 80
     lam_d, mu_d, t_d = Decimal(lam), Decimal(mu), Decimal(t)
     gamma = lam_d - mu_d
     w = (lam_d * (gamma * t_d).exp() - mu_d) / gamma
     pi = 1 / w
     n_t = (-gamma * t_d).exp() * w - 1
-    alpha = n_t / (1 + n_t)
-    return float(((1 - alpha) * pi * (1 - pi) ** (n - 1)).ln())
+    extinction_pr = n_t / (1 + n_t)
+    return float(((1 - extinction_pr) * pi * (1 - pi) ** (n - 1)).ln())
 
 
 class TestPopulationProbability:
@@ -89,7 +89,7 @@ class TestPopulationProbability:
     def test_unbias_positive_count_uses_geometric_mass(self) -> None:
         """Unbiased positive counts follow the conditioned geometric mass."""
         birth_rate, death_rate, time, n = 0.1, 0.05, 100.0, 5
-        alpha_t = float(
+        extinction_pr = float(
             calculate_extinction_pr(
                 birth_rate,
                 death_rate,
@@ -97,7 +97,7 @@ class TestPopulationProbability:
                 return_log_prob=False,
             )
         )
-        beta_t = (birth_rate / death_rate) * alpha_t
+        one_minus_pi = (birth_rate / death_rate) * extinction_pr
 
         result = calculate_populations_log_lik(
             birth_rate,
@@ -107,7 +107,7 @@ class TestPopulationProbability:
             condition_on_survival=True,
         )
 
-        expected = math.log1p(-beta_t) + (n - 1) * math.log(beta_t)
+        expected = math.log1p(-one_minus_pi) + (n - 1) * math.log(one_minus_pi)
         assert_allclose(float(result), expected)
 
     def test_finite_results(self) -> None:
@@ -172,8 +172,13 @@ class TestPopulationProbability:
         birth_rate, death_rate, n = 0.1, 0.05, 10
 
         results = []
-        # Use shorter times to avoid beta_t = 1 boundary issues
-        for time in [50.0, 100.0, 200.0, 500.0]:  # Removed 1000 which causes beta_t = 1
+        # Use shorter times to avoid one_minus_pi = 1 boundary issues
+        for time in [
+            50.0,
+            100.0,
+            200.0,
+            500.0,
+        ]:  # Removed 1000 which causes one_minus_pi = 1
             result = calculate_populations_log_lik(
                 birth_rate,
                 death_rate,
@@ -186,7 +191,7 @@ class TestPopulationProbability:
         # Results should be finite for all times
         assert all(math.isfinite(prob) for _, prob in results)
 
-    def test_alpha_beta_bounds(self) -> None:
+    def test_extinction_pr_and_pi_bounds(self) -> None:
         """Test that α_t and β_t stay within valid bounds [0, 1]."""
         # We'll test this indirectly by ensuring the function doesn't return -inf
         # when it should produce valid results
@@ -206,7 +211,7 @@ class TestPopulationProbability:
                 ns=n,
             )
             # If the function returns -inf,
-            # it means alpha_t or beta_t went out of bounds
+            # it means extinction_pr or one_minus_pi went out of bounds
             # For these reasonable parameters, we expect finite results
             assert math.isfinite(float(result)), (
                 f"Expected finite result for λ={birth_rate}, μ={death_rate}, "
@@ -218,7 +223,7 @@ class TestPopulationProbability:
         birth_rate, death_rate, time, n = 0.1, 0.05, 100.0, 5
 
         # Manual calculation following the same steps
-        alpha_t = float(
+        extinction_pr = float(
             calculate_extinction_pr(
                 birth_rate,
                 death_rate,
@@ -226,10 +231,12 @@ class TestPopulationProbability:
                 return_log_prob=False,
             )
         )
-        beta_t = (birth_rate / death_rate) * alpha_t
+        one_minus_pi = (birth_rate / death_rate) * extinction_pr
 
         manual_result = (
-            math.log(1 - alpha_t) + math.log(1 - beta_t) + (n - 1) * math.log(beta_t)
+            math.log(1 - extinction_pr)
+            + math.log(1 - one_minus_pi)
+            + (n - 1) * math.log(one_minus_pi)
         )
 
         # Function result
@@ -250,7 +257,9 @@ class TestPopulationProbability:
     def test_initial_population_gt_one(self) -> None:
         """Validate the n0 > 1 branch against the closed-form summation."""
 
-        def davison_formula(a: int, k: int, alpha_t: float, beta_t: float) -> float:
+        def davison_formula(
+            a: int, k: int, extinction_pr: float, one_minus_pi: float
+        ) -> float:
             """Calculate the probability using Davison's formula.
 
             Parameters
@@ -259,10 +268,10 @@ class TestPopulationProbability:
                 initial population size (n0)
             k: int
                 observed population size (n)
-            alpha_t: float
+            extinction_pr: float
                 extinction probability at time t
-            beta_t: float
-                (λ/μ) * alpha_t
+            one_minus_pi: float
+                (λ/μ) * extinction_pr
 
             """
             terms: list[float] = []
@@ -270,14 +279,24 @@ class TestPopulationProbability:
                 term = (
                     math.comb(a, j)
                     * math.comb(k - 1, a - j - 1)
-                    * (alpha_t**j)
-                    * (beta_t ** (k - a + j))
-                    * ((1 - alpha_t - beta_t + alpha_t * beta_t) ** (a - j))
+                    * (extinction_pr**j)
+                    * (one_minus_pi ** (k - a + j))
+                    * (
+                        (
+                            1
+                            - extinction_pr
+                            - one_minus_pi
+                            + extinction_pr * one_minus_pi
+                        )
+                        ** (a - j)
+                    )
                 )
                 terms.append(term)
             return sum(terms)
 
-        def tavare_formula(n: int, m: int, alpha_t: float, beta_t: float) -> float:
+        def tavare_formula(
+            n: int, m: int, extinction_pr: float, one_minus_pi: float
+        ) -> float:
             """Calculate the probability using Tavaré's formula.
 
             Parameters
@@ -286,10 +305,10 @@ class TestPopulationProbability:
                 initial population size (n0)
             m: int
                 observed population size (n)
-            alpha_t: float
+            extinction_pr: float
                 extinction probability at time t
-            beta_t: float
-                (λ/μ) * alpha_t
+            one_minus_pi: float
+                (λ/μ) * extinction_pr
 
             """
             terms: list[float] = []
@@ -297,9 +316,17 @@ class TestPopulationProbability:
                 term = (
                     math.comb(n, j)
                     * math.comb(m - 1, j - 1)
-                    * (alpha_t ** (n - j))
-                    * (beta_t ** (m - j))
-                    * ((1 - alpha_t - beta_t + alpha_t * beta_t) ** j)
+                    * (extinction_pr ** (n - j))
+                    * (one_minus_pi ** (m - j))
+                    * (
+                        (
+                            1
+                            - extinction_pr
+                            - one_minus_pi
+                            + extinction_pr * one_minus_pi
+                        )
+                        ** j
+                    )
                 )
                 terms.append(term)
             return sum(terms)
@@ -308,7 +335,7 @@ class TestPopulationProbability:
         n0 = 5
         n = 4
 
-        alpha_t = float(
+        extinction_pr = float(
             calculate_extinction_pr(
                 birth_rate,
                 death_rate,
@@ -317,10 +344,10 @@ class TestPopulationProbability:
             )
         )
 
-        beta_t = (birth_rate / death_rate) * alpha_t
+        one_minus_pi = (birth_rate / death_rate) * extinction_pr
 
-        davison_result = davison_formula(n0, n, alpha_t, beta_t)
-        tavare_result = tavare_formula(n0, n, alpha_t, beta_t)
+        davison_result = davison_formula(n0, n, extinction_pr, one_minus_pi)
+        tavare_result = tavare_formula(n0, n, extinction_pr, one_minus_pi)
 
         my_result = math.exp(
             float(
@@ -361,7 +388,7 @@ class TestPopulationProbability:
 
     def test_n_equals_one_special_case(self) -> None:
         """Test the special case where n=1."""
-        # When n=1, the (n-1)*log(beta_t) term becomes 0
+        # When n=1, the (n-1)*log(one_minus_pi) term becomes 0
         birth_rate, death_rate, time = 0.1, 0.05, 100.0
 
         result = calculate_populations_log_lik(birth_rate, death_rate, times=time, ns=1)
@@ -369,7 +396,7 @@ class TestPopulationProbability:
         assert math.isfinite(float(result)), "n=1 case should produce finite result"
 
         # Manual verification for n=1
-        alpha_t = float(
+        extinction_pr = float(
             calculate_extinction_pr(
                 birth_rate,
                 death_rate,
@@ -377,11 +404,11 @@ class TestPopulationProbability:
                 return_log_prob=False,
             )
         )
-        beta_t = (birth_rate / death_rate) * alpha_t
+        one_minus_pi = (birth_rate / death_rate) * extinction_pr
 
-        expected = math.log(1 - alpha_t) + math.log(
-            1 - beta_t,
-        )  # (n-1)*log(beta_t) = 0 for n=1
+        expected = math.log(1 - extinction_pr) + math.log(
+            1 - one_minus_pi,
+        )  # (n-1)*log(one_minus_pi) = 0 for n=1
 
         assert abs(float(result) - expected) < 1e-12, (
             f"n=1 case mismatch: expected={expected}, got={float(result)}"
@@ -391,7 +418,7 @@ class TestPopulationProbability:
         ("birth_rate", "death_rate", "time", "n"),
         [
             (0.1, 0.05, 100.0, 5),
-            # (0.5, 0.3, 200.0, 10),  # This leads to beta_t = 1, excluded
+            # (0.5, 0.3, 200.0, 10),  # This leads to one_minus_pi = 1, excluded
             (1.0, 0.8, 50.0, 3),
             (0.01, 0.008, 1000.0, 15),
             (2.0, 1.5, 30.0, 7),
@@ -429,10 +456,10 @@ class TestPopulationProbability:
 
     def test_boundary_conditions(self) -> None:
         """Test conditions that might cause boundary issues."""
-        # Test case where alpha_t or beta_t might approach 1
+        # Test case where extinction_pr or one_minus_pi might approach 1
         # This is a challenging case numerically
 
-        # When μ is very small compared to λ, beta_t approaches λ/λ = 1
+        # When μ is very small compared to λ, one_minus_pi approaches λ/λ = 1
         birth_rate = 1.0
         death_rate = 1e-10  # Very small
         time = 1.0  # Small time to avoid other numerical issues
@@ -527,10 +554,10 @@ class TestPopulationsLogPmf:
             ns=jnp.array([0.0]),
             times=jnp.array([time]),
         )
-        expected_log_alpha = float(
+        expected_log_extinction_pr = float(
             calculate_extinction_pr(birth_rate, death_rate, time, return_log_prob=True)
         )
-        assert_allclose(float(log_pmf[0]), expected_log_alpha, rtol=1e-10)
+        assert_allclose(float(log_pmf[0]), expected_log_extinction_pr, rtol=1e-10)
 
     def test_pmf_skip_normalization_matches_normal(self) -> None:
         """_skip_normalization=True must return the same values as the default path."""

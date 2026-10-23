@@ -91,7 +91,7 @@ class TestLikelihood:
         gamma = lam - mu
         w = (lam * (gamma * t).exp() - mu) / gamma
         n_t = (-gamma * t).exp() * w - 1
-        log_pop = (1 / (1 + n_t) / w).ln()  # (1 - alpha) * pi, z = 1
+        log_pop = (1 / (1 + n_t) / w).ln()  # (1 - extinction_pr) * pi, z = 1
         f_spine = lam * mu * ((-mu * a).exp() - (-lam * a).exp()) / gamma
         expected = float(log_pop + f_spine.ln())
 

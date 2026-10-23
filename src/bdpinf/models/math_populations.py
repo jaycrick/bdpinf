@@ -2,16 +2,16 @@ r"""Population log-likelihood calculations for birth-death processes.
 
 Tavaré (2018) formula for P(Z_T = n | Z_0 = n0), written in the paper's
 notation [paper: Eq. ?]: from one ancestor,
-$\Pr(Z_T = 0) = \alpha = N/(1+N)$ and, given survival,
+$\Pr(Z_T = 0) = P_0(T) = N/(1+N)$ and, given survival,
 $Z_T$ is geometric with success probability $\pi(T) = 1/\mathcal W(T)$,
 i.e. $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
-With $\beta = 1 - \pi$ the code uses
-$\ln\alpha = \ln N - \mathrm{softplus}(\ln N)$,
-$\ln(1-\alpha) = -\mathrm{softplus}(\ln N)$,
-$\ln(1-\beta) = \ln\pi = -\ln\mathcal W(T)$ and
-$\ln\beta = \ln(\mathcal W(T) - 1) - \ln\mathcal W(T)$,
+The code uses
+$\ln P_0 = \ln N - \mathrm{softplus}(\ln N)$,
+$\ln(1-P_0) = -\mathrm{softplus}(\ln N)$,
+$\ln\pi = -\ln\mathcal W(T)$ and
+$\ln(1-\pi) = \ln(\mathcal W(T) - 1) - \ln\mathcal W(T)$,
 all from :mod:`bdpinf.models.math_nested`, so nothing is recovered through
-``log1p(-beta)`` round trips.
+``log1p(-...)`` round trips.
 
 Control flow is ``jit``- and ``grad``-safe:
 
@@ -62,15 +62,15 @@ def _safe_mul(count: jax.Array, log_value: jax.Array) -> jax.Array:
 def _population_logs(
     birth_rates: jax.Array, death_rates: jax.Array, times: jax.Array
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
-    r"""Return $(\ln\alpha, \ln(1-\alpha), \ln\beta, \ln\pi)$ at ``T``."""
+    r"""Return $(\ln P_0, \ln(1-P_0), \ln(1-\pi), \ln\pi)$ at ``T``."""
     terms = nested_terms(birth_rates, death_rates, times)
     log_n = log_extinction_numerator(terms)
     softplus_n = jnp.logaddexp(0.0, log_n)
     log_w_total = log_nested_w_total(terms)
-    log_alpha = restore_neg_inf(log_n - softplus_n)
-    log_one_minus_alpha = -softplus_n
-    log_beta = restore_neg_inf(log_nested_w_minus_one(terms) - log_w_total)
-    return log_alpha, log_one_minus_alpha, log_beta, -log_w_total
+    log_extinction_pr = restore_neg_inf(log_n - softplus_n)
+    log_survival_pr = -softplus_n
+    log_one_minus_pi = restore_neg_inf(log_nested_w_minus_one(terms) - log_w_total)
+    return log_extinction_pr, log_survival_pr, log_one_minus_pi, -log_w_total
 
 
 @jaxtyped(typechecker=beartype)
@@ -78,8 +78,8 @@ def _compute_populations_log_lik_multi_start(
     ns: Float[Array, " n"],
     nonzero_mask: Bool[Array, " n"],
     n0: int,
-    log_alpha: Float[Array, ""],
-    log_beta: Float[Array, ""],
+    log_extinction_pr: Float[Array, ""],
+    log_one_minus_pi: Float[Array, ""],
     log_one_minus: Float[Array, ""],
 ) -> Float[Array, " n"]:
     r"""Log probabilities for populations when initial_population > 1.
@@ -96,10 +96,10 @@ def _compute_populations_log_lik_multi_start(
         Shape (m,) bool, True where ns > 0.
     n0 : int
         Initial population (static compile-time constant).
-    log_alpha, log_beta : jax.Array
-        Scalar float64 $\ln\alpha$ and $\ln\beta$.
+    log_extinction_pr, log_one_minus_pi : jax.Array
+        Scalar float64 $\ln P_0(T)$ and $\ln(1-\pi)$.
     log_one_minus : jax.Array
-        Scalar float64 $\ln(1-\alpha) + \ln(1-\beta)$.
+        Scalar float64 $\ln(1-P_0) + \ln\pi$.
 
     Returns
     -------
@@ -128,15 +128,15 @@ def _compute_populations_log_lik_multi_start(
             - jsp.special.gammaln(n0_f - j_all)
             - jsp.special.gammaln(n_f - n0_f + j_all + 1.0)
         )
-        log_alpha_term = _safe_mul(j_all, log_alpha)
-        log_beta_term = _safe_mul(n_f - n0_f + j_all, log_beta)
+        log_extinction_pr_term = _safe_mul(j_all, log_extinction_pr)
+        log_one_minus_pi_term = _safe_mul(n_f - n0_f + j_all, log_one_minus_pi)
         log_one_minus_term = _safe_mul(n0_f - j_all, log_one_minus)
 
         log_terms = (
             log_binom_n0
             + log_binom_second
-            + log_alpha_term
-            + log_beta_term
+            + log_extinction_pr_term
+            + log_one_minus_pi_term
             + log_one_minus_term
         )
         log_terms = jnp.where(valid_j, log_terms, _ninf)
@@ -191,7 +191,7 @@ def calculate_populations_log_pmf(
             birth_rates, death_rates, times
         )
 
-    log_alpha, log_one_minus_alpha, log_beta, log_pi = _population_logs(
+    log_extinction_pr, log_survival_pr, log_one_minus_pi, log_pi = _population_logs(
         birth_rates, death_rates, times
     )
 
@@ -199,21 +199,21 @@ def calculate_populations_log_pmf(
     nonzero_mask = ~zero_mask
 
     if initial_population == 1:
-        log_term3 = jnp.where(ns == 1, _zero, _safe_mul(ns - 1.0, log_beta))
-        nonzero_val = log_one_minus_alpha + log_pi + log_term3
-        log_pr = jnp.where(zero_mask, log_alpha, nonzero_val)
+        log_term3 = jnp.where(ns == 1, _zero, _safe_mul(ns - 1.0, log_one_minus_pi))
+        nonzero_val = log_survival_pr + log_pi + log_term3
+        log_pr = jnp.where(zero_mask, log_extinction_pr, nonzero_val)
     else:
         log_pr = _compute_populations_log_lik_multi_start(
             ns=ns,
             nonzero_mask=nonzero_mask,
             n0=initial_population,
-            log_alpha=log_alpha,
-            log_beta=log_beta,
-            log_one_minus=log_one_minus_alpha + log_pi,
+            log_extinction_pr=log_extinction_pr,
+            log_one_minus_pi=log_one_minus_pi,
+            log_one_minus=log_survival_pr + log_pi,
         )
         log_pr = jnp.where(
             zero_mask,
-            jnp.float64(initial_population) * log_alpha,
+            jnp.float64(initial_population) * log_extinction_pr,
             log_pr,
         )
 
@@ -309,12 +309,14 @@ def calculate_populations_log_lik(
 
     # condition_on_survival=True path (initial_population==1 only):
     # condition on non-extinction.
-    log_alpha, _, log_beta, log_pi = _population_logs(birth_rates, death_rates, times)
+    log_extinction_pr, _, log_one_minus_pi, log_pi = _population_logs(
+        birth_rates, death_rates, times
+    )
     zero_mask = ns == 0
-    log_term3 = jnp.where(ns == 1, _zero, _safe_mul(ns - 1.0, log_beta))
+    log_term3 = jnp.where(ns == 1, _zero, _safe_mul(ns - 1.0, log_one_minus_pi))
     log_pr = jnp.where(
         zero_mask,
-        jnp.float64(initial_population) * log_alpha,
+        jnp.float64(initial_population) * log_extinction_pr,
         log_pi + log_term3,
     )
     return jnp.where(jnp.all(jnp.isfinite(log_pr)), log_pr.sum(), _ninf)

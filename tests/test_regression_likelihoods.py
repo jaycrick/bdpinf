@@ -56,7 +56,7 @@ _GOLDEN_EXTINCTION_CRITICAL = 0.9868421053
 _GOLDEN_SPINE_LL_750 = -25.0902674713
 # Non-spine age log-lik at age=750
 _GOLDEN_NON_SPINE_LL_750 = -40.4957324571
-# Population log-lik at n=5: log[(1-alpha) pi (1-pi)^4], matching a 60-digit
+# Population log-lik at n=5: log[(1-extinction_pr) pi (1-pi)^4], matching a 60-digit
 # decimal evaluation (-31.83258146374835...); evaluating through 1 - pi would
 # lose ~4e-4 here because pi(T) ~ 1e-13.
 _GOLDEN_POPULATIONS_LL_N5 = -31.8325814637

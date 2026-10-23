@@ -34,7 +34,7 @@ def calculate_extinction_pr(
     *,
     return_log_prob: bool = False,
 ) -> jax.Array:
-    r"""Extinction probability $\Pr(Z_T = 0) = N/(1+N)$, or its log.
+    r"""Extinction probability $P_0(T) = \Pr(Z_T = 0) = N/(1+N)$, or its log.
 
     Evaluated as $\ln N - \operatorname{softplus}(\ln N)$, which stays
     accurate when $N$ is tiny.

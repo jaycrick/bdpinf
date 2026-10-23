@@ -72,14 +72,14 @@ def _reference(birth: list[float], death: list[float], ends: list[float]) -> _Re
         )
 
     n_total = n_of(t_end)
-    alpha = n_total / (1 + n_total)
+    extinction_pr = n_total / (1 + n_total)
     pi = 1 / w_of(t_end)
 
     def log_pop(n: int) -> float:
-        # Pr(Z_T = n) = (1 - alpha) pi (1 - pi)^(n-1) for n >= 1
-        return float(np.log((1 - alpha) * pi * (1 - pi) ** (n - 1)))
+        # Pr(Z_T = n) = (1 - extinction_pr) pi (1 - pi)^(n-1) for n >= 1
+        return float(np.log((1 - extinction_pr) * pi * (1 - pi) ** (n - 1)))
 
-    return _Reference(spine, non_spine, log_pop, float(alpha))
+    return _Reference(spine, non_spine, log_pop, float(extinction_pr))
 
 
 _CASES = {

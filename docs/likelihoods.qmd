@@ -135,7 +135,7 @@ $\mathcal W(b)-1=e^{\Gamma(0,b]}L(b)$.
 In the code $N$ is called the *extinction numerator* (`ext_num`);
 it is $\mathcal W$ only after the factor $e^{\Gamma}$,
 so $\pi(T)=1/(1+N(T))$ holds only when $\Gamma(0,T]=0$.
-Also $\Pr(Z_T=0)=N(T)/(1+N(T))$.
+Also the extinction probability is $P_0(T)=\Pr(Z_T=0)=N(T)/(1+N(T))$.
 
 The code (`bdpinf.models.math_nested`) evaluates these cumulative sums in log space
 (`cumlogsumexp` of positive terms, no subtraction) once per likelihood call,
@@ -144,11 +144,11 @@ $L_\mu(s,T)$ uses the mirror-image suffix sum.
 
 ### Population term
 
-The population-count term is $\ln\Pr(Z_T=z)=\ln(1-\alpha)+\ln\pi+(z-1)\ln\beta$ with
-$\alpha=N/(1+N)$ and $\beta=1-\pi$;
+The population-count term is $\ln\Pr(Z_T=z)=\ln(1-P_0(T))+\ln\pi+(z-1)\ln(1-\pi)$ with
+$P_0(T)=N/(1+N)$;
 given survival, $\ln\Pr(Z_T=z\mid Z_T\ge1)=-z\ln\mathcal W(T)+(z-1)\ln(\mathcal W(T)-1)$.
-The code uses $\ln\pi=-\ln\mathcal W(T)$ and $\ln\beta=\ln(\mathcal W(T)-1)-\ln\mathcal W(T)$ directly,
-so it never forms $1-\beta$ (which loses precision when $\pi(T)\ll1$).
+The code uses $\ln\pi=-\ln\mathcal W(T)$ and $\ln(1-\pi)=\ln(\mathcal W(T)-1)-\ln\mathcal W(T)$ directly,
+so it never recovers $\pi$ as $1-(1-\pi)$ (which loses precision when $\pi(T)\ll1$).
 
 ## Numerical stability and validation
 
