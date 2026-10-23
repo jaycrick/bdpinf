@@ -96,28 +96,47 @@ class TestNestedW:
         assert w == pytest.approx(1.0 + lam * b, rel=1e-13)
 
     @pytest.mark.parametrize(("times", "birth", "death"), _PARAM_SETS)
-    def test_relations_between_w_n_and_l(
+    def test_relations_between_w_i_and_l(
         self, times: list[float], birth: list[float], death: list[float]
     ) -> None:
         terms = _terms(times, birth, death)
         gamma = float(terms.gamma_total)
         w_t = float(jnp.exp(mn.log_nested_w_total(terms)))
-        n_t = float(jnp.exp(mn.log_extinction_numerator(terms)))
-        assert w_t == pytest.approx(math.exp(gamma) * (1.0 + n_t), rel=1e-12)
+        i_t = float(jnp.exp(mn.log_extinction_odds(terms)))
+        assert w_t == pytest.approx(math.exp(gamma) * (1.0 + i_t), rel=1e-12)
         assert w_t - 1.0 == pytest.approx(
             float(jnp.exp(mn.log_nested_w_minus_one(terms))), rel=1e-10
         )
 
-    def test_pi_equals_one_over_one_plus_n_only_when_gamma_is_zero(self) -> None:
-        terms = _terms([2.0, 4.0], [1.5, 0.5], [0.5, 1.5])  # Gamma(0,T] = 0
-        assert float(terms.gamma_total) == pytest.approx(0.0, abs=1e-14)
-        pi_t = float(jnp.exp(-mn.log_nested_w_total(terms)))
-        n_t = float(jnp.exp(mn.log_extinction_numerator(terms)))
-        assert pi_t == pytest.approx(1.0 / (1.0 + n_t), rel=1e-12)
-        skewed = _terms([2.0, 4.0], [1.5, 0.9], [0.5, 1.5])
-        pi_s = float(jnp.exp(-mn.log_nested_w_total(skewed)))
-        n_s = float(jnp.exp(mn.log_extinction_numerator(skewed)))
-        assert pi_s != pytest.approx(1.0 / (1.0 + n_s), rel=1e-3)
+    @pytest.mark.parametrize(("times", "birth", "death"), _PARAM_SETS)
+    def test_extinction_odds_is_logit_of_extinction_pr(
+        self, times: list[float], birth: list[float], death: list[float]
+    ) -> None:
+        terms = _terms(times, birth, death)
+        log_p0, log_surv = mn.log_extinction_and_survival_pr(terms)
+        log_i = mn.log_extinction_odds(terms)
+        assert float(log_i) == pytest.approx(float(log_p0 - log_surv), rel=1e-12)
+        assert float(jnp.exp(log_p0) + jnp.exp(log_surv)) == pytest.approx(1.0)
+        # 1 + I = 1 / Pr(Z_T >= 1) and W = E[Z_T] / Pr(Z_T >= 1)
+        w_t = float(jnp.exp(mn.log_nested_w_total(terms)))
+        assert 1.0 + float(jnp.exp(log_i)) == pytest.approx(
+            float(jnp.exp(-log_surv)), rel=1e-12
+        )
+        assert w_t == pytest.approx(
+            math.exp(float(terms.gamma_total)) * float(jnp.exp(-log_surv)), rel=1e-12
+        )
+
+    def test_extinction_odds_diverges_only_when_not_supercritical(self) -> None:
+        def odds(birth: float, death: float, horizon: float) -> float:
+            terms = _terms([horizon], [birth], [death])
+            return float(jnp.exp(mn.log_extinction_odds(terms)))
+
+        # Critical: I(T) = mu * T grows without bound.
+        assert odds(1.0, 1.0, 50.0) == pytest.approx(50.0, rel=1e-12)
+        assert odds(1.0, 1.0, 500.0) == pytest.approx(500.0, rel=1e-12)
+        # Supercritical: I(T) converges to mu / (lambda - mu).
+        assert odds(2.0, 1.0, 50.0) == pytest.approx(1.0, rel=1e-10)
+        assert odds(2.0, 1.0, 500.0) == pytest.approx(1.0, rel=1e-10)
 
     def test_small_horizon_keeps_relative_accuracy(self) -> None:
         lam, mu, t = 0.9, 0.4, 1e-9

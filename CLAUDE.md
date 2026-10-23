@@ -120,7 +120,7 @@ Imports may only point at the same or a lower layer; `tests/test_layering.py` en
 
 1. **JAX everywhere**: rates and ages are float64 `jax.Array`s so `jax.grad`/`jax.jit` work and precision holds; `jax.config.update("jax_enable_x64", True)` runs at package import.
 2. **Pure math functions, not methods**: the `models.math_*` modules hold free functions with no class state, so the maths stays testable and composable without `BirthDeathProcess`.
-3. **Names follow the paper**: $\Gamma,\Lambda,M$ for the rate integrals, $N(T)$ (code: *extinction numerator*), $A$ non-spine age, $A^*$ spine age, $T$ observation time.
+3. **Names follow the paper**: $\Gamma,\Lambda,M$ for the rate integrals, $I(T)$ (the *extinction odds*, $P_0/(1-P_0)$), $A$ non-spine age, $A^*$ spine age, $T$ observation time.
 
 ## Known challenges
 

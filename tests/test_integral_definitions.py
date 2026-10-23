@@ -27,10 +27,10 @@ class _Reference(NamedTuple):
 
 
 def _reference(birth: list[float], death: list[float], ends: list[float]) -> _Reference:
-    """Evaluate Gamma, N, W and L_mu with scipy quadrature (no closed forms).
+    """Evaluate Gamma, I, W and L_mu with scipy quadrature (no closed forms).
 
-    With Gamma(s, e] = int (lambda - mu), N(b) = int_0^b mu e^{-Gamma(0, t]} dt,
-    W(b) = e^{Gamma(0, b]} (1 + N(b)) and L_mu(s, T) = int_s^T mu e^{Gamma(u, T]} du:
+    With Gamma(s, e] = int (lambda - mu), I(b) = int_0^b mu e^{-Gamma(0, t]} dt,
+    W(b) = e^{Gamma(0, b]} (1 + I(b)) and L_mu(s, T) = int_s^T mu e^{Gamma(u, T]} du:
     spine f*(a) = lambda(s) e^{-Lambda(s, T]} L_mu(s, T) and non-spine
     f(a) = lambda(s) W(s) e^{-M(s, T]} / (W(T) - 1), with s = T - a.
     """

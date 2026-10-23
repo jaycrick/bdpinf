@@ -126,16 +126,19 @@ and for $b$ inside epoch $k$ replace $d_k$ by $b-\tau_{k-1}$.
 Equivalently, with $\kappa^-(g,d)=(1-e^{-gd})/g$ (equal to $d$ at $g=0$),
 
 $$
-  N(b)=\int_0^b\mu\,e^{-\Gamma(0,t]}dt=\sum_k\mu_k\,e^{-\Gamma(0,\tau_{k-1}]}\,\kappa^-(\gamma_k,d_k),
-  \qquad \mathcal W(b)=e^{\Gamma(0,b]}\bigl(1+N(b)\bigr),
+  I(b)=\int_0^b\mu\,e^{-\Gamma(0,t]}dt=\sum_k\mu_k\,e^{-\Gamma(0,\tau_{k-1}]}\,\kappa^-(\gamma_k,d_k),
+  \qquad \mathcal W(b)=e^{\Gamma(0,b]}\bigl(1+I(b)\bigr),
 $$
 
 and the same sum with $\lambda_k$ in place of $\mu_k$ gives $L(b)$ with
 $\mathcal W(b)-1=e^{\Gamma(0,b]}L(b)$.
-In the code $N$ is called the *extinction numerator* (`ext_num`);
-it is $\mathcal W$ only after the factor $e^{\Gamma}$,
-so $\pi(T)=1/(1+N(T))$ holds only when $\Gamma(0,T]=0$.
-Also the extinction probability is $P_0(T)=\Pr(Z_T=0)=N(T)/(1+N(T))$.
+$I(T)$ is the *extinction odds*:
+$P_0(T)=\Pr(Z_T=0)=I(T)/(1+I(T))$, equivalently $I=P_0/(1-P_0)$ and $\ln I=\operatorname{logit}P_0$.
+Two identities follow.
+First, $1+I(T)=1/\Pr(Z_T\ge1)$.
+Second, $\mathcal W(T)=e^{\Gamma(0,T]}(1+I(T))=\mathbb E[Z_T]/\Pr(Z_T\ge1)=\mathbb E[Z_T\mid Z_T\ge1]$, since $\mathbb E[Z_T]=e^{\Gamma(0,T]}$.
+Writing $I(T)=\int_0^T\mu(t)/\mathbb E[Z_t]\,dt$ shows it as the death hazard measured per unit of expected population.
+Extinction is almost sure as $T\to\infty$ if and only if $I(\infty)$ diverges (Kendall's criterion).
 
 The code (`bdpinf.models.math_nested`) evaluates these cumulative sums in log space
 (`cumlogsumexp` of positive terms, no subtraction) once per likelihood call,
@@ -145,7 +148,7 @@ $L_\mu(s,T)$ uses the mirror-image suffix sum.
 ### Population term
 
 The population-count term is $\ln\Pr(Z_T=z)=\ln(1-P_0(T))+\ln\pi+(z-1)\ln(1-\pi)$ with
-$P_0(T)=N/(1+N)$;
+$P_0(T)=I/(1+I)$;
 given survival, $\ln\Pr(Z_T=z\mid Z_T\ge1)=-z\ln\mathcal W(T)+(z-1)\ln(\mathcal W(T)-1)$.
 The code uses $\ln\pi=-\ln\mathcal W(T)$ and $\ln(1-\pi)=\ln(\mathcal W(T)-1)-\ln\mathcal W(T)$ directly,
 so it never recovers $\pi$ as $1-(1-\pi)$ (which loses precision when $\pi(T)\ll1$).
@@ -182,7 +185,7 @@ log_lik = non_spine_log_density(terms, ages).sum()
 ## Related functions
 
 - `spine_log_density`: spine age density (ages $\ge T$ get the boundary mass at $t=T$).
-- `bdpinf.models.math_nested`: the exact epoch-wise $\mathcal W$, $N$, $L_\mu$ and age densities behind all of these.
+- `bdpinf.models.math_nested`: the exact epoch-wise $\mathcal W$, $I$, $L_\mu$ and age densities behind all of these.
 
 ## Unknown Spine (Default Inference Path)
 

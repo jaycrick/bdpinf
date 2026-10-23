@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `qmd_scripts/validation/survival_conditioned_simulation/` (`01_simulator_comparison`, `02_subcritical_splitting`): the `bdsurv` simulator-comparison notebooks, moved here so `bdsurv` no longer depends on `bdpinf`.
 - `models.rate_functions` (`RateFunction`, `PiecewiseConstantRate`, `PiecewiseLinearRate`) and `models.math_age_densities`: spine, non-spine and random-individual age densities/CDFs for time-varying (piecewise-linear) birth and death rates, with a notebook of density shapes (`qmd_scripts/validation/time_varying_rates/`).
 - `visualization.age_density_plots` (`scenario_panel`, `scenario_row`, ...) and a non-spine age-shapes notebook (`02_non_spine_age_shapes.qmd`).
-- `models.math_nested`: exact epoch-wise nested integral $\mathcal W(b)=1/\pi(b)$, $N(T)$ and the age densities in the paper's notation, all in log space; `inference.likelihood.resolve_spine_ages` shared by `log_likelihood`, `fit_birth_death_processes` and the Bayesian model.
+- `models.math_nested`: exact epoch-wise nested integral $\mathcal W(b)=1/\pi(b)$, $I(T)$ and the age densities in the paper's notation, all in log space; `inference.likelihood.resolve_spine_ages` shared by `log_likelihood`, `fit_birth_death_processes` and the Bayesian model.
 
 ### Fixed
 
@@ -24,6 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `models.math_ages` removed: use `models.math_nested` (`nested_terms(birth, death, times)` then `non_spine_log_density` / `spine_log_density`, `.sum()` for a log-likelihood).
   `nested_terms` and the density functions now validate concrete (non-traced) inputs.
+
+- `models.math_nested`: $N(T)$ is now the extinction odds $I(T)=P_0/(1-P_0)$; `log_extinction_numerator` renamed `log_extinction_odds`, `NestedTerms.log_n_*` renamed `log_i_*`, and new `log_extinction_and_survival_pr` returns $\ln P_0$ and $\ln(1-P_0)$ (shared by `math_extinction` and `math_populations`).
 
 - `models.math_extinction`: only `calculate_extinction_pr` remains (dropped `pr_extinction_numerator`, `log_pr_extinction_numerator`, the unused `_integrand_surv_from_weighted_birth_time` and the `_skip_normalization` kwarg).
 

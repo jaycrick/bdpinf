@@ -16,7 +16,7 @@ Notation (paper symbol, code name)
 | $d_k = \tau_k - \tau_{k-1}$ | ``durations`` |
 | $\Gamma(0, \tau_k]$ | ``gamma_end`` (``gamma_before``: k-1) |
 | $\Lambda(s, T], M(s, T]$ | ``lam_after``/``mu_after`` plus a partial |
-| $N(b)=\int_0^b \mu e^{-\Gamma(0,t]}$ | ``log_n_*`` |
+| $I(b)=\int_0^b \mu e^{-\Gamma(0,t]}$ (extinction odds at $b = T$) | ``log_i_*`` |
 | $L(b)=\int_0^b \lambda e^{-\Gamma(0,t]}$ | ``log_l_*`` |
 | $\mathcal W(b)$ | `log_nested_w` |
 | $\pi(b) = 1/\mathcal W(b)$ | ``exp(-log_nested_w(...))`` |
@@ -26,15 +26,15 @@ Notation (paper symbol, code name)
 
 Key relations (all exact):
 
-- $\mathcal W(b) = e^{\Gamma(0,b]}\,(1 + N(b))$
+- $\mathcal W(b) = e^{\Gamma(0,b]}\,(1 + I(b))$
   and $\mathcal W(b) - 1 = e^{\Gamma(0,b]} L(b)$.
-  Hence $\pi(T) = 1/(1+\texttt{ext\_num})$ only when $\Gamma(0,T]=0$,
-  where ``ext_num`` is $N(T)$.
-- $\Pr(Z_T = 0) = N/(1+N)$ and $\Pr(Z_T = z \mid Z_T \ge 1)
-  = \pi(1-\pi)^{z-1}$.
+- $I(T) = P_0(T)/(1 - P_0(T))$ is the odds of extinction by $T$,
+  so $\Pr(Z_T = 0) = I/(1+I)$, $1 + I(T) = 1/\Pr(Z_T \ge 1)$ and
+  $\mathcal W(T) = \mathbb E[Z_T]/\Pr(Z_T \ge 1) = \mathbb E[Z_T \mid Z_T \ge 1]$.
+  Given survival, $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
 - Per epoch, with $\kappa^-(g, d) = (1 - e^{-gd})/g$ (equal to ``d`` at
   $g = 0$, so the critical case needs no special treatment),
-  $N$ and $L$ accumulate $w_k e^{-\Gamma(0,\tau_{k-1}]}
+  $I$ and $L$ accumulate $w_k e^{-\Gamma(0,\tau_{k-1}]}
   \kappa^-(\gamma_k, d_k)$ with $w = \mu$ and $w = \lambda$.
 - Non-spine age: $f(a) = \lambda(T-a)\,\mathcal W(T-a)\,e^{-M(T-a,T]}
   / (\mathcal W(T) - 1)$.
@@ -57,7 +57,8 @@ __all__ = [
     "LOG_ZERO",
     "NestedTerms",
     "age_log_densities",
-    "log_extinction_numerator",
+    "log_extinction_and_survival_pr",
+    "log_extinction_odds",
     "log_nested_w",
     "log_nested_w_minus_one",
     "log_nested_w_total",
@@ -87,8 +88,8 @@ class NestedTerms(NamedTuple):
     gamma_before: jax.Array
     gamma_end: jax.Array
     gamma_total: jax.Array
-    log_n_before: jax.Array
-    log_n_total: jax.Array
+    log_i_before: jax.Array
+    log_i_total: jax.Array
     log_l_total: jax.Array
     log_spine_after: jax.Array
     lam_after: jax.Array
@@ -105,7 +106,7 @@ _COLUMNS = (
     "growth",
     "gamma_before",
     "gamma_end",
-    "log_n_before",
+    "log_i_before",
     "log_spine_after",
     "lam_after",
     "mu_after",
@@ -124,7 +125,7 @@ class _Row(NamedTuple):
     growth: jax.Array
     gamma_before: jax.Array
     gamma_end: jax.Array
-    log_n_before: jax.Array
+    log_i_before: jax.Array
     log_spine_after: jax.Array
     lam_after: jax.Array
     mu_after: jax.Array
@@ -242,22 +243,22 @@ def nested_terms(
     log_mu = _log_or_floor(death_rates)
     log_lam = _log_or_floor(birth_rates)
 
-    n_terms = log_mu - gamma_before + log_kappa
+    i_terms = log_mu - gamma_before + log_kappa
     l_terms = log_lam - gamma_before + log_kappa
     # kappa^+ = e^{gd} kappa^-: contribution of epoch j to L_mu(tau_k, T) for k < j.
     spine_terms = log_mu + (gamma_total - gamma_end) + x + log_kappa
     lam_dur = birth_rates * durations
     mu_dur = death_rates * durations
     if times.shape[0] == 1:  # static: nothing to accumulate over a single epoch
-        log_n_cum, log_l_cum = n_terms, l_terms
-        log_n_before = jnp.full_like(n_terms, LOG_ZERO)
-        log_spine_after = jnp.full_like(n_terms, LOG_ZERO)
-        lam_after = jnp.zeros_like(n_terms)
-        mu_after = jnp.zeros_like(n_terms)
+        log_i_cum, log_l_cum = i_terms, l_terms
+        log_i_before = jnp.full_like(i_terms, LOG_ZERO)
+        log_spine_after = jnp.full_like(i_terms, LOG_ZERO)
+        lam_after = jnp.zeros_like(i_terms)
+        mu_after = jnp.zeros_like(i_terms)
     else:
-        log_n_cum = jax.lax.cumlogsumexp(n_terms)
+        log_i_cum = jax.lax.cumlogsumexp(i_terms)
         log_l_cum = jax.lax.cumlogsumexp(l_terms)
-        log_n_before = _shift_right(log_n_cum, LOG_ZERO)
+        log_i_before = _shift_right(log_i_cum, LOG_ZERO)
         log_spine_after = _shift_left(
             jax.lax.cumlogsumexp(spine_terms, reverse=True), LOG_ZERO
         )
@@ -272,7 +273,7 @@ def nested_terms(
             growth,
             gamma_before,
             gamma_end,
-            log_n_before,
+            log_i_before,
             log_spine_after,
             lam_after,
             mu_after,
@@ -290,8 +291,8 @@ def nested_terms(
         gamma_before=gamma_before,
         gamma_end=gamma_end,
         gamma_total=gamma_total,
-        log_n_before=log_n_before,
-        log_n_total=log_n_cum[-1],
+        log_i_before=log_i_before,
+        log_i_total=log_i_cum[-1],
         log_l_total=log_l_cum[-1],
         log_spine_after=log_spine_after,
         lam_after=lam_after,
@@ -312,15 +313,15 @@ def _row(terms: NestedTerms, s: jax.Array) -> _Row:
 
 
 # ---------------------------------------------------------------------------
-# W, N and related scalars
+# W, I and related scalars
 # ---------------------------------------------------------------------------
 
 
 def _log_w_from_row(row: _Row, u: jax.Array, *, single_epoch: bool) -> jax.Array:
     """``log W`` at ``start + u`` inside the epoch described by ``row``."""
     partial = row.log_death - row.gamma_before + _log_kappa_minus(row.growth, u)
-    log_n_b = partial if single_epoch else jnp.logaddexp(row.log_n_before, partial)
-    return row.gamma_before + row.growth * u + jnp.logaddexp(0.0, log_n_b)
+    log_i_b = partial if single_epoch else jnp.logaddexp(row.log_i_before, partial)
+    return row.gamma_before + row.growth * u + jnp.logaddexp(0.0, log_i_b)
 
 
 def log_nested_w(terms: NestedTerms, b: jax.Array) -> jax.Array:
@@ -332,15 +333,29 @@ def log_nested_w(terms: NestedTerms, b: jax.Array) -> jax.Array:
 
 def log_nested_w_total(terms: NestedTerms) -> jax.Array:
     r"""Return $\ln\mathcal W(T)$, i.e. $-\ln\pi(T)$."""
-    return terms.gamma_total + jnp.logaddexp(0.0, terms.log_n_total)
+    return terms.gamma_total + jnp.logaddexp(0.0, terms.log_i_total)
 
 
-def log_extinction_numerator(terms: NestedTerms) -> jax.Array:
-    r"""Return $\ln N(T)$ with $N(T) = \int_0^T \mu e^{-\Gamma(0,t]}dt$.
+def log_extinction_odds(terms: NestedTerms) -> jax.Array:
+    r"""Return $\ln I(T)$ with $I(T) = \int_0^T \mu e^{-\Gamma(0,t]}dt$.
 
-    ``LOG_ZERO`` (not ``-inf``) when $N(T) = 0$.
+    $I(T) = P_0(T)/(1 - P_0(T))$ is the odds of extinction by $T$,
+    so $\ln I = \operatorname{logit} P_0$.
+    ``LOG_ZERO`` (not ``-inf``) when $I(T) = 0$.
     """
-    return terms.log_n_total
+    return terms.log_i_total
+
+
+def log_extinction_and_survival_pr(terms: NestedTerms) -> tuple[jax.Array, jax.Array]:
+    r"""Return $(\ln P_0(T), \ln(1 - P_0(T)))$ from the extinction odds.
+
+    Evaluated as $\ln I - \operatorname{softplus}(\ln I)$ and
+    $-\operatorname{softplus}(\ln I)$, which stay accurate when $I$ is tiny
+    or huge.
+    """
+    log_i = log_extinction_odds(terms)
+    softplus_i = jnp.logaddexp(0.0, log_i)
+    return restore_neg_inf(log_i - softplus_i), -softplus_i
 
 
 def log_nested_w_minus_one(terms: NestedTerms) -> jax.Array:

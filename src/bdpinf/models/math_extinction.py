@@ -2,16 +2,17 @@ r"""Extinction probability calculations for birth-death processes.
 
 Notation follows the paper:
 $\Gamma(0,t] = \int_0^t (\lambda - \mu)$,
-$N(T) = \int_0^T \mu(t)\, e^{-\Gamma(0,t]}\,dt$,
-$\mathcal W(T) = e^{\Gamma(0,T]}(1 + N(T))$ and $\pi(T) = 1/\mathcal W(T)$.
-The extinction probability is $\Pr(Z_T = 0) = N(T) / (1 + N(T))$.
-In the code $N(T)$ is called the *extinction numerator* (``ext_num``); it
-equals $\mathcal W(T) - 1$ only after the rescaling above, so
-$\pi(T) = 1/(1 + N(T))$ holds only when $\Gamma(0,T] = 0$.
+$I(T) = \int_0^T \mu(t)\, e^{-\Gamma(0,t]}\,dt$,
+$\mathcal W(T) = e^{\Gamma(0,T]}(1 + I(T))$ and $\pi(T) = 1/\mathcal W(T)$.
+$I(T) = P_0(T)/(1 - P_0(T))$ is the odds of extinction by $T$,
+so $\Pr(Z_T = 0) = I(T) / (1 + I(T))$.
+Extinction is almost sure as $T \to \infty$ iff $I(\infty)$ diverges
+(Kendall's criterion).
 
 The epoch-wise closed forms live in :mod:`bdpinf.models.math_nested`
-(:func:`~bdpinf.models.math_nested.log_extinction_numerator` gives
-$\ln N(T)$); this module exposes the probability built on them.
+(:func:`~bdpinf.models.math_nested.log_extinction_and_survival_pr` gives
+$\ln P_0(T)$ and $\ln(1 - P_0(T))$); this module exposes the probability
+built on them.
 
 All inputs are assumed float64 (``jax_enable_x64`` is set in __init__.py).
 """
@@ -20,11 +21,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from bdpinf.models.math_nested import (
-    log_extinction_numerator,
-    nested_terms,
-    restore_neg_inf,
-)
+from bdpinf.models.math_nested import log_extinction_and_survival_pr, nested_terms
 
 
 def calculate_extinction_pr(
@@ -34,10 +31,10 @@ def calculate_extinction_pr(
     *,
     return_log_prob: bool = False,
 ) -> jax.Array:
-    r"""Extinction probability $P_0(T) = \Pr(Z_T = 0) = N/(1+N)$, or its log.
+    r"""Extinction probability $P_0(T) = \Pr(Z_T = 0) = I/(1+I)$, or its log.
 
-    Evaluated as $\ln N - \operatorname{softplus}(\ln N)$, which stays
-    accurate when $N$ is tiny.
+    Evaluated as $\ln I - \operatorname{softplus}(\ln I)$, which stays
+    accurate when $I$ is tiny.
 
     Parameters
     ----------
@@ -55,8 +52,7 @@ def calculate_extinction_pr(
         Scalar float64.
 
     """
-    log_n = restore_neg_inf(
-        log_extinction_numerator(nested_terms(birth_rates, death_rates, times))
+    log_pr, _ = log_extinction_and_survival_pr(
+        nested_terms(birth_rates, death_rates, times)
     )
-    log_pr = restore_neg_inf(log_n - jnp.logaddexp(0.0, log_n))
     return log_pr if return_log_prob else jnp.exp(log_pr)

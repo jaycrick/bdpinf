@@ -2,12 +2,12 @@ r"""Population log-likelihood calculations for birth-death processes.
 
 Tavaré (2018) formula for P(Z_T = n | Z_0 = n0), written in the paper's
 notation [paper: Eq. ?]: from one ancestor,
-$\Pr(Z_T = 0) = P_0(T) = N/(1+N)$ and, given survival,
+$\Pr(Z_T = 0) = P_0(T) = I/(1+I)$ and, given survival,
 $Z_T$ is geometric with success probability $\pi(T) = 1/\mathcal W(T)$,
 i.e. $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
 The code uses
-$\ln P_0 = \ln N - \mathrm{softplus}(\ln N)$,
-$\ln(1-P_0) = -\mathrm{softplus}(\ln N)$,
+$\ln P_0 = \ln I - \mathrm{softplus}(\ln I)$,
+$\ln(1-P_0) = -\mathrm{softplus}(\ln I)$,
 $\ln\pi = -\ln\mathcal W(T)$ and
 $\ln(1-\pi) = \ln(\mathcal W(T) - 1) - \ln\mathcal W(T)$,
 all from :mod:`bdpinf.models.math_nested`, so nothing is recovered through
@@ -35,7 +35,7 @@ from jax import scipy as jsp
 from jaxtyping import Array, Bool, Float, jaxtyped
 
 from bdpinf.models.math_nested import (
-    log_extinction_numerator,
+    log_extinction_and_survival_pr,
     log_nested_w_minus_one,
     log_nested_w_total,
     nested_terms,
@@ -64,11 +64,8 @@ def _population_logs(
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     r"""Return $(\ln P_0, \ln(1-P_0), \ln(1-\pi), \ln\pi)$ at ``T``."""
     terms = nested_terms(birth_rates, death_rates, times)
-    log_n = log_extinction_numerator(terms)
-    softplus_n = jnp.logaddexp(0.0, log_n)
+    log_extinction_pr, log_survival_pr = log_extinction_and_survival_pr(terms)
     log_w_total = log_nested_w_total(terms)
-    log_extinction_pr = restore_neg_inf(log_n - softplus_n)
-    log_survival_pr = -softplus_n
     log_one_minus_pi = restore_neg_inf(log_nested_w_minus_one(terms) - log_w_total)
     return log_extinction_pr, log_survival_pr, log_one_minus_pi, -log_w_total
 
