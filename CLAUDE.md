@@ -91,28 +91,31 @@ Public names, signatures and docstrings are in the generated API reference (`gre
 
 Imports may only point at the same or a lower layer; `tests/test_layering.py` enforces this and must list every new module.
 
-  | Layer | Package / module                                                                 | Role                                                                                           |
-  | ----- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-  | 0     | `utils`, `paths`                                                                 | Small helpers; `find_project_root()` for notebooks and scripts (never hardcode relative paths) |
-  | 1     | `types`, `models.validation`, `models.rate_functions`, `models.math_nested`      | Input validation, `RateFunction` protocol, the closed-form core                                |
-  | 2     | `models.math_extinction`, `models.math_populations`, `models.math_age_densities` | Pure functions built on layer 1                                                                |
-  | 3     | `inference`                                                                      | Likelihood, MLE fitting, covariance, NumPyro/NUTS, persistence                                 |
-  | 4-5   | `models.genealogy`, `process`                                                    | `BirthDeathProcess`, the canonical object passed between modules                               |
-  | 6     | `simulation`                                                                     | Gillespie and lifespan-at-birth simulators, survival conditioning, `bdsurv` adapters           |
-  | 7     | `analysis`                                                                       | Notebook-facing helpers: subset fits, recovery studies, date-density pipelines, LaTeX tables   |
-  | 8     | `visualization`                                                                  | Altair charts (house theme in `altair_theme.py`, the single export path `save_chart`)          |
+  | Layer | Package / module                                                                                        | Role                                                                                                      |
+  | ----- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+  | 0     | `utils`, `paths`                                                                                        | Small helpers; `find_project_root()` for notebooks and scripts (never hardcode relative paths)            |
+  | 1     | `types`, `models.validation`, `models.rate_functions`, `models.math_nested`                             | Input validation, `RateFunction` protocol, the closed-form core                                           |
+  | 2     | `models.math_extinction`, `models.math_populations`, `models.math_age_densities`, `models.math_general` | Pure functions built on layer 1                                                                           |
+  | 3     | `inference`                                                                                             | `AgeData` and likelihood, rate-model families, constraints, Newton MLE fitting, NumPyro/NUTS, persistence |
+  | 4-5   | `models.genealogy`, `process`                                                                           | `BirthDeathProcess`, the canonical object passed between modules                                          |
+  | 6     | `simulation`                                                                                            | Gillespie and lifespan-at-birth simulators, survival conditioning, `bdsurv` adapters                      |
+  | 7     | `analysis`                                                                                              | Notebook-facing helpers: subset fits, recovery studies, date-density pipelines, LaTeX tables              |
+  | 8     | `visualization`                                                                                         | Altair charts (house theme in `altair_theme.py`, the single export path `save_chart`)                     |
 
 ### Ideas worth knowing
 
 - **Nested integral $\mathcal W$.** $\mathcal W(b)=1/\pi(b)$ obeys $\mathcal W'=\gamma\mathcal W+\mu$, so for piecewise-constant rates it has an exact epoch-wise recursion (the "restart principle").
   Age and population likelihoods follow from it in $O(K+n\log K)$, in log space, with no sum over genealogy orderings and no division by $\lambda-\mu$ (the critical case is exact).
   `math_nested` is the piecewise-constant array API (`nested_terms(birth, death, times)` then `non_spine_log_density` / `spine_log_density`).
-  `math_age_densities` is the general-rate API for any `RateFunction` (piecewise-constant or linear, with room for splines or sinusoids), computed by Gauss-Legendre quadrature between breakpoints; its `*_general` names mirror `math_nested`.
-- **Validation.** `nested_terms` and the density functions validate concrete inputs and skip validation under `jit`/`grad` tracing; the fitter and Bayesian model call the shared `_log_likelihood_core` with already-validated tensors.
+  `math_general` is the general-rate counterpart for any `RateFunction` (piecewise-constant or linear, with room for splines or sinusoids): `general_terms(birth, death)` does the segment quadrature once (Gauss-Legendre between breakpoints, accumulated with `cumlogsumexp`), after which each age needs two short partial-segment quadratures; `terms_for(birth, death)` picks the exact `math_nested` backend for piecewise-constant rates on shared epochs and quadrature otherwise, and its density functions accept either kind of terms.
+  `math_age_densities` keeps the public `*_general` names and the CDFs on top of it.
+- **Validation.** `nested_terms` and the density functions validate concrete inputs and skip validation under `jit`/`grad` tracing; `AgeData.from_groups` does the host-side work (spine resolution, counts, range checks) once, and the fitter and Bayesian model call the shared `_log_likelihood_core` on its output.
 - **Unknown spine.** When no spine is given, `log_likelihood()` marginalises over which individual is the spine (`resolve_spine_ages` is the shared resolution step).
   `condition_on_survival` (default `True`) conditions the population-count term on non-extinction.
-- **Fitting.** `fit_birth_death_processes()` runs optimizers in sequence (e.g. L-BFGS then Adam), each warm-started from the previous attempt, and stops at the first convergence.
-  `ParameterConstraints` (fixed values, equality groups) reduces the parameter space and is validated before optimisation.
+- **Fitting.** `fit(AgeData, BirthDeathModel)` maximises the exact likelihood with a trust-region Newton method (`scipy` `trust-exact`, jitted JAX gradient and Hessian), falling back to L-BFGS-B, and reports a `FitResult` (parameters by name, `at_interior_optimum`, covariance, profile-likelihood intervals via `profile_likelihood_interval`).
+  `BirthDeathModel` pairs two `RateModel` families (`PiecewiseConstant`, `PiecewiseLinear`; a new family only needs `params`, `build`, `constant_values`, `values_from_rate`); every parameter has a transform (log for rates) that maps it to the unconstrained scale.
+  `Constraints` (fixed values, equality groups, **by parameter name**) compile to index maps shared by the MLE and NUTS; a jump-form `PiecewiseLinear` with `flat_groups` constraints *is* the piecewise-constant model, so constant is nested in linear.
+  The jitted objective is cached per model and constraint structure with the data and fixed values as arguments, and the age vector is padded (masked) to a power-of-two bucket, so repeated fits (bootstrap, profile likelihood, recovery studies) compile once; compile time, not run time, dominates a single fit (`scripts/bench_fitting.py`, `docs/design/FITTING_DERIVATIVES.md`).
   `fit_single_model` / `FitModelConfig` in `analysis.validation_helpers` is the one fit-an-age-vector helper used by the recovery studies.
 - **Plots.** Reusable, tested builders live in `visualization`; one-off diagnostic charts are built inline in notebooks with `alt.Chart(...)`, the shared `PTOLQUAL` palette and `save_chart`/`display_svg`.
 
@@ -125,7 +128,10 @@ Imports may only point at the same or a lower layer; `tests/test_layering.py` en
 ## Known challenges
 
 **Multi-epoch convergence**: High-dimensional parameter space with sensitivity at epoch boundaries.
-Mitigate by using equality constraints (constant rates across epochs), providing good initial guesses, using LBFGS first then Adam, and setting `perturb_initial_params_std > 0`.
+Mitigate by using equality constraints (constant rates across epochs), warm-starting a richer model from a simpler fit (`init=previous_result`), and `n_starts > 1` (the second start swaps birth and death, because ages alone are symmetric in the two rates).
+
+**Weak identifiability**: from survivor ages alone, early-time rates and the death rate are weakly identified (the size term fixes only $\pi(T)$; ages separate the rest slowly), and Wald intervals for growth-type parameters are not asymptotically valid.
+Flexible models (many knots) need constraints or a lot of data; prefer `profile_likelihood_interval`.
 
 **Numerical stability**: Likelihoods are always computed in log-space.
 Extreme rate values (μ >> λ or vice versa) and ages near epoch boundaries can still cause issues.

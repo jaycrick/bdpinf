@@ -35,6 +35,7 @@ from jax import scipy as jsp
 from jaxtyping import Array, Bool, Float, jaxtyped
 
 from bdpinf.models.math_nested import (
+    Totals,
     log_extinction_and_survival_pr,
     log_nested_w_minus_one,
     log_nested_w_total,
@@ -60,10 +61,9 @@ def _safe_mul(count: jax.Array, log_value: jax.Array) -> jax.Array:
 
 
 def _population_logs(
-    birth_rates: jax.Array, death_rates: jax.Array, times: jax.Array
+    terms: Totals,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     r"""Return $(\ln P_0, \ln(1-P_0), \ln(1-\pi), \ln\pi)$ at ``T``."""
-    terms = nested_terms(birth_rates, death_rates, times)
     log_extinction_pr, log_survival_pr = log_extinction_and_survival_pr(terms)
     log_w_total = log_nested_w_total(terms)
     log_one_minus_pi = restore_neg_inf(log_nested_w_minus_one(terms) - log_w_total)
@@ -148,25 +148,24 @@ def _compute_populations_log_lik_multi_start(
 # ---------------------------------------------------------------------------
 
 
-def calculate_populations_log_pmf(
-    birth_rates: Float[Array, " epochs"],
-    death_rates: Float[Array, " epochs"],
+def calculate_populations_log_pmf_from_terms(
+    terms: Totals,
     ns: Float[Array, " n"],
-    times: Float[Array, " epochs"],
     *,
     initial_population: int = 1,
-    _skip_normalization: bool = False,
 ) -> Float[Array, " n"]:
-    r"""Per-element log P(Z_T = ns[i]) for each i.
+    r"""Per-element log P(Z_T = ns[i]) from precomputed terms.
 
-    Same math as ``calculate_populations_log_lik`` but returns the shape-(m,)
-    per-element log-probability array rather than their sum.  JIT- and vmap-safe
-    with ``_skip_normalization=True``.
+    ``terms`` is either kind of epoch terms
+    (:class:`~bdpinf.models.math_nested.NestedTerms` or
+    :class:`~bdpinf.models.math_general.GeneralTerms`), so the rates may be any
+    :class:`~bdpinf.models.rate_functions.RateFunction`.
+    JIT- and vmap-safe.
 
     Parameters
     ----------
-    birth_rates, death_rates, times : jax.Array
-        Shape (n_epochs,) float64.
+    terms : Totals
+        Precomputed terms for the birth and death rates.
     ns : jax.Array
         Shape (m,) float64 population counts to evaluate.
     initial_population : int
@@ -182,14 +181,8 @@ def calculate_populations_log_pmf(
     _zero = jnp.float64(0.0)
 
     ns = ensure_1d_tensor(ns)
-
-    if not _skip_normalization:
-        birth_rates, death_rates, times = normalize_and_validate_inputs(
-            birth_rates, death_rates, times
-        )
-
     log_extinction_pr, log_survival_pr, log_one_minus_pi, log_pi = _population_logs(
-        birth_rates, death_rates, times
+        terms
     )
 
     zero_mask = ns == 0
@@ -215,6 +208,47 @@ def calculate_populations_log_pmf(
         )
 
     return jnp.where(jnp.isnan(log_pr), _ninf, log_pr)
+
+
+def calculate_populations_log_pmf(
+    birth_rates: Float[Array, " epochs"],
+    death_rates: Float[Array, " epochs"],
+    ns: Float[Array, " n"],
+    times: Float[Array, " epochs"],
+    *,
+    initial_population: int = 1,
+    _skip_normalization: bool = False,
+) -> Float[Array, " n"]:
+    r"""Per-element log P(Z_T = ns[i]) for piecewise-constant rates.
+
+    Same math as ``calculate_populations_log_lik`` but returns the shape-(m,)
+    per-element log-probability array rather than their sum.  JIT- and vmap-safe
+    with ``_skip_normalization=True``.
+
+    Parameters
+    ----------
+    birth_rates, death_rates, times : jax.Array
+        Shape (n_epochs,) float64.
+    ns : jax.Array
+        Shape (m,) float64 population counts to evaluate.
+    initial_population : int
+        Z_0. Default 1.
+
+    Returns
+    -------
+    jax.Array
+        Shape (m,) float64 log probabilities.
+
+    """
+    if not _skip_normalization:
+        birth_rates, death_rates, times = normalize_and_validate_inputs(
+            birth_rates, death_rates, times
+        )
+    return calculate_populations_log_pmf_from_terms(
+        nested_terms(birth_rates, death_rates, times),
+        ns,
+        initial_population=initial_population,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +285,62 @@ def population_geometric_parameter(
     return jnp.exp(-log_nested_w_total(nested_terms(birth_rates, death_rates, times)))
 
 
+def calculate_populations_log_lik_from_terms(
+    terms: Totals,
+    ns: Float[Array, " n"],
+    *,
+    initial_population: int = 1,
+    condition_on_survival: bool = False,
+) -> Float[Array, ""]:
+    r"""Log P(Z_T = n) summed over provided counts, from precomputed terms.
+
+    Same as :func:`calculate_populations_log_lik` but for any
+    :class:`~bdpinf.models.rate_functions.RateFunction` pair, through terms
+    from :func:`bdpinf.models.math_general.terms_for`.
+    JIT- and grad-safe.
+
+    Parameters
+    ----------
+    terms : Totals
+        Precomputed terms for the birth and death rates.
+    ns : jax.Array
+        Shape (m,) float64 population counts.
+    initial_population : int
+        Z_0. Default 1.
+    condition_on_survival : bool
+        If True and initial_population == 1, condition on non-extinction for
+        positive counts: $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
+
+    Returns
+    -------
+    jax.Array
+        Scalar float64.
+
+    """
+    _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
+    _zero = jnp.float64(0.0)
+
+    ns = ensure_1d_tensor(ns)
+
+    if not condition_on_survival:
+        log_pr = calculate_populations_log_pmf_from_terms(
+            terms, ns, initial_population=initial_population
+        )
+        return jnp.where(jnp.all(jnp.isfinite(log_pr)), log_pr.sum(), _ninf)
+
+    # condition_on_survival=True path (initial_population==1 only):
+    # condition on non-extinction.
+    log_extinction_pr, _, log_one_minus_pi, log_pi = _population_logs(terms)
+    zero_mask = ns == 0
+    log_term3 = jnp.where(ns == 1, _zero, _safe_mul(ns - 1.0, log_one_minus_pi))
+    log_pr = jnp.where(
+        zero_mask,
+        jnp.float64(initial_population) * log_extinction_pr,
+        log_pi + log_term3,
+    )
+    return jnp.where(jnp.all(jnp.isfinite(log_pr)), log_pr.sum(), _ninf)
+
+
 def calculate_populations_log_lik(
     birth_rates: Float[Array, " epochs"],
     death_rates: Float[Array, " epochs"],
@@ -283,37 +373,13 @@ def calculate_populations_log_lik(
         Scalar float64.
 
     """
-    _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
-    _zero = jnp.float64(0.0)
-
-    ns = ensure_1d_tensor(ns)
-
     if not _skip_normalization:
         birth_rates, death_rates, times = normalize_and_validate_inputs(
             birth_rates, death_rates, times
         )
-
-    if not condition_on_survival:
-        log_pr = calculate_populations_log_pmf(
-            birth_rates,
-            death_rates,
-            ns,
-            times,
-            initial_population=initial_population,
-            _skip_normalization=True,
-        )
-        return jnp.where(jnp.all(jnp.isfinite(log_pr)), log_pr.sum(), _ninf)
-
-    # condition_on_survival=True path (initial_population==1 only):
-    # condition on non-extinction.
-    log_extinction_pr, _, log_one_minus_pi, log_pi = _population_logs(
-        birth_rates, death_rates, times
+    return calculate_populations_log_lik_from_terms(
+        nested_terms(birth_rates, death_rates, times),
+        ns,
+        initial_population=initial_population,
+        condition_on_survival=condition_on_survival,
     )
-    zero_mask = ns == 0
-    log_term3 = jnp.where(ns == 1, _zero, _safe_mul(ns - 1.0, log_one_minus_pi))
-    log_pr = jnp.where(
-        zero_mask,
-        jnp.float64(initial_population) * log_extinction_pr,
-        log_pi + log_term3,
-    )
-    return jnp.where(jnp.all(jnp.isfinite(log_pr)), log_pr.sum(), _ninf)

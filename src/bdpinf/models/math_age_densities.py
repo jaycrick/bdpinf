@@ -41,8 +41,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from bdpinf.models import math_nested
-from bdpinf.models.rate_functions import PiecewiseConstantRate, RateFunction
+from bdpinf.models import math_general
+from bdpinf.models.rate_functions import RateFunction
 
 __all__ = [
     "age_log_densities_general",
@@ -63,35 +63,10 @@ Method = Literal["auto", "quadrature"]
 ``"quadrature"`` forces quadrature (an independent oracle for the exact path)."""
 
 
-def _exact_terms(
-    birth: RateFunction, death: RateFunction, method: Method
-) -> math_nested.NestedTerms | None:
-    """Epoch terms when both rates are piecewise constant on the same epochs."""
-    if method != "auto":
-        return None
-    if not (
-        isinstance(birth, PiecewiseConstantRate)
-        and isinstance(death, PiecewiseConstantRate)
-    ):
-        return None
-    if birth.epoch_end_times.shape != death.epoch_end_times.shape:
-        return None
-    both = (birth.epoch_end_times, death.epoch_end_times)
-    if not any(isinstance(x, jax.core.Tracer) for x in both) and not bool(
-        jnp.array_equal(*both)
-    ):
-        return None
-    return math_nested.nested_terms(birth.values, death.values, birth.epoch_end_times)
-
-
-# ---------------------------------------------------------------------------
-# Quadrature primitives
-# ---------------------------------------------------------------------------
-
-
-def _safe_log(x: jax.Array) -> jax.Array:
-    positive = x > 0
-    return jnp.where(positive, jnp.log(jnp.where(positive, x, 1.0)), -jnp.inf)
+def _terms(
+    birth: RateFunction, death: RateFunction, n_nodes: int, method: Method
+) -> math_general.AgeTerms:
+    return math_general.terms_for(birth, death, n_nodes=n_nodes, method=method)
 
 
 def _sorted_breakpoints(*rates: RateFunction) -> jax.Array:
@@ -112,20 +87,6 @@ def _segments(
     half = 0.5 * (b - a)
     mid = 0.5 * (a + b)
     return mid[:, None] + half[:, None] * xi[None, :], half[:, None] * wi[None, :]
-
-
-def _log_l(
-    weight: RateFunction,
-    birth: RateFunction,
-    death: RateFunction,
-    s: jax.Array,
-    e: jax.Array,
-    n_nodes: int,
-) -> jax.Array:
-    r"""Scalar $\ln L_w(s, e)$ with $L_w = \int_s^e w\,e^{\Gamma(t,e]}$."""
-    x, w = _segments(s, e, _sorted_breakpoints(birth, death), n_nodes)
-    gamma_te = birth.integral(x, e) - death.integral(x, e)
-    return jax.nn.logsumexp(_safe_log(weight(x)) + gamma_te, b=w)
 
 
 def log_nested_w_general(
@@ -150,16 +111,7 @@ def log_nested_w_general(
         See :data:`Method`.
 
     """
-    exact = _exact_terms(birth, death, method)
-    if exact is not None:
-        return math_nested.log_nested_w(exact, b)
-
-    def scalar(b_: jax.Array) -> jax.Array:
-        zero = jnp.zeros_like(b_)
-        gamma_0b = birth.integral(zero, b_) - death.integral(zero, b_)
-        return jnp.logaddexp(gamma_0b, _log_l(death, birth, death, zero, b_, n_nodes))
-
-    return jnp.vectorize(scalar, signature="()->()")(jnp.asarray(b, dtype=jnp.float64))
+    return math_general.log_nested_w(_terms(birth, death, n_nodes, method), b)
 
 
 # ---------------------------------------------------------------------------
@@ -179,21 +131,8 @@ def spine_age_log_density(
 
     The atom at $a = T$ is :func:`spine_age_log_atom`.
     """
-    exact = _exact_terms(birth, death, method)
-    if exact is not None:
-        return math_nested.spine_log_density(exact, ages, atom_at_boundary=False)
-    end = birth.end_time
-
-    def scalar(a: jax.Array) -> jax.Array:
-        s = end - a
-        return (
-            _safe_log(birth(s))
-            - birth.integral(s, end)
-            + _log_l(death, birth, death, s, end, n_nodes)
-        )
-
-    return jnp.vectorize(scalar, signature="()->()")(
-        jnp.asarray(ages, dtype=jnp.float64)
+    return math_general.spine_log_density(
+        _terms(birth, death, n_nodes, method), ages, atom_at_boundary=False
     )
 
 
@@ -205,13 +144,7 @@ def spine_age_log_atom(
     method: Method = "auto",
 ) -> jax.Array:
     r"""Log of $\Pr(A^* = T) = \mathcal W(T) e^{-\Lambda(0,T]}$."""
-    exact = _exact_terms(birth, death, method)
-    if exact is not None:
-        return math_nested.spine_log_atom(exact)
-    end = birth.end_time
-    return log_nested_w_general(
-        birth, death, end, n_nodes=n_nodes, method="quadrature"
-    ) - birth.integral(jnp.zeros_like(end), end)
+    return math_general.spine_log_atom(_terms(birth, death, n_nodes, method))
 
 
 def non_spine_age_log_density(
@@ -223,25 +156,8 @@ def non_spine_age_log_density(
     method: Method = "auto",
 ) -> jax.Array:
     r"""Log density of the non-spine age $A$, ``0 < a < T``."""
-    exact = _exact_terms(birth, death, method)
-    if exact is not None:
-        return math_nested.non_spine_log_density(exact, ages)
-    end = birth.end_time
-    log_norm = _log_l(birth, birth, death, jnp.zeros_like(end), end, n_nodes)
-
-    def scalar(a: jax.Array) -> jax.Array:
-        s = end - a
-        return (
-            _safe_log(birth(s))
-            + log_nested_w_general(
-                birth, death, s, n_nodes=n_nodes, method="quadrature"
-            )
-            - death.integral(s, end)
-            - log_norm
-        )
-
-    return jnp.vectorize(scalar, signature="()->()")(
-        jnp.asarray(ages, dtype=jnp.float64)
+    return math_general.non_spine_log_density(
+        _terms(birth, death, n_nodes, method), ages
     )
 
 
@@ -257,12 +173,8 @@ def age_log_densities_general(
 
     For piecewise-constant rates both come from one shared pass.
     """
-    exact = _exact_terms(birth, death, method)
-    if exact is not None:
-        return math_nested.age_log_densities(exact, ages, atom_at_boundary=False)
-    return (
-        non_spine_age_log_density(ages, birth, death, n_nodes=n_nodes, method=method),
-        spine_age_log_density(ages, birth, death, n_nodes=n_nodes, method=method),
+    return math_general.age_log_densities(
+        _terms(birth, death, n_nodes, method), ages, atom_at_boundary=False
     )
 
 

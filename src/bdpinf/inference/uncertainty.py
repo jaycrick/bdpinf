@@ -2,13 +2,10 @@
 
 import math
 import warnings
-from collections.abc import Callable
 
 import jax
 import jax.numpy as jnp
 import jax.scipy.special
-
-from .likelihood import log_likelihood
 
 
 def _is_positive_definite(matrix: jax.Array) -> bool:
@@ -59,48 +56,15 @@ def _invert_observed_fisher(
     return jnp.linalg.pinv(observed_fisher)
 
 
-def estimate_mle_covariance(
-    free_log_params: jax.Array,
-    n_epochs: int,
-    full_log_params_fn: Callable[[jax.Array], jax.Array],
-    non_spine_ages: jax.Array,
-    times_tensor: jax.Array,
-    *,
-    spine_ages_tensor: jax.Array | None,
-    population_sizes_tensor: jax.Array,
-    initial_population: int,
-    condition_on_survival: bool = True,
-) -> jax.Array:
-    """Estimate covariance of fitted log-parameters using the Hessian."""
-    theta_hat = jnp.array(free_log_params, dtype=jnp.float64)
+def covariance_from_hessian(hessian: jax.Array) -> jax.Array:
+    """Covariance of the free parameters from the negative-log-likelihood Hessian.
 
-    def objective(theta_free: jax.Array) -> jax.Array:
-        full_log_params = full_log_params_fn(theta_free)
-        return -log_likelihood(
-            birth_rates=full_log_params[:n_epochs],
-            death_rates=full_log_params[n_epochs:],
-            ages=non_spine_ages,
-            times=times_tensor,
-            spine_ages=spine_ages_tensor,
-            ns=population_sizes_tensor,
-            initial_population=initial_population,
-            condition_on_survival=condition_on_survival,
-            is_ordered=False,
-            log_scale_params=True,
-        )
-
-    hessian_nll = jax.hessian(objective)(theta_hat)
-    hessian_nll = 0.5 * (hessian_nll + hessian_nll.T)
-
-    covariance_log_free = _invert_observed_fisher(hessian_nll)
-    covariance_log_free = 0.5 * (covariance_log_free + covariance_log_free.T)
-
-    jacobian_full_log = jax.jacobian(full_log_params_fn)(theta_hat)
-
-    covariance_log_full = jacobian_full_log @ covariance_log_free @ jacobian_full_log.T
-    covariance_log_full = 0.5 * (covariance_log_full + covariance_log_full.T)
-
-    return covariance_log_full
+    Inverts the observed Fisher information, with the jitter and pseudo-inverse
+    fallbacks of :func:`_invert_observed_fisher`.
+    """
+    hessian = 0.5 * (hessian + hessian.T)
+    covariance = _invert_observed_fisher(hessian)
+    return 0.5 * (covariance + covariance.T)
 
 
 def confidence_intervals_from_log_covariance(

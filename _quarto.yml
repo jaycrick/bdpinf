@@ -65,6 +65,8 @@ website:
             file: qmd_scripts/validation/time_varying_rates/01_spine_age_shapes.qmd
           - text: "Non-spine age shapes"
             file: qmd_scripts/validation/time_varying_rates/02_non_spine_age_shapes.qmd
+          - text: "Piecewise-linear fitting"
+            file: qmd_scripts/validation/time_varying_rates/03_piecewise_linear_recovery.qmd
       - text: "Validation: Survival-Conditioned Simulation"
         menu:
           - text: "Simulator comparison"

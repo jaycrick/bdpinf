@@ -1,11 +1,13 @@
 """Tests for the single-epoch bulk-inference recovery-study helpers."""
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import pytest
 
 import bdpinf.analysis.single_epoch_recovery as ser
+from bdpinf.inference import FitResult
 
 
 class _FakeSampledAges:
@@ -14,20 +16,6 @@ class _FakeSampledAges:
     def __init__(self, spine: list[float], non_spine: list[float]) -> None:
         self.spine_ages = np.asarray(spine, dtype=np.float64)
         self.non_spine_ages = np.asarray(non_spine, dtype=np.float64)
-
-
-def _fake_success_result(
-    birth: float, death: float, optimizer: str = "lbfgs"
-) -> dict[str, Any]:
-    return {
-        "success": True,
-        "birth_rates": np.array([birth]),
-        "death_rates": np.array([death]),
-        "optimization_result": {
-            "attempts": [{"optimizer": optimizer}],
-            "selected_attempt_index": 0,
-        },
-    }
 
 
 class TestSampleSingleEpochAges:
@@ -52,13 +40,15 @@ class TestRunSingleEpochRecoveryReplicate:
     """Test run_single_epoch_recovery_replicate."""
 
     def test_successful_replicate_row_shape(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        make_fit_result: Callable[..., FitResult],
     ) -> None:
         def fake_sample(*args: Any, **kwargs: Any) -> np.ndarray:
             return np.array([1.0, 2.0, 15.0])  # includes a boundary age
 
-        def fake_fit(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            return _fake_success_result(0.48, 0.09, optimizer="adam")
+        def fake_fit(*args: Any, **kwargs: Any) -> FitResult:
+            return make_fit_result([0.48], [0.09], method="L-BFGS-B")
 
         monkeypatch.setattr(ser, "sample_single_epoch_ages", fake_sample)
         monkeypatch.setattr(ser, "fit_single_model", fake_fit)
@@ -74,16 +64,18 @@ class TestRunSingleEpochRecoveryReplicate:
         assert row["has_boundary_age"] is True
         assert row["birth_rate"] == pytest.approx(0.48)
         assert row["death_rate"] == pytest.approx(0.09)
-        assert row["optimizer"] == "adam"
+        assert row["optimizer"] == "L-BFGS-B"
 
     def test_fit_is_configured_from_true_rates(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        make_fit_result: Callable[..., FitResult],
     ) -> None:
         captured: dict[str, Any] = {}
 
-        def fake_fit(ages: Any, config: Any) -> dict[str, Any]:
+        def fake_fit(ages: Any, config: Any) -> FitResult:
             captured["config"] = config
-            return _fake_success_result(0.5, 0.1)
+            return make_fit_result([0.5], [0.1])
 
         monkeypatch.setattr(
             ser, "sample_single_epoch_ages", lambda *a, **k: np.array([1.0, 2.0])
@@ -97,17 +89,20 @@ class TestRunSingleEpochRecoveryReplicate:
         config = captured["config"]
         assert config.times == 15.0
         assert config.is_ordered is True
-        assert config.perturb_initial_params_std == 0.0
         np.testing.assert_array_equal(config.initial_birth_rates, [0.5])
         np.testing.assert_array_equal(config.initial_death_rates, [0.1])
-        assert list(config.optimizers) == ["lbfgs", "adam"]
+        assert config.method == "trust-exact"
 
-    def test_non_boundary_replicate_row(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_non_boundary_replicate_row(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        make_fit_result: Callable[..., FitResult],
+    ) -> None:
         def fake_sample(*args: Any, **kwargs: Any) -> np.ndarray:
             return np.array([1.0, 2.0, 3.0])  # max < time_span
 
-        def fake_fit(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            return _fake_success_result(0.5, 0.1)
+        def fake_fit(*args: Any, **kwargs: Any) -> FitResult:
+            return make_fit_result([0.5], [0.1])
 
         monkeypatch.setattr(ser, "sample_single_epoch_ages", fake_sample)
         monkeypatch.setattr(ser, "fit_single_model", fake_fit)

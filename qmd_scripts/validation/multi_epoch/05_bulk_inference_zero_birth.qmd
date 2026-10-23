@@ -21,7 +21,7 @@ __compile_start = time.perf_counter()
 
 Simulation and fitting for this study (1000 replicates, structural-zero
 second-epoch birth rate with a shared death rate, fit under
-`ParameterConstraints`) are precomputed by
+`Constraints`) are precomputed by
 `scripts/generate_recovery_studies.py --study multi_epoch_zero_birth` --- see
 `bdpinf.analysis.multi_epoch_recovery.run_zero_birth_replicate` for the
 per-replicate simulate+fit logic --- and persisted to

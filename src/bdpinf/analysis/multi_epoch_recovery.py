@@ -11,7 +11,7 @@ the per-replicate simulate+fit work is run once by
   single-rate generative data fit with a two-epoch model.
 - :func:`run_zero_birth_replicate` --- ``05_bulk_inference_zero_birth.qmd``:
   structural-zero second-epoch birth rate with a shared death rate, fit under
-  :class:`~bdpinf.inference.fitting.ParameterConstraints`.
+  :class:`~bdpinf.inference.Constraints`.
 """
 
 import dataclasses
@@ -28,20 +28,16 @@ from bdpinf.analysis.validation_helpers import (
     fit_single_model,
     has_ages_in_each_epoch,
 )
-from bdpinf.inference.fitting import (
-    ParameterConstraints,
-)
+from bdpinf.inference import Constraints, FitResult
 from bdpinf.simulation import simulate_birth_death_process
 
 
-def _epoch_row(
-    simulation_index: int, model: dict[str, Any] | None
-) -> dict[str, Any] | None:
+def _epoch_row(simulation_index: int, model: FitResult | None) -> dict[str, Any] | None:
     """Convert a two-epoch fit result into a tidy row, or ``None`` on failure."""
-    if model is None or not model.get("success", False):
+    if model is None or not model.success:
         return None
-    birth = np.atleast_1d(model["birth_rates"])
-    death = np.atleast_1d(model["death_rates"])
+    birth = model.birth_values
+    death = model.death_values
     return {
         "simulation_index": simulation_index,
         "epoch_1_birth": float(birth[0]),
@@ -136,27 +132,13 @@ def simulate_zero_birth_second_epoch(
 def fit_zero_birth_replicate(
     ages: NDArray[np.float64],
     config: FitModelConfig,
-    constraints: ParameterConstraints,
-) -> dict[str, Any] | None:
+    constraints: Constraints,
+) -> FitResult | None:
     """Fit one age vector under the structural-zero-birth constraint set."""
-    result = fit_single_model(
+    return fit_single_model(
         np.asarray(ages, dtype=np.float64),
-        dataclasses.replace(
-            config,
-            perturb_initial_params_std=config.perturb_initial_params_std or 0.0,
-            param_constraints=constraints,
-        ),
+        dataclasses.replace(config, constraints=constraints),
     )
-    if result is None:
-        return None
-
-    if result.get("success", False):
-        birth_rates = np.asarray(result.get("birth_rates"), dtype=np.float64)
-        if birth_rates.size >= 2:
-            birth_rates = birth_rates.copy()
-            birth_rates[1] = 0.0
-            result["birth_rates"] = birth_rates
-    return result
 
 
 def run_zero_birth_replicate(
@@ -167,7 +149,7 @@ def run_zero_birth_replicate(
     death_rate: float,
     times: NDArray[np.float64],
     fit_config: FitModelConfig,
-    param_constraints: ParameterConstraints,
+    param_constraints: Constraints,
 ) -> dict[str, Any]:
     """Simulate and fit one structural-zero-second-epoch-birth replicate.
 
@@ -189,7 +171,7 @@ def run_zero_birth_replicate(
 
     model = fit_zero_birth_replicate(ages, fit_config, param_constraints)
 
-    if len(ages) == 0 or model is None or not model.get("success", False):
+    if len(ages) == 0 or model is None or not model.success:
         return {
             "simulation_index": simulation_index,
             "success": False,
@@ -208,6 +190,6 @@ def run_zero_birth_replicate(
         "population": len(ages),
         "mean_age": float(np.mean(ages)),
         "has_boundary_age": bool(np.max(ages) == final_time),
-        "birth_rate": float(np.atleast_1d(model["birth_rates"])[0]),
-        "death_rate": float(np.atleast_1d(model["death_rates"])[0]),
+        "birth_rate": float(model.birth_values[0]),
+        "death_rate": float(model.death_values[0]),
     }

@@ -11,21 +11,9 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from bdpinf.analysis.validation_helpers import (
-    FitModelConfig,
-    fit_single_model,
-    get_selected_attempt,
-)
-from bdpinf.inference import ConvergenceConfig
+from bdpinf.analysis.validation_helpers import FitModelConfig, fit_single_model
+from bdpinf.inference import FitResult
 from bdpinf.simulation import simulate_bdp_ages_from_distributions
-
-_DEFAULT_OPTIMIZER_KWARGS: dict[str, dict[str, Any]] = {
-    "lbfgs": {"lr": 1.0, "line_search_fn": "strong_wolfe", "min_iterations": 10},
-    "adam": {"lr": 1e-3},
-}
-_DEFAULT_CONVERGENCE_CONFIG = ConvergenceConfig(
-    gradient_threshold=1e-6, absolute_tolerance=1e-10, patience=10
-)
 
 
 def sample_single_epoch_ages(
@@ -71,12 +59,8 @@ def run_single_epoch_recovery_replicate(
             FitModelConfig(
                 times=time_span,
                 is_ordered=True,
-                perturb_initial_params_std=0.0,
                 initial_birth_rates=np.array([birth_rate], dtype=float),
                 initial_death_rates=np.array([death_rate], dtype=float),
-                optimizers=("lbfgs", "adam"),
-                optimizer_kwargs=_DEFAULT_OPTIMIZER_KWARGS,
-                convergence_config=_DEFAULT_CONVERGENCE_CONFIG,
                 condition_on_survival=True,
             ),
         ),
@@ -87,7 +71,7 @@ def _row_from_fit(
     simulation_index: int,
     ages: NDArray[np.float64],
     time_span: float,
-    result: dict[str, Any] | None,
+    result: FitResult | None,
 ) -> dict[str, Any]:
     if len(ages) == 0:
         return {
@@ -104,7 +88,7 @@ def _row_from_fit(
     population = len(ages)
     mean_age = float(np.mean(ages))
 
-    if result is None or not result.get("success", False):
+    if result is None or not result.success:
         return {
             "simulation_index": simulation_index,
             "success": False,
@@ -117,20 +101,13 @@ def _row_from_fit(
         }
 
     has_boundary_age = bool(np.max(ages) == time_span)
-    selected_attempt = get_selected_attempt(result)
-    optimizer = (
-        str(selected_attempt.get("optimizer", "unknown"))
-        if selected_attempt is not None
-        else "unknown"
-    )
-
     return {
         "simulation_index": simulation_index,
         "success": True,
         "population": population,
         "mean_age": mean_age,
         "has_boundary_age": has_boundary_age,
-        "birth_rate": float(np.atleast_1d(result["birth_rates"])[0]),
-        "death_rate": float(np.atleast_1d(result["death_rates"])[0]),
-        "optimizer": optimizer,
+        "birth_rate": float(result.birth_values[0]),
+        "death_rate": float(result.death_values[0]),
+        "optimizer": result.method,
     }

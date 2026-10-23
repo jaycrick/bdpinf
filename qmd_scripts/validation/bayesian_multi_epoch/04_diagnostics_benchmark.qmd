@@ -23,11 +23,12 @@ __compile_start = time.perf_counter()
 import numpy as np
 import pandas as pd
 
-from bdpinf.inference import fit_birth_death_processes_bayesian
-from bdpinf.inference.bayesian import (
+from bdpinf.inference import (
+    AgeData,
     BayesianMCMCConfig,
-    BayesianModelConfig,
     BayesianPriorConfig,
+    BirthDeathModel,
+    fit_bayesian,
 )
 from bdpinf.simulation import simulate_birth_death_process
 ```
@@ -48,8 +49,8 @@ mcmc_config = BayesianMCMCConfig(
     max_tree_depth=8,
     disable_progressbar=True,
 )
-model_config = BayesianModelConfig(is_ordered=True, rng_seed=2026)
 prior_config = BayesianPriorConfig(loc=-6.0, scale=2.0)
+model = BirthDeathModel.piecewise_constant(times)
 
 rows = []
 for run in range(num_runs):
@@ -65,36 +66,25 @@ for run in range(num_runs):
     ages = (times[-1] - alive["creation_time"].to_numpy(dtype=float)).astype(float)
 
     start = time.perf_counter()
-    result = fit_birth_death_processes_bayesian(
-        list_of_ages=[ages],
-        times=np.asarray(times, dtype=np.float64),
-        model_config=model_config,
-        mcmc_config=mcmc_config,
-        prior_config=prior_config,
+    result = fit_bayesian(
+        AgeData.from_groups([ages], float(times[-1]), is_ordered=True),
+        model,
+        prior=prior_config,
+        mcmc=mcmc_config,
+        rng_seed=2026,
     )
     elapsed = time.perf_counter() - start
 
     row = {
         "run": run + 1,
-        "success": bool(result.get("success", False)),
+        "success": True,
         "runtime_s": elapsed,
     }
-    if result.get("success", False):
-        birth_rhat = np.asarray(
-            result["diagnostics"]["birth_rates"]["r_hat"], dtype=float
-        )
-        death_rhat = np.asarray(
-            result["diagnostics"]["death_rates"]["r_hat"], dtype=float
-        )
-        birth_neff = np.asarray(
-            result["diagnostics"]["birth_rates"]["n_eff"], dtype=float
-        )
-        death_neff = np.asarray(
-            result["diagnostics"]["death_rates"]["n_eff"], dtype=float
-        )
-        row["max_rhat"] = float(np.nanmax(np.concatenate([birth_rhat, death_rhat])))
-        row["min_neff"] = float(np.nanmin(np.concatenate([birth_neff, death_neff])))
-        row["divergences"] = int(result.get("num_divergences", 0))
+    r_hat = np.asarray(list(result.r_hat.values()), dtype=float)
+    n_eff = np.asarray(list(result.n_eff.values()), dtype=float)
+    row["max_rhat"] = float(np.nanmax(r_hat))
+    row["min_neff"] = float(np.nanmin(n_eff))
+    row["divergences"] = int(result.num_divergences)
     rows.append(row)
 
 summary_df = pd.DataFrame(rows)

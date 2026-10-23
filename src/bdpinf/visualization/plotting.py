@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from bdpinf.inference.fitting import FitResult
 from bdpinf.visualization.altair_theme import PTOLQUAL, save_chart
 
 logger = logging.getLogger(__name__)
@@ -261,7 +262,7 @@ def convergence_chart(ll_history: Sequence[float], *, title: str) -> alt.Chart:
 
 def save_multi_epoch_convergence_figure(
     case_name: str,
-    result: dict[str, Any],
+    result: FitResult,
     output_slug: str,
     figures_dir: Path | None = None,
 ) -> None:
@@ -271,8 +272,8 @@ def save_multi_epoch_convergence_figure(
     ----------
     case_name : str
         Human-readable label used in the figure title.
-    result : dict[str, Any]
-        Fit result dict as returned by ``fit_birth_death_processes``.
+    result : FitResult
+        Fit result as returned by :func:`~bdpinf.inference.fit`.
     output_slug : str
         Filename stem passed to ``save_chart``.
     figures_dir : Path | None
@@ -280,20 +281,8 @@ def save_multi_epoch_convergence_figure(
         directory via :func:`save_chart`.
 
     """
-    from bdpinf.analysis.validation_helpers import (
-        get_selected_attempt,
-    )
-
-    if not result.get("success"):
-        return
-
-    selected_attempt = get_selected_attempt(result)
-    nll_history = (
-        selected_attempt.get("nll_history", [])
-        if isinstance(selected_attempt, dict)
-        else []
-    )
-    if not nll_history:
+    nll_history = result.nll_history
+    if not result.success or not nll_history:
         return
 
     ll_history = [-value for value in nll_history]
@@ -311,7 +300,7 @@ def save_multi_epoch_convergence_figure(
 
 def save_multi_epoch_birth_time_figure(
     case_name: str,
-    result: dict[str, Any],
+    result: FitResult,
     epochs: list[Any],
     birth_years: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -327,8 +316,8 @@ def save_multi_epoch_birth_time_figure(
     ----------
     case_name : str
         Human-readable label used in the default figure title.
-    result : dict[str, Any]
-        Fit result dict as returned by ``fit_birth_death_processes``.
+    result : FitResult
+        Fit result as returned by :func:`~bdpinf.inference.fit`.
     epochs : list[Any]
         List of ``(start, end, label)`` epoch tuples.
     birth_years : NDArray[np.float64]
@@ -347,17 +336,15 @@ def save_multi_epoch_birth_time_figure(
 
     """
     from bdpinf.inference.likelihood import (
-        calculate_unknown_spine_mixture_birth_density,
+        calculate_unknown_spine_mixture_age_density_rates,
     )
     from bdpinf.visualization.age_fit_plot import (
         creation_year_fit_chart,
     )
 
-    if not result.get("success"):
+    if not result.success:
         return
 
-    birth_rates = np.asarray(result["birth_rates"], dtype=float)
-    death_rates = np.asarray(result["death_rates"], dtype=float)
     observed_birth_years = np.asarray(birth_years, dtype=float)
     if observed_birth_years.size == 0:
         return
@@ -370,12 +357,11 @@ def save_multi_epoch_birth_time_figure(
     density_values: np.ndarray | None = None
     try:
         density_values = np.asarray(
-            calculate_unknown_spine_mixture_birth_density(
-                birth_rates=np.asarray(birth_rates, dtype=np.float64),
-                death_rates=np.asarray(death_rates, dtype=np.float64),
-                birth_time_grid=np.asarray(birth_time_grid, dtype=np.float64),
-                times=times,
-                num_individuals=len(observed_birth_years),
+            calculate_unknown_spine_mixture_age_density_rates(
+                result.birth,
+                result.death,
+                float(times[-1]) - np.asarray(birth_time_grid, dtype=np.float64),
+                len(observed_birth_years),
             ),
             dtype=np.float64,
         )
@@ -524,7 +510,7 @@ def rate_ci_panel(
 
 def save_multi_epoch_fit_figure(
     case_name: str,
-    result: dict[str, Any],
+    result: FitResult,
     epochs: list[Any],
     output_slug: str,
     figures_dir: Path | None = None,
@@ -535,8 +521,8 @@ def save_multi_epoch_fit_figure(
     ----------
     case_name : str
         Human-readable label used in the figure title.
-    result : dict[str, Any]
-        Fit result dict as returned by ``fit_birth_death_processes``.
+    result : FitResult
+        Fit result as returned by :func:`~bdpinf.inference.fit`.
     epochs : list[Any]
         List of ``(start, end, label)`` epoch tuples used to label bars.
     output_slug : str
@@ -546,11 +532,11 @@ def save_multi_epoch_fit_figure(
         directory via :func:`save_chart`.
 
     """
-    if not result.get("success"):
+    if not result.success:
         return
 
-    birth_rates = np.asarray(result["birth_rates"], dtype=float)
-    death_rates = np.asarray(result["death_rates"], dtype=float)
+    birth_rates = np.asarray(result.birth_values, dtype=float)
+    death_rates = np.asarray(result.death_values, dtype=float)
     epoch_labels = [f"{start}-{end}" for start, end, _ in epochs]
 
     def _rate_panel(rates: np.ndarray, color: str, subtitle: str) -> alt.LayerChart:

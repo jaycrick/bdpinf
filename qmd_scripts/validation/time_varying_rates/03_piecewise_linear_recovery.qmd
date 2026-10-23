@@ -1,0 +1,190 @@
+---
+title: "Time-Varying Rates: Fitting Piecewise-Linear Rates"
+subtitle: "Recovering a linear birth rate with constant death from simulated ages"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# ruff: noqa: E402
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+
+__compile_start = time.perf_counter()
+```
+
+## Overview
+
+`fit` maximises the exact likelihood over the parameters of a rate model.
+Here the birth rate is continuous piecewise linear with knots at $0$, $T/2$ and $T$,
+and the death rate is constant (its three knots are tied by a `Constraints` equality group).
+Ages are drawn from the exact age laws with `simulate_ages_from_rates`,
+so the only error is statistical.
+
+From survivor ages alone the early-time rates are weakly identified:
+the population size fixes only $\pi(T)$, and the ages separate the rest slowly.
+So the knots that matter most for the ages (middle and end) are recovered well,
+while the first knot and the death rate trade off.
+This is a property of the data, not of the optimiser.
+
+## Setup
+
+```{python}
+import json
+import os
+from pathlib import Path
+
+import altair as alt
+import jax.numpy as jnp
+import numpy as np
+import pandas as pd
+
+from bdpinf import find_project_root
+from bdpinf.inference import (
+    AgeData,
+    BirthDeathModel,
+    Constraints,
+    fit,
+    profile_likelihood_interval,
+)
+from bdpinf.models.rate_functions import PiecewiseConstantRate, PiecewiseLinearRate
+from bdpinf.simulation import simulate_ages_from_rates
+from bdpinf.visualization import save_chart
+from bdpinf.visualization.altair_theme import PTOLQUAL
+
+figures_dir = find_project_root() / "figures" / "validation" / "time_varying_rates"
+figures_dir.mkdir(parents=True, exist_ok=True)
+```
+
+## Simulate and fit
+
+```{python}
+horizon = 6.0
+epoch_end_times = [horizon / 2, horizon]
+true_birth_knots = np.array([1.0, 1.8, 0.9])
+true_death = 0.4
+
+times = jnp.array(epoch_end_times)
+true_birth = PiecewiseLinearRate.continuous(jnp.array(true_birth_knots), times)
+true_death_rate = PiecewiseConstantRate(jnp.array([true_death, true_death]), times)
+
+model = BirthDeathModel.piecewise_linear(epoch_end_times)
+constant_death = Constraints(equal=[model.death_names])
+
+n_replicates = 30
+rng = np.random.default_rng(11)
+rows = []
+fits = []
+for replicate in range(n_replicates):
+    sample = simulate_ages_from_rates(true_birth, true_death_rate, rng)
+    data = AgeData.from_groups([sample.all_ages], horizon, is_ordered=True)
+    result = fit(data, model, constraints=constant_death)
+    fits.append((data, result))
+    rows.append(
+        {
+            "replicate": replicate,
+            "population": sample.population,
+            "converged": result.converged,
+            "interior": result.at_interior_optimum,
+            **{name: result.params[name] for name in model.birth_names},
+            "death": result.params["death.knot0"],
+            "log_likelihood": result.log_likelihood,
+        }
+    )
+fit_df = pd.DataFrame(rows)
+print(fit_df.describe().loc[["count", "mean", "50%", "std"]].round(3).to_string())
+```
+
+## Recovery of the birth knots
+
+```{python}
+long = fit_df.melt(
+    id_vars=["replicate", "population"],
+    value_vars=[*model.birth_names, "death"],
+    var_name="parameter",
+    value_name="estimate",
+)
+truth = pd.DataFrame(
+    {
+        "parameter": [*model.birth_names, "death"],
+        "truth": [*true_birth_knots, true_death],
+    }
+)
+points = (
+    alt.Chart(long)
+    .mark_circle(opacity=0.6, size=40, color=PTOLQUAL[0])
+    .encode(
+        x=alt.X("parameter:N", title=None, sort=None),
+        y=alt.Y("estimate:Q", title="Estimate", scale=alt.Scale(type="symlog")),
+    )
+)
+marks = (
+    alt.Chart(truth)
+    .mark_tick(color=PTOLQUAL[1], thickness=3, size=40)
+    .encode(x=alt.X("parameter:N", sort=None), y="truth:Q")
+)
+fig_recovery = (points + marks).properties(
+    width=420, height=300, title="Estimates (dots) against truth (ticks)"
+)
+save_chart(fig_recovery, "vtv03_piecewise_linear_recovery", output_dir=figures_dir)
+fig_recovery
+```
+
+## Nesting: constant rates inside piecewise linear
+
+A flexible model can never fit worse than a model it contains.
+Check the likelihood of the constant-rate special case against the linear fit on every replicate.
+
+```{python}
+constant_model = BirthDeathModel.piecewise_constant([horizon])
+gaps = []
+for data, result in fits:
+    constant = fit(data, constant_model, compute_covariance=False)
+    gaps.append(result.log_likelihood - constant.log_likelihood)
+print(f"minimum log-likelihood gain over constant rates: {min(gaps):.2e}")
+print(f"median gain: {float(np.median(gaps)):.3f}")
+assert min(gaps) > -1e-6
+```
+
+## A profile-likelihood interval
+
+Wald intervals are not asymptotically valid for growth-type parameters,
+so use the profile likelihood for the end knot of the birth rate on one replicate.
+
+```{python}
+data, result = fits[0]
+low, high = profile_likelihood_interval(result, data, "birth.knot2")
+wald_low, wald_high = result.confidence_intervals()["birth.knot2"]
+print(f"estimate        {result.params['birth.knot2']:.3f} (true {true_birth_knots[2]})")
+print(f"profile 95% CI  [{low:.3f}, {high:.3f}]")
+print(f"Wald 95% CI     [{wald_low:.3f}, {wald_high:.3f}]")
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+duration_seconds = time.perf_counter() - __compile_start
+doc_name = "methods_validation_time_varying_rates_piecewise_linear_recovery.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+try:
+    log_data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    log_data = {}
+
+log_data[doc_name] = {
+    "duration_seconds": duration_seconds,
+    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+}
+compile_log.write_text(json.dumps(log_data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

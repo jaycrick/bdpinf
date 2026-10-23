@@ -7,10 +7,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `inference.fit`, `FitResult`, `AgeData`, `BirthDeathModel`, `PiecewiseConstant`, `PiecewiseLinear`, `Constraints`: fit any rate-function family (piecewise constant, continuous or jump-form piecewise linear, room for sinusoids) by maximum likelihood, with a trust-region Newton optimiser on jitted JAX gradients and Hessians, constraints by parameter name, multi-start (including the birth/death mirror start), moment-estimator initial values, and `profile_likelihood_interval`.
+
+- `models.math_general`: segment-wise Gauss-Legendre terms for $\mathcal W$ and the age densities for any `RateFunction` (`general_terms`, `terms_for`), sharing the `math_nested` function names; `math_age_densities` and the population likelihood (`calculate_populations_log_lik_from_terms`) now build on it.
+
+- `inference.likelihood.log_likelihood_rates` and `calculate_unknown_spine_mixture_age_density_rates`: likelihood and mixture density for arbitrary rate functions.
+
+- `inference.fit_bayesian` and `BayesianResult`: NUTS on the same parameterisation and constraints as the MLE.
+  `BayesianResult.to_dict()` returns the dict layout used by `save_posterior_samples` and the application notebooks; `BayesianPriorConfig.resolve(model)` (and `resolve_tensors(n_epochs)` for piecewise-constant models) gives the prior locations and scales.
+
+- `simulation.simulate_ages_from_rates`: exact age sampling for any rate functions.
+
+- `scripts/bench_fitting.py`, `docs/design/FITTING_DERIVATIVES.md`: benchmarks of derivative variants, Mathematica-derived explicit scores, quadrature nodes and optimisers; `tests/test_explicit_scores.py` checks autodiff against the symbolic scores.
+
+- `qmd_scripts/validation/time_varying_rates/03_piecewise_linear_recovery.qmd`: piecewise-linear fitting and recovery.
+
 - `qmd_scripts/validation/survival_conditioned_simulation/` (`01_simulator_comparison`, `02_subcritical_splitting`): the `bdsurv` simulator-comparison notebooks, moved here so `bdsurv` no longer depends on `bdpinf`.
+
 - `models.rate_functions` (`RateFunction`, `PiecewiseConstantRate`, `PiecewiseLinearRate`) and `models.math_age_densities`: spine, non-spine and random-individual age densities/CDFs for time-varying (piecewise-linear) birth and death rates, with a notebook of density shapes (`qmd_scripts/validation/time_varying_rates/`).
+
 - `visualization.age_density_plots` (`scenario_panel`, `scenario_row`, ...) and a non-spine age-shapes notebook (`02_non_spine_age_shapes.qmd`).
+
 - `models.math_nested`: exact epoch-wise nested integral $\mathcal W(b)=1/\pi(b)$, $I(T)$ and the age densities in the paper's notation, all in log space; `inference.likelihood.resolve_spine_ages` shared by `log_likelihood`, `fit_birth_death_processes` and the Bayesian model.
+
+### Removed
+
+- `inference.fit_birth_death_processes`, `fit_from_data_frame`, `ParameterConstraints`, `ConvergenceConfig`, `fit_birth_death_processes_bayesian`, `BayesianModelConfig`, `mle_init_log_rates` and the Adam/SGD optimiser runners: use `fit`, `AgeData.from_data_frame`, `Constraints`, `fit_bayesian` and `init=`.
+  `analysis.get_selected_attempt` is gone; `FitResult` carries `nll_history`, `method` and `n_iter`.
 
 ### Fixed
 
@@ -21,6 +44,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `BirthDeathProcess.log_likelihood` uses the labelled spine (when exactly one) instead of re-detecting it.
 
 ### Changed
+
+- Fitting is about 5 times faster on the regression set (95 s to 17 s for 15 fits; milliseconds once compiled): the jitted objective is cached per model and constraint structure and the age vector is padded to power-of-two buckets.
+  `analysis.FitModelConfig`/`fit_single_model` now return a `FitResult`; recovery-study helpers and `fit_subset` use `fit`.
+  `models.math_populations` gained terms-based `*_from_terms` functions (the array functions are unchanged).
 
 - `models.math_ages` removed: use `models.math_nested` (`nested_terms(birth, death, times)` then `non_spine_log_density` / `spine_log_density`, `.sum()` for a log-likelihood).
   `nested_terms` and the density functions now validate concrete (non-traced) inputs.

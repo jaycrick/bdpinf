@@ -12,13 +12,13 @@ from bdpinf.analysis import (
     boundary_corrected_kde_on_support,
     build_hist_bins,
     fit_single_model,
-    get_selected_attempt,
     has_ages_in_each_epoch,
     iqr_plotting_subset,
     robust_y_max,
     theoretical_age_density,
 )
 from bdpinf.analysis import validation_helpers as vh
+from bdpinf.inference import Constraints
 from bdpinf.models.math_nested import (
     nested_terms,
     non_spine_log_density,
@@ -114,59 +114,62 @@ class TestValidationHelpers:
         assert FitModelConfig(times=1000.0).condition_on_survival is True
 
     def test_fit_single_model_forwards_condition_on_survival_default(
-        self, monkeypatch
+        self, monkeypatch, make_fit_result
     ) -> None:
         captured: dict[str, object] = {}
 
-        def fake_fit_birth_death_processes(**kwargs):
+        def fake_fit(*args, **kwargs):
             captured.update(kwargs)
-            return {"success": True}
+            return make_fit_result([0.5], [0.1])
 
-        monkeypatch.setattr(
-            validation_helpers_module,
-            "fit_birth_death_processes",
-            fake_fit_birth_death_processes,
-        )
+        monkeypatch.setattr(validation_helpers_module, "fit", fake_fit)
 
         result = fit_single_model(
             np.array([1.0, 2.0], dtype=np.float64),
             FitModelConfig(times=10.0),
         )
 
-        assert result == {"success": True}
+        assert result is not None
+        assert result.success
         assert captured["condition_on_survival"] is True
 
-    def test_fit_single_model_forwards_optional_settings(self, monkeypatch) -> None:
+    def test_fit_single_model_forwards_optional_settings(
+        self, monkeypatch, make_fit_result
+    ) -> None:
         captured: dict[str, object] = {}
 
-        def fake_fit(**kwargs):
+        def fake_fit(*args, **kwargs):
             captured.update(kwargs)
-            return {"success": True}
+            return make_fit_result([0.5], [0.1])
 
-        monkeypatch.setattr(
-            validation_helpers_module, "fit_birth_death_processes", fake_fit
-        )
-        constraints = vh.ParameterConstraints(fixed_params={1: 1e-12})
+        monkeypatch.setattr(validation_helpers_module, "fit", fake_fit)
+        constraints = Constraints(fixed={"birth.v0": 1e-12})
 
         fit_single_model(
             np.array([1.0, 2.0], dtype=np.float64),
             FitModelConfig(
-                times=10.0, optimizers=("lbfgs",), param_constraints=constraints
+                times=10.0,
+                method="L-BFGS-B",
+                n_starts=3,
+                random_seed=11,
+                constraints=constraints,
+                initial_birth_rates=np.array([0.5]),
             ),
         )
 
-        assert captured["optimizers"] == ["lbfgs"]
-        assert captured["param_constraints"] is constraints
+        assert captured["method"] == "L-BFGS-B"
+        assert captured["n_starts"] == 3
+        assert captured["seed"] == 11
+        assert captured["constraints"] is constraints
+        assert captured["init"] == {"birth.v0": 0.5}
 
     def test_fit_single_model_logs_and_returns_none_on_exception(
         self, monkeypatch, caplog
     ) -> None:
-        def boom(**kwargs):
+        def boom(*args, **kwargs):
             raise RuntimeError("optimizer blew up")
 
-        monkeypatch.setattr(
-            validation_helpers_module, "fit_birth_death_processes", boom
-        )
+        monkeypatch.setattr(validation_helpers_module, "fit", boom)
 
         with caplog.at_level("WARNING"):
             result = fit_single_model(
@@ -260,37 +263,3 @@ class TestNewValidationHelpers:
         )
         integral = float(np.trapezoid(y_vals, x_grid))
         assert 0.5 < integral < 1.5
-
-    def test_get_selected_attempt_returns_indexed_attempt(self) -> None:
-        result = {
-            "optimization_result": {
-                "selected_attempt_index": 1,
-                "attempts": [{"nll": 1.0}, {"nll": 2.0}],
-            }
-        }
-        attempt = get_selected_attempt(result)
-        assert attempt is not None
-        assert attempt["nll"] == pytest.approx(2.0)
-
-    def test_get_selected_attempt_falls_back_to_first_on_invalid_index(self) -> None:
-        result = {
-            "optimization_result": {
-                "selected_attempt_index": 99,
-                "attempts": [{"nll": 1.0}, {"nll": 2.0}],
-            }
-        }
-        attempt = get_selected_attempt(result)
-        assert attempt is not None
-        assert attempt["nll"] == pytest.approx(1.0)
-
-    def test_get_selected_attempt_returns_none_when_no_attempts(self) -> None:
-        result = {
-            "optimization_result": {
-                "selected_attempt_index": 0,
-                "attempts": [],
-            }
-        }
-        assert get_selected_attempt(result) is None
-
-    def test_get_selected_attempt_returns_none_when_key_missing(self) -> None:
-        assert get_selected_attempt({}) is None

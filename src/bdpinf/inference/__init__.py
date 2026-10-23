@@ -4,24 +4,26 @@ This package contains likelihood calculation, optimization, and fitting utilitie
 for birth-death process models.
 """
 
-from ._fit_types import ConvergenceConfig
 from .bayesian import (
     BayesianMCMCConfig,
-    BayesianModelConfig,
     BayesianPriorConfig,
-    fit_birth_death_processes_bayesian,
-    mle_init_log_rates,
+    BayesianResult,
+    fit_bayesian,
 )
+from .constraints import CompiledConstraints, Constraints
 from .fitting import (
-    ParameterConstraints,
-    fit_birth_death_processes,
-    fit_from_data_frame,
+    FitResult,
+    fit,
     get_crude_parameter_estimates,
+    moment_initial_rates,
+    profile_likelihood_interval,
 )
 from .likelihood import (
+    AgeData,
     calculate_unknown_spine_mixture_age_density,
     calculate_unknown_spine_mixture_birth_density,
     log_likelihood,
+    log_likelihood_rates,
 )
 from .persistence import (
     load_posterior_samples,
@@ -29,29 +31,44 @@ from .persistence import (
     save_posterior_samples,
     save_recovery_results,
 )
+from .rate_models import (
+    BirthDeathModel,
+    Param,
+    PiecewiseConstant,
+    PiecewiseLinear,
+    RateModel,
+)
 from .uncertainty import (
     confidence_intervals_from_log_covariance,
-    estimate_mle_covariance,
+    covariance_from_hessian,
 )
 
 __all__ = [
+    "AgeData",
     "BayesianMCMCConfig",
-    "BayesianModelConfig",
     "BayesianPriorConfig",
-    "ConvergenceConfig",
-    "ParameterConstraints",
+    "BayesianResult",
+    "BirthDeathModel",
+    "CompiledConstraints",
+    "Constraints",
+    "FitResult",
+    "Param",
+    "PiecewiseConstant",
+    "PiecewiseLinear",
+    "RateModel",
     "calculate_unknown_spine_mixture_age_density",
     "calculate_unknown_spine_mixture_birth_density",
     "confidence_intervals_from_log_covariance",
-    "estimate_mle_covariance",
-    "fit_birth_death_processes",
-    "fit_birth_death_processes_bayesian",
-    "fit_from_data_frame",
+    "covariance_from_hessian",
+    "fit",
+    "fit_bayesian",
     "get_crude_parameter_estimates",
     "load_posterior_samples",
     "load_recovery_results",
     "log_likelihood",
-    "mle_init_log_rates",
+    "log_likelihood_rates",
+    "moment_initial_rates",
+    "profile_likelihood_interval",
     "save_posterior_samples",
     "save_recovery_results",
 ]

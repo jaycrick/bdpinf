@@ -24,11 +24,12 @@ from pathlib import Path
 
 import numpy as np
 
-from bdpinf.inference import fit_birth_death_processes_bayesian
-from bdpinf.inference.bayesian import (
+from bdpinf.inference import (
+    AgeData,
     BayesianMCMCConfig,
-    BayesianModelConfig,
     BayesianPriorConfig,
+    BirthDeathModel,
+    fit_bayesian,
 )
 from bdpinf.simulation import simulate_birth_death_process
 ```
@@ -64,17 +65,15 @@ mcmc_config = BayesianMCMCConfig(
     max_tree_depth=8,
     disable_progressbar=True,
 )
-model_config = BayesianModelConfig(is_ordered=True, rng_seed=2026)
 prior_config = BayesianPriorConfig(loc=-6.0, scale=2.0)
+data = AgeData.from_groups([ages], float(times[-1]), is_ordered=True)
+model = BirthDeathModel.piecewise_constant(times)
 
-single_fit_result = fit_birth_death_processes_bayesian(
-    list_of_ages=[ages],
-    times=np.asarray(times, dtype=np.float64),
-    model_config=model_config,
-    mcmc_config=mcmc_config,
-    prior_config=prior_config,
+single_fit_result = fit_bayesian(
+    data, model, prior=prior_config, mcmc=mcmc_config, rng_seed=2026
 )
-print(single_fit_result)
+print(single_fit_result.params)
+print(f"divergences: {single_fit_result.num_divergences}")
 ```
 
 ```{python}
@@ -88,13 +87,7 @@ txt_file = "prof-multi-epoch-bayesian-single-fit.txt"
 profiler = cProfile.Profile()
 profiler.enable()
 try:
-    _ = fit_birth_death_processes_bayesian(
-        list_of_ages=[ages],
-        times=np.asarray(times, dtype=np.float64),
-        model_config=model_config,
-        mcmc_config=mcmc_config,
-        prior_config=prior_config,
-    )
+    _ = fit_bayesian(data, model, prior=prior_config, mcmc=mcmc_config, rng_seed=2026)
 finally:
     profiler.disable()
     profiler.dump_stats(prof_file)

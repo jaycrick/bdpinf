@@ -1,11 +1,13 @@
 """Tests for visualization plotting utilities."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import altair as alt
 import numpy as np
 import pandas as pd
 
+from bdpinf.inference import FitResult
 from bdpinf.visualization.plotting import (
     convergence_chart,
     rate_ci_panel,
@@ -18,20 +20,19 @@ _DEFAULT_NLL_HISTORY = [10.0, 8.0, 7.5]
 
 
 def _fit_result(
-    *, success: bool = True, nll_history: list[float] | None = None
-) -> dict:
-    """Build a minimal fit-result dict shaped like fit_birth_death_processes' output."""
-    if nll_history is None:
-        nll_history = _DEFAULT_NLL_HISTORY
-    return {
-        "success": success,
-        "birth_rates": [0.02, 0.03],
-        "death_rates": [0.01, 0.015],
-        "optimization_result": {
-            "attempts": [{"nll_history": nll_history}],
-            "selected_attempt_index": 0,
-        },
-    }
+    make_fit_result: Callable[..., FitResult],
+    *,
+    success: bool = True,
+    nll_history: list[float] | None = None,
+) -> FitResult:
+    """Build a two-epoch fit result with the given convergence history."""
+    return make_fit_result(
+        [0.02, 0.03],
+        [0.01, 0.015],
+        times=[5.0, 10.0],
+        converged=success,
+        nll_history=_DEFAULT_NLL_HISTORY if nll_history is None else nll_history,
+    )
 
 
 class TestConvergenceChart:
@@ -57,8 +58,10 @@ class TestConvergenceChart:
 class TestSaveMultiEpochConvergenceFigure:
     """Test the convergence-trace saver."""
 
-    def test_writes_chart_for_successful_result(self, tmp_path: Path) -> None:
-        result = _fit_result(nll_history=[10.0, 8.0, 7.5])
+    def test_writes_chart_for_successful_result(
+        self, make_fit_result: Callable[..., FitResult], tmp_path: Path
+    ) -> None:
+        result = _fit_result(make_fit_result, nll_history=[10.0, 8.0, 7.5])
 
         save_multi_epoch_convergence_figure(
             "Test Case", result, "convergence_slug", figures_dir=tmp_path
@@ -66,8 +69,10 @@ class TestSaveMultiEpochConvergenceFigure:
 
         assert (tmp_path / "convergence_slug.pdf").exists()
 
-    def test_skips_unsuccessful_result(self, tmp_path: Path) -> None:
-        result = _fit_result(success=False)
+    def test_skips_unsuccessful_result(
+        self, make_fit_result: Callable[..., FitResult], tmp_path: Path
+    ) -> None:
+        result = _fit_result(make_fit_result, success=False)
 
         save_multi_epoch_convergence_figure(
             "Test Case", result, "convergence_slug", figures_dir=tmp_path
@@ -75,8 +80,10 @@ class TestSaveMultiEpochConvergenceFigure:
 
         assert not (tmp_path / "convergence_slug.pdf").exists()
 
-    def test_skips_result_with_no_history(self, tmp_path: Path) -> None:
-        result = _fit_result(nll_history=[])
+    def test_skips_result_with_no_history(
+        self, make_fit_result: Callable[..., FitResult], tmp_path: Path
+    ) -> None:
+        result = _fit_result(make_fit_result, nll_history=[])
 
         save_multi_epoch_convergence_figure(
             "Test Case", result, "convergence_slug", figures_dir=tmp_path
@@ -88,8 +95,12 @@ class TestSaveMultiEpochConvergenceFigure:
 class TestSaveMultiEpochBirthTimeFigure:
     """Test the birth-time histogram saver."""
 
-    def test_writes_chart_for_successful_result(self, tmp_path: Path) -> None:
-        result = _fit_result()
+    def test_writes_chart_for_successful_result(
+        self, make_fit_result: Callable[..., FitResult], tmp_path: Path
+    ) -> None:
+        result = _fit_result(
+            make_fit_result,
+        )
         epochs = [(0.0, 100.0, "Epoch 1"), (100.0, 200.0, "Epoch 2")]
         birth_years = np.array([20.0, 50.0, 80.0, 150.0])
         times = np.array([100.0, 200.0], dtype=np.float64)
@@ -106,8 +117,10 @@ class TestSaveMultiEpochBirthTimeFigure:
 
         assert (tmp_path / "birth_time_slug.pdf").exists()
 
-    def test_skips_unsuccessful_result(self, tmp_path: Path) -> None:
-        result = _fit_result(success=False)
+    def test_skips_unsuccessful_result(
+        self, make_fit_result: Callable[..., FitResult], tmp_path: Path
+    ) -> None:
+        result = _fit_result(make_fit_result, success=False)
         epochs = [(0.0, 100.0, "Epoch 1")]
         birth_years = np.array([20.0])
         times = np.array([100.0], dtype=np.float64)
@@ -124,8 +137,12 @@ class TestSaveMultiEpochBirthTimeFigure:
 
         assert not (tmp_path / "birth_time_slug.pdf").exists()
 
-    def test_skips_when_no_observed_years(self, tmp_path: Path) -> None:
-        result = _fit_result()
+    def test_skips_when_no_observed_years(
+        self, make_fit_result: Callable[..., FitResult], tmp_path: Path
+    ) -> None:
+        result = _fit_result(
+            make_fit_result,
+        )
         epochs = [(0.0, 100.0, "Epoch 1")]
         birth_years = np.array([], dtype=float)
         times = np.array([100.0], dtype=np.float64)
@@ -200,8 +217,12 @@ class TestRateCiPanel:
 class TestSaveMultiEpochFitFigure:
     """Test the per-epoch birth/death rate bar-chart saver."""
 
-    def test_writes_chart_for_successful_result(self, tmp_path: Path) -> None:
-        result = _fit_result()
+    def test_writes_chart_for_successful_result(
+        self, make_fit_result: Callable[..., FitResult], tmp_path: Path
+    ) -> None:
+        result = _fit_result(
+            make_fit_result,
+        )
         epochs = [(0.0, 100.0, "Epoch 1"), (100.0, 200.0, "Epoch 2")]
 
         save_multi_epoch_fit_figure(
@@ -210,8 +231,10 @@ class TestSaveMultiEpochFitFigure:
 
         assert (tmp_path / "fit_slug.pdf").exists()
 
-    def test_skips_unsuccessful_result(self, tmp_path: Path) -> None:
-        result = _fit_result(success=False)
+    def test_skips_unsuccessful_result(
+        self, make_fit_result: Callable[..., FitResult], tmp_path: Path
+    ) -> None:
+        result = _fit_result(make_fit_result, success=False)
         epochs = [(0.0, 100.0, "Epoch 1")]
 
         save_multi_epoch_fit_figure(

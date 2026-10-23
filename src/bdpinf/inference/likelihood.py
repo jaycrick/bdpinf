@@ -4,21 +4,26 @@ This module contains functions for calculating log-likelihood values for
 birth-death process models, used in parameter fitting and model evaluation.
 """
 
+import dataclasses
 import warnings
-from typing import Literal, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from bdpinf.models.math_nested import (
+from bdpinf.models.math_general import (
+    DEFAULT_NODES,
+    AgeTerms,
     age_log_densities,
-    nested_terms,
     non_spine_log_density,
     spine_log_density,
+    terms_for,
 )
-from bdpinf.models.math_populations import calculate_populations_log_lik
+from bdpinf.models.math_nested import nested_terms
+from bdpinf.models.math_populations import calculate_populations_log_lik_from_terms
+from bdpinf.models.rate_functions import RateFunction
 from bdpinf.models.validation import normalize_and_validate_inputs
 from bdpinf.utils import ensure_1d_tensor, ensure_1d_tensors
 
@@ -75,6 +80,227 @@ def resolve_spine_ages(
     if ages_np.size == 1:
         return SpineResolution(ages_np.copy(), ages_np[:0], False)
     return SpineResolution(None, ages_np, True)
+
+
+@dataclasses.dataclass(frozen=True)
+class AgeData:
+    """Validated age observations in the form the likelihood core consumes.
+
+    All host-side work (splitting off a labelled spine, detecting a spine at the
+    observation time, population counts) happens once in the constructors,
+    so evaluating the likelihood under ``jit``/``grad`` needs no host branches.
+
+    Attributes
+    ----------
+    non_spine_ages : jax.Array
+        Non-spine ages, or all ages when the spine is unknown.
+    spine_ages : jax.Array | None
+        Known spine ages.
+    ns : jax.Array
+        Population counts, one per group.
+    end_time : float
+        Observation time ``T``.
+    use_unknown_spine : bool
+        Whether the spine is marginalised over ``non_spine_ages``.
+    initial_population : int
+        Number of individuals at time 0.
+    n_non_spine : int | jax.Array | None
+        Number of genuine entries in ``non_spine_ages`` when it has been padded
+        (see :meth:`padded`); ``None`` means all entries are genuine.
+
+    """
+
+    non_spine_ages: jax.Array
+    spine_ages: jax.Array | None
+    ns: jax.Array
+    end_time: float
+    use_unknown_spine: bool
+    initial_population: int = 1
+    n_non_spine: int | jax.Array | None = None
+
+    @property
+    def n_observations(self) -> int:
+        """Number of observed ages (spine included)."""
+        n_spine = 0 if self.spine_ages is None else len(self.spine_ages)
+        n_rest = (
+            len(self.non_spine_ages)
+            if self.n_non_spine is None
+            else int(self.n_non_spine)
+        )
+        return n_rest + n_spine
+
+    def padded(self, size: int) -> "AgeData":
+        """Return a copy whose ``non_spine_ages`` is padded to ``size`` entries.
+
+        The padding is masked out of the likelihood, so values and gradients are
+        unchanged, but jitted functions then see the same array shape for every
+        sample size in the same bucket and compile only once.
+        """
+        n = (
+            len(self.non_spine_ages)
+            if self.n_non_spine is None
+            else int(self.n_non_spine)
+        )
+        if size < n:
+            msg = f"Cannot pad {n} ages to a smaller size {size}."
+            raise ValueError(msg)
+        # Pad on the host: jnp ops on a new length would each trigger a compile.
+        current = np.asarray(self.non_spine_ages, dtype=np.float64)
+        filler = np.full(size - len(current), 0.5 * self.end_time, dtype=np.float64)
+        return dataclasses.replace(
+            self,
+            non_spine_ages=jnp.asarray(np.concatenate([current, filler])),
+            n_non_spine=n,
+        )
+
+    @classmethod
+    def from_groups(
+        cls,
+        list_of_ages: list[jax.Array] | list[NDArray[np.float64]],
+        end_time: float,
+        *,
+        spine_ages: ArrayLike | None = None,
+        is_ordered: bool = False,
+        population_sizes: ArrayLike | None = None,
+        initial_population: int = 1,
+    ) -> "AgeData":
+        """Build from age arrays per group.
+
+        Parameters
+        ----------
+        list_of_ages : list of array-like
+            Age arrays per group; at least one must be non-empty.
+        end_time : float
+            Observation time ``T`` (positive).
+        spine_ages : array-like, optional
+            Explicit spine ages.
+        is_ordered : bool
+            If True, the first element of every array is its spine.
+        population_sizes : array-like, optional
+            Counts per group; defaults to the group lengths (plus one per group
+            when ``spine_ages`` is given).
+        initial_population : int
+            Individuals at time 0.
+
+        Raises
+        ------
+        ValueError
+            If all groups are empty, ``population_sizes`` has the wrong length,
+            or ages fall outside ``[0, end_time]``.
+
+        """
+        if end_time <= 0:
+            msg = "Observation time must be positive."
+            raise ValueError(msg)
+        # Host-side NumPy throughout: jnp ops on data-dependent shapes would each
+        # trigger an XLA compile.
+        groups = [np.asarray(a, dtype=np.float64).reshape(-1) for a in list_of_ages]
+        if not any(len(g) > 0 for g in groups):
+            msg = "No valid data points for fitting"
+            raise ValueError(msg)
+        if population_sizes is not None:
+            ns = np.asarray(population_sizes, dtype=np.int32).reshape(-1)
+            if ns.size != len(groups):
+                msg = "Length of population_sizes must match length of list_of_ages"
+                raise ValueError(msg)
+        else:
+            ns = np.array(
+                [len(g) + int(spine_ages is not None) for g in groups],
+                dtype=np.int32,
+            )
+
+        spine: NDArray[np.float64] | None
+        if is_ordered and spine_ages is None:
+            heads = [float(g[0]) for g in groups if len(g) > 0]
+            tails = [g[1:] for g in groups if len(g) > 1]
+            spine = np.array(heads, dtype=np.float64)
+            rest = np.concatenate(tails) if tails else np.empty(0, dtype=np.float64)
+        else:
+            spine = (
+                None
+                if spine_ages is None
+                else np.asarray(spine_ages, dtype=np.float64).reshape(-1)
+            )
+            rest = np.concatenate([g for g in groups if len(g) > 0])
+
+        everything = rest if spine is None else np.concatenate([rest, spine])
+        if np.any(everything < 0) or np.any(everything > end_time):
+            msg = f"Ages must be in the range [0, {end_time}]."
+            raise ValueError(msg)
+
+        use_unknown = False
+        if spine is None and len(rest) > 0:
+            resolved = resolve_spine_ages(
+                rest, end_time, multiple_terminal="marginalize"
+            )
+            spine = resolved.spine_ages
+            rest = resolved.non_spine_ages
+            use_unknown = resolved.use_unknown_spine
+        return cls(
+            non_spine_ages=jnp.asarray(rest, dtype=jnp.float64),
+            spine_ages=None if spine is None else jnp.asarray(spine, dtype=jnp.float64),
+            ns=jnp.asarray(ns),
+            end_time=float(end_time),
+            use_unknown_spine=use_unknown,
+            initial_population=initial_population,
+        )
+
+    @classmethod
+    def from_data_frame(
+        cls,
+        df: "Any",
+        end_time: float,
+        *,
+        age_column: str | None = None,
+        **kwargs: Any,
+    ) -> "AgeData":
+        """Build from one age column of a DataFrame (auto-detected if unnamed).
+
+        Extra keyword arguments go to :meth:`from_groups`.
+        """
+        if age_column is None or age_column not in df.columns:
+            exact = [col for col in df.columns if col in ("age", "ages")]
+            prefixed = [col for col in df.columns if col.startswith("age_")]
+            candidates = exact or prefixed
+            if not candidates:
+                msg = (
+                    f"Column '{age_column if age_column is not None else 'of ages'}' "
+                    "not found, and no 'age', 'ages', or 'age_*' columns were found."
+                )
+                raise ValueError(msg)
+            if len(candidates) > 1:
+                msg = f"Multiple age columns found: {candidates}"
+                raise ValueError(msg)
+            age_column = candidates[0]
+        ages = jnp.asarray(df[age_column].to_numpy(dtype=np.float64, copy=True))
+        return cls.from_groups([ages], end_time, **kwargs)
+
+
+def log_likelihood_rates(
+    data: AgeData,
+    birth: RateFunction,
+    death: RateFunction,
+    *,
+    condition_on_survival: bool = True,
+    n_nodes: int = DEFAULT_NODES,
+) -> jax.Array:
+    """Log-likelihood of ``data`` under arbitrary birth and death rate functions.
+
+    Piecewise-constant rates on shared epochs use the exact epoch-wise backend,
+    anything else uses Gauss-Legendre quadrature
+    (see :func:`bdpinf.models.math_general.terms_for`).
+    Safe under ``jit`` and ``grad``; returns ``-inf`` for invalid parameters.
+    """
+    return _log_likelihood_core(
+        terms_for(birth, death, n_nodes=n_nodes),
+        data.non_spine_ages,
+        data.spine_ages,
+        data.ns,
+        initial_population=data.initial_population,
+        condition_on_survival=condition_on_survival,
+        use_unknown_spine_marginal=data.use_unknown_spine,
+        n_valid=data.n_non_spine,
+    )
 
 
 def log_likelihood(
@@ -273,68 +499,53 @@ def log_likelihood(
         spine_ages = ages[:1]
         ages = ages[1:]
 
-    # Delegate the population + age-likelihood math to the shared core (see
-    # _log_likelihood_core).  skip_normalization=False because this function
-    # is never traced under jax.jit, so the math kernels' own
-    # normalize_and_validate_inputs call is safe to run.
+    birth_rates, death_rates, times = normalize_and_validate_inputs(
+        birth_rates, death_rates, times
+    )
     return _log_likelihood_core(
-        birth_rates,
-        death_rates,
-        non_spine_ages=ages,
-        spine_ages=spine_ages,
-        times=times,
-        ns=ns_arr,
+        nested_terms(birth_rates, death_rates, times),
+        ages,
+        spine_ages,
+        ns_arr,
         initial_population=initial_population,
         condition_on_survival=condition_on_survival,
         use_unknown_spine_marginal=use_unknown_spine_marginal,
-        skip_normalization=False,
     )
 
 
 def _log_likelihood_core(
-    birth_rates: jnp.ndarray,
-    death_rates: jnp.ndarray,
+    terms: AgeTerms,
     non_spine_ages: jnp.ndarray,
     spine_ages: jnp.ndarray | None,
-    times: jnp.ndarray,
     ns: jnp.ndarray,
     *,
     initial_population: int = 1,
     condition_on_survival: bool = True,
     use_unknown_spine_marginal: bool = True,
-    skip_normalization: bool = True,
+    n_valid: int | jax.Array | None = None,
 ) -> jnp.ndarray:
-    """Shared log-likelihood core, used by both ``log_likelihood`` and the MLE hot path.
+    """Shared log-likelihood core for ``log_likelihood`` and the fitters.
 
-    All host-side validation and spine auto-detection (auto-detecting an
-    unknown spine, splitting ``is_ordered`` inputs, etc.) must be completed by
-    the caller before invoking this function — this function itself contains
-    no host-side hazards (``bool(traced)``, ``np.isclose(traced)``, dynamic
-    mask slicing).
-
-    All JAX-branching on ``use_unknown_spine_marginal``, ``spine_ages is not
-    None``, and array lengths uses Python-level conditionals that resolve at
-    XLA trace time because these flags and shapes are static closure constants
-    whenever this function is called under ``jax.jit`` (the MLE hot path, via
-    ``_jittable_nll``).  Non-finite outputs are handled with ``jnp.where``
-    instead of early ``bool()``-guarded returns, so the function is safe to
-    call both inside and outside ``jax.jit``.
+    All host-side validation and spine resolution must be completed by the
+    caller (see :class:`AgeData`); this function contains no host-side hazards
+    (``bool(traced)``, ``np.isclose(traced)``, dynamic mask slicing), so it is
+    safe under ``jax.jit`` and ``jax.grad``.
+    The flags and array lengths are static, so the Python-level branching on
+    them resolves at trace time.
+    Non-finite outputs are mapped to ``-inf`` with ``jnp.where``.
 
     Parameters
     ----------
-    birth_rates, death_rates : jnp.ndarray
-        Positive-scale rates (NOT log-scale), shape ``(n_epochs,)`` float64.
+    terms : AgeTerms
+        Precomputed terms for the rates (exact epoch-wise or quadrature, see
+        :func:`bdpinf.models.math_general.terms_for`).
     non_spine_ages : jnp.ndarray
         Non-spine (or all, when marginalizing) ages, shape ``(m,)`` float64.
     spine_ages : jnp.ndarray | None
         Explicit spine ages if known, or ``None`` when ``use_unknown_spine_marginal``
         is True.
-    times : jnp.ndarray
-        Epoch end times, shape ``(n_epochs,)`` float64.
     ns : jnp.ndarray
-        Population counts, shape ``(k,)`` float64.  Passed directly to
-        ``calculate_populations_log_lik``; no host-side sum is computed here
-        (closure JAX arrays are abstract inside ``jax.jit``).
+        Population counts, shape ``(k,)``.
     initial_population : int
         Initial population size (static, Python int).
     condition_on_survival : bool
@@ -343,13 +554,9 @@ def _log_likelihood_core(
         If True, ``non_spine_ages`` contains all ages and the spine position
         is marginalized via logsumexp.  Static Python bool resolved at trace
         time.
-    skip_normalization : bool
-        Forwarded as ``_skip_normalization`` to the math kernels.  ``True``
-        (the MLE hot path) skips ``normalize_and_validate_inputs``, which uses
-        Python-level ``float()``/``bool()`` calls that are unsafe under
-        ``jax.jit`` — the caller is responsible for having already validated
-        and normalized its inputs.  ``False`` (``log_likelihood``, never
-        traced) lets the math kernels re-validate.
+    n_valid : int | jax.Array | None
+        If given, only the first ``n_valid`` entries of ``non_spine_ages`` are
+        genuine (the rest is padding and is masked out).  May be traced.
 
     Returns
     -------
@@ -359,29 +566,19 @@ def _log_likelihood_core(
     """
     _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
 
-    log_P_n_T = calculate_populations_log_lik(
-        birth_rates=birth_rates,
-        death_rates=death_rates,
-        times=times,
-        ns=ns,
+    log_P_n_T = calculate_populations_log_lik_from_terms(
+        terms,
+        ns,
         initial_population=initial_population,
         condition_on_survival=condition_on_survival,
-        _skip_normalization=skip_normalization,
     )
 
-    # NOTE: do NOT call int(float(ns.sum())) here — under jax.jit, closure
-    # JAX arrays are abstract tracers.  The n_non_spine == 0 guard below
-    # makes an early-return redundant: when there are no ages, ages_log_lik
-    # stays 0.0 and the final jnp.where handles any -inf from log_P_n_T.
     ages_log_lik = jnp.float64(0.0)
-    n_non_spine = len(non_spine_ages)  # static shape
+    n_non_spine = len(non_spine_ages)  # static (padded) shape
+    valid = None if n_valid is None else jnp.arange(n_non_spine) < n_valid
 
-    if skip_normalization is False:
-        # Eager callers (``log_likelihood``) keep the shared input validation.
-        birth_rates, death_rates, times = normalize_and_validate_inputs(
-            birth_rates, death_rates, times
-        )
-    terms = nested_terms(birth_rates, death_rates, times)
+    def masked_sum(x: jax.Array) -> jax.Array:
+        return x.sum() if valid is None else jnp.where(valid, x, 0.0).sum()
 
     if use_unknown_spine_marginal and n_non_spine > 0:
         # Unknown-spine marginal (paper: P(Z_T) * sum_j f*(a_j) prod_{i!=j} f(a_i),
@@ -389,16 +586,23 @@ def _log_likelihood_core(
         # candidate; both densities come from one shared pass.
         log_f, log_f_spine = age_log_densities(terms, non_spine_ages)
         a = log_f_spine - log_f
+        if valid is not None:
+            a = jnp.where(valid, a, -jnp.inf)
         a_max = jax.lax.stop_gradient(jnp.max(a))
         log_sum_exp = jnp.log(jnp.sum(jnp.exp(a - a_max))) + a_max
-        ages_log_lik = log_f.sum() - jnp.log(jnp.float64(n_non_spine)) + log_sum_exp
+        count = n_non_spine if n_valid is None else n_valid
+        ages_log_lik = (
+            masked_sum(log_f)
+            - jnp.log(jnp.asarray(count, dtype=jnp.float64))
+            + log_sum_exp
+        )
     else:
         # Known or pre-resolved spine.
         if spine_ages is not None:
             ages_log_lik = ages_log_lik + spine_log_density(terms, spine_ages).sum()
         if n_non_spine > 0:
-            ages_log_lik = (
-                ages_log_lik + non_spine_log_density(terms, non_spine_ages).sum()
+            ages_log_lik = ages_log_lik + masked_sum(
+                non_spine_log_density(terms, non_spine_ages)
             )
 
     total = log_P_n_T + ages_log_lik
@@ -465,6 +669,35 @@ def calculate_unknown_spine_mixture_age_density(
 
     log_non_spine, log_spine = age_log_densities(
         nested_terms(birth_rates, death_rates, times), age_grid
+    )
+    ab = jnp.stack([log_n_minus_one + log_non_spine, log_spine])
+    return jnp.exp(jax.scipy.special.logsumexp(ab, axis=0) - log_n)
+
+
+def calculate_unknown_spine_mixture_age_density_rates(
+    birth: RateFunction,
+    death: RateFunction,
+    age_grid: object,
+    num_individuals: int,
+    *,
+    n_nodes: int = DEFAULT_NODES,
+) -> jnp.ndarray:
+    """Age density of a random individual when the spine is unknown.
+
+    Same as :func:`calculate_unknown_spine_mixture_age_density` for arbitrary
+    :class:`~bdpinf.models.rate_functions.RateFunction` birth and death rates.
+    """
+    if num_individuals <= 0:
+        msg = "num_individuals must be a positive integer."
+        raise ValueError(msg)
+    (age_grid_arr,) = ensure_1d_tensors(age_grid)
+    log_n = jnp.log(jnp.float64(num_individuals))
+    if num_individuals > 1:
+        log_n_minus_one = jnp.log(jnp.float64(num_individuals - 1))
+    else:
+        log_n_minus_one = jnp.array(-jnp.inf, dtype=jnp.float64)
+    log_non_spine, log_spine = age_log_densities(
+        terms_for(birth, death, n_nodes=n_nodes), age_grid_arr
     )
     ab = jnp.stack([log_n_minus_one + log_non_spine, log_spine])
     return jnp.exp(jax.scipy.special.logsumexp(ab, axis=0) - log_n)

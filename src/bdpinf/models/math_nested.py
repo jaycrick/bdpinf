@@ -46,7 +46,7 @@ that cumulative log-sums and their gradients stay finite;
 public results are mapped back to ``-inf``.
 """
 
-from typing import NamedTuple
+from typing import NamedTuple, Protocol
 
 import jax
 import jax.numpy as jnp
@@ -56,6 +56,7 @@ from bdpinf.models.validation import normalize_and_validate_inputs
 __all__ = [
     "LOG_ZERO",
     "NestedTerms",
+    "Totals",
     "age_log_densities",
     "log_extinction_and_survival_pr",
     "log_extinction_odds",
@@ -71,6 +72,30 @@ __all__ = [
 
 LOG_ZERO: float = -1e30
 _SERIES_THRESHOLD: float = 1e-6
+
+
+class Totals(Protocol):
+    """The whole-window scalars shared by exact and quadrature terms."""
+
+    @property
+    def gamma_total(self) -> jax.Array:
+        r"""$\Gamma(0, T]$."""
+        ...
+
+    @property
+    def log_i_total(self) -> jax.Array:
+        r"""$\ln I(T)$, with ``LOG_ZERO`` for zero."""
+        ...
+
+    @property
+    def log_l_total(self) -> jax.Array:
+        r"""$\ln L(T)$, with ``LOG_ZERO`` for zero."""
+        ...
+
+    @property
+    def lam_total(self) -> jax.Array:
+        r"""$\Lambda(0, T]$."""
+        ...
 
 
 class NestedTerms(NamedTuple):
@@ -331,12 +356,12 @@ def log_nested_w(terms: NestedTerms, b: jax.Array) -> jax.Array:
     return _log_w_from_row(row, b - row.start, single_epoch=terms.table.shape[0] == 1)
 
 
-def log_nested_w_total(terms: NestedTerms) -> jax.Array:
+def log_nested_w_total(terms: Totals) -> jax.Array:
     r"""Return $\ln\mathcal W(T)$, i.e. $-\ln\pi(T)$."""
     return terms.gamma_total + jnp.logaddexp(0.0, terms.log_i_total)
 
 
-def log_extinction_odds(terms: NestedTerms) -> jax.Array:
+def log_extinction_odds(terms: Totals) -> jax.Array:
     r"""Return $\ln I(T)$ with $I(T) = \int_0^T \mu e^{-\Gamma(0,t]}dt$.
 
     $I(T) = P_0(T)/(1 - P_0(T))$ is the odds of extinction by $T$,
@@ -346,7 +371,7 @@ def log_extinction_odds(terms: NestedTerms) -> jax.Array:
     return terms.log_i_total
 
 
-def log_extinction_and_survival_pr(terms: NestedTerms) -> tuple[jax.Array, jax.Array]:
+def log_extinction_and_survival_pr(terms: Totals) -> tuple[jax.Array, jax.Array]:
     r"""Return $(\ln P_0(T), \ln(1 - P_0(T)))$ from the extinction odds.
 
     Evaluated as $\ln I - \operatorname{softplus}(\ln I)$ and
@@ -358,7 +383,7 @@ def log_extinction_and_survival_pr(terms: NestedTerms) -> tuple[jax.Array, jax.A
     return restore_neg_inf(log_i - softplus_i), -softplus_i
 
 
-def log_nested_w_minus_one(terms: NestedTerms) -> jax.Array:
+def log_nested_w_minus_one(terms: Totals) -> jax.Array:
     r"""Return $\ln(\mathcal W(T) - 1) = \Gamma(0,T] + \ln L(T)$.
 
     ``LOG_ZERO`` when there are no births.
@@ -371,7 +396,7 @@ def log_nested_w_minus_one(terms: NestedTerms) -> jax.Array:
 # ---------------------------------------------------------------------------
 
 
-def spine_log_atom(terms: NestedTerms) -> jax.Array:
+def spine_log_atom(terms: Totals) -> jax.Array:
     r"""Log of $\Pr(A^* = T) = \mathcal W(T)\,e^{-\Lambda(0,T]}$."""
     return log_nested_w_total(terms) - terms.lam_total
 

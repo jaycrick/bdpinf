@@ -1,812 +1,287 @@
-"""Maximum likelihood estimation for birth-death process parameters using JAX."""
+r"""Maximum likelihood fitting of birth-death rate models.
+
+:func:`fit` maximises the exact log-likelihood of a set of ages over the
+parameters of a :class:`~bdpinf.inference.rate_models.BirthDeathModel`
+(piecewise-constant, piecewise-linear, or any other family satisfying the
+:class:`~bdpinf.inference.rate_models.RateModel` protocol), optionally under
+:class:`~bdpinf.inference.constraints.Constraints`.
+
+The optimiser is a trust-region Newton method (``scipy`` ``trust-exact``) driven
+by a jitted JAX gradient and Hessian.
+Newton steps are insensitive to the strong scale differences between
+parameters (the information about a growth rate grows like $T^2$ while the
+information about a rate grows like the number of individuals), which is
+what makes first-order methods slow here.
+The Hessian at the optimum also gives the covariance, and certifies that the
+optimum is an interior maximum rather than a boundary or saddle point.
+"""
 
 import dataclasses
 import logging
 import math
 import warnings
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from typing import Any, TypedDict, Unpack
+from collections.abc import Iterator, Mapping
+from typing import Any
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
-from numpy.typing import NDArray
+import scipy.optimize
+import scipy.stats
+from numpy.typing import ArrayLike, NDArray
 
-from bdpinf.models.validation import (
-    normalize_and_validate_inputs,
-)
+from bdpinf.inference.constraints import CompiledConstraints, Constraints
+from bdpinf.inference.likelihood import AgeData, log_likelihood_rates
+from bdpinf.inference.rate_models import BirthDeathModel
+from bdpinf.inference.uncertainty import covariance_from_hessian
+from bdpinf.models.math_general import DEFAULT_NODES
+from bdpinf.models.rate_functions import RateFunction
+from bdpinf.models.validation import normalize_and_validate_inputs
 from bdpinf.utils import ensure_1d_tensor
 
-from ._fit_types import (
-    DEFAULT_ITERATIONS,
-    MIN_EQUALITY_GROUP_SIZE,
-    ConvergenceConfig,
-    OptimizerAttemptResult,
-    OptimizerRunResult,
-    OptimizerStrategy,
-)
-from ._optimizer_runners import (
-    _scaled_config,  # pyright: ignore[reportPrivateUsage]
-    run_first_order_optimizer,
-    run_lbfgs_optimizer,
-)
-from .likelihood import (
-    _log_likelihood_core,  # pyright: ignore[reportPrivateUsage]
-    log_likelihood,
-    resolve_spine_ages,
-)
-from .uncertainty import estimate_mle_covariance
+__all__ = [
+    "FitResult",
+    "StartSummary",
+    "fit",
+    "get_crude_parameter_estimates",
+    "moment_initial_rates",
+    "profile_likelihood_interval",
+]
 
 logger = logging.getLogger(__name__)
 
+_PENALTY = 1e20
+"""Objective value returned where the likelihood is not finite."""
 
-class FitKwargs(TypedDict, total=False):
-    """TypedDict for fit_birth_death_processes kwargs."""
+_BOUNDARY_LOG_RATE = -12.0
+"""Log-scale parameter values below this count as having hit the zero boundary."""
 
-    initial_birth_rates: jax.Array | NDArray[np.float64] | None
-    initial_death_rates: jax.Array | NDArray[np.float64] | None
-    is_ordered: bool
-    spine_ages: jax.Array | NDArray[np.float64] | None
-    population_sizes: jax.Array | NDArray[np.float64] | None
-    initial_population: int
-    optimizers: Sequence[str] | str
-    condition_on_survival: bool
-    optimizer_kwargs: dict[str, dict[str, Any]] | None
-    perturb_initial_params_std: float
-    random_seed: int | None
-    param_constraints: "ParameterConstraints | None"
-    estimate_uncertainty: bool
+_METHODS = ("trust-exact", "L-BFGS-B")
+_MIN_GROUP = 2
 
 
-@dataclass(frozen=True)
-class ParameterConstraints:
-    """Constraints for fitting: fixed parameters and equality groups.
+@dataclasses.dataclass(frozen=True)
+class StartSummary:
+    """Outcome of one optimisation start."""
 
-    Constraints shrink the optimised parameter space (which can help
-    convergence); the fitted result is always reported in the full space.
-    Fixed parameters stay in the likelihood but are not optimised, and
-    parameters in one equality group share a single fitted value.
+    log_likelihood: float
+    converged: bool
+    n_iter: int
+    swapped: bool = False
 
-    Parameters are indexed birth rates first, then death rates.
-    With three epochs, indices 0-2 are ``birth_rates[0..2]`` and indices 3-5
-    are ``death_rates[0..2]``.
+
+@dataclasses.dataclass(frozen=True)
+class FitResult:
+    """Result of :func:`fit`.
 
     Attributes
     ----------
-    fixed_params : dict[int, float]
-        Mapping from parameter index to fixed value.
-    equality_groups : list[list[int]]
-        Groups of at least two parameter indices that must be equal.
-        A parameter may not appear in a group and in ``fixed_params``.
-
-    Examples
-    --------
-    Three epochs; fix the last death rate and pool the first two epochs'
-    birth rates and death rates:
-
-    >>> constraints = ParameterConstraints(
-    ...     fixed_params={5: 0.05},
-    ...     equality_groups=[[0, 1], [3, 4]],
-    ... )
-
-    Time-invariant rates over four epochs (two free parameters):
-
-    >>> n_epochs = 4
-    >>> constant = ParameterConstraints(
-    ...     equality_groups=[
-    ...         list(range(n_epochs)),
-    ...         list(range(n_epochs, 2 * n_epochs)),
-    ...     ]
-    ... )
-
-    Pass the object to
-    :func:`~bdpinf.inference.fitting.fit_birth_death_processes` as
-    ``param_constraints``; invalid constraints (out-of-range index, overlap
-    between fixed and grouped indices, group smaller than two) raise
-    ``ValueError`` from :meth:`validate`.
+    model : BirthDeathModel
+        The fitted family.
+    constraints : Constraints
+        The constraints used.
+    params : dict[str, float]
+        Fitted natural-scale value of every parameter (``birth.<name>``,
+        ``death.<name>``), constraints applied.
+    birth, death : RateFunction
+        The fitted rate functions.
+    log_likelihood : float
+        Maximised log-likelihood.
+    converged : bool
+        Whether the per-observation gradient norm met the tolerance.
+    score_norm : float
+        Euclidean norm of the gradient of the log-likelihood in the free
+        unconstrained parameters.
+    min_hessian_eig : float | None
+        Smallest eigenvalue of the negative-log-likelihood Hessian there;
+        positive at a strict interior maximum.
+    at_interior_optimum : bool
+        Converged, positive-definite Hessian and no rate at the zero boundary.
+    covariance_free : NDArray | None
+        Covariance of the free unconstrained parameters (inverse observed
+        information).
+    covariance : NDArray | None
+        Covariance of the natural-scale parameters (delta method), ordered as
+        ``model.params``; fixed parameters have zero variance.
+    covariance_unconstrained : NDArray | None
+        Covariance of the full unconstrained vector, ordered as ``model.params``
+        (for log-scale parameters this is the covariance of the log rates).
+    n_iter, n_function_evals : int
+        Optimiser iterations and objective evaluations of the selected start.
+    message : str
+        Optimiser termination message.
+    method : str
+        Optimiser that produced the result.
+    nll_history : list[float]
+        Negative log-likelihood after each iteration of the selected start.
+    starts : list[StartSummary]
+        One summary per start.
+    free_values : NDArray
+        Fitted free unconstrained parameters.
+    compiled : CompiledConstraints
+        The expansion maps for ``free_values``.
 
     """
 
-    fixed_params: dict[int, float] = dataclasses.field(default_factory=dict)
-    equality_groups: list[list[int]] = dataclasses.field(default_factory=list)
+    model: BirthDeathModel
+    constraints: Constraints
+    params: dict[str, float]
+    birth: RateFunction
+    death: RateFunction
+    log_likelihood: float
+    converged: bool
+    score_norm: float
+    min_hessian_eig: float | None
+    at_interior_optimum: bool
+    covariance_free: NDArray[np.float64] | None
+    covariance: NDArray[np.float64] | None
+    covariance_unconstrained: NDArray[np.float64] | None
+    n_iter: int
+    n_function_evals: int
+    message: str
+    method: str
+    nll_history: list[float]
+    starts: list[StartSummary]
+    free_values: NDArray[np.float64]
+    compiled: CompiledConstraints
 
-    def validate(self, n_total_params: int) -> None:
-        """Validate constraints are consistent with parameter count.
+    @property
+    def success(self) -> bool:
+        """Alias for :attr:`converged`."""
+        return self.converged
 
-        Parameters
-        ----------
-        n_total_params : int
-            Total number of parameters (2 * n_epochs).
+    @property
+    def natural(self) -> NDArray[np.float64]:
+        """Natural-scale parameter vector, ordered as ``model.params``."""
+        return np.array([self.params[name] for name in self.model.names])
 
-        Raises
-        ------
-        ValueError
-            If indices are out of bounds or constraints are invalid.
+    @property
+    def birth_values(self) -> NDArray[np.float64]:
+        """Fitted birth parameters (the epoch rates for a piecewise-constant model)."""
+        return np.array([self.params[name] for name in self.model.birth_names])
 
+    @property
+    def death_values(self) -> NDArray[np.float64]:
+        """Fitted death parameters (the epoch rates for a piecewise-constant model)."""
+        return np.array([self.params[name] for name in self.model.death_names])
+
+    @property
+    def standard_errors(self) -> dict[str, float] | None:
+        """Delta-method standard errors of the natural-scale parameters.
+
+        Wald standard errors of growth-type parameters are not asymptotically
+        valid as the observation window grows (their limit law is not normal);
+        prefer :func:`profile_likelihood_interval` there.
         """
-        all_constrained_indices = set(self.fixed_params.keys())
-        for idx, value in self.fixed_params.items():
-            if idx not in range(n_total_params):
-                msg = f"Parameter index {idx} out of range [0, {n_total_params})"
-                raise ValueError(msg)
-            if not np.isfinite(value) or value < 0:
-                msg = f"Fixed parameter at index {idx} must be non-negative and finite"
-                raise ValueError(msg)
+        if self.covariance is None:
+            return None
+        se = np.sqrt(np.clip(np.diag(self.covariance), 0.0, None))
+        return dict(zip(self.model.names, (float(v) for v in se), strict=True))
 
-        for group in self.equality_groups:
-            if len(group) < MIN_EQUALITY_GROUP_SIZE:
-                msg = "Equality groups must have at least 2 elements"
-                raise ValueError(msg)
-            for idx in group:
-                if idx not in range(n_total_params):
-                    msg = f"Parameter index {idx} out of range [0, {n_total_params})"
-                    raise ValueError(msg)
-                if idx in all_constrained_indices:
-                    msg = (
-                        f"Index {idx} appears in both fixed_params and equality_groups"
-                    )
-                    raise ValueError(msg)
-            all_constrained_indices.update(group)
+    def confidence_intervals(
+        self, level: float = 0.95
+    ) -> dict[str, tuple[float, float]] | None:
+        """Wald intervals computed on the unconstrained scale and mapped back.
 
-    def get_free_param_indices(self, n_total_params: int) -> list[int]:
-        """Get indices of parameters that will be optimized.
-
-        Parameters
-        ----------
-        n_total_params : int
-            Total number of parameters (2 * n_epochs).
-
-        Returns
-        -------
-        list[int]
-            Indices of free parameters in the original parameter space.
-
+        Rates therefore get positive intervals.
+        Fixed parameters get a degenerate interval.
         """
-        self.validate(n_total_params)
-        fixed_set = set(self.fixed_params.keys())
-        equality_set = set()
-        for group in self.equality_groups:
-            equality_set.update(group)
-
-        free_indices = [
-            i
-            for i in range(n_total_params)
-            if i not in fixed_set and i not in equality_set
-        ]
-        # Add one representative from each equality group
-        free_indices.extend([min(group) for group in self.equality_groups])
-
-        return sorted(free_indices)
-
-
-def _apply_constraints_to_full_params(
-    free_params: jax.Array,
-    constraints: ParameterConstraints,
-    n_total_params: int,
-) -> jax.Array:
-    """Expand free parameters to full parameter space applying all constraints.
-
-    Parameters
-    ----------
-    free_params : jax.Array
-        Parameters corresponding to free indices only.
-    constraints : ParameterConstraints
-        The constraint specification.
-    n_total_params : int
-        Total number of parameters (2 * n_epochs).
-
-    Returns
-    -------
-    jax.Array
-        Full parameter vector with constraints applied.
-
-    """
-    free_indices = constraints.get_free_param_indices(n_total_params)
-    free_position_by_index = {idx: pos for pos, idx in enumerate(free_indices)}
-
-    representative_by_index: dict[int, int] = {}
-    for group in constraints.equality_groups:
-        representative_idx = min(group)
-        for idx in group:
-            representative_by_index[idx] = representative_idx
-
-    parts: list[jax.Array] = []
-    for idx in range(n_total_params):
-        if idx in constraints.fixed_params:
-            parts.append(
-                jnp.array(constraints.fixed_params[idx], dtype=free_params.dtype),
-            )
-            continue
-
-        source_idx = representative_by_index.get(idx, idx)
-        parts.append(free_params[free_position_by_index[source_idx]])
-
-    return jnp.stack(parts)
-
-
-def _reduce_to_free_params(
-    full_params: jax.Array,
-    constraints: ParameterConstraints,
-    n_total_params: int,
-) -> jax.Array:
-    """Extract only free parameters from full parameter space.
-
-    Parameters
-    ----------
-    full_params : jax.Array
-        Full parameter vector.
-    constraints : ParameterConstraints
-        The constraint specification.
-    n_total_params : int
-        Total number of parameters (2 * n_epochs).
-
-    Returns
-    -------
-    jax.Array
-        Reduced parameter vector containing only free parameters.
-
-    """
-    free_indices = constraints.get_free_param_indices(n_total_params)
-    return full_params[jnp.array(free_indices)]
-
-
-def fit_birth_death_processes(
-    list_of_ages: list[jax.Array | NDArray[np.float64]],
-    times: jax.Array | NDArray[np.float64] | float,
-    *,
-    initial_birth_rates: jax.Array | NDArray[np.float64] | None = None,
-    initial_death_rates: jax.Array | NDArray[np.float64] | None = None,
-    is_ordered: bool = False,
-    spine_ages: jax.Array | NDArray[np.float64] | None = None,
-    population_sizes: jax.Array | NDArray[np.float64] | None = None,
-    initial_population: int = 1,
-    optimizers: Sequence[str] | str = ("LBFGS", "Adam"),
-    optimizer_kwargs: dict[str, dict[str, Any]] | None = None,
-    perturb_initial_params_std: float = 0.0,
-    random_seed: int | None = None,
-    condition_on_survival: bool = True,
-    convergence_config: ConvergenceConfig | None = None,
-    param_constraints: ParameterConstraints | None = None,
-    estimate_uncertainty: bool = True,
-) -> dict[str, Any]:
-    """Fit birth-death parameters to grouped age data via JAX.
-
-    Optimizes log-parameters with requested optimizers (defaults: LBFGS, Adam).
-
-    Parameters
-    ----------
-    list_of_ages : list[jax.Array | NDArray]
-        Age arrays per group; ≥1 non-empty array required.
-    times : jax.Array | NDArray | float
-        Observation time(s), must be positive.
-    is_ordered : bool
-        If True, extract spine from first element per array.
-    initial_birth_rates, initial_death_rates : jax.Array | NDArray | None
-        Initial guesses; auto-estimated if None.
-    spine_ages : jax.Array | NDArray | None
-        Explicit spine ages (if not auto-extracted).
-    population_sizes : jax.Array | NDArray | None
-        Counts per group; auto-computed if None.
-    initial_population : int
-        The number of initial individuals at time 0. Default is 1.
-    optimizers : Sequence[str] | str
-        Optimizer names ('LBFGS', 'Adam', 'SGD') to try sequentially.
-        Defaults to ('LBFGS', 'Adam').
-    optimizer_kwargs : dict[str, dict[str, Any]] | None
-        Custom per-optimizer hyperparameters (e.g. {'adam': {'lr': 0.01}}).
-    perturb_initial_params_std : float
-        Noise std as fraction of initial params; 0 = no noise.
-    random_seed : int | None
-        Seed for reproducible perturbation.
-    convergence_config : ConvergenceConfig | None
-        Custom convergence criteria; defaults used if None.
-    param_constraints : ParameterConstraints | None
-        Constraints for fixed/equal parameters; None = no constraints.
-    estimate_uncertainty : bool
-        If True (default), estimate uncertainty via the observed Fisher
-        information (Hessian of NLL in free log-parameter space). The returned
-        covariance is in the full log-parameter space.
-    condition_on_survival : bool
-        If True (default), use the conditional non-extinction population mass
-        for positive counts when evaluating the likelihood.
-
-    Returns
-    -------
-    dict
-        {'success': bool, 'birth_rates': ndarray, 'death_rates': ndarray,
-         'log_likelihood': float, 'nll_history': list, 'optimization_result': dict}
-
-    """
-    non_empty_age = _find_non_empty_age(list_of_ages)
-    (times_tensor,) = normalize_and_validate_inputs(times=times)
-    population_sizes_tensor = _prepare_population_sizes(
-        list_of_ages,
-        population_sizes,
-        spine_ages,
-    )
-    spine_ages_tensor, non_spine_ages = _extract_spine_and_ages(
-        list_of_ages,
-        is_ordered=is_ordered,
-        spine_ages=spine_ages,
-    )
-    initial_params = _build_initial_params(
-        initial_birth_rates,
-        initial_death_rates,
-        non_empty_age,
-        times_tensor,
-        initial_population=initial_population,
-    )
-    if bool(jnp.any(initial_params <= 0)):
-        msg = "Initial parameters must be positive before log transform"
-        raise ValueError(msg)
-
-    n_epochs = len(times_tensor)
-    expected_len = 2 * n_epochs
-    if len(initial_params) != expected_len:
-        msg = (
-            "Initial parameters size mismatch with times: "
-            f"expected {expected_len}, got {len(initial_params)}"
+        if self.covariance_unconstrained is None:
+            return None
+        z = float(scipy.stats.norm.ppf(0.5 + 0.5 * level))
+        centre = np.where(
+            self.compiled.is_fixed, 0.0, self.free_values[self.compiled.source]
         )
-        raise ValueError(msg)
-
-    if param_constraints is None:
-        param_constraints = ParameterConstraints()
-    param_constraints.validate(len(initial_params))
-
-    initial_params = _apply_param_perturbation(
-        initial_params=initial_params,
-        perturb_initial_params_std=perturb_initial_params_std,
-        random_seed=random_seed,
-    )
-
-    convergence_config = convergence_config or ConvergenceConfig.default()
-    strategies_map = _build_optimizer_strategies(
-        optimizer_kwargs=optimizer_kwargs,
-        convergence_config=convergence_config,
-    )
-    requested_keys = _normalize_requested_optimizers(optimizers, strategies_map)
-
-    optimizer_run_result = _run_optimizer_strategies(
-        strategies_map=strategies_map,
-        requested_keys=requested_keys,
-        initial_params=initial_params,
-        n_epochs=n_epochs,
-        non_spine_ages=non_spine_ages,
-        times_tensor=times_tensor,
-        spine_ages_tensor=spine_ages_tensor,
-        population_sizes_tensor=population_sizes_tensor,
-        initial_population=initial_population,
-        condition_on_survival=condition_on_survival,
-        convergence_config=convergence_config,
-        param_constraints=param_constraints,
-    )
-
-    log_params = optimizer_run_result.log_params
-    converged = optimizer_run_result.converged
-
-    optimization_result = _build_optimization_result_payload(optimizer_run_result)
-
-    full_params = _apply_constraints_to_full_params(
-        jnp.exp(log_params),
-        param_constraints,
-        2 * n_epochs,
-    )
-    full_log_params = jnp.log(full_params)
-
-    finalized = _finalize_fit(
-        full_log_params,
-        n_epochs,
-        non_spine_ages,
-        times_tensor,
-        spine_ages_tensor=spine_ages_tensor,
-        population_sizes_tensor=population_sizes_tensor,
-        initial_population=initial_population,
-        condition_on_survival=condition_on_survival,
-    )
-    if finalized is None:
+        sd = np.sqrt(np.clip(np.diag(self.covariance_unconstrained), 0.0, None))
+        lo = np.asarray(self.compiled.expand_full(jnp.asarray(centre - z * sd)))
+        hi = np.asarray(self.compiled.expand_full(jnp.asarray(centre + z * sd)))
         return {
-            "success": False,
-            "optimization_result": optimization_result,
+            name: (float(a), float(b))
+            for name, a, b in zip(self.model.names, lo, hi, strict=True)
         }
 
-    birth_rates, death_rates, final_log_likelihood, final_loss = finalized
-    result: dict[str, Any] = {
-        "success": converged,
-        "birth_rates": birth_rates,
-        "death_rates": death_rates,
-        "log_likelihood": final_log_likelihood,
-        "optimization_result": {
-            **optimization_result,
-            "final_loss": final_loss,
-        },
-    }
-
-    if estimate_uncertainty:
-        if not converged:
-            warnings.warn(
-                "Estimating uncertainty from a fit that did not converge; the "
-                "Hessian is evaluated at a possibly non-stationary point, so "
-                "the resulting covariance/standard errors may not be valid.",
-                UserWarning,
-                stacklevel=2,
-            )
-
-        def full_log_params_fn(theta_free: jax.Array) -> jax.Array:
-            return jnp.log(
-                _apply_constraints_to_full_params(
-                    jnp.exp(theta_free),
-                    param_constraints,
-                    2 * n_epochs,
-                ),
-            )
-
-        covariance = estimate_mle_covariance(
-            free_log_params=log_params,
-            n_epochs=n_epochs,
-            full_log_params_fn=full_log_params_fn,
-            non_spine_ages=non_spine_ages,
-            times_tensor=times_tensor,
-            spine_ages_tensor=spine_ages_tensor,
-            population_sizes_tensor=population_sizes_tensor,
-            initial_population=initial_population,
-            condition_on_survival=condition_on_survival,
-        )
-        result["uncertainty"] = np.array(covariance)
-
-    return result
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly summary."""
+        return {
+            "params": dict(self.params),
+            "log_likelihood": self.log_likelihood,
+            "converged": self.converged,
+            "score_norm": self.score_norm,
+            "min_hessian_eig": self.min_hessian_eig,
+            "at_interior_optimum": self.at_interior_optimum,
+            "n_iter": self.n_iter,
+            "n_function_evals": self.n_function_evals,
+            "message": self.message,
+            "method": self.method,
+            "nll_history": list(self.nll_history),
+            "starts": [dataclasses.asdict(s) for s in self.starts],
+            "standard_errors": self.standard_errors,
+            "covariance": None if self.covariance is None else self.covariance.tolist(),
+            "param_names": list(self.model.names),
+            "end_time": self.model.end_time,
+        }
 
 
-def _build_optimization_result_payload(
-    optimizer_run_result: OptimizerRunResult,
-) -> dict[str, Any]:
-    """Create attempt-centric optimization payload for fit results."""
-    attempts_payload: list[dict[str, Any]] = []
-    for attempt in optimizer_run_result.attempts:
-        first_nll = attempt.nll_history[0] if attempt.nll_history else None
-        best_nll = min(attempt.nll_history) if attempt.nll_history else None
-        final_nll = attempt.nll_history[-1] if attempt.nll_history else None
-        attempts_payload.append(
-            {
-                "optimizer": attempt.optimizer,
-                "attempt_index": attempt.attempt_index,
-                "converged": attempt.converged,
-                "iterations": attempt.iterations,
-                "nll_history": attempt.nll_history,
-                "grad_norms": attempt.grad_norms,
-                "param_history": attempt.param_history,
-                "timestamps": attempt.timestamps,
-                "first_nll": first_nll,
-                "best_nll": best_nll,
-                "final_nll": final_nll,
-                "exception_type": attempt.exception_type,
-                "exception": attempt.exception_message,
-            },
-        )
-
-    best_attempt_index: int | None = None
-    best_attempt_value = float("inf")
-    for attempt_payload in attempts_payload:
-        if attempt_payload["best_nll"] is None:
-            continue
-        if attempt_payload["best_nll"] < best_attempt_value:
-            best_attempt_value = attempt_payload["best_nll"]
-            best_attempt_index = attempt_payload["attempt_index"]
-
-    first_attempt_index = 0 if attempts_payload else None
-    last_attempt_index = len(attempts_payload) - 1 if attempts_payload else None
-
-    return {
-        "converged": optimizer_run_result.converged,
-        "selected_attempt_index": optimizer_run_result.selected_attempt_index,
-        "first_attempt_index": first_attempt_index,
-        "last_attempt_index": last_attempt_index,
-        "best_attempt_index": best_attempt_index,
-        "attempts": attempts_payload,
-    }
+# ---------------------------------------------------------------------------
+# Initial values
+# ---------------------------------------------------------------------------
 
 
-def fit_from_data_frame(
-    df: "Any",
-    times: float | NDArray[np.float64] | jax.Array,
-    *,
-    age_column: str | None = None,
-    **fit_kwargs: Unpack[FitKwargs],
-) -> dict[str, Any]:
-    """Fit parameters from DataFrame age column.
+def _all_ages(data: AgeData) -> NDArray[np.float64]:
+    """Every genuine age (spine included) as a host array."""
+    rest = np.asarray(data.non_spine_ages, dtype=np.float64)
+    if data.n_non_spine is not None:
+        rest = rest[: int(data.n_non_spine)]
+    if data.spine_ages is None:
+        return rest
+    return np.concatenate([rest, np.asarray(data.spine_ages, dtype=np.float64)])
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input data_frame containing age data.
-    times : float | NDArray | jax.Array
-        Observation time(s).
-    age_column : str | None
-        Name of age column; auto-detected if None.
-    **fit_kwargs : Any
-        Additional keyword arguments forwarded to ``fit_birth_death_processes``.
 
-    Returns
-    -------
-    dict
-        Fitting results with success, rates, and optimization metadata.
+def moment_initial_rates(data: AgeData) -> tuple[float, float] | None:
+    r"""Constant-rate moment estimators of $(\lambda, \mu)$ from the data.
 
+    For constant rates the non-spine ages tend to $\mathrm{Exp}(\lambda)$,
+    so $\tilde\lambda = 1/\bar A$; the population size gives the growth rate
+    $\tilde\gamma$ as the non-zero root of
+    $\gamma(\bar n - 1) = \tilde\lambda(e^{\gamma T} - 1)$, and
+    $\tilde\mu = \tilde\lambda - \tilde\gamma$.
+    Returns ``None`` when no sensible root exists (for example one individual).
     """
-    if age_column is None or age_column not in df.columns:
-        exact_matches = [col for col in df.columns if col in ("age", "ages")]
-        prefix_matches = [col for col in df.columns if col.startswith("age_")]
-        candidates = exact_matches or prefix_matches
-        if not candidates:
-            msg = (
-                f"Column '{age_column if age_column is not None else 'of ages'}' "
-                "not found, and no 'age', 'ages', or 'age_*' "
-                "columns were found."
-            )
-            raise ValueError(msg)
-        if len(candidates) > 1:
-            msg = f"Multiple age columns found: {candidates}"
-            raise ValueError(msg)
-        age_column = candidates[0]
+    ages = _all_ages(data)
+    mean_age = float(ages.mean()) if ages.size else 0.0
+    n_bar = float(np.mean(np.asarray(data.ns)))
+    horizon = data.end_time
+    if mean_age <= 0 or n_bar <= 1.0 or data.initial_population != 1:
+        return None
+    lam = 1.0 / mean_age
 
-    ages_arr = jnp.array(
-        df[age_column].to_numpy(dtype=np.float64, copy=True),
-        dtype=jnp.float64,
-    )
-    times_arr = jnp.array(times, dtype=jnp.float64)
-    times_arr, ages_arr = normalize_and_validate_inputs(
-        times=times_arr,
-        ages=ages_arr,
-    )
+    def score(g: float) -> float:
+        return g * (n_bar - 1.0) - lam * math.expm1(g * horizon)
 
-    return fit_birth_death_processes(
-        list_of_ages=[ages_arr],
-        times=times_arr,
-        **fit_kwargs,
-    )
-
-
-def _run_optimizer_strategies(
-    strategies_map: dict[str, OptimizerStrategy],
-    requested_keys: list[str],
-    initial_params: jax.Array,
-    n_epochs: int,
-    non_spine_ages: jax.Array,
-    times_tensor: jax.Array,
-    spine_ages_tensor: jax.Array | None,
-    population_sizes_tensor: jax.Array,
-    initial_population: int,
-    convergence_config: ConvergenceConfig,
-    param_constraints: ParameterConstraints | None = None,
-    condition_on_survival: bool = True,
-) -> OptimizerRunResult:
-    """Run optimizers sequentially until convergence; return params and metadata."""
-    if param_constraints is None:
-        param_constraints = ParameterConstraints()
-
-    n_total_params = 2 * n_epochs
-
-    free_initial_params = _reduce_to_free_params(
-        initial_params,
-        param_constraints,
-        n_total_params,
-    )
-    log_params_initial = jnp.log(free_initial_params)
-    log_params = log_params_initial
-
-    # ------------------------------------------------------------------
-    # Host-side spine pre-resolution (same resolution as ``log_likelihood``).
-    # We resolve all data-dependent and host-side branches here once so the
-    # jitted NLL core sees only static-shape, concrete closure constants.
-    # ------------------------------------------------------------------
-    _jit_ns = population_sizes_tensor
-    _jit_times = times_tensor
-
-    if spine_ages_tensor is None and len(non_spine_ages) > 0:
-        resolved = resolve_spine_ages(
-            non_spine_ages,
-            float(times_tensor[-1]),
-            multiple_terminal="marginalize",
-        )
-        _jit_spine: jax.Array | None = (
-            None
-            if resolved.spine_ages is None
-            else jnp.asarray(resolved.spine_ages, dtype=jnp.float64)
-        )
-        _jit_non_spine = jnp.asarray(resolved.non_spine_ages, dtype=jnp.float64)
-        _use_unknown_spine = resolved.use_unknown_spine
-    else:
-        _jit_spine = spine_ages_tensor
-        _jit_non_spine = non_spine_ages
-        _use_unknown_spine = False
-
-    # ------------------------------------------------------------------
-    # Build the jitted value-and-gradient callable.
-    # The NLL closure calls the math kernels directly with
-    # _skip_normalization=True, avoiding all host-side bool() hazards.
-    # All static info (shapes, flags, data arrays) are closure constants;
-    # only log_params_free is the traced argument.
-    # ------------------------------------------------------------------
-    def _jittable_nll(log_params_free: jax.Array) -> jax.Array:
-        full_params = _apply_constraints_to_full_params(
-            jnp.exp(log_params_free),
-            param_constraints,
-            n_total_params,
-        )
-        birth_rates = full_params[:n_epochs]
-        death_rates = full_params[n_epochs:]
-        return -_log_likelihood_core(
-            birth_rates=birth_rates,
-            death_rates=death_rates,
-            non_spine_ages=_jit_non_spine,
-            spine_ages=_jit_spine,
-            times=_jit_times,
-            ns=_jit_ns,
-            initial_population=initial_population,
-            condition_on_survival=condition_on_survival,
-            use_unknown_spine_marginal=_use_unknown_spine,
-            skip_normalization=True,
-        )
-
-    val_and_grad_fn = jax.jit(jax.value_and_grad(_jittable_nll))
-
-    # The objective sums a term per observed age, so its gradient norm scales
-    # with the number of observations; scale the gradient-threshold portion of
-    # the convergence criteria accordingly (see _optimizer_runners._scaled_config
-    # for why) so the stopping rule is sample-size invariant.
-    n_observations = len(_jit_non_spine) + (
-        len(_jit_spine) if _jit_spine is not None else 0
-    )
-    scaled_convergence_config = _scaled_config(convergence_config, n_observations)
-
-    converged = False
-    selected_attempt_index: int | None = None
-    attempts: list[OptimizerAttemptResult] = []
-
-    # Warm-start each subsequent optimizer from the running best parameters
-    # (not the original initial guess) so a sequence like ("LBFGS", "Adam")
-    # actually refines LBFGS's result with Adam, matching the documented
-    # LBFGS-then-Adam workflow instead of running two independent fits.
-    log_params = log_params_initial
-    best_overall_nll = float("inf")
-    best_overall_log_params: jax.Array | None = None
-    best_overall_attempt_index: int | None = None
-
-    for idx, key in enumerate(requested_keys):
-        strategy = strategies_map[key]
-
-        attempt, best_log_params = _run_single_optimizer(
-            strategy=strategy,
-            attempt_index=idx,
-            log_params=log_params,
-            convergence_config=scaled_convergence_config,
-            val_and_grad_fn=val_and_grad_fn,
-        )
-        attempts.append(attempt)
-
-        if best_log_params is not None:
-            log_params = best_log_params
-
-        attempt_best_nll = min(attempt.nll_history) if attempt.nll_history else None
-        if (
-            attempt_best_nll is not None
-            and math.isfinite(attempt_best_nll)
-            and best_log_params is not None
-            and attempt_best_nll < best_overall_nll
-        ):
-            best_overall_nll = attempt_best_nll
-            best_overall_log_params = best_log_params
-            best_overall_attempt_index = idx
-
-        if attempt.converged:
-            converged = True
-            break
-
-    # Return parameters from the globally-best attempt (lowest NLL across all
-    # attempts actually run), not merely the last attempt run, and report that
-    # attempt's index so the returned rates, `selected_attempt_index`, and
-    # `best_attempt_index` (computed from the same nll_history data in
-    # _build_optimization_result_payload) all agree.  When an attempt converges
-    # we stop immediately (as before), and that attempt is necessarily the
-    # best one seen so far, so this also covers the converged path.
-    if best_overall_log_params is not None:
-        log_params = best_overall_log_params
-        selected_attempt_index = best_overall_attempt_index
-    elif attempts:
-        selected_attempt_index = 0
-
-    return OptimizerRunResult(
-        log_params=log_params,
-        converged=converged,
-        selected_attempt_index=selected_attempt_index,
-        attempts=attempts,
-    )
-
-
-def _run_single_optimizer(
-    strategy: OptimizerStrategy,
-    attempt_index: int,
-    log_params: jax.Array,
-    convergence_config: ConvergenceConfig,
-    val_and_grad_fn: Callable[[jax.Array], tuple[jax.Array, jax.Array]],
-) -> tuple[OptimizerAttemptResult, jax.Array | None]:
-    """Run a single optimizer strategy and handle results.
-
-    Returns
-    -------
-        (attempt_result, best_log_params)
-
-    """
-    attempt_nll_history: list[float] = []
-    attempt_grad_norms: list[float] = []
-    attempt_param_history: list[list[float]] = []
-    attempt_timestamps: list[float] = []
-    iterations = 0
-
+    slope = n_bar - 1.0 - lam * horizon
     try:
-        runner = (
-            run_lbfgs_optimizer
-            if strategy.name == "LBFGS"
-            else run_first_order_optimizer
-        )
-        did_converge, run_exc, best_log_params, iterations = runner(
-            strategy=strategy,
-            log_params=log_params,
-            max_iters=strategy.max_iters,
-            nll_history=attempt_nll_history,
-            grad_norms=attempt_grad_norms,
-            param_history=attempt_param_history,
-            timestamps=attempt_timestamps,
-            convergence_config=convergence_config,
-            val_and_grad_fn=val_and_grad_fn,
-        )
-    except (RuntimeError, ValueError) as exc:
-        return (
-            OptimizerAttemptResult(
-                optimizer=strategy.name,
-                attempt_index=attempt_index,
-                converged=False,
-                iterations=iterations,
-                nll_history=attempt_nll_history,
-                exception_type=type(exc).__name__,
-                exception_message=str(exc),
-                grad_norms=attempt_grad_norms or None,
-                param_history=attempt_param_history or None,
-                timestamps=attempt_timestamps or None,
-            ),
-            None,
-        )
-
-    if run_exc is not None:
-        return (
-            OptimizerAttemptResult(
-                optimizer=strategy.name,
-                attempt_index=attempt_index,
-                converged=False,
-                iterations=iterations,
-                nll_history=attempt_nll_history,
-                exception_type=type(run_exc).__name__,
-                exception_message=str(run_exc),
-                grad_norms=attempt_grad_norms or None,
-                param_history=attempt_param_history or None,
-                timestamps=attempt_timestamps or None,
-            ),
-            None,
-        )
-
-    return (
-        OptimizerAttemptResult(
-            optimizer=strategy.name,
-            attempt_index=attempt_index,
-            converged=did_converge,
-            iterations=iterations,
-            nll_history=attempt_nll_history,
-            grad_norms=attempt_grad_norms or None,
-            param_history=attempt_param_history or None,
-            timestamps=attempt_timestamps or None,
-        ),
-        best_log_params,
-    )
+        if abs(slope) < 1e-12:
+            gamma = 0.0
+        elif slope > 0:
+            hi = 1.0 / horizon
+            while score(hi) > 0 and hi * horizon < 500:
+                hi *= 2.0
+            if score(hi) > 0:
+                return None
+            gamma = scipy.optimize.brentq(score, 1e-12, hi)
+        else:
+            lo = -1.0 / horizon
+            while score(lo) > 0 and -lo * horizon < 500:
+                lo *= 2.0
+            if score(lo) > 0:
+                return None
+            gamma = scipy.optimize.brentq(score, lo, -1e-12)
+    except ValueError:
+        return None
+    mu = lam - gamma
+    if not (math.isfinite(lam) and math.isfinite(mu)) or lam <= 0:
+        return None
+    return lam, max(mu, 0.05 * lam)
 
 
 def get_crude_parameter_estimates(
@@ -817,7 +292,7 @@ def get_crude_parameter_estimates(
     death_rates: jax.Array | NDArray[np.float64] | float | None = None,
     initial_population: int = 1,
 ) -> tuple[jax.Array, jax.Array]:
-    """Get crude initial parameter estimates from age data."""
+    """Get crude initial epoch rates from age data (fallback heuristic)."""
     if birth_rates is not None and death_rates is not None:
         msg = "Cannot provide both birth_rates and death_rates"
         raise ValueError(msg)
@@ -857,11 +332,8 @@ def get_crude_parameter_estimates(
         )
         raise ValueError(msg)
 
-    # Pull birth and death rates a quarter of the way toward each other.
-    # Both updates must use the *original* (pre-shrink) values: computing
-    # est_death_rates from the already-updated est_birth_rates would make the
-    # pull asymmetric (birth moves a quarter of the original gap, death moves
-    # a quarter of the now-smaller gap).
+    # Pull birth and death rates a quarter of the way toward each other, using the
+    # original (pre-shrink) values for both so the pull is symmetric.
     rate_gap = est_death_rates - est_birth_rates
     est_birth_rates = est_birth_rates + rate_gap / 4
     est_death_rates = est_death_rates - rate_gap / 4
@@ -869,214 +341,584 @@ def get_crude_parameter_estimates(
     return (est_birth_rates, est_death_rates)
 
 
-def _find_non_empty_age(
-    list_of_ages: list[jax.Array | NDArray[np.float64]],
-) -> jax.Array:
-    """Return first non-empty age array; raise ValueError if all empty."""
-    for ages in list_of_ages:
-        if len(ages) > 0:
-            return ensure_1d_tensor(ages)
-    msg = "No valid data points for fitting"
-    raise ValueError(msg)
-
-
-def _prepare_population_sizes(
-    list_of_ages: list[jax.Array | NDArray[np.float64]],
-    population_sizes: jax.Array | NDArray[np.float64] | None,
-    spine_ages: jax.Array | NDArray[np.float64] | None,
-) -> jax.Array:
-    """Return population_sizes or auto-compute from list_of_ages + spine_ages."""
-    if population_sizes is not None:
-        ps = ensure_1d_tensor(population_sizes)
-        ps_int = jnp.array(ps, dtype=jnp.int32)
-        if ps_int.size != len(list_of_ages):
-            msg = "Length of population_sizes must match length of list_of_ages"
-            raise ValueError(msg)
-        return ps_int
-
-    return jnp.array(
-        [len(ages) + int(spine_ages is not None) for ages in list_of_ages],
-        dtype=jnp.int32,
-    )
-
-
-def _extract_spine_and_ages(
-    list_of_ages: list[jax.Array | NDArray[np.float64]],
-    *,
-    is_ordered: bool,
-    spine_ages: jax.Array | NDArray[np.float64] | None,
-) -> tuple[jax.Array | None, jax.Array]:
-    """Extract/auto-extract spine ages and return (spine_ages, non_spine_ages)."""
-    spine_ages_tensor: jax.Array | None
-    if is_ordered and (spine_ages is None):
-        spine_list: list[float] = []
-        remaining: list[jax.Array] = []
-        for arr in list_of_ages:
-            if len(arr) == 0:
-                continue
-            arr_jax = ensure_1d_tensor(arr)
-            spine_list.append(float(arr_jax[0]))
-            if len(arr_jax) > 1:
-                remaining.append(arr_jax[1:])
-
-        spine_ages_tensor = jnp.array(spine_list, dtype=jnp.float64)
-        non_spine_ages = (
-            jnp.concatenate(remaining)
-            if remaining
-            else jnp.array([], dtype=jnp.float64)
+def _default_init(data: AgeData, model: BirthDeathModel) -> Iterator[jax.Array]:
+    """Yield candidate natural-scale starting vectors, best first (computed lazily)."""
+    moments = moment_initial_rates(data)
+    if moments is not None:
+        yield model.constant_natural(*moments)
+    try:
+        birth, death = get_crude_parameter_estimates(
+            _all_ages(data), data.end_time, initial_population=data.initial_population
         )
-        return spine_ages_tensor, non_spine_ages
+        yield model.constant_natural(float(birth[0]), float(death[0]))
+    except ValueError:
+        pass
+    yield model.constant_natural(1.0 / data.end_time, 0.5 / data.end_time)
 
-    spine_ages_tensor = None if spine_ages is None else ensure_1d_tensor(spine_ages)
-    non_spine_tensors = [ensure_1d_tensor(arr) for arr in list_of_ages if len(arr) > 0]
-    non_spine_ages = (
-        jnp.concatenate(non_spine_tensors)
-        if non_spine_tensors
-        else jnp.array([], dtype=jnp.float64)
+
+InitSpec = (
+    Mapping[str, float] | ArrayLike | FitResult | tuple[RateFunction, RateFunction]
+)
+
+
+def _resolve_init(
+    init: InitSpec | None, data: AgeData, model: BirthDeathModel
+) -> Iterator[jax.Array]:
+    """Yield the candidate starting vectors implied by the user's ``init``."""
+    if init is None:
+        yield from _default_init(data, model)
+    elif isinstance(init, FitResult):
+        yield model.natural_from_rates(init.birth, init.death)
+    elif isinstance(init, tuple):
+        yield model.natural_from_rates(*init)
+    elif isinstance(init, Mapping):
+        base = np.array(next(_default_init(data, model)), dtype=np.float64)
+        for name, value in init.items():
+            if name not in model.names:
+                msg = f"Unknown parameter '{name}' in init"
+                raise ValueError(msg)
+            base[model.names.index(name)] = float(value)
+        yield jnp.asarray(base)
+    else:
+        arr = jnp.asarray(init, dtype=jnp.float64)
+        if arr.shape != (len(model.names),):
+            msg = f"init has shape {arr.shape}, expected ({len(model.names)},)"
+            raise ValueError(msg)
+        yield arr
+
+
+# ---------------------------------------------------------------------------
+# Optimisation
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass
+class _RunOutcome:
+    x: NDArray[np.float64]
+    nll: float
+    grad_norm: float
+    n_iter: int
+    n_evals: int
+    message: str
+    method: str
+    history: list[float]
+
+
+def _run_optimizer(
+    x0: NDArray[np.float64],
+    value_and_grad: Any,
+    hessian: Any,
+    *,
+    method: str,
+    grad_tol: float,
+    max_iter: int,
+) -> _RunOutcome:
+    """Run one scipy optimiser from ``x0``."""
+    evaluations = 0
+    seen: dict[bytes, float] = {}
+
+    def fun(x: NDArray[np.float64]) -> tuple[float, NDArray[np.float64]]:
+        nonlocal evaluations
+        evaluations += 1
+        value, grad = value_and_grad(jnp.asarray(x))
+        seen[np.asarray(x, dtype=np.float64).tobytes()] = float(value)
+        return float(value), np.asarray(grad, dtype=np.float64)
+
+    history: list[float] = []
+
+    def record(xk: NDArray[np.float64]) -> None:
+        key = np.asarray(xk, dtype=np.float64).tobytes()
+        history.append(seen[key] if key in seen else fun(np.asarray(xk))[0])
+
+    if method == "trust-exact":
+        result = scipy.optimize.minimize(
+            fun,
+            x0,
+            jac=True,
+            hess=lambda x: np.asarray(hessian(jnp.asarray(x)), dtype=np.float64),
+            method="trust-exact",
+            callback=record,
+            options={"gtol": grad_tol, "maxiter": max_iter},
+        )
+    else:
+        result = scipy.optimize.minimize(
+            fun,
+            x0,
+            jac=True,
+            method="L-BFGS-B",
+            callback=record,
+            options={"gtol": grad_tol, "maxiter": 10 * max_iter, "ftol": 1e-15},
+        )
+    x = np.asarray(result.x, dtype=np.float64)
+    nll, grad = fun(x)
+    return _RunOutcome(
+        x=x,
+        nll=nll,
+        grad_norm=float(np.linalg.norm(grad)),
+        n_iter=int(getattr(result, "nit", len(history))),
+        n_evals=evaluations,
+        message=str(result.message),
+        method=method,
+        history=history or [nll],
     )
-    return spine_ages_tensor, non_spine_ages
 
 
-def _build_initial_params(
-    initial_birth_rates: jax.Array | NDArray[np.float64] | None,
-    initial_death_rates: jax.Array | NDArray[np.float64] | None,
-    non_empty_age: jax.Array,
-    times_tensor: jax.Array,
-    initial_population: int = 1,
-) -> jax.Array:
-    """Build initial param vector; auto-estimate if needed."""
-    if initial_birth_rates is None or initial_death_rates is None:
-        crude_birth, crude_death = get_crude_parameter_estimates(
-            non_empty_age,
-            times_tensor,
-            birth_rates=initial_birth_rates,
-            death_rates=initial_death_rates,
+def _optimise_start(
+    x0: NDArray[np.float64],
+    value_and_grad: Any,
+    hessian: Any,
+    *,
+    method: str,
+    grad_tol: float,
+    max_iter: int,
+) -> _RunOutcome:
+    """Optimise from one start, falling back across methods if it stalls."""
+
+    def attempt(start: NDArray[np.float64], how: str) -> _RunOutcome | None:
+        try:
+            return _run_optimizer(
+                start,
+                value_and_grad,
+                hessian,
+                method=how,
+                grad_tol=grad_tol,
+                max_iter=max_iter,
+            )
+        except (ValueError, FloatingPointError, np.linalg.LinAlgError) as exc:
+            logger.debug("%s failed from %s: %s", how, start, exc)
+            return None
+
+    first = attempt(x0, method)
+    if first is not None and first.grad_norm <= grad_tol and first.nll < _PENALTY:
+        return first
+    best = first or _RunOutcome(
+        x0, _PENALTY, float("inf"), 0, 0, "optimiser failed", method, []
+    )
+    other = "L-BFGS-B" if method == "trust-exact" else "trust-exact"
+    for fallback in (other, "trust-exact"):
+        retry = attempt(best.x, fallback)
+        if retry is None:
+            continue
+        if retry.nll <= best.nll + 1e-12:
+            retry.n_iter += best.n_iter
+            retry.n_evals += best.n_evals
+            retry.history = best.history + retry.history
+            best = retry
+        if best.grad_norm <= grad_tol:
+            break
+    return best
+
+
+_MIN_BUCKET = 32
+
+
+def _bucket(n: int) -> int:
+    """Smallest power of two (at least ``_MIN_BUCKET``) holding ``n`` ages."""
+    return max(_MIN_BUCKET, 1 << max(0, int(n) - 1).bit_length())
+
+
+@dataclasses.dataclass(frozen=True)
+class _Objective:
+    """Jitted negative log-likelihood, its gradient and its Hessian."""
+
+    nll: Any
+    value_and_grad: Any
+    hessian: Any
+
+
+_OBJECTIVES: dict[tuple[Any, ...], _Objective] = {}
+_MAX_CACHED_OBJECTIVES = 32
+
+
+def _objective(
+    model: BirthDeathModel,
+    compiled: CompiledConstraints,
+    *,
+    has_spine: bool,
+    use_unknown_spine: bool,
+    initial_population: int,
+    end_time: float,
+    condition_on_survival: bool,
+    n_nodes: int,
+) -> _Objective:
+    """Return the jitted objective for this model and constraint structure.
+
+    The data arrays and the fixed parameter values are *arguments* of the jitted
+    functions, so one compilation serves every fit with the same structure and
+    array shapes (bootstrap replicates, profile-likelihood refits, recovery
+    studies with equal sample sizes).
+    Reverse mode gives the gradient and forward-over-forward the Hessian, which
+    compiles about twice as fast as the default for the small parameter counts
+    here.
+    """
+    key = (
+        model,
+        compiled.structure_key,
+        has_spine,
+        use_unknown_spine,
+        initial_population,
+        end_time,
+        condition_on_survival,
+        n_nodes,
+    )
+    cached = _OBJECTIVES.get(key)
+    if cached is not None:
+        return cached
+
+    def penalised(
+        free: jax.Array,
+        non_spine: jax.Array,
+        spine: jax.Array,
+        ns: jax.Array,
+        fixed_natural: jax.Array,
+        n_valid: jax.Array,
+    ) -> jax.Array:
+        birth, death = model.rates(compiled.expand(free, fixed_natural))
+        data = AgeData(
+            non_spine_ages=non_spine,
+            spine_ages=spine if has_spine else None,
+            ns=ns,
+            end_time=end_time,
+            use_unknown_spine=use_unknown_spine,
             initial_population=initial_population,
+            n_non_spine=n_valid,
         )
-        return jnp.concatenate([crude_birth, crude_death])
+        log_lik = log_likelihood_rates(
+            data,
+            birth,
+            death,
+            condition_on_survival=condition_on_survival,
+            n_nodes=n_nodes,
+        )
+        return jnp.where(jnp.isfinite(log_lik), -log_lik, _PENALTY)
 
-    return jnp.concatenate(
-        [
-            ensure_1d_tensor(initial_birth_rates),
-            ensure_1d_tensor(initial_death_rates),
-        ],
+    objective = _Objective(
+        nll=jax.jit(penalised),
+        value_and_grad=jax.jit(jax.value_and_grad(penalised)),
+        hessian=jax.jit(jax.jacfwd(jax.jacfwd(penalised))),
     )
+    if len(_OBJECTIVES) >= _MAX_CACHED_OBJECTIVES:
+        _OBJECTIVES.clear()
+    _OBJECTIVES[key] = objective
+    return objective
 
 
-def _apply_param_perturbation(
-    initial_params: jax.Array,
-    perturb_initial_params_std: float,
-    random_seed: int | None,
-) -> jax.Array:
-    """Add multiplicative log-normal noise to params."""
-    if perturb_initial_params_std <= 0:
-        return initial_params
-    seed = random_seed if random_seed is not None else 0
-    key = jax.random.PRNGKey(seed)
-    raw_noise = jax.random.normal(key, shape=initial_params.shape, dtype=jnp.float64)
-    noise = jnp.maximum(raw_noise * perturb_initial_params_std + 1.0, 0.1)
-    return initial_params * noise
-
-
-def _lbfgs_solver_factory(**_: object) -> None:
-    """Return None; LBFGS runs via scipy and has no optax solver object."""
-    return
-
-
-def _build_optimizer_strategies(
-    optimizer_kwargs: dict[str, dict[str, Any]] | None,
-    convergence_config: ConvergenceConfig,
-) -> dict[str, OptimizerStrategy]:
-    """Build optimizer config dict."""
-    strategies_map: dict[str, OptimizerStrategy] = {
-        "adam": OptimizerStrategy(
-            name="Adam",
-            solver_factory=optax.adam,
-            max_iters=DEFAULT_ITERATIONS,
-            solver_kwargs={"lr": 0.1},
-        ),
-        "lbfgs": OptimizerStrategy(
-            name="LBFGS",
-            solver_factory=_lbfgs_solver_factory,
-            max_iters=DEFAULT_ITERATIONS // 20,
-            solver_kwargs={
-                "tolerance_grad": convergence_config.gradient_threshold,
-                "tolerance_change": convergence_config.absolute_tolerance,
-            },
-        ),
-        "sgd": OptimizerStrategy(
-            name="SGD",
-            solver_factory=optax.sgd,
-            max_iters=DEFAULT_ITERATIONS,
-            solver_kwargs={"lr": 0.001},
-        ),
-    }
-
-    if optimizer_kwargs is None:
-        return strategies_map
-
-    for key, custom_kwargs in optimizer_kwargs.items():
-        key_lower = key.lower()
-        if key_lower in strategies_map:
-            strategy = strategies_map[key_lower]
-            merged_solver_kwargs = {**strategy.solver_kwargs, **custom_kwargs}
-            strategies_map[key_lower] = OptimizerStrategy(
-                name=strategy.name,
-                solver_factory=strategy.solver_factory,
-                max_iters=strategy.max_iters,
-                solver_kwargs=merged_solver_kwargs,
-            )
-    return strategies_map
-
-
-def _normalize_requested_optimizers(
-    optimizers: Sequence[str] | str,
-    strategies_map: dict[str, OptimizerStrategy],
-) -> list[str]:
-    """Normalize optimizer names to lowercase list; validate against strategies_map."""
-    requested_opts = [optimizers] if isinstance(optimizers, str) else list(optimizers)
-    requested_keys = [opt.strip().lower() for opt in requested_opts]
-
-    for key in requested_keys:
-        if key not in strategies_map:
-            msg = (
-                f"Unsupported optimizer '{key}'. "
-                f"Choose from {list(strategies_map.keys())}."
-            )
-            raise ValueError(msg)
-    return requested_keys
-
-
-def _finalize_fit(
-    log_params: jax.Array,
-    n_epochs: int,
-    non_spine_ages: jax.Array,
-    times_tensor: jax.Array,
+def fit(
+    data: AgeData,
+    model: BirthDeathModel,
     *,
-    spine_ages_tensor: jax.Array | None,
-    population_sizes_tensor: jax.Array,
-    initial_population: int = 1,
+    constraints: Constraints | None = None,
+    init: InitSpec | None = None,
+    method: str = "trust-exact",
+    n_starts: int = 1,
+    perturb_std: float = 0.3,
+    seed: int | None = None,
+    tol: float = 1e-6,
+    max_iter: int = 200,
     condition_on_survival: bool = True,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], float, float] | None:
-    """Convert log params to original scale; return rates + final likelihoods."""
-    final_nll = -log_likelihood(
-        birth_rates=log_params[:n_epochs],
-        death_rates=log_params[n_epochs:],
-        ages=non_spine_ages,
-        times=times_tensor,
-        spine_ages=spine_ages_tensor,
-        ns=population_sizes_tensor,
-        initial_population=initial_population,
+    compute_covariance: bool = True,
+    n_nodes: int = DEFAULT_NODES,
+    pad_to_bucket: bool = True,
+) -> FitResult:
+    r"""Fit a birth-death rate model to age data by maximum likelihood.
+
+    Parameters
+    ----------
+    data : AgeData
+        Observed ages (see :meth:`AgeData.from_groups`).
+    model : BirthDeathModel
+        Parametric family for the birth and death rates, on the same
+        observation window as ``data``.
+    constraints : Constraints, optional
+        Fixed parameters and equality groups, by name.
+    init : mapping | array-like | FitResult | tuple of RateFunction, optional
+        Starting point: natural-scale values by name, a full natural-scale
+        vector, a previous :class:`FitResult` (for example a piecewise-constant
+        fit warm-starting a piecewise-linear one), or a ``(birth, death)`` pair
+        of rate functions.
+        By default constant rates from :func:`moment_initial_rates`.
+    method : {"trust-exact", "L-BFGS-B"}
+        Primary optimiser.
+        The other one is the fallback if the primary stalls.
+    n_starts : int
+        Number of starts.
+        With more than one, the second start exchanges birth and death (when
+        the two families have the same layout), because ages alone are
+        symmetric in the two rates; further starts perturb the first on the
+        unconstrained scale by ``perturb_std``.
+        The start with the highest likelihood is returned.
+    perturb_std : float
+        Standard deviation of the unconstrained-scale perturbation.
+    seed : int, optional
+        Seed for the perturbations.
+    tol : float
+        Convergence tolerance on the gradient norm per observation.
+    max_iter : int
+        Iteration limit per optimiser run.
+    condition_on_survival : bool
+        Condition the population-count term on non-extinction.
+    compute_covariance : bool
+        Compute the covariance from the observed information.
+    n_nodes : int
+        Gauss-Legendre nodes per segment for non-piecewise-constant rates.
+    pad_to_bucket : bool
+        Pad the age vector (masked out of the likelihood) to the next power of
+        two so that fits with similar sample sizes share one compilation of the
+        gradient and Hessian, which otherwise dominates the run time.
+        Results are identical to the unpadded fit.
+
+    Returns
+    -------
+    FitResult
+
+    Raises
+    ------
+    ValueError
+        If the model and data windows differ, ``method`` is unknown, or no
+        starting point has a finite likelihood.
+
+    """
+    if method not in _METHODS:
+        msg = f"Unsupported method '{method}'. Choose from {list(_METHODS)}."
+        raise ValueError(msg)
+    if not np.isclose(model.end_time, data.end_time):
+        msg = (
+            f"Model window {model.end_time} does not match the data "
+            f"observation time {data.end_time}."
+        )
+        raise ValueError(msg)
+    constraints = constraints or Constraints()
+    compiled = constraints.compile(model.params)
+    objective = _objective(
+        model,
+        compiled,
+        has_spine=data.spine_ages is not None,
+        use_unknown_spine=data.use_unknown_spine,
+        initial_population=data.initial_population,
+        end_time=data.end_time,
         condition_on_survival=condition_on_survival,
-        is_ordered=False,
-        log_scale_params=True,
+        n_nodes=n_nodes,
+    )
+    n_rest = (
+        len(data.non_spine_ages) if data.n_non_spine is None else int(data.n_non_spine)
+    )
+    padded = (
+        data
+        if pad_to_bucket is False or data.n_non_spine is not None
+        else data.padded(_bucket(n_rest))
+    )
+    runtime = (
+        jnp.asarray(padded.non_spine_ages),
+        jnp.zeros(0) if data.spine_ages is None else jnp.asarray(data.spine_ages),
+        jnp.asarray(data.ns),
+        jnp.asarray(compiled.fixed_natural),
+        jnp.asarray(n_rest),
     )
 
-    if not math.isfinite(float(final_nll)):
-        return None
+    def nll(free: jax.Array) -> jax.Array:
+        return objective.nll(free, *runtime)
 
-    birth_rates = np.array(jnp.exp(log_params[:n_epochs]))
-    death_rates = np.array(jnp.exp(log_params[n_epochs:]))
-    final_log_likelihood = -float(final_nll)
+    def value_and_grad(free: jax.Array) -> tuple[jax.Array, jax.Array]:
+        return objective.value_and_grad(free, *runtime)
 
-    return birth_rates, death_rates, final_log_likelihood, float(final_nll)
+    def hessian(free: jax.Array) -> jax.Array:
+        return objective.hessian(free, *runtime)
+
+    n_obs = max(1, data.n_observations)
+    grad_tol = tol * n_obs
+
+    summaries: list[StartSummary] = []
+    if compiled.n_free == 0:
+        value = float(nll(jnp.zeros(0)))
+        best = _RunOutcome(
+            np.zeros(0), value, 0.0, 0, 1, "no free parameters", method, [value]
+        )
+        summaries.append(StartSummary(-value, True, 0))
+    else:
+        first: NDArray[np.float64] | None = None
+        natural0 = model.constant_natural(1.0, 1.0)
+        for candidate in _resolve_init(init, data, model):
+            u0 = np.asarray(compiled.reduce(candidate), dtype=np.float64)
+            if float(nll(jnp.asarray(u0))) < _PENALTY:
+                first, natural0 = u0, candidate
+                break
+        if first is None:
+            msg = "No starting point has a finite likelihood; pass `init`."
+            raise ValueError(msg)
+
+        starts: list[tuple[NDArray[np.float64], bool]] = [(first, False)]
+        if n_starts > 1:
+            swapped = model.swapped(natural0)
+            if swapped is not None:
+                u_swap = np.asarray(compiled.reduce(swapped), dtype=np.float64)
+                if float(nll(jnp.asarray(u_swap))) < _PENALTY:
+                    starts.append((u_swap, True))
+            rng = np.random.default_rng(seed)
+            while len(starts) < n_starts:
+                starts.append(
+                    (first + rng.normal(0.0, perturb_std, size=first.shape), False)
+                )
+
+        outcomes: list[_RunOutcome] = []
+        for u_start, was_swapped in starts:
+            out = _optimise_start(
+                u_start,
+                value_and_grad,
+                hessian,
+                method=method,
+                grad_tol=grad_tol,
+                max_iter=max_iter,
+            )
+            outcomes.append(out)
+            summaries.append(
+                StartSummary(
+                    log_likelihood=-out.nll if out.nll < _PENALTY else float("-inf"),
+                    converged=out.grad_norm <= grad_tol,
+                    n_iter=out.n_iter,
+                    swapped=was_swapped,
+                )
+            )
+        best = min(outcomes, key=lambda o: o.nll)
+
+    x_best = best.x
+    converged = best.grad_norm <= grad_tol and best.nll < _PENALTY
+    natural = np.asarray(compiled.expand(jnp.asarray(x_best)), dtype=np.float64)
+    birth, death = model.rates(jnp.asarray(natural))
+
+    min_eig: float | None = None
+    cov_free = cov_nat = cov_unc = None
+    if compiled.n_free > 0:
+        hess = np.asarray(hessian(jnp.asarray(x_best)), dtype=np.float64)
+        hess = 0.5 * (hess + hess.T)
+        min_eig = float(np.linalg.eigvalsh(hess).min())
+        if compute_covariance:
+            if not converged:
+                warnings.warn(
+                    "Estimating uncertainty from a fit that did not converge; the "
+                    "Hessian is evaluated at a possibly non-stationary point, so "
+                    "the resulting covariance/standard errors may not be valid.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            cov_free = np.asarray(covariance_from_hessian(jnp.asarray(hess)))
+            jac = np.asarray(jax.jacobian(compiled.expand)(jnp.asarray(x_best)))
+            cov_nat = jac @ cov_free @ jac.T
+            select = np.zeros((len(natural), compiled.n_free))
+            for i, k in enumerate(compiled.source):
+                if not compiled.is_fixed[i]:
+                    select[i, k] = 1.0
+            cov_unc = select @ cov_free @ select.T
+
+    log_scale = compiled.codes[compiled.free_indices] == 1
+    boundary = (
+        bool(np.any(x_best[log_scale] < _BOUNDARY_LOG_RATE)) if x_best.size else False
+    )
+    interior = bool(converged and not boundary and (min_eig is None or min_eig > 0))
+
+    return FitResult(
+        model=model,
+        constraints=constraints,
+        params=dict(zip(model.names, (float(v) for v in natural), strict=True)),
+        birth=birth,
+        death=death,
+        log_likelihood=-best.nll if best.nll < _PENALTY else float("-inf"),
+        converged=converged,
+        score_norm=best.grad_norm,
+        min_hessian_eig=min_eig,
+        at_interior_optimum=interior,
+        covariance_free=cov_free,
+        covariance=cov_nat,
+        covariance_unconstrained=cov_unc,
+        n_iter=best.n_iter,
+        n_function_evals=best.n_evals,
+        message=best.message,
+        method=best.method,
+        nll_history=best.history,
+        starts=summaries,
+        free_values=x_best,
+        compiled=compiled,
+    )
+
+
+def profile_likelihood_interval(
+    result: FitResult,
+    data: AgeData,
+    name: str,
+    *,
+    level: float = 0.95,
+    span: float = 4.0,
+    **fit_kwargs: Any,
+) -> tuple[float, float]:
+    r"""Profile-likelihood confidence interval for one parameter.
+
+    Re-fits with ``name`` held fixed and finds where twice the drop in
+    log-likelihood reaches the $\chi^2_1$ quantile.
+    Unlike a Wald interval this stays valid when the sampling distribution is
+    not normal (growth-type parameters over long windows).
+
+    Parameters
+    ----------
+    result : FitResult
+        The maximum-likelihood fit.
+    data : AgeData
+        The data it was fitted to.
+    name : str
+        Parameter to profile (a name in ``result.model.names``).
+    level : float
+        Confidence level.
+    span : float
+        Search range: for log-scale parameters the log of the value moves by up
+        to this much either side, otherwise the value moves by this much.
+    **fit_kwargs
+        Forwarded to :func:`fit` (for example ``n_nodes``).
+
+    Returns
+    -------
+    tuple[float, float]
+        Lower and upper limits; a limit is ``0.0`` or ``inf`` if not bracketed.
+
+    """
+    if name not in result.model.names:
+        msg = f"Unknown parameter '{name}'"
+        raise ValueError(msg)
+    target = result.log_likelihood - 0.5 * float(scipy.stats.chi2.ppf(level, 1))
+    centre = result.params[name]
+    is_log = result.model.params[result.model.names.index(name)].transform == "log"
+    fixed_base = dict(result.constraints.fixed)
+    # Profiling frees ``name`` from its equality group; the rest stay tied.
+    equal = [
+        rest
+        for group in result.constraints.equal
+        if len(rest := [n for n in group if n != name]) >= _MIN_GROUP
+    ]
+
+    def drop(value: float) -> float:
+        constraints = Constraints(fixed={**fixed_base, name: value}, equal=equal)
+        refit = fit(
+            data,
+            result.model,
+            constraints=constraints,
+            init=result,
+            compute_covariance=False,
+            **fit_kwargs,
+        )
+        return refit.log_likelihood - target
+
+    def search(direction: int) -> float:
+        steps = np.arange(1, 9) / 8.0 * span
+        probe = (
+            centre * np.exp(direction * steps) if is_log else centre + direction * steps
+        )
+        previous = centre
+        for value in probe:
+            if value < 0 and is_log:
+                break
+            if drop(float(value)) < 0:
+                a, b = sorted((previous, float(value)))
+                return float(
+                    scipy.optimize.brentq(drop, a, b, xtol=1e-6 * max(1.0, abs(centre)))
+                )
+            previous = float(value)
+        return 0.0 if direction < 0 else float("inf")
+
+    return search(-1), search(+1)

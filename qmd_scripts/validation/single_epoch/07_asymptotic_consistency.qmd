@@ -48,7 +48,6 @@ from bdpinf.analysis.spike_detection import (
     select_max_ci_times,
 )
 from bdpinf.analysis.validation_helpers import safe_mean, safe_var
-from bdpinf.inference import ConvergenceConfig
 from bdpinf.utils import format_table_dataframe, json_safe
 from bdpinf.visualization.plotting import plot_parameter_consistency
 
@@ -102,28 +101,7 @@ regime_lookup: dict[str, RegimeConfig] = {
     regime_config["name"]: regime_config for regime_config in regime_configs
 }
 bootstrap_samples = 1000
-fit_optimizers = ["lbfgs", "adam"]
-fit_optimizer_kwargs: dict[str, dict[str, Any]] = {
-    "lbfgs": {
-        "lr": 1.0,
-        "line_search_fn": "strong_wolfe",
-        "min_iterations": 10,
-    },
-    "adam": {
-        "lr": 1e-3,
-    },
-}
-fit_convergence_config = ConvergenceConfig(
-    gradient_threshold=1e-6,
-    absolute_tolerance=1e-10,
-    patience=10,
-)
-fit_run_config = FittingRunConfig(
-    seed=seed,
-    fit_optimizers=fit_optimizers,
-    fit_optimizer_kwargs=fit_optimizer_kwargs,
-    convergence_config=fit_convergence_config,
-)
+fit_run_config = FittingRunConfig(seed=seed, method="trust-exact", tol=1e-6)
 ```
 
 ## Load Precomputed Simulations And Fits
@@ -217,7 +195,7 @@ for _, row in spike_selection_unique_df.iterrows():
     debug_payload = {
         key: json_safe(value) for key, value in record.items() if key != "fit_result"
     }
-    debug_payload["fit_result"] = fit_result
+    debug_payload["fit_result"] = fit_result.to_dict()
     debug_path.write_text(json.dumps(debug_payload, indent=2, default=json_safe))
 
 debug_records_df = pd.DataFrame(

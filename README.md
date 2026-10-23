@@ -40,14 +40,18 @@ uv sync --group dev
 
 ```python
 from bdpinf import BirthDeathProcess
-from bdpinf.inference.fitting import fit_birth_death_processes
+from bdpinf.inference import AgeData, BirthDeathModel, fit
 
-model = BirthDeathProcess(creation_times=[100, 200, 300], epoch_end_times=500)
-results = fit_birth_death_processes(
-    list_of_ages=[model.ages],
-    times=model.epoch_end_times,
-)
-model.update_parameters(results["birth_rates"], results["death_rates"], results)
+process = BirthDeathProcess(creation_times=[100, 200, 300], epoch_end_times=500)
+data = AgeData.from_groups([process.ages], end_time=500.0)
+
+# Piecewise-constant rates (one per epoch) ...
+result = fit(data, BirthDeathModel.piecewise_constant([500.0]))
+process.update_parameters(result.birth_values, result.death_values, result)
+
+# ... or piecewise-linear rates, warm-started from the constant fit.
+linear = fit(data, BirthDeathModel.piecewise_linear([250.0, 500.0]), init=result)
+print(linear.params, linear.log_likelihood)
 ```
 
 Render the research-notebook site (notebooks live under `qmd_scripts/`; output
@@ -62,8 +66,10 @@ uv run quarto render
 
 ## Key Features
 
-- Birth-death process modeling: MLE fitting (JAX, JIT-compiled) and Bayesian
-  inference (NumPyro/NUTS) for single- and multi-epoch birth/death rates,
+- Birth-death process modeling: MLE fitting (JAX, trust-region Newton) and
+  Bayesian inference (NumPyro/NUTS) for piecewise-constant or piecewise-linear
+  birth/death rates, with room for other parametric families (sinusoids,
+  splines) and constraints by parameter name,
   with a Quarto research-notebook site of validation studies against
   synthetic data with known ground-truth parameters
 - Gillespie and lifespan-at-birth simulators, plus multilevel splitting for

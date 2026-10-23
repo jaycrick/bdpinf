@@ -19,15 +19,10 @@ Design
 - Seeds and tolerances are fixed so failures are reproducible.
 """
 
-from typing import Any
-
 import numpy as np
 import pytest
 
-from bdpinf.inference.fitting import (
-    ParameterConstraints,
-    fit_birth_death_processes,
-)
+from bdpinf.inference import AgeData, BirthDeathModel, Constraints, FitResult, fit
 from bdpinf.simulation import (
     simulate_birth_death_lifespans,
     simulate_birth_death_process,
@@ -35,6 +30,29 @@ from bdpinf.simulation import (
 
 _MIN_SURVIVORS = 15
 _MAX_SEEDS = 20
+_EQUAL_RATES = Constraints(equal=[["birth.v0", "death.v0"]])
+
+
+def _fit_ages(
+    ages: np.ndarray,
+    T: float,
+    constraints: Constraints | None = None,
+    seed: int | None = None,
+) -> FitResult:
+    """Fit one single-epoch piecewise-constant model to ``ages``."""
+    return fit(
+        AgeData.from_groups([ages], T),
+        BirthDeathModel.piecewise_constant([T]),
+        constraints=constraints,
+        seed=seed,
+        compute_covariance=False,
+    )
+
+
+def _fitted(result: FitResult, param: str) -> float:
+    """Return the fitted birth or death rate (``param`` is ``birth`` or ``death``)."""
+    values = result.birth_values if param == "birth" else result.death_values
+    return float(values[0])
 
 
 def _simulate_and_fit(
@@ -42,12 +60,12 @@ def _simulate_and_fit(
     death_rate: float,
     T: float,
     seed: int,
-    param_constraints: ParameterConstraints | None = None,
+    constraints: Constraints | None = None,
     *,
     ensure_non_extinct: bool = False,
     max_retries: int = 100,
-) -> dict[str, Any] | None:
-    """Simulate a single epoch and fit. Return fit dict or None when too few survivors."""
+) -> FitResult | None:
+    """Simulate a single epoch and fit. Return the fit or None when too few survivors."""
     df = simulate_birth_death_process(
         birth_rates=birth_rate,
         death_rates=death_rate,
@@ -60,13 +78,7 @@ def _simulate_and_fit(
     if surviving is None or len(surviving) < _MIN_SURVIVORS:
         return None
     ages = surviving["age"].to_numpy(dtype=np.float64)
-    return fit_birth_death_processes(
-        [ages],
-        times=T,
-        param_constraints=param_constraints,
-        estimate_uncertainty=False,
-        random_seed=seed + 1000,
-    )
+    return _fit_ages(ages, T, constraints, seed + 1000)
 
 
 def _recovery_pass_rate(
@@ -77,7 +89,7 @@ def _recovery_pass_rate(
     true_value: float,
     rel_tol: float,
     n_pass: int = 4,
-    param_constraints: ParameterConstraints | None = None,
+    constraints: Constraints | None = None,
     *,
     ensure_non_extinct: bool = False,
     max_retries: int = 100,
@@ -96,13 +108,13 @@ def _recovery_pass_rate(
             death_rate,
             T,
             seed,
-            param_constraints,
+            constraints,
             ensure_non_extinct=ensure_non_extinct,
             max_retries=max_retries,
         )
-        if result is None or not result["success"]:
+        if result is None or not result.success:
             continue
-        fitted = float(np.atleast_1d(result[param])[0])
+        fitted = _fitted(result, param)
         if abs(fitted - true_value) / true_value < rel_tol:
             successes += 1
     return successes
@@ -119,7 +131,7 @@ class TestRecoverySingleEpoch:
             birth_rate=true_birth,
             death_rate=0.003,
             T=600.0,
-            param="birth_rates",
+            param="birth",
             true_value=true_birth,
             rel_tol=0.20,
         )
@@ -145,7 +157,7 @@ class TestRecoverySingleEpoch:
             birth_rate=0.01,
             death_rate=true_death,
             T=600.0,
-            param="death_rates",
+            param="death",
             true_value=true_death,
             rel_tol=0.20,
         )
@@ -166,15 +178,15 @@ class TestRecoverySingleEpoch:
     def test_recover_with_birth_death_equality_constraint(self) -> None:
         """Equality constraint λ=μ should tighten recovery of the shared rate."""
         true_rate = 0.005
-        constraints = ParameterConstraints(equality_groups=[[0, 1]])
+        constraints = _EQUAL_RATES
         successes = _recovery_pass_rate(
             birth_rate=true_rate,
             death_rate=true_rate,
             T=800.0,
-            param="birth_rates",
+            param="birth",
             true_value=true_rate,
             rel_tol=0.25,
-            param_constraints=constraints,
+            constraints=constraints,
         )
         assert successes >= 4, (
             f"Only {successes}/{_MAX_SEEDS} replicates recovered constrained rate within 25%"
@@ -189,17 +201,15 @@ class TestRecoverySingleEpoch:
         if surviving is None or len(surviving) < _MIN_SURVIVORS:
             pytest.skip("insufficient survivors for this seed")
         ages = surviving["age"].to_numpy(dtype=np.float64)
-        result = fit_birth_death_processes(
-            [ages], times=600.0, estimate_uncertainty=False
-        )
-        assert result["success"]
-        fitted_birth = float(np.atleast_1d(result["birth_rates"])[0])
-        fitted_death = float(np.atleast_1d(result["death_rates"])[0])
+        result = _fit_ages(ages, 600.0)
+        assert result.success
+        fitted_birth = _fitted(result, "birth")
+        fitted_death = _fitted(result, "death")
         assert fitted_birth > 0
         assert fitted_death > 0
         assert np.isfinite(fitted_birth)
         assert np.isfinite(fitted_death)
-        assert np.isfinite(float(result["log_likelihood"]))
+        assert np.isfinite(result.log_likelihood)
 
     def test_recover_subcritical_rates(self) -> None:
         """Subcritical process (μ > λ): both rates should be recoverable.
@@ -218,7 +228,7 @@ class TestRecoverySingleEpoch:
             birth_rate=true_birth,
             death_rate=true_death,
             T=800.0,
-            param="birth_rates",
+            param="birth",
             true_value=true_birth,
             rel_tol=0.20,
             ensure_non_extinct=True,
@@ -241,15 +251,15 @@ class TestRecoverySingleEpoch:
     def test_recover_critical_rates(self) -> None:
         """Critical process (λ ≈ μ): shared rate should be recoverable within 25%."""
         true_rate = 0.04
-        constraints = ParameterConstraints(equality_groups=[[0, 1]])
+        constraints = _EQUAL_RATES
         successes = _recovery_pass_rate(
             birth_rate=true_rate,
             death_rate=true_rate,
             T=1500.0,
-            param="birth_rates",
+            param="birth",
             true_value=true_rate,
             rel_tol=0.25,
-            param_constraints=constraints,
+            constraints=constraints,
         )
         assert successes >= 4, (
             f"Only {successes}/{_MAX_SEEDS} replicates recovered critical rate within 25%"
@@ -261,12 +271,12 @@ def _simulate_lifespans_and_fit(
     death_rate: float,
     T: float,
     seed: int,
-    param_constraints: ParameterConstraints | None = None,
+    constraints: Constraints | None = None,
     *,
     ensure_non_extinct: bool = False,
     max_retries: int = 100,
-) -> dict[str, Any] | None:
-    """Simulate via lifespan-at-birth and fit. Return fit dict or None."""
+) -> FitResult | None:
+    """Simulate via lifespan-at-birth and fit. Return the fit or None."""
     df = simulate_birth_death_lifespans(
         birth_rates=birth_rate,
         death_rates=death_rate,
@@ -279,13 +289,7 @@ def _simulate_lifespans_and_fit(
     if surviving is None or len(surviving) < _MIN_SURVIVORS:
         return None
     ages = surviving["age"].to_numpy(dtype=np.float64)
-    return fit_birth_death_processes(
-        [ages],
-        times=T,
-        param_constraints=param_constraints,
-        estimate_uncertainty=False,
-        random_seed=seed + 1000,
-    )
+    return _fit_ages(ages, T, constraints, seed + 1000)
 
 
 def _lifespan_recovery_pass_rate(
@@ -296,7 +300,7 @@ def _lifespan_recovery_pass_rate(
     true_value: float,
     rel_tol: float,
     n_pass: int = 4,
-    param_constraints: ParameterConstraints | None = None,
+    constraints: Constraints | None = None,
     *,
     ensure_non_extinct: bool = False,
     max_retries: int = 100,
@@ -311,13 +315,13 @@ def _lifespan_recovery_pass_rate(
             death_rate,
             T,
             seed,
-            param_constraints,
+            constraints,
             ensure_non_extinct=ensure_non_extinct,
             max_retries=max_retries,
         )
-        if result is None or not result["success"]:
+        if result is None or not result.success:
             continue
-        fitted = float(np.atleast_1d(result[param])[0])
+        fitted = _fitted(result, param)
         if abs(fitted - true_value) / true_value < rel_tol:
             successes += 1
     return successes
@@ -334,7 +338,7 @@ class TestRecoveryLifespanSingleEpoch:
             birth_rate=true_birth,
             death_rate=0.003,
             T=600.0,
-            param="birth_rates",
+            param="birth",
             true_value=true_birth,
             rel_tol=0.20,
         )
@@ -350,14 +354,12 @@ class TestRecoveryLifespanSingleEpoch:
         if surviving is None or len(surviving) < _MIN_SURVIVORS:
             pytest.skip("insufficient survivors for this seed")
         ages = surviving["age"].to_numpy(dtype=np.float64)
-        result = fit_birth_death_processes(
-            [ages], times=600.0, estimate_uncertainty=False
-        )
-        assert result["success"]
-        fitted_birth = float(np.atleast_1d(result["birth_rates"])[0])
-        fitted_death = float(np.atleast_1d(result["death_rates"])[0])
+        result = _fit_ages(ages, 600.0)
+        assert result.success
+        fitted_birth = _fitted(result, "birth")
+        fitted_death = _fitted(result, "death")
         assert fitted_birth > 0
         assert fitted_death > 0
         assert np.isfinite(fitted_birth)
         assert np.isfinite(fitted_death)
-        assert np.isfinite(float(result["log_likelihood"]))
+        assert np.isfinite(result.log_likelihood)

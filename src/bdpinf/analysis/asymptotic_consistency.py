@@ -11,13 +11,11 @@ from typing import Any
 import numpy as np
 
 from bdpinf.analysis.spike_detection import bootstrap_seed, replicate_seed
-from bdpinf.inference import ConvergenceConfig, fit_birth_death_processes
+from bdpinf.inference import AgeData, BirthDeathModel, FitResult, fit
 from bdpinf.simulation import (
     simulate_bdp_ages_from_distributions,
     simulate_birth_death_process,
 )
-
-OptimizerKwargs = dict[str, dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -25,9 +23,9 @@ class FittingRunConfig:
     """Shared fitting configuration for a validation run."""
 
     seed: int
-    fit_optimizers: list[str]
-    fit_optimizer_kwargs: OptimizerKwargs
-    convergence_config: ConvergenceConfig
+    method: str = "trust-exact"
+    tol: float = 1e-6
+    max_iter: int = 200
 
 
 def sample_age_vector(
@@ -103,21 +101,25 @@ def _fit_ages(
     rep_seed: int,
     fit_config: FittingRunConfig,
     *,
-    estimate_uncertainty: bool = True,
-) -> dict[str, Any]:
+    compute_covariance: bool = True,
+) -> FitResult:
     """Fit one age vector starting from the regime's true rates."""
-    return fit_birth_death_processes(
-        list_of_ages=[np.asarray(ages, dtype=np.float64)],
-        times=np.asarray([float(observation_time)], dtype=np.float64),
-        is_ordered=True,
-        perturb_initial_params_std=0.0,
-        random_seed=rep_seed,
-        initial_birth_rates=np.asarray([float(regime_config["birth_rate"])]),
-        initial_death_rates=np.asarray([float(regime_config["death_rate"])]),
-        optimizers=fit_config.fit_optimizers,
-        optimizer_kwargs=fit_config.fit_optimizer_kwargs,
-        convergence_config=fit_config.convergence_config,
-        estimate_uncertainty=estimate_uncertainty,
+    horizon = float(observation_time)
+    model = BirthDeathModel.piecewise_constant([horizon])
+    return fit(
+        AgeData.from_groups(
+            [np.asarray(ages, dtype=np.float64)], horizon, is_ordered=True
+        ),
+        model,
+        init={
+            "birth.v0": float(regime_config["birth_rate"]),
+            "death.v0": float(regime_config["death_rate"]),
+        },
+        seed=rep_seed,
+        method=fit_config.method,
+        tol=fit_config.tol,
+        max_iter=fit_config.max_iter,
+        compute_covariance=compute_covariance,
     )
 
 
@@ -157,12 +159,12 @@ def fit_replicate(
         ages,
         rep_seed,
         fit_config,
-        estimate_uncertainty=False,
+        compute_covariance=False,
     )
-    if fit_result.get("success", False):
+    if fit_result.success:
         record["success"] = True
-        record["birth_estimate"] = float(np.atleast_1d(fit_result["birth_rates"])[0])
-        record["death_estimate"] = float(np.atleast_1d(fit_result["death_rates"])[0])
+        record["birth_estimate"] = float(fit_result.birth_values[0])
+        record["death_estimate"] = float(fit_result.death_values[0])
     return record
 
 

@@ -27,16 +27,15 @@ class TestAsymptoticConsistency:
         other = ac.sample_age_vector(regime, **{**kwargs, "simulation_index": 1})
         assert other.size != ages.size or not np.array_equal(other, ages)
 
-    def test_reproduce_replicate_monkeypatched_fit(self, monkeypatch):
+    def test_reproduce_replicate_monkeypatched_fit(self, monkeypatch, make_fit_result):
         # stub fit function to return predictable result
-        def fake_fit(*args, **kwargs):
-            return {
-                "success": True,
-                "birth_rates": np.array([1.23]),
-                "death_rates": np.array([0.45]),
-            }
+        captured = {}
 
-        monkeypatch.setattr(ac, "fit_birth_death_processes", fake_fit)
+        def fake_fit(*args, **kwargs):
+            captured.update(kwargs)
+            return make_fit_result([1.23], [0.45], times=[1.0])
+
+        monkeypatch.setattr(ac, "fit", fake_fit)
         # also patch sampling to simple vector
         monkeypatch.setattr(
             ac, "sample_age_vector", lambda *a, **k: np.array([0.1, 0.2])
@@ -57,23 +56,14 @@ class TestAsymptoticConsistency:
                 "death_rate": 0.5,
             },
         }
-        fit_config = ac.FittingRunConfig(
-            seed=42,
-            fit_optimizers=["adam"],
-            fit_optimizer_kwargs={},
-            convergence_config=ac.ConvergenceConfig(
-                gradient_threshold=1e-6,
-                absolute_tolerance=1e-10,
-                patience=10,
-            ),
-        )
+        fit_config = ac.FittingRunConfig(seed=42, method="L-BFGS-B", tol=1e-7)
         payload = ac.reproduce_replicate(
             row,
             regime_lookup,
             fit_config=fit_config,
         )
-        assert (
-            payload["fit_result"]["success"] is True
-            or payload["fit_result"] is None
-            or isinstance(payload["fit_result"], dict)
-        )
+        assert payload["fit_result"].success
+        assert payload["fit_result"].birth_values[0] == pytest.approx(1.23)
+        assert captured["method"] == "L-BFGS-B"
+        assert captured["tol"] == 1e-7
+        assert captured["init"] == {"birth.v0": 1.0, "death.v0": 0.5}

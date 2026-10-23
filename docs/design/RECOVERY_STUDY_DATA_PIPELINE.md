@@ -66,11 +66,11 @@ extraction pattern:
   `run_single_rate_replicate` (for `04`'s single-rate-data-fit-with-two-epochs
   scenario), and `run_zero_birth_replicate` +
   `simulate_zero_birth_second_epoch` + `fit_zero_birth_replicate` (for `05`'s
-  structural-zero-birth, shared-death, `ParameterConstraints`-fit scenario).
+  structural-zero-birth, shared-death, `Constraints`-fit scenario).
 
 Both reuse existing helpers rather than duplicating them:
-`validation_helpers.FitModelConfig`/`fit_single_model`/`has_ages_in_each_epoch`/`get_selected_attempt`,
-`single_epoch.extract_alive_ages`, `inference.fitting.ParameterConstraints`.
+`validation_helpers.FitModelConfig`/`fit_single_model`/`has_ages_in_each_epoch`,
+`single_epoch.extract_alive_ages`, `inference.Constraints`.
 
 **Generation script** --- `scripts/generate_recovery_studies.py`, a Typer CLI
 modeled directly on the application repo's

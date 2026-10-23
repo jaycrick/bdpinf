@@ -8,15 +8,10 @@ Run with::
     uv run pytest -m slow tests/test_recovery_multi_epoch.py
 """
 
-from typing import Any
-
 import numpy as np
 import pytest
 
-from bdpinf.inference.fitting import (
-    ParameterConstraints,
-    fit_birth_death_processes,
-)
+from bdpinf.inference import AgeData, BirthDeathModel, Constraints, FitResult, fit
 from bdpinf.simulation import simulate_birth_death_process
 
 _MIN_SURVIVORS = 15
@@ -42,22 +37,29 @@ def _simulate_two_epoch(
     return surviving["age"].to_numpy(dtype=np.float64)
 
 
+def _fit_ages(
+    ages: np.ndarray, constraints: Constraints | None = None, seed: int | None = None
+) -> FitResult:
+    """Fit piecewise-constant rates on the two epochs to ``ages``."""
+    return fit(
+        AgeData.from_groups([ages], float(_TIMES[-1])),
+        BirthDeathModel.piecewise_constant(_TIMES),
+        constraints=constraints,
+        seed=seed,
+        compute_covariance=False,
+    )
+
+
 def _two_epoch_fit(
     birth_rates: list[float],
     death_rates: list[float],
     seed: int,
-    param_constraints: ParameterConstraints | None = None,
-) -> dict[str, Any] | None:
+    constraints: Constraints | None = None,
+) -> FitResult | None:
     ages = _simulate_two_epoch(birth_rates, death_rates, seed)
     if ages is None:
         return None
-    return fit_birth_death_processes(
-        [ages],
-        times=_TIMES,
-        param_constraints=param_constraints,
-        estimate_uncertainty=False,
-        random_seed=seed + 1000,
-    )
+    return _fit_ages(ages, constraints, seed + 1000)
 
 
 @pytest.mark.slow
@@ -82,7 +84,7 @@ class TestRecoveryMultiEpoch:
         true_birth = 0.01
         true_death_1 = 0.003
         true_death_2 = 0.007
-        constraints = ParameterConstraints(equality_groups=[[0, 1]])
+        constraints = Constraints(equal=[["birth.v0", "birth.v1"]])
 
         birth1_ok = 0
         death1_ok = 0
@@ -93,13 +95,13 @@ class TestRecoveryMultiEpoch:
                 birth_rates=[true_birth, true_birth],
                 death_rates=[true_death_1, true_death_2],
                 seed=seed,
-                param_constraints=constraints,
+                constraints=constraints,
             )
-            if result is None or not result["success"]:
+            if result is None or not result.success:
                 continue
             attempts += 1
-            br = np.atleast_1d(result["birth_rates"])
-            dr = np.atleast_1d(result["death_rates"])
+            br = result.birth_values
+            dr = result.death_values
             if len(br) >= 2 and len(dr) >= 2:
                 if abs(br[0] - true_birth) / true_birth < 0.25:
                     birth1_ok += 1
@@ -142,10 +144,10 @@ class TestRecoveryMultiEpoch:
 
         for seed in range(_MAX_SEEDS):
             result = _two_epoch_fit(true_birth, true_death, seed)
-            if result is None or not result["success"]:
+            if result is None or not result.success:
                 continue
             attempts += 1
-            dr = np.atleast_1d(result["death_rates"])
+            dr = result.death_values
             if len(dr) < 2:
                 continue
             err1_own = abs(dr[0] - true_death[0])
@@ -172,13 +174,11 @@ class TestRecoveryMultiEpoch:
         ages = _simulate_two_epoch([0.01, 0.01], [0.003, 0.007], seed=42)
         if ages is None:
             pytest.skip("insufficient survivors for seed 42")
-        result = fit_birth_death_processes(
-            [ages], times=_TIMES, estimate_uncertainty=False
-        )
-        if not result["success"]:
+        result = _fit_ages(ages)
+        if not result.success:
             pytest.skip("optimizer did not converge for this seed")
-        assert len(np.atleast_1d(result["birth_rates"])) == 2
-        assert len(np.atleast_1d(result["death_rates"])) == 2
+        assert len(result.birth_values) == 2
+        assert len(result.death_values) == 2
 
     @pytest.mark.xfail(
         reason=(
@@ -204,13 +204,11 @@ class TestRecoveryMultiEpoch:
             if ages is None:
                 continue
             attempts += 1
-            result = _two_epoch_fit(
-                true_birth, true_death, seed, param_constraints=None
-            )
-            if result is None or not result["success"]:
+            result = _two_epoch_fit(true_birth, true_death, seed, constraints=None)
+            if result is None or not result.success:
                 continue
-            br = np.atleast_1d(result["birth_rates"])
-            dr = np.atleast_1d(result["death_rates"])
+            br = result.birth_values
+            dr = result.death_values
             if len(br) != 2 or len(dr) != 2:
                 continue
             recovered = all(

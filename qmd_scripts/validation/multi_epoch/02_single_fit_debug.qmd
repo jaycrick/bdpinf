@@ -81,13 +81,19 @@ print(f"Initial NLL: {initial_nll}")
 fit_config = FitModelConfig(
     times=times,
     is_ordered=True,
-    perturb_initial_params_std=0.0,
     random_seed=10925,
     initial_birth_rates=birth_rates,
     initial_death_rates=death_rates,
 )
-single_fit_result = fit_single_model(ages, fit_config)
-print(single_fit_result)
+single_fit_result = fit_single_model(ages, fit_config, compute_covariance=True)
+assert single_fit_result is not None
+print(single_fit_result.params)
+print(
+    f"log-likelihood {single_fit_result.log_likelihood:.4f}, "
+    f"converged={single_fit_result.converged}, "
+    f"iterations={single_fit_result.n_iter}, "
+    f"interior optimum={single_fit_result.at_interior_optimum}"
+)
 ```
 
 ```{python}

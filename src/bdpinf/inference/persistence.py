@@ -1,7 +1,7 @@
 """Posterior sample and recovery-study persistence for birth-death inference.
 
 Thin save/load wrappers around ``numpy.savez_compressed`` so that posterior
-samples produced by :func:`fit_birth_death_processes_bayesian` (or the subset
+samples produced by :func:`~bdpinf.inference.fit_bayesian` (or the subset
 wrapper :func:`~bdpinf.analysis.subset_fitting.fit_subsets_bayesian`)
 can be written to disk once and reloaded into downstream analysis notebooks
 without re-running the slow MCMC step.
@@ -60,7 +60,7 @@ def save_posterior_samples(
     ----------
     posterior_samples : dict[str, Any]
         The ``"posterior_samples"`` sub-dict from
-        :func:`fit_birth_death_processes_bayesian`, with keys
+        :func:`~bdpinf.inference.fit_bayesian`, with keys
         ``"birth_rates"`` and ``"death_rates"`` (each shape
         ``[n_draws, n_epochs]``).
     path : str or Path

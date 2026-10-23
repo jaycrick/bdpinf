@@ -7,12 +7,68 @@ import os
 # Must be set BEFORE any import that transitively imports jax.
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
+from bdpinf.inference import BirthDeathModel, Constraints, FitResult
+from bdpinf.inference.fitting import StartSummary
 from bdpinf.process import BirthDeathProcess
+
+
+@pytest.fixture
+def make_fit_result() -> Callable[..., FitResult]:
+    """Return a factory for ready-made piecewise-constant fit results.
+
+    The result is built directly (no optimisation), so tests can feed fitting
+    consumers a realistic ``FitResult`` cheaply.
+    """
+
+    def factory(
+        birth: Sequence[float],
+        death: Sequence[float],
+        *,
+        times: Sequence[float] | None = None,
+        converged: bool = True,
+        nll_history: Sequence[float] = (10.0, 9.0),
+        method: str = "trust-exact",
+        log_likelihood: float = -9.0,
+    ) -> FitResult:
+        epochs = list(times) if times is not None else [float(len(birth))]
+        if len(epochs) != len(birth):
+            epochs = [float(k + 1) for k in range(len(birth))]
+        model = BirthDeathModel.piecewise_constant(epochs)
+        compiled = Constraints().compile(model.params)
+        natural = np.concatenate([np.asarray(birth), np.asarray(death)]).astype(float)
+        birth_fn, death_fn = model.rates(jnp.asarray(natural))
+        return FitResult(
+            model=model,
+            constraints=Constraints(),
+            params=dict(zip(model.names, natural.tolist(), strict=True)),
+            birth=birth_fn,
+            death=death_fn,
+            log_likelihood=log_likelihood,
+            converged=converged,
+            score_norm=0.0,
+            min_hessian_eig=1.0,
+            at_interior_optimum=converged,
+            covariance_free=None,
+            covariance=None,
+            covariance_unconstrained=None,
+            n_iter=len(nll_history),
+            n_function_evals=len(nll_history),
+            message="ok",
+            method=method,
+            nll_history=list(nll_history),
+            starts=[StartSummary(log_likelihood, converged, len(nll_history))],
+            free_values=np.log(np.clip(natural, 1e-300, None)),
+            compiled=compiled,
+        )
+
+    return factory
 
 
 @pytest.fixture

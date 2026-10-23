@@ -106,7 +106,6 @@ def _generate_single_epoch_asymptotic_consistency(
         FittingRunConfig,
         run_single_replicate,
     )
-    from bdpinf.inference import ConvergenceConfig
 
     seed = 42
     time_grid = np.logspace(-0.5, 0.5, num=15)
@@ -136,21 +135,7 @@ def _generate_single_epoch_asymptotic_consistency(
             "death_rate": 6.0,
         },
     ]
-    fit_run_config = FittingRunConfig(
-        seed=seed,
-        fit_optimizers=["lbfgs", "adam"],
-        fit_optimizer_kwargs={
-            "lbfgs": {
-                "lr": 1.0,
-                "line_search_fn": "strong_wolfe",
-                "min_iterations": 10,
-            },
-            "adam": {"lr": 1e-3},
-        },
-        convergence_config=ConvergenceConfig(
-            gradient_threshold=1e-6, absolute_tolerance=1e-10, patience=10
-        ),
-    )
+    fit_run_config = FittingRunConfig(seed=seed, method="trust-exact", tol=1e-6)
 
     rows: list[dict[str, object]] = []
     for regime_config in regime_configs:
@@ -187,7 +172,6 @@ def _generate_multi_epoch_two_rate(
     fit_config = FitModelConfig(
         times=times,
         is_ordered=True,
-        perturb_initial_params_std=0.0,
         random_seed=10925,
         initial_birth_rates=birth_rates_true,
         initial_death_rates=death_rates_true,
@@ -223,7 +207,6 @@ def _generate_multi_epoch_single_rate(
     fit_config = FitModelConfig(
         times=fit_times,
         is_ordered=True,
-        perturb_initial_params_std=0.0,
         random_seed=10925,
         initial_birth_rates=birth_rates_true,
         initial_death_rates=death_rates_true,
@@ -245,7 +228,7 @@ def _generate_multi_epoch_zero_birth(
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """``05_bulk_inference_zero_birth.qmd``: structural-zero birth, shared death."""
     from bdpinf.analysis import FitModelConfig, run_zero_birth_replicate
-    from bdpinf.inference.fitting import ParameterConstraints
+    from bdpinf.inference import Constraints
     from bdpinf.utils import derive_worker_seeds
 
     birth_rate_epoch_1_true = 1.0
@@ -263,14 +246,13 @@ def _generate_multi_epoch_zero_birth(
     fit_config = FitModelConfig(
         times=times,
         is_ordered=True,
-        perturb_initial_params_std=0.0,
         random_seed=10925,
         initial_birth_rates=birth_rates_true,
         initial_death_rates=death_rates_true,
     )
-    param_constraints = ParameterConstraints(
-        fixed_params={1: 1e-12},
-        equality_groups=[[2, 3]],
+    param_constraints = Constraints(
+        fixed={"birth.v1": 0.0},
+        equal=[["death.v0", "death.v1"]],
     )
 
     rows = Parallel(n_jobs=-1)(

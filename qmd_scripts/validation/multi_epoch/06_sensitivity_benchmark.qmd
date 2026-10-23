@@ -74,7 +74,6 @@ for cfg_idx, cfg in enumerate(configs):
     fit_config = FitModelConfig(
         times=times,
         is_ordered=True,
-        perturb_initial_params_std=0.0,
         random_seed=10925,
         initial_birth_rates=cfg["birth_rates"],
         initial_death_rates=cfg["death_rates"],
@@ -85,7 +84,7 @@ for cfg_idx, cfg in enumerate(configs):
     )
     elapsed = time.perf_counter() - start
 
-    successful = [f for f in fits if f is not None and f.get("success", False)]
+    successful = [f for f in fits if f is not None and f.success]
     rows.append(
         {
             "config": cfg_idx + 1,

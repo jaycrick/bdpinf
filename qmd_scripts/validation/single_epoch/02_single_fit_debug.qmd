@@ -86,12 +86,18 @@ genealogy_fig
 fit_config = FitModelConfig(
     times=time_span,
     is_ordered=True,
-    perturb_initial_params_std=0.0,
     initial_birth_rates=np.array([birth_rate], dtype=float),
     initial_death_rates=np.array([death_rate], dtype=float),
 )
-single_fit_result = fit_single_model(ages, fit_config)
-print(single_fit_result)
+single_fit_result = fit_single_model(ages, fit_config, compute_covariance=True)
+assert single_fit_result is not None
+print(single_fit_result.params)
+print(
+    f"log-likelihood {single_fit_result.log_likelihood:.4f}, "
+    f"converged={single_fit_result.converged}, "
+    f"iterations={single_fit_result.n_iter}, "
+    f"interior optimum={single_fit_result.at_interior_optimum}"
+)
 ```
 
 ## Profile One Fit
@@ -122,34 +128,7 @@ print(report)
 ## NLL Convergence
 
 ```{python}
-optimization_result = (
-    single_fit_result.get("optimization_result")
-    if isinstance(single_fit_result, dict)
-    else None
-)
-attempts = (
-    optimization_result.get("attempts", [])
-    if isinstance(optimization_result, dict)
-    else []
-)
-selected_attempt_index = (
-    optimization_result.get("selected_attempt_index")
-    if isinstance(optimization_result, dict)
-    else None
-)
-selected_attempt = None
-if isinstance(attempts, list) and attempts:
-    if isinstance(selected_attempt_index, int) and 0 <= selected_attempt_index < len(
-        attempts
-    ):
-        selected_attempt = attempts[selected_attempt_index]
-    else:
-        selected_attempt = attempts[0]
-nll_history = (
-    selected_attempt.get("nll_history", [])
-    if isinstance(selected_attempt, dict)
-    else []
-)
+nll_history = list(single_fit_result.nll_history)
 
 if nll_history:
     _nll_df = pd.DataFrame(

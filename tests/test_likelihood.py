@@ -15,6 +15,7 @@ from bdpinf.models.math_nested import (
     non_spine_log_density,
     spine_log_density,
 )
+from bdpinf.models.math_populations import calculate_populations_log_lik
 
 
 def _expected_unknown_spine_age_log_lik(
@@ -62,7 +63,7 @@ class TestLikelihood:
             times=times,
         )
 
-        expected = likelihood.calculate_populations_log_lik(
+        expected = calculate_populations_log_lik(
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
@@ -153,7 +154,7 @@ class TestLikelihood:
 
         birth_rates = jnp.exp(log_birth_rates)
         death_rates = jnp.exp(log_death_rates)
-        expected = likelihood.calculate_populations_log_lik(
+        expected = calculate_populations_log_lik(
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
@@ -186,7 +187,7 @@ class TestLikelihood:
         )
 
         expected = (
-            likelihood.calculate_populations_log_lik(
+            calculate_populations_log_lik(
                 birth_rates=birth_rates,
                 death_rates=death_rates,
                 times=times,
@@ -220,7 +221,7 @@ class TestLikelihood:
         )
 
         expected = (
-            likelihood.calculate_populations_log_lik(
+            calculate_populations_log_lik(
                 birth_rates=birth_rates,
                 death_rates=death_rates,
                 times=times,
@@ -338,7 +339,7 @@ class TestLikelihood:
             times=times,
         )
 
-        expected = likelihood.calculate_populations_log_lik(
+        expected = calculate_populations_log_lik(
             birth_rates=birth_rates,
             death_rates=death_rates,
             times=times,
@@ -393,7 +394,7 @@ class TestLikelihood:
         )
 
         all_non_spine = (
-            likelihood.calculate_populations_log_lik(
+            calculate_populations_log_lik(
                 birth_rates=birth_rates,
                 death_rates=death_rates,
                 times=times,

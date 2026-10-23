@@ -23,11 +23,12 @@ __compile_start = time.perf_counter()
 import numpy as np
 import pandas as pd
 
-from bdpinf.inference import fit_birth_death_processes_bayesian
-from bdpinf.inference.bayesian import (
+from bdpinf.inference import (
+    AgeData,
     BayesianMCMCConfig,
-    BayesianModelConfig,
     BayesianPriorConfig,
+    BirthDeathModel,
+    fit_bayesian,
 )
 from bdpinf.simulation import simulate_birth_death_process
 ```
@@ -48,8 +49,8 @@ mcmc_config = BayesianMCMCConfig(
     max_tree_depth=8,
     disable_progressbar=True,
 )
-model_config = BayesianModelConfig(is_ordered=True, rng_seed=2026)
 prior_config = BayesianPriorConfig(loc=-6.0, scale=2.0)
+model = BirthDeathModel.piecewise_constant(times)
 
 fit_rows = []
 fit_results = {}
@@ -71,23 +72,19 @@ for i in range(num_sims):
         )
         continue
 
-    result = fit_birth_death_processes_bayesian(
-        list_of_ages=[ages],
-        times=np.asarray(times, dtype=np.float64),
-        model_config=model_config,
-        mcmc_config=mcmc_config,
-        prior_config=prior_config,
+    result = fit_bayesian(
+        AgeData.from_groups([ages], float(times[-1]), is_ordered=True),
+        model,
+        prior=prior_config,
+        mcmc=mcmc_config,
+        rng_seed=2026,
     )
     fit_results[i] = result
     fit_rows.append(
         {
             "replicate": i,
-            "success": bool(result.get("success", False)),
-            "divergences": (
-                int(result.get("num_divergences", 0))
-                if result.get("success", False)
-                else np.nan
-            ),
+            "success": True,
+            "divergences": int(result.num_divergences),
         }
     )
 
@@ -98,12 +95,12 @@ print(fit_df.to_string(index=False))
 ## Recovery Summary
 
 ```{python}
-successful = [r for r in fit_results.values() if r.get("success", False)]
+successful = list(fit_results.values())
 if successful:
-    birth_e1 = np.asarray([float(r["birth_rates"][0]) for r in successful], dtype=float)
-    birth_e2 = np.asarray([float(r["birth_rates"][1]) for r in successful], dtype=float)
-    death_e1 = np.asarray([float(r["death_rates"][0]) for r in successful], dtype=float)
-    death_e2 = np.asarray([float(r["death_rates"][1]) for r in successful], dtype=float)
+    birth_e1 = np.asarray([r.params["birth.v0"] for r in successful], dtype=float)
+    birth_e2 = np.asarray([r.params["birth.v1"] for r in successful], dtype=float)
+    death_e1 = np.asarray([r.params["death.v0"] for r in successful], dtype=float)
+    death_e2 = np.asarray([r.params["death.v1"] for r in successful], dtype=float)
 
     print(f"Epoch1 birth mean: {birth_e1.mean():.6f} (true={true_birth_rates[0]:.6f})")
     print(f"Epoch2 birth mean: {birth_e2.mean():.6f} (true={true_birth_rates[1]:.6f})")

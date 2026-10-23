@@ -171,7 +171,7 @@ class BirthDeathProcess:
         self.fitted: bool = (
             self._birth_rates is not None and self._death_rates is not None
         )
-        self.fit_results: dict[str, Any] | None = None
+        self.fit_results: object | None = None
 
     @classmethod
     def from_records(
@@ -813,7 +813,7 @@ class BirthDeathProcess:
         self,
         birth_rates: NumericInput,
         death_rates: NumericInput,
-        fit_results: dict[str, Any] | None = None,
+        fit_results: object | None = None,
     ) -> None:
         """Update the model parameters after fitting.
 
@@ -827,7 +827,7 @@ class BirthDeathProcess:
         death_rates
             Fitted death-rate vector (μ), one value per epoch
         fit_results
-            Optional fit results dictionary from fitting module
+            Optional fit result from the fitting module (e.g. a ``FitResult``)
 
         """
         self._birth_rates = self._normalize_rate_vector(

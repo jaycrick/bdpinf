@@ -36,7 +36,7 @@ import typer
 
 import bdpinf  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
 from bdpinf import get_project_root
-from bdpinf.inference import fit_birth_death_processes
+from bdpinf.inference import AgeData, BirthDeathModel, fit
 from bdpinf.models.math_nested import (
     nested_terms,
     non_spine_log_density,
@@ -92,7 +92,7 @@ def _make_nll_fn(
 ) -> Callable[[jax.Array], jax.Array]:
     """Return a closure nll(log_params) → scalar.
 
-    Mirrors what _compute_nll does inside fit_birth_death_processes:
+    Mirrors what the jitted objective does inside ``fit``:
     log_params = [log_lambda_1, ..., log_lambda_k, log_mu_1, ..., log_mu_k].
     """
     n_epochs = len(times)
@@ -365,16 +365,12 @@ def bench_fitter(
     n_repeats: int = N_REPEATS_FITTER_OPT,
     output: Path = OUTPUT_FITTER_OPT,
 ) -> None:
-    """Benchmark fit_birth_death_processes end-to-end (JIT-compiled optimizer).
+    """Benchmark ``fit`` end-to-end (JIT-compiled trust-region Newton).
 
-    Each fit call builds a fresh jax.jit(value_and_grad(...)) closure.  The
-    first optimizer step within a fit triggers XLA compilation; subsequent
-    steps hit the JIT cache.  JAX also caches across fit calls that share
-    the same input shapes, so the second fit call for a given (epochs, n_ages)
-    cell avoids recompilation.
-
-    Uses LBFGS only (no Adam) and skips Hessian estimation for a clean
-    measurement of the optimizer loop.
+    The first fit for a model structure triggers XLA compilation of the
+    gradient and Hessian; later fits with the same structure and age-vector
+    bucket reuse the compiled objective, so the warm number is the optimiser
+    loop alone.  Covariance estimation is skipped for a clean measurement.
     """
     default_out = get_project_root() / "_output" / "jax_jit_benchmarks.json"  # pyright: ignore[reportUnusedVariable]
     out: Path = output if output is not None else default_out  # pyright: ignore[reportUnnecessaryComparison]
@@ -399,26 +395,20 @@ def bench_fitter(
                 [np.array(non_spine_ages_jax), np.array(spine_ages_jax)]
             )
 
-            _fit_kwargs: dict[str, Any] = {
-                "optimizers": ["LBFGS"],
-                "estimate_uncertainty": False,
-                "condition_on_survival": True,
-            }
+            data = AgeData.from_groups([all_ages], t_max)
+            model = BirthDeathModel.piecewise_constant(times_np)
 
-            # Cold: first call — includes JIT compilation on the first optimizer step
+            # Cold: first call --- includes JIT compilation of gradient and Hessian
             t0 = time.perf_counter()
-            cold_result = fit_birth_death_processes([all_ages], times_np, **_fit_kwargs)
+            cold_result = fit(data, model, compute_covariance=False)
             cold_s = time.perf_counter() - t0
-            _attempts = cold_result.get("optimization_result", {}).get("attempts", [])
-            cold_iters: int | None = (
-                _attempts[0].get("iterations") if _attempts else None
-            )
+            cold_iters: int | None = cold_result.n_iter
 
-            # Warm: n_repeats subsequent calls — JIT-compiled XLA kernel reused
+            # Warm: n_repeats subsequent calls --- compiled objective reused
             warm_times: list[float] = []
             for _ in range(n_repeats):
                 t0 = time.perf_counter()
-                fit_birth_death_processes([all_ages], times_np, **_fit_kwargs)
+                fit(data, model, compute_covariance=False)
                 warm_times.append(time.perf_counter() - t0)
 
             warm_s = float(np.mean(warm_times))

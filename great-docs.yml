@@ -79,6 +79,7 @@ reference:
     contents:
       - models.math_extinction
       - models.math_nested
+      - models.math_general
       - models.math_age_densities
       - models.rate_functions
       - models.math_populations
@@ -94,12 +95,16 @@ reference:
   - title: Inference
     desc: Likelihood, maximum likelihood estimation and covariance, Bayesian fitting.
     contents:
-      - inference.fitting.fit_birth_death_processes
-      - name: inference.ConvergenceConfig
-      - name: inference.fitting.ParameterConstraints
+      - inference.fitting.fit
+      - name: inference.fitting.FitResult
+      - inference.fitting.profile_likelihood_interval
+      - inference.fitting.moment_initial_rates
+      - inference.rate_models
+      - inference.constraints
+      - inference.likelihood.AgeData
       - inference.likelihood.log_likelihood
+      - inference.likelihood.log_likelihood_rates
       - inference.likelihood.resolve_spine_ages
-      - inference.fitting.fit_from_data_frame
       - inference.uncertainty
       - inference.bayesian
       - inference.persistence

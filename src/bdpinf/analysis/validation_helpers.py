@@ -1,7 +1,7 @@
 """Shared helpers for validation notebooks and scripts."""
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,33 +9,65 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import gaussian_kde
 
-from bdpinf.inference import ConvergenceConfig, fit_birth_death_processes
-from bdpinf.inference.fitting import ParameterConstraints
+from bdpinf.inference import (
+    AgeData,
+    BirthDeathModel,
+    Constraints,
+    FitResult,
+    fit,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class FitModelConfig:
-    """Configuration for single-model fitting helpers."""
+    """Configuration for single-model fitting helpers.
+
+    Parameters
+    ----------
+    times : float | NDArray
+        Epoch end times (the last is the observation time).
+    is_ordered : bool
+        Treat the first age as the spine.
+    n_starts, perturb_std, random_seed
+        Multi-start settings forwarded to :func:`~bdpinf.inference.fit`.
+    initial_birth_rates, initial_death_rates : NDArray | None
+        Starting values for the birth and death parameters (the epoch rates of
+        the default piecewise-constant model).
+        Give one or both; a missing family starts from the moment estimators.
+    condition_on_survival : bool
+        Condition the population term on non-extinction.
+    method, tol, max_iter
+        Optimiser settings forwarded to :func:`~bdpinf.inference.fit`.
+    constraints : Constraints | None
+        Fixed parameters and equality groups.
+    model : BirthDeathModel | None
+        Family to fit; defaults to piecewise-constant rates on ``times``.
+
+    """
 
     times: float | NDArray[np.float64]
     is_ordered: bool = True
-    perturb_initial_params_std: float | None = None
+    n_starts: int = 1
+    perturb_std: float = 0.3
     random_seed: int | None = None
     initial_birth_rates: NDArray[np.float64] | None = None
     initial_death_rates: NDArray[np.float64] | None = None
     condition_on_survival: bool = True
-    optimizers: Sequence[str] | None = None
-    optimizer_kwargs: dict[str, dict[str, Any]] | None = None
-    convergence_config: ConvergenceConfig | None = None
-    param_constraints: ParameterConstraints | None = None
+    method: str = "trust-exact"
+    tol: float = 1e-6
+    max_iter: int = 200
+    constraints: Constraints | None = None
+    model: BirthDeathModel | None = None
 
 
 def fit_single_model(
     ages: NDArray[np.float64],
     config: FitModelConfig,
-) -> dict[str, Any] | None:
+    *,
+    compute_covariance: bool = False,
+) -> FitResult | None:
     """Fit one model from a single age vector.
 
     Returns ``None`` for empty ``ages`` or when the fit raises; the exception is
@@ -44,35 +76,41 @@ def fit_single_model(
     if len(ages) == 0:
         return None
 
-    fit_kwargs: dict[str, Any] = {
-        "list_of_ages": [ages],
-        "times": config.times,
-        "is_ordered": config.is_ordered,
-    }
-    if config.perturb_initial_params_std is not None:
-        fit_kwargs["perturb_initial_params_std"] = config.perturb_initial_params_std
-    if config.random_seed is not None:
-        fit_kwargs["random_seed"] = config.random_seed
-    if config.initial_birth_rates is not None:
-        fit_kwargs["initial_birth_rates"] = config.initial_birth_rates
-    if config.initial_death_rates is not None:
-        fit_kwargs["initial_death_rates"] = config.initial_death_rates
-    fit_kwargs["condition_on_survival"] = config.condition_on_survival
-    if config.optimizers is not None:
-        fit_kwargs["optimizers"] = list(config.optimizers)
-    if config.optimizer_kwargs is not None:
-        fit_kwargs["optimizer_kwargs"] = config.optimizer_kwargs
-    if config.convergence_config is not None:
-        fit_kwargs["convergence_config"] = config.convergence_config
-    if config.param_constraints is not None:
-        fit_kwargs["param_constraints"] = config.param_constraints
+    epoch_end_times = np.atleast_1d(np.asarray(config.times, dtype=np.float64))
+    model = config.model or BirthDeathModel.piecewise_constant(epoch_end_times)
+
+    init: dict[str, float] | None = None
+    if config.initial_birth_rates is not None or config.initial_death_rates is not None:
+        init = {}
+        for names, values in (
+            (model.birth_names, config.initial_birth_rates),
+            (model.death_names, config.initial_death_rates),
+        ):
+            if values is not None:
+                init.update(zip(names, np.atleast_1d(values).tolist(), strict=True))
 
     try:
-        return fit_birth_death_processes(**fit_kwargs)
-    except Exception as exc:
-        logger.warning(
-            "fit_birth_death_processes raised %s: %s", type(exc).__name__, exc
+        data = AgeData.from_groups(
+            [np.asarray(ages, dtype=np.float64)],
+            float(epoch_end_times[-1]),
+            is_ordered=config.is_ordered,
         )
+        return fit(
+            data,
+            model,
+            constraints=config.constraints,
+            init=init,
+            method=config.method,
+            n_starts=config.n_starts,
+            perturb_std=config.perturb_std,
+            seed=config.random_seed,
+            tol=config.tol,
+            max_iter=config.max_iter,
+            condition_on_survival=config.condition_on_survival,
+            compute_covariance=compute_covariance,
+        )
+    except Exception as exc:
+        logger.warning("fit raised %s: %s", type(exc).__name__, exc)
         return None
 
 
@@ -384,42 +422,6 @@ def build_hist_bins(
     max_x = float(np.max(combined))
     upper = max_x * 1.05 if max_x > 0 else 1.0
     return {"start": 0.0, "end": upper, "size": upper / bins}
-
-
-def get_selected_attempt(result: dict[str, Any]) -> dict[str, Any] | None:
-    """Return the selected optimization attempt from a fit result dict.
-
-    Parameters
-    ----------
-    result : dict[str, Any]
-        Fit result dict as returned by ``fit_birth_death_processes``.
-
-    Returns
-    -------
-    dict[str, Any] | None
-        The selected attempt dict, or ``None`` if the result has no attempts.
-        Falls back to the first attempt when no valid ``selected_attempt_index``
-        is present.
-
-    """
-    optimization_result = result.get("optimization_result")
-    attempts = (
-        optimization_result.get("attempts", [])
-        if isinstance(optimization_result, dict)
-        else []
-    )
-    selected_attempt_index = (
-        optimization_result.get("selected_attempt_index")
-        if isinstance(optimization_result, dict)
-        else None
-    )
-    if isinstance(attempts, list) and attempts:
-        if isinstance(
-            selected_attempt_index, int
-        ) and 0 <= selected_attempt_index < len(attempts):
-            return dict(attempts[selected_attempt_index])
-        return dict(attempts[0])
-    return None
 
 
 def has_ages_in_each_epoch(

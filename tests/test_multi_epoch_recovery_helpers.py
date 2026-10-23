@@ -1,5 +1,6 @@
 """Tests for the multi-epoch bulk-inference recovery-study helpers."""
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -9,17 +10,7 @@ import pytest
 import bdpinf.analysis.multi_epoch_recovery as mer
 import bdpinf.analysis.validation_helpers as vh
 from bdpinf.analysis.validation_helpers import FitModelConfig
-from bdpinf.inference.fitting import ParameterConstraints
-
-
-def _fake_two_epoch_result(
-    birth: tuple[float, float], death: tuple[float, float]
-) -> dict[str, Any]:
-    return {
-        "success": True,
-        "birth_rates": np.array(birth),
-        "death_rates": np.array(death),
-    }
+from bdpinf.inference import Constraints, FitResult
 
 
 class TestRunTwoRateReplicate:
@@ -49,7 +40,11 @@ class TestRunTwoRateReplicate:
         )
         assert row is None
 
-    def test_kept_replicate_row_shape(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_kept_replicate_row_shape(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        make_fit_result: Callable[..., FitResult],
+    ) -> None:
         monkeypatch.setattr(
             mer, "simulate_birth_death_process", lambda **kwargs: object()
         )
@@ -60,7 +55,9 @@ class TestRunTwoRateReplicate:
         monkeypatch.setattr(
             mer,
             "fit_single_model",
-            lambda *a, **k: _fake_two_epoch_result((0.51, 0.72), (0.11, 0.16)),
+            lambda *a, **k: make_fit_result(
+                [0.51, 0.72], [0.11, 0.16], times=[7.5, 15.0]
+            ),
         )
 
         row = mer.run_two_rate_replicate(
@@ -126,7 +123,11 @@ class TestRunSingleRateReplicate:
         )
         assert row is None
 
-    def test_kept_replicate_row_shape(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_kept_replicate_row_shape(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        make_fit_result: Callable[..., FitResult],
+    ) -> None:
         monkeypatch.setattr(
             mer, "sample_single_epoch_ages", lambda *a, **k: np.array([1.0, 10.0])
         )
@@ -134,7 +135,9 @@ class TestRunSingleRateReplicate:
         monkeypatch.setattr(
             mer,
             "fit_single_model",
-            lambda *a, **k: _fake_two_epoch_result((0.49, 0.48), (0.09, 0.11)),
+            lambda *a, **k: make_fit_result(
+                [0.49, 0.48], [0.09, 0.11], times=[7.5, 15.0]
+            ),
         )
 
         row = mer.run_single_rate_replicate(
@@ -199,8 +202,8 @@ class TestFitZeroBirthReplicate:
     _CONFIG = FitModelConfig(
         times=np.array([7.5, 15.0]), is_ordered=True, condition_on_survival=True
     )
-    _CONSTRAINTS = ParameterConstraints(
-        fixed_params={1: 1e-12}, equality_groups=[[2, 3]]
+    _CONSTRAINTS = Constraints(
+        fixed={"birth.v1": 0.0}, equal=[["death.v0", "death.v1"]]
     )
 
     def test_empty_ages_returns_none(self) -> None:
@@ -209,29 +212,31 @@ class TestFitZeroBirthReplicate:
         )
         assert result is None
 
-    def test_second_epoch_birth_zeroed_on_success(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_forwards_constraints_to_the_fit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        make_fit_result: Callable[..., FitResult],
     ) -> None:
-        def fake_fit(**kwargs: Any) -> dict[str, Any]:
-            return {
-                "success": True,
-                "birth_rates": np.array([0.98, 1e-12]),
-                "death_rates": np.array([0.11, 0.11]),
-            }
+        captured: dict[str, Any] = {}
 
-        monkeypatch.setattr(vh, "fit_birth_death_processes", fake_fit)
+        def fake_fit(*args: Any, **kwargs: Any) -> FitResult:
+            captured.update(kwargs)
+            return make_fit_result([0.98, 0.0], [0.11, 0.11], times=[7.5, 15.0])
+
+        monkeypatch.setattr(vh, "fit", fake_fit)
 
         result = mer.fit_zero_birth_replicate(
             np.array([1.0, 2.0]), self._CONFIG, self._CONSTRAINTS
         )
         assert result is not None
-        assert result["birth_rates"][1] == 0.0
+        assert captured["constraints"] is self._CONSTRAINTS
+        assert result.birth_values[1] == 0.0
 
     def test_exception_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def fake_fit(**kwargs: Any) -> dict[str, Any]:
+        def fake_fit(*args: Any, **kwargs: Any) -> FitResult:
             raise RuntimeError("optimizer blew up")
 
-        monkeypatch.setattr(vh, "fit_birth_death_processes", fake_fit)
+        monkeypatch.setattr(vh, "fit", fake_fit)
 
         result = mer.fit_zero_birth_replicate(
             np.array([1.0]), self._CONFIG, self._CONSTRAINTS
@@ -244,8 +249,8 @@ class TestRunZeroBirthReplicate:
 
     _TIMES = np.array([7.5, 15.0])
     _CONFIG = FitModelConfig(times=_TIMES, is_ordered=True)
-    _CONSTRAINTS = ParameterConstraints(
-        fixed_params={1: 1e-12}, equality_groups=[[2, 3]]
+    _CONSTRAINTS = Constraints(
+        fixed={"birth.v1": 0.0}, equal=[["death.v0", "death.v1"]]
     )
 
     def _fake_simulated(self, ages: list[float]) -> pd.DataFrame:
@@ -259,7 +264,9 @@ class TestRunZeroBirthReplicate:
         )
 
     def test_successful_replicate_row_shape(
-        self, monkeypatch: pytest.MonkeyPatch
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        make_fit_result: Callable[..., FitResult],
     ) -> None:
         monkeypatch.setattr(
             mer,
@@ -269,11 +276,9 @@ class TestRunZeroBirthReplicate:
         monkeypatch.setattr(
             mer,
             "fit_zero_birth_replicate",
-            lambda *a, **k: {
-                "success": True,
-                "birth_rates": np.array([0.98, 0.0]),
-                "death_rates": np.array([0.11, 0.11]),
-            },
+            lambda *a, **k: make_fit_result(
+                [0.98, 0.0], [0.11, 0.11], times=[7.5, 15.0]
+            ),
         )
 
         row = mer.run_zero_birth_replicate(

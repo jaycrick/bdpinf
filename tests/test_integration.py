@@ -5,10 +5,12 @@ import pandas as pd
 import pytest
 from bdsurv import SplittingConfig
 
-from bdpinf.inference.fitting import (
-    ParameterConstraints,
-    fit_birth_death_processes,
-    fit_from_data_frame,
+from bdpinf.inference import (
+    AgeData,
+    BirthDeathModel,
+    Constraints,
+    FitResult,
+    fit,
 )
 from bdpinf.inference.likelihood import log_likelihood
 from bdpinf.simulation import (
@@ -22,6 +24,34 @@ def _as_float(value: object) -> float:
     if hasattr(value, "item"):
         return float(value.item())
     return float(value)
+
+
+def _fit(
+    ages: np.ndarray,
+    times: float | np.ndarray,
+    *,
+    constraints: Constraints | None = None,
+    init: dict[str, float] | None = None,
+    compute_covariance: bool = True,
+) -> FitResult:
+    """Fit piecewise-constant rates on the epochs ``times`` to one age vector."""
+    epochs = np.atleast_1d(np.asarray(times, dtype=np.float64))
+    return fit(
+        AgeData.from_groups([np.asarray(ages, dtype=np.float64)], float(epochs[-1])),
+        BirthDeathModel.piecewise_constant(epochs),
+        constraints=constraints,
+        init=init,
+        compute_covariance=compute_covariance,
+    )
+
+
+def _fit_frame(df: pd.DataFrame, times: float, **kwargs: object) -> FitResult:
+    """Fit a single-epoch model to the ``age`` column of ``df``."""
+    return fit(
+        AgeData.from_data_frame(df, times, age_column="age"),
+        BirthDeathModel.piecewise_constant([times]),
+        **kwargs,  # pyright: ignore[reportArgumentType]
+    )
 
 
 class TestIntegration:
@@ -48,10 +78,10 @@ class TestIntegration:
             surviving_data = simulated_df[simulated_df["survived"]]
             if len(surviving_data) > 0:
                 fit_df = pd.DataFrame({"age": surviving_data["age"].values})
-                result = fit_from_data_frame(fit_df, age_column="age", times=200.0)
-                if result["success"]:
-                    fitted_birth = result["birth_rates"]
-                    fitted_death = result["death_rates"]
+                result = _fit_frame(fit_df, 200.0)
+                if result.success:
+                    fitted_birth = result.birth_values
+                    fitted_death = result.death_values
                     assert fitted_birth > 0
                     assert fitted_death >= 0
                     assert np.isfinite(_as_float(fitted_birth))
@@ -89,14 +119,12 @@ class TestIntegration:
 
             n_datasets += 1
             try:
-                result = fit_birth_death_processes([ages], times)
+                result = _fit(ages, times, compute_covariance=False)
             except ValueError:
                 consecutive_successes = 0
                 continue
 
-            if result["success"] and np.isfinite(
-                _as_float(result.get("log_likelihood", np.nan)),
-            ):
+            if result.success and np.isfinite(result.log_likelihood):
                 n_success += 1
                 consecutive_successes += 1
                 if consecutive_successes >= 9:
@@ -137,14 +165,13 @@ class TestIntegration:
         assert summary["min_age"] == 100
         assert summary["max_age"] == 900
         fit_df = pd.DataFrame({"age": ages})
-        result = fit_from_data_frame(fit_df, age_column="age", times=1000.0)
-        assert isinstance(result, dict)
-        assert "success" in result
+        result = _fit_frame(fit_df, 1000.0)
+        assert isinstance(result, FitResult)
         test_ages = np.array([100, 200, 300, 400, 500])
         predictions = [
             log_likelihood(
-                birth_rates=result["birth_rates"],
-                death_rates=result["death_rates"],
+                birth_rates=result.birth_values,
+                death_rates=result.death_values,
                 ages=np.array([age], dtype=np.float64),
                 times=1000.0,
             )
@@ -183,13 +210,13 @@ class TestIntegration:
 
         # Fit model
 
-        result = fit_from_data_frame(prepared_df, age_column="age", times=2000.0)
-        assert result["success"]
+        result = _fit_frame(prepared_df, 2000.0)
+        assert result.success
         age_range = np.linspace(100, 1000, 10)
         predictions = [
             log_likelihood(
-                birth_rates=result["birth_rates"],
-                death_rates=result["death_rates"],
+                birth_rates=result.birth_values,
+                death_rates=result.death_values,
                 ages=np.array([age], dtype=np.float64),
                 times=2000.0,
             )
@@ -211,24 +238,20 @@ class TestIntegration:
         # Create models with more reasonable initial parameters
         max_age = float(ages.max())
         final_time = max_age + 50.0  # Smaller buffer
-        from bdpinf.inference.fitting import fit_from_data_frame
-
         initial_params_list = [(0.01, 0.005), (0.02, 0.001)]
         results = []
         for i, (init_birth, init_death) in enumerate(initial_params_list):
             try:
-                fit_result = fit_from_data_frame(
+                fit_result = _fit_frame(
                     df,
-                    age_column="age",
-                    times=final_time,
-                    initial_birth_rates=np.array([init_birth]),
-                    initial_death_rates=np.array([init_death]),
+                    final_time,
+                    init={"birth.v0": init_birth, "death.v0": init_death},
                 )
                 results.append(
                     {
                         "model_id": i,
-                        "success": fit_result["success"],
-                        "log_likelihood": fit_result.get("log_likelihood", np.nan),
+                        "success": fit_result.success,
+                        "log_likelihood": fit_result.log_likelihood,
                     },
                 )
             except Exception:
@@ -309,9 +332,8 @@ class TestIntegration:
         """Test robustness to different data quality scenarios."""
         # Scenario 1: Very few data points
         sparse_ages = np.array([1000.0 - t for t in [500.0, 600.0]], dtype=np.float64)
-        sparse_result = fit_birth_death_processes([sparse_ages], times=1000.0)
-        assert isinstance(sparse_result, dict)
-        assert "success" in sparse_result
+        sparse_result = _fit(sparse_ages, 1000.0, compute_covariance=False)
+        assert isinstance(sparse_result, FitResult)
 
         # Scenario 2: Many data points
         dense_times = list(range(100, 900, 50))
@@ -319,9 +341,8 @@ class TestIntegration:
             [1000.0 - float(t) for t in dense_times],
             dtype=np.float64,
         )
-        dense_result = fit_birth_death_processes([dense_ages], times=1000.0)
-        assert isinstance(dense_result, dict)
-        assert "success" in dense_result
+        dense_result = _fit(dense_ages, 1000.0, compute_covariance=False)
+        assert isinstance(dense_result, FitResult)
 
         # Scenario 3: Irregular spacing
         irregular_times = [10.0, 50.0, 51.0, 52.0, 200.0, 800.0, 900.0, 950.0]
@@ -329,9 +350,8 @@ class TestIntegration:
             [1000.0 - t for t in irregular_times],
             dtype=np.float64,
         )
-        irregular_result = fit_birth_death_processes([irregular_ages], times=1000.0)
-        assert isinstance(irregular_result, dict)
-        assert "success" in irregular_result
+        irregular_result = _fit(irregular_ages, 1000.0, compute_covariance=False)
+        assert isinstance(irregular_result, FitResult)
 
     def test_numerical_edge_cases(self) -> None:
         """Test numerical edge cases that might cause problems."""
@@ -399,54 +419,37 @@ class TestIntegration:
         )
         assert np.isfinite(_as_float(ll))
 
-    def test_fit_from_data_frame_matches_fit_from_arrays(self) -> None:
+    def test_data_frame_fit_matches_array_fit(self) -> None:
         rng = np.random.default_rng(99)
         T = 1200.0
         ages_arr = rng.exponential(scale=300.0, size=25)
         ages_arr = ages_arr[ages_arr < T]
         df = pd.DataFrame({"age": ages_arr})
-        result_df = fit_from_data_frame(df, age_column="age", times=T)
-        result_arr = fit_birth_death_processes(
-            [ages_arr],
-            times=T,
-            estimate_uncertainty=False,
+        result_df = _fit_frame(df, T)
+        result_arr = _fit(ages_arr, T, compute_covariance=False)
+        assert result_df.success == result_arr.success
+        np.testing.assert_allclose(
+            result_df.log_likelihood, result_arr.log_likelihood, rtol=1e-8
         )
-        if result_df["success"] and result_arr["success"]:
-            assert np.isfinite(_as_float(result_df["birth_rates"]))
-            assert np.isfinite(_as_float(result_arr["birth_rates"]))
 
-    def test_covariance_is_positive_definite_after_successful_fit(self) -> None:
+    def test_covariance_is_positive_semidefinite_after_successful_fit(self) -> None:
         rng = np.random.default_rng(55)
         ages = rng.exponential(scale=300.0, size=30)
         ages = ages[ages < 1200.0]
-        result = fit_birth_death_processes(
-            [ages],
-            times=1200.0,
-            estimate_uncertainty=True,
-        )
-        if not result["success"]:
+        result = _fit(ages, 1200.0)
+        if not result.success or result.covariance is None:
             return
-        cov = result.get("uncertainty")
-        if cov is None:
-            return
-        cov_arr = np.atleast_2d(cov)
-        eigenvalues = np.linalg.eigvalsh(cov_arr)
+        eigenvalues = np.linalg.eigvalsh(np.atleast_2d(result.covariance))
         assert np.all(eigenvalues >= -1e-8)
 
     def test_equality_constraint_produces_equal_rates(self) -> None:
         ages = np.array([100.0, 200.0, 300.0, 500.0, 700.0, 900.0, 1100.0, 1300.0])
         times = np.array([750.0, 1500.0])
-        constraints = ParameterConstraints(equality_groups=[[0, 1]])
-        result = fit_birth_death_processes(
-            [ages],
-            times=times,
-            param_constraints=constraints,
-            estimate_uncertainty=False,
-        )
-        if not result["success"]:
+        constraints = Constraints(equal=[["birth.v0", "birth.v1"]])
+        result = _fit(ages, times, constraints=constraints, compute_covariance=False)
+        if not result.success:
             return
-        birth_rates = np.atleast_1d(result["birth_rates"])
-        assert birth_rates[0] == pytest.approx(birth_rates[1], rel=1e-4)
+        assert result.birth_values[0] == pytest.approx(result.birth_values[1], rel=1e-4)
 
     @pytest.mark.xfail(
         reason="result is a BirthDeathProcess, not subscriptable like a dict —"
@@ -466,9 +469,9 @@ class TestIntegration:
         assert len(creation_times) == 2
         assert len(ages) == 2
         np.testing.assert_array_equal(ages, [400.0, 300.0])
-        result = fit_birth_death_processes([ages], times=final_time)
-        if result["success"]:
-            assert result["success"]
+        result = _fit(ages, final_time)
+        if result.success:
+            assert result.success
             assert len(creation_times) == 2
             ages = np.array(
                 [final_time - ct for ct in creation_times],
