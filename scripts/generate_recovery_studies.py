@@ -15,6 +15,8 @@ Studies
     validation/single_epoch/06_bulk_inference.qmd
 ``single_epoch_asymptotic_consistency`` (60 000 replicates)
     validation/single_epoch/07_asymptotic_consistency.qmd
+``single_epoch_fixed_time_consistency`` (200 replicates x 3 regimes x 50 fits)
+    validation/single_epoch/09_asymptotic_consistency_fixed_time.qmd
 ``multi_epoch_two_rate`` (up to 1 000 replicates)
     validation/multi_epoch/03_bulk_inference.qmd
 ``multi_epoch_single_rate`` (up to 1 000 replicates)
@@ -156,6 +158,53 @@ def _generate_single_epoch_asymptotic_consistency(
     return df, metadata
 
 
+def _generate_single_epoch_fixed_time_consistency(
+    num_simulations: int,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """``09_asymptotic_consistency_fixed_time.qmd``: fixed T, growing sample."""
+    from bdpinf.analysis.asymptotic_consistency import (
+        FittingRunConfig,
+        fixed_time_size_grid,
+        population_size_quantile,
+        run_fixed_time_replicate,
+    )
+
+    seed = 42
+    observation_time = 2.0
+    regime_configs: list[dict[str, Any]] = [
+        {"name": "Subcritical", "birth_rate": 5.0, "death_rate": 6.0},
+        {"name": "Critical", "birth_rate": 5.0, "death_rate": 5.0},
+        {"name": "Supercritical", "birth_rate": 5.0, "death_rate": 2.0},
+    ]
+    # The supercritical population distribution sets the size grid for all regimes.
+    n_max = population_size_quantile(5.0, 2.0, observation_time, q=0.99)
+    size_grid = fixed_time_size_grid(n_max, num_points=50)
+    fit_run_config = FittingRunConfig(seed=seed, method="trust-exact", tol=1e-6)
+
+    rows: list[dict[str, object]] = []
+    for regime_config in regime_configs:
+        for replicate_rows in Parallel(n_jobs=-1)(
+            delayed(run_fixed_time_replicate)(
+                regime_config=regime_config,
+                observation_time=observation_time,
+                size_grid=size_grid,
+                simulation_index=simulation_index,
+                fit_config=fit_run_config,
+            )
+            for simulation_index in range(num_simulations)
+        ):
+            rows.extend(replicate_rows)
+    df = pd.DataFrame(rows)
+    metadata = {
+        "num_simulations": num_simulations,
+        "seed": seed,
+        "observation_time": observation_time,
+        "n_max": n_max,
+        "size_grid": size_grid.tolist(),
+    }
+    return df, metadata
+
+
 def _generate_multi_epoch_two_rate(
     num_sims: int,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -283,6 +332,10 @@ _STUDIES: dict[str, tuple[Any, int]] = {
         _generate_single_epoch_asymptotic_consistency,
         1000,
     ),
+    "single_epoch_fixed_time_consistency": (
+        _generate_single_epoch_fixed_time_consistency,
+        200,
+    ),
     "multi_epoch_two_rate": (_generate_multi_epoch_two_rate, 1000),
     "multi_epoch_single_rate": (_generate_multi_epoch_single_rate, 1000),
     "multi_epoch_zero_birth": (_generate_multi_epoch_zero_birth, 1000),
@@ -318,10 +371,10 @@ def main(
     ] = None,
 ) -> None:
     """Generate and save recovery-study (simulate-then-fit) datasets."""
-    from bdpinf import get_project_root
+    from bdpinf import find_project_root
     from bdpinf.inference import save_recovery_results
 
-    project_root = get_project_root()
+    project_root = find_project_root()
     output_dir = out_dir or (project_root / "recovery_samples")
     output_dir.mkdir(parents=True, exist_ok=True)
 

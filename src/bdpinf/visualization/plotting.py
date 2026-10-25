@@ -31,6 +31,7 @@ def compute_consistency_bands(
     seed: int,
     parameter_name: str,
     true_rate_key: str,
+    x: str = "T",
 ) -> pd.DataFrame:
     """Compute tidy bootstrap CI bands for a parameter across regimes and T.
 
@@ -56,6 +57,9 @@ def compute_consistency_bands(
         Parameter prefix (e.g. ``"birth"``) used to select columns.
     true_rate_key : str
         Key into each regime config giving the parameter's true value.
+    x : str
+        Column in both tables indexing the x-axis (default ``"T"``); the
+        output column keeps this name.
 
     Returns
     -------
@@ -71,18 +75,16 @@ def compute_consistency_bands(
 
     rows: list[dict[str, Any]] = []
     for regime_name in regime_order:
-        regime_summary = summary_df[summary_df["regime"] == regime_name].sort_values(
-            "T"
-        )
+        regime_summary = summary_df[summary_df["regime"] == regime_name].sort_values(x)
         regime_raw = results_df[
             (results_df["regime"] == regime_name) & (results_df["success"])
         ]
         true_value = float(regime_lookup[regime_name][true_rate_key])
 
         for _, summary_row in regime_summary.iterrows():
-            t = float(summary_row["T"])
+            t = float(summary_row[x])
             reps = regime_raw.loc[
-                regime_raw["T"] == t,
+                regime_raw[x] == t,
                 f"{parameter_name}_estimate",
             ].to_numpy()
             reps = reps[np.isfinite(reps)]
@@ -137,7 +139,7 @@ def compute_consistency_bands(
                 rows.append(
                     {
                         "regime": regime_name,
-                        "T": t,
+                        x: t,
                         "statistic": stat,
                         "estimate": estimates[stat],
                         "lower": lower,
@@ -150,7 +152,7 @@ def compute_consistency_bands(
         rows,
         columns=[
             "regime",
-            "T",
+            x,
             "statistic",
             "estimate",
             "lower",
@@ -169,12 +171,16 @@ def plot_parameter_consistency(
     parameter_name: str,
     true_rate_key: str,
     title: str,
+    x: str = "T",
+    log_x: bool = True,
 ) -> alt.FacetChart:
     """Facet a parameter's consistency across regimes (rows) and statistics (cols).
 
     Each cell shows the estimate line (with a bootstrap 95% CI band) versus a
     log-scaled observation time ``T``; the true value is a dashed horizontal
     rule (omitted for variance). Statistics use independent y-scales.
+    ``x`` names the column to plot on the x-axis (default ``T``); ``log_x``
+    switches the log scale off.
     """
     bands = compute_consistency_bands(
         summary_df,
@@ -184,17 +190,22 @@ def plot_parameter_consistency(
         seed,
         parameter_name,
         true_rate_key,
+        x,
     )
     regime_order = [regime_config["name"] for regime_config in regime_configs]
 
-    x = alt.X("T:Q", scale=alt.Scale(type="log"), title="T")
+    x_enc = alt.X(
+        f"{x}:Q",
+        scale=alt.Scale(type="log") if log_x else alt.Undefined,
+        title=x,
+    )
     color = alt.Color("regime:N", legend=None)
 
     ci_band = (
         alt.Chart()
         .mark_area(opacity=0.25)
         .encode(
-            x=x,
+            x=x_enc,
             y=alt.Y("lower:Q", title=None),
             y2="upper:Q",
             color=color,
@@ -204,7 +215,7 @@ def plot_parameter_consistency(
         alt.Chart()
         .mark_line(point=True, strokeWidth=2)
         .encode(
-            x=x,
+            x=x_enc,
             y=alt.Y("estimate:Q", title=None),
             color=color,
         )

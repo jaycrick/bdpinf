@@ -67,3 +67,58 @@ class TestAsymptoticConsistency:
         assert captured["method"] == "L-BFGS-B"
         assert captured["tol"] == 1e-7
         assert captured["init"] == {"birth.v0": 1.0, "death.v0": 0.5}
+
+    def test_fixed_time_size_grid(self):
+        grid = ac.fixed_time_size_grid(1000, num_points=50)
+        assert grid[0] == 1
+        assert grid[-1] == 1000
+        assert len(grid) == 50
+        assert np.all(np.diff(grid) > 0)
+        assert len(ac.fixed_time_size_grid(10, num_points=50)) == 10
+
+    def test_population_size_quantile_matches_geometric(self):
+        # Subcritical with lam=1, mu=2, T large: pi -> 1 - lam/mu = 0.5.
+        n = ac.population_size_quantile(1.0, 2.0, 30.0, q=0.99)
+        assert n == int(np.ceil(np.log(0.01) / np.log(0.5)))
+
+    def test_sample_nested_ages_reproducible(self):
+        regime = {"name": "R", "birth_rate": 1.0, "death_rate": 0.5}
+        a = ac.sample_nested_ages(regime, 3.0, 40, 0, seed=1)
+        b = ac.sample_nested_ages(regime, 3.0, 40, 0, seed=1)
+        assert a.size == 40
+        assert np.all((a >= 0) & (a <= 3.0))
+        np.testing.assert_array_equal(a, b)
+
+    def test_run_fixed_time_replicate_warm_starts(self, monkeypatch, make_fit_result):
+        inits = []
+
+        def fake_fit(data, model, **kwargs):
+            inits.append(kwargs["init"])
+            return make_fit_result([1.1], [0.4], times=[3.0])
+
+        monkeypatch.setattr(ac, "fit", fake_fit)
+        regime = {"name": "R", "birth_rate": 1.0, "death_rate": 0.5}
+        rows = ac.run_fixed_time_replicate(
+            regime,
+            3.0,
+            np.array([1, 5, 9]),
+            0,
+            fit_config=ac.FittingRunConfig(seed=1),
+        )
+        assert [r["population_size"] for r in rows] == [1, 5, 9]
+        assert inits[0] == {"birth.v0": 1.0, "death.v0": 0.5}
+        assert not isinstance(inits[1], dict)
+        assert rows[0]["sampling"] == "fixed_time"
+
+    def test_simulate_bdp_ages_given_size(self):
+        from bdpinf.simulation import simulate_bdp_ages_given_size
+
+        process = simulate_bdp_ages_given_size(
+            1.0, 0.5, 3.0, 12, np.random.default_rng(0)
+        )
+        assert process.spine_ages is not None
+        assert process.non_spine_ages is not None
+        assert len(process.spine_ages) == 1
+        assert len(process.non_spine_ages) == 11
+        with pytest.raises(ValueError, match="population_size"):
+            simulate_bdp_ages_given_size(1.0, 0.5, 3.0, 0, np.random.default_rng(0))

@@ -8,12 +8,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+import jax.numpy as jnp
 import numpy as np
 
 from bdpinf.analysis.spike_detection import bootstrap_seed, replicate_seed
 from bdpinf.inference import AgeData, BirthDeathModel, FitResult, fit
+from bdpinf.models.math_populations import population_geometric_parameter
 from bdpinf.simulation import (
     simulate_bdp_ages_from_distributions,
+    simulate_bdp_ages_given_size,
     simulate_birth_death_process,
 )
 
@@ -102,8 +105,9 @@ def _fit_ages(
     fit_config: FittingRunConfig,
     *,
     compute_covariance: bool = True,
+    init: FitResult | None = None,
 ) -> FitResult:
-    """Fit one age vector starting from the regime's true rates."""
+    """Fit one age vector, from the regime's true rates unless ``init`` is given."""
     horizon = float(observation_time)
     model = BirthDeathModel.piecewise_constant([horizon])
     return fit(
@@ -111,7 +115,9 @@ def _fit_ages(
             [np.asarray(ages, dtype=np.float64)], horizon, is_ordered=True
         ),
         model,
-        init={
+        init=init
+        if init is not None
+        else {
             "birth.v0": float(regime_config["birth_rate"]),
             "death.v0": float(regime_config["death_rate"]),
         },
@@ -235,3 +241,122 @@ def reproduce_replicate(
         "ages": np.asarray(ages, dtype=np.float64),
         "fit_result": fit_result,
     }
+
+
+def population_size_quantile(
+    birth_rate: float,
+    death_rate: float,
+    observation_time: float,
+    q: float = 0.99,
+) -> int:
+    """Return the ``q``-quantile of the population size at ``T`` given survival.
+
+    Given survival the size is geometric with parameter ``pi(T)``.
+    """
+    pi = float(
+        population_geometric_parameter(
+            jnp.array([birth_rate], dtype=jnp.float64),
+            jnp.array([death_rate], dtype=jnp.float64),
+            jnp.array([observation_time], dtype=jnp.float64),
+        )
+    )
+    if pi >= 1.0:
+        return 1
+    return max(1, int(np.ceil(np.log1p(-q) / np.log1p(-pi))))
+
+
+def fixed_time_size_grid(n_max: int, num_points: int = 50) -> np.ndarray:
+    """Return distinct integer sample sizes linearly spaced from 1 to ``n_max``."""
+    return np.unique(np.rint(np.linspace(1, n_max, num_points)).astype(int))
+
+
+def sample_nested_ages(
+    regime_config: Mapping[str, Any],
+    observation_time: float,
+    n_max: int,
+    simulation_index: int,
+    *,
+    seed: int,
+) -> np.ndarray:
+    """Sample ``n_max`` ages with the spine first, so prefixes are nested samples."""
+    rep_seed = replicate_seed(
+        seed,
+        regime_config["name"],
+        "fixed_time",
+        observation_time,
+        simulation_index,
+    )
+    sampled = simulate_bdp_ages_given_size(
+        birth_rate=float(regime_config["birth_rate"]),
+        death_rate=float(regime_config["death_rate"]),
+        max_time=observation_time,
+        population_size=n_max,
+        rng=np.random.default_rng(int(rep_seed)),
+    )
+    if sampled.spine_ages is None or sampled.non_spine_ages is None:
+        msg = "simulate_bdp_ages_given_size returned no ages"
+        raise RuntimeError(msg)
+    return np.concatenate([sampled.spine_ages, sampled.non_spine_ages]).astype(
+        np.float64
+    )
+
+
+def run_fixed_time_replicate(
+    regime_config: Mapping[str, Any],
+    observation_time: float,
+    size_grid: np.ndarray,
+    simulation_index: int,
+    *,
+    fit_config: FittingRunConfig,
+) -> list[dict[str, Any]]:
+    """Fit growing prefixes of one sample, each warm-started at the last MLE."""
+    ages = sample_nested_ages(
+        regime_config,
+        observation_time,
+        int(size_grid[-1]),
+        simulation_index,
+        seed=fit_config.seed,
+    )
+    rep_seed = int(
+        replicate_seed(
+            fit_config.seed,
+            regime_config["name"],
+            "fixed_time",
+            observation_time,
+            simulation_index,
+        )
+    )
+    rows: list[dict[str, Any]] = []
+    previous: FitResult | None = None
+    for n in size_grid:
+        record = _replicate_record(
+            {**regime_config, "sampling": "fixed_time"},
+            observation_time,
+            simulation_index,
+            rep_seed,
+        )
+        fit_result = _fit_ages(
+            regime_config,
+            observation_time,
+            ages[: int(n)],
+            rep_seed,
+            fit_config,
+            compute_covariance=False,
+            init=previous,
+        )
+        record |= {
+            "population_size": int(n),
+            "n_non_spine": int(n) - 1,
+            "success": bool(fit_result.success),
+            "at_interior_optimum": bool(fit_result.at_interior_optimum),
+            "birth_estimate": np.nan,
+            "death_estimate": np.nan,
+            "log_likelihood": float(fit_result.log_likelihood),
+            "n_iter": int(fit_result.n_iter),
+        }
+        if fit_result.success:
+            record["birth_estimate"] = float(fit_result.birth_values[0])
+            record["death_estimate"] = float(fit_result.death_values[0])
+            previous = fit_result
+        rows.append(record)
+    return rows

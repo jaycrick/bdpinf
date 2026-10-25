@@ -13,6 +13,7 @@ from .conditioned import (
 from .simulator import (
     LifespanSimulationArrays,
     simulate_bdp_ages_from_distributions,
+    simulate_bdp_ages_given_size,
     simulate_birth_death_lifespans,
     simulate_birth_death_lifespans_arrays,
     simulate_birth_death_process,
@@ -38,6 +39,7 @@ __all__ = [
     "sample_conditioned_survival_process",
     "simulate_ages_from_rates",
     "simulate_bdp_ages_from_distributions",
+    "simulate_bdp_ages_given_size",
     "simulate_birth_death_lifespans",
     "simulate_birth_death_lifespans_arrays",
     "simulate_birth_death_process",

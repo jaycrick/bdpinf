@@ -554,6 +554,17 @@ def simulate_bdp_ages_from_distributions(
     else:
         pop_size = rng.geometric(float(population_geometric_parameter(_b, _d, _t)))
 
+    return _ages_at_population_size(br, dr, mt, pop_size, rng)
+
+
+def _ages_at_population_size(
+    br: float,
+    dr: float,
+    mt: float,
+    pop_size: int,
+    rng: np.random.Generator,
+) -> BirthDeathProcess:
+    """Sample one spine age and ``pop_size - 1`` non-spine ages."""
     ages: dict[str, list[float]] = {"spine": [], "non_spine": []}
     if pop_size > 0:
         ages["spine"] = _sample_spine_ages(br, dr, mt, rng=rng, n_samples=1)
@@ -568,6 +579,53 @@ def simulate_bdp_ages_from_distributions(
         birth_rates=br,
         death_rates=dr,
     )
+
+
+def simulate_bdp_ages_given_size(
+    birth_rate: object,
+    death_rate: object,
+    max_time: object,
+    population_size: int,
+    rng: np.random.Generator,
+) -> BirthDeathProcess:
+    """Sample individual ages for a fixed population size.
+
+    Like :func:`simulate_bdp_ages_from_distributions` but conditional on
+    ``population_size`` instead of drawing it: one spine age and
+    ``population_size - 1`` non-spine ages on ``[0, T]``.
+
+    Parameters
+    ----------
+    birth_rate, death_rate, max_time
+        Positive scalars.
+    population_size
+        Number of surviving individuals (at least 1).
+    rng
+        NumPy random number generator.
+
+    Returns
+    -------
+        BirthDeathProcess instance containing the sampled age groups.
+
+    Raises
+    ------
+        ValueError: If rates or max_time are not positive, or
+            ``population_size`` is less than 1.
+
+    """
+    br = _as_scalar_float(birth_rate, name="birth_rate")
+    dr = _as_scalar_float(death_rate, name="death_rate")
+    mt = _as_scalar_float(max_time, name="max_time")
+    if br <= 0.0 or dr <= 0.0:
+        msg = "birth_rate and death_rate must be positive"
+        raise ValueError(msg)
+    if mt <= 0.0:
+        msg = "max_time must be positive"
+        raise ValueError(msg)
+    if population_size < 1:
+        msg = "population_size must be at least 1"
+        raise ValueError(msg)
+    return _ages_at_population_size(br, dr, mt, int(population_size), rng)
 
 
 # ---------------------------------------------------------------------------
