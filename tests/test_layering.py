@@ -39,6 +39,7 @@ _LAYERS: dict[str, int] = {
     "bdpinf.process": 5,
     "bdpinf.simulation.age_sampling": 6,
     "bdpinf.simulation.conditioned": 6,
+    "bdpinf.simulation.linear_rates": 6,
     "bdpinf.simulation.simulator": 6,
     "bdpinf.simulation.survival_conditioning": 6,
     "bdpinf.simulation": 6,

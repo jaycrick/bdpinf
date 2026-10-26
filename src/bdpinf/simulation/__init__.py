@@ -10,6 +10,7 @@ from .conditioned import (
     simulate_birth_death_process_from_contour_process,
     simulate_subcritical_survival_splitting,
 )
+from .linear_rates import simulate_birth_death_linear
 from .simulator import (
     LifespanSimulationArrays,
     simulate_bdp_ages_from_distributions,
@@ -42,6 +43,7 @@ __all__ = [
     "simulate_bdp_ages_given_size",
     "simulate_birth_death_lifespans",
     "simulate_birth_death_lifespans_arrays",
+    "simulate_birth_death_linear",
     "simulate_birth_death_process",
     "simulate_birth_death_process_from_contour_process",
     "simulate_subcritical_survival_splitting",
