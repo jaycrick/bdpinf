@@ -145,3 +145,15 @@ GPU rendering
 was benchmarked and found 1.6×--8× *slower* than CPU on every config tested,
 so Bayesian notebooks render on CPU too; see
 `docs/design/GPU_RENDERING_PROTOCOL.md`.
+
+To copy the rendered outputs and cached results back from the cluster,
+pull the remote checkout over the local one with `rsync`
+(`<hpc-host>` is your SSH host alias, and the paths are wherever each checkout lives):
+
+```bash
+rsync -varzP --exclude="/.*" <hpc-host>:/path/to/remote/bdpinf/ /path/to/local/bdpinf
+```
+
+The trailing slash on the source copies its contents rather than the directory itself,
+and `--exclude="/.*"` skips top-level dotfiles and directories (`.git`, `.venv`, …)
+so each machine keeps its own environment and git state.
