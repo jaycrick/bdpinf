@@ -125,7 +125,11 @@ recovery_samples_dir = find_project_root() / "recovery_samples"
 loaded = load_recovery_results(
     recovery_samples_dir / "single_epoch_asymptotic_consistency.npz"
 )
+# Growth rate is birth - death.
 results_df = loaded["results"]
+results_df = results_df.assign(
+    growth_estimate=results_df["birth_estimate"] - results_df["death_estimate"]
+)
 summary_rows: list[dict[str, object]] = []
 
 for (regime, sampling, observation_time), group in results_df.groupby(
@@ -147,6 +151,8 @@ for (regime, sampling, observation_time), group in results_df.groupby(
             "birth_var": safe_var(successful["birth_estimate"]),
             "death_mean": safe_mean(successful["death_estimate"]),
             "death_var": safe_var(successful["death_estimate"]),
+            "growth_mean": safe_mean(successful["growth_estimate"]),
+            "growth_var": safe_var(successful["growth_estimate"]),
             "true_birth_rate": float(regime_lookup[regime]["birth_rate"]),
             "true_death_rate": float(regime_lookup[regime]["death_rate"]),
         },
@@ -277,32 +283,56 @@ print(
 
 ## Consistency Plots
 
-```{python}
-# plotting moved to src/bdpinf/visualization/plotting.py; see plot_parameter_consistency
+Plotted by `plot_parameter_consistency` (`src/bdpinf/visualization/plotting.py`);
+the y axes fit the data rather than starting at zero.
 
-fig_birth = plot_parameter_consistency(
-    summary_df=summary_df,
-    results_df=results_df,
-    regime_configs=regime_configs,
-    bootstrap_samples=bootstrap_samples,
-    seed=seed,
-    parameter_name="birth",
-    true_rate_key="birth_rate",
-    title="Birth-rate consistency across observation time",
-)
-display(fig_birth)
-fig_death = plot_parameter_consistency(
-    summary_df=summary_df,
-    results_df=results_df,
-    regime_configs=regime_configs,
-    bootstrap_samples=bootstrap_samples,
-    seed=seed,
-    parameter_name="death",
-    true_rate_key="death_rate",
-    title="Death-rate consistency across observation time",
-)
-display(fig_death)
+```{python}
+# | label: consistency-helper
+plot_configs = [
+    {**cfg, "growth_rate": cfg["birth_rate"] - cfg["death_rate"]}
+    for cfg in regime_configs
+]
+
+
+def plot_consistency(parameter: str) -> None:
+    """Build and display the consistency chart for one parameter."""
+    chart = plot_parameter_consistency(
+        summary_df=summary_df,
+        results_df=results_df,
+        regime_configs=plot_configs,
+        bootstrap_samples=bootstrap_samples,
+        seed=seed,
+        parameter_name=parameter,
+        true_rate_key=f"{parameter}_rate",
+        title=f"{parameter.capitalize()}-rate consistency across observation time",
+    )
+    display(chart)
 ```
+
+::: {.panel-tabset}
+
+## Birth rate
+
+```{python}
+# | label: consistency-birth
+plot_consistency("birth")
+```
+
+## Death rate
+
+```{python}
+# | label: consistency-death
+plot_consistency("death")
+```
+
+## Growth rate
+
+```{python}
+# | label: consistency-growth
+plot_consistency("growth")
+```
+
+:::
 
 ```{python}
 # | label: compile-time-report

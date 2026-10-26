@@ -10,6 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `visualization.plot_parameter_consistency`: `x` and `log_x` options to plot against a column other than `T`.
 - `visualization.plot_parameter_consistency`: y axes fit the data instead of starting at zero.
 - Validation notebook 09: growth-rate consistency tab, single-age fit left out of the plots, and a table of the mean population size per scenario.
+- Validation notebook 07: birth, death and growth rate consistency plots in tabs.
 
 ## [0.2.0] --- 2026-10-23
 
