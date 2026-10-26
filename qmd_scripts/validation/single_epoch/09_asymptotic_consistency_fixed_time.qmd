@@ -46,6 +46,7 @@ import json
 import os
 from pathlib import Path
 
+import jax.numpy as jnp
 import pandas as pd
 from IPython.display import display
 from itables import show as show_table
@@ -53,16 +54,26 @@ from itables import show as show_table
 from bdpinf import find_project_root
 from bdpinf.analysis.validation_helpers import safe_mean, safe_var
 from bdpinf.inference import load_recovery_results
+from bdpinf.models.math_populations import population_geometric_parameter
 from bdpinf.utils import format_table_dataframe
 from bdpinf.visualization import save_chart
 from bdpinf.visualization.plotting import plot_parameter_consistency
 
 seed = 42
 bootstrap_samples = 1000
+regime_rates = [
+    ("Subcritical", 5.0, 6.0),
+    ("Critical", 5.0, 5.0),
+    ("Supercritical", 5.0, 2.0),
+]
 regime_configs = [
-    {"name": "Subcritical", "birth_rate": 5.0, "death_rate": 6.0},
-    {"name": "Critical", "birth_rate": 5.0, "death_rate": 5.0},
-    {"name": "Supercritical", "birth_rate": 5.0, "death_rate": 2.0},
+    {
+        "name": name,
+        "birth_rate": birth,
+        "death_rate": death,
+        "growth_rate": birth - death,
+    }
+    for name, birth, death in regime_rates
 ]
 figures_dir = find_project_root() / "figures" / "validation" / "single_epoch"
 ```
@@ -76,6 +87,11 @@ loaded = load_recovery_results(
 )
 results_df = loaded["results"]
 print(loaded["metadata"])
+
+# Growth rate is birth - death.
+results_df = results_df.assign(
+    growth_estimate=results_df["birth_estimate"] - results_df["death_estimate"]
+)
 
 summary_rows: list[dict[str, object]] = []
 for (regime, n), group in results_df.groupby(["regime", "population_size"], sort=False):
@@ -91,6 +107,8 @@ for (regime, n), group in results_df.groupby(["regime", "population_size"], sort
             "birth_var": safe_var(successful["birth_estimate"]),
             "death_mean": safe_mean(successful["death_estimate"]),
             "death_var": safe_var(successful["death_estimate"]),
+            "growth_mean": safe_mean(successful["growth_estimate"]),
+            "growth_var": safe_var(successful["growth_estimate"]),
         }
     )
 summary_df = (
@@ -98,6 +116,34 @@ summary_df = (
     .sort_values(["regime", "population_size"])
     .reset_index(drop=True)
 )
+```
+
+### Mean Population Size
+
+Given survival to $T$, the population size is geometric with parameter $\pi(T)$,
+so its mean is $1/\pi(T)$.
+
+```{python}
+# | label: mean-population-size
+observation_time = float(loaded["metadata"]["observation_time"])
+mean_size_rows = [
+    {
+        "regime": cfg["name"],
+        "birth_rate": cfg["birth_rate"],
+        "death_rate": cfg["death_rate"],
+        "T": observation_time,
+        "mean_population_size": 1.0
+        / float(
+            population_geometric_parameter(
+                jnp.array([cfg["birth_rate"]], dtype=jnp.float64),
+                jnp.array([cfg["death_rate"]], dtype=jnp.float64),
+                jnp.array([observation_time], dtype=jnp.float64),
+            )
+        ),
+    }
+    for cfg in regime_configs
+]
+show_table(format_table_dataframe(pd.DataFrame(mean_size_rows)))
 ```
 
 ### Summary Table
@@ -110,11 +156,15 @@ show_table(format_table_dataframe(summary_df))
 ## Consistency Plots
 
 ```{python}
-# | label: consistency-plots
-for parameter in ("birth", "death"):
+# | label: consistency-helper
+def plot_consistency(parameter: str) -> None:
+    """Build, save and display the consistency chart for one parameter.
+
+    The first fit (a single age) is left out of the plots only.
+    """
     chart = plot_parameter_consistency(
-        summary_df=summary_df,
-        results_df=results_df,
+        summary_df=summary_df[summary_df["population_size"] > 1],
+        results_df=results_df[results_df["population_size"] > 1],
         regime_configs=regime_configs,
         bootstrap_samples=bootstrap_samples,
         seed=seed,
@@ -127,6 +177,31 @@ for parameter in ("birth", "death"):
     save_chart(chart, f"vse09_{parameter}_consistency", output_dir=figures_dir)
     display(chart)
 ```
+
+::: {.panel-tabset}
+
+## Birth rate
+
+```{python}
+# | label: consistency-birth
+plot_consistency("birth")
+```
+
+## Death rate
+
+```{python}
+# | label: consistency-death
+plot_consistency("death")
+```
+
+## Growth rate
+
+```{python}
+# | label: consistency-growth
+plot_consistency("growth")
+```
+
+:::
 
 ```{python}
 # | label: compile-time-report

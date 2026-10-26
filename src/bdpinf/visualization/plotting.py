@@ -178,7 +178,8 @@ def plot_parameter_consistency(
 
     Each cell shows the estimate line (with a bootstrap 95% CI band) versus a
     log-scaled observation time ``T``; the true value is a dashed horizontal
-    rule (omitted for variance). Statistics use independent y-scales.
+    rule (omitted for variance). Statistics use independent y-scales, fitted
+    to the data rather than anchored at zero.
     ``x`` names the column to plot on the x-axis (default ``T``); ``log_x``
     switches the log scale off.
     """
@@ -206,7 +207,7 @@ def plot_parameter_consistency(
         .mark_area(opacity=0.25)
         .encode(
             x=x_enc,
-            y=alt.Y("lower:Q", title=None),
+            y=alt.Y("lower:Q", title=None, scale=alt.Scale(zero=False)),
             y2="upper:Q",
             color=color,
         )
@@ -216,7 +217,7 @@ def plot_parameter_consistency(
         .mark_line(point=True, strokeWidth=2)
         .encode(
             x=x_enc,
-            y=alt.Y("estimate:Q", title=None),
+            y=alt.Y("estimate:Q", title=None, scale=alt.Scale(zero=False)),
             color=color,
         )
     )
