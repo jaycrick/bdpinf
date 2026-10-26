@@ -166,6 +166,13 @@ class FitResult:
         return np.array([self.params[name] for name in self.model.death_names])
 
     @property
+    def knot_times(self) -> NDArray[np.float64] | None:
+        """Fitted knot times (``None`` when the epochs are fixed)."""
+        if self.model.knots is None:
+            return None
+        return np.array([self.params[name] for name in self.model.knot_names])
+
+    @property
     def standard_errors(self) -> dict[str, float] | None:
         """Delta-method standard errors of the natural-scale parameters.
 
@@ -368,7 +375,12 @@ def _resolve_init(
     if init is None:
         yield from _default_init(data, model)
     elif isinstance(init, FitResult):
-        yield model.natural_from_rates(init.birth, init.death)
+        knots = [init.params.get(name) for name in model.knot_names]
+        yield model.natural_from_rates(
+            init.birth,
+            init.death,
+            None if None in knots else knots,  # type: ignore[arg-type]
+        )
     elif isinstance(init, tuple):
         yield model.natural_from_rates(*init)
     elif isinstance(init, Mapping):
@@ -782,7 +794,7 @@ def fit(
 
     x_best = best.x
     converged = best.grad_norm <= grad_tol and best.nll < _PENALTY
-    natural = np.asarray(compiled.expand(jnp.asarray(x_best)), dtype=np.float64)
+    natural = model.canonical(compiled.expand(jnp.asarray(x_best)))
     birth, death = model.rates(jnp.asarray(natural))
 
     min_eig: float | None = None
@@ -809,9 +821,10 @@ def fit(
                     select[i, k] = 1.0
             cov_unc = select @ cov_free @ select.T
 
-    log_scale = compiled.codes[compiled.free_indices] == 1
-    boundary = (
-        bool(np.any(x_best[log_scale] < _BOUNDARY_LOG_RATE)) if x_best.size else False
+    free_codes = compiled.codes[compiled.free_indices]
+    boundary = bool(
+        np.any(x_best[free_codes == 1] < _BOUNDARY_LOG_RATE)
+        or np.any(np.abs(x_best[free_codes == 3]) > _BOUNDARY_LOG_RATE)
     )
     interior = bool(converged and not boundary and (min_eig is None or min_eig > 0))
 

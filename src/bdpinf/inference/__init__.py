@@ -18,6 +18,7 @@ from .fitting import (
     moment_initial_rates,
     profile_likelihood_interval,
 )
+from .knots import KnotFitResult, fit_knots
 from .likelihood import (
     AgeData,
     calculate_unknown_spine_mixture_age_density,
@@ -33,6 +34,7 @@ from .persistence import (
 )
 from .rate_models import (
     BirthDeathModel,
+    FreeKnots,
     Param,
     PiecewiseConstant,
     PiecewiseLinear,
@@ -52,6 +54,8 @@ __all__ = [
     "CompiledConstraints",
     "Constraints",
     "FitResult",
+    "FreeKnots",
+    "KnotFitResult",
     "Param",
     "PiecewiseConstant",
     "PiecewiseLinear",
@@ -62,6 +66,7 @@ __all__ = [
     "covariance_from_hessian",
     "fit",
     "fit_bayesian",
+    "fit_knots",
     "get_crude_parameter_estimates",
     "load_posterior_samples",
     "load_recovery_results",

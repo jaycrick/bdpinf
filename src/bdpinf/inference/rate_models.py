@@ -18,6 +18,11 @@ Provided families:
 parameter list.
 A new family (for example a sinusoid with amplitude, period and phase
 parameters) only needs to satisfy the :class:`RateModel` protocol.
+
+The epoch boundaries (knots) are fixed by default.
+Passing a :class:`FreeKnots` to :class:`BirthDeathModel` makes them parameters
+(``tau0 .. tau{K-1}``, shared by the birth and death rates) that are fitted
+along with the rates, inside the ranges the caller allows.
 """
 
 import dataclasses
@@ -28,6 +33,7 @@ from typing import Literal, Protocol
 import jax
 import jax.numpy as jnp
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 from bdpinf.models.rate_functions import (
     PiecewiseConstantRate,
@@ -37,6 +43,7 @@ from bdpinf.models.rate_functions import (
 
 __all__ = [
     "BirthDeathModel",
+    "FreeKnots",
     "Param",
     "PiecewiseConstant",
     "PiecewiseLinear",
@@ -44,10 +51,14 @@ __all__ = [
     "Transform",
 ]
 
-Transform = Literal["log", "identity", "logit"]
-"""How a natural-scale parameter maps to the unconstrained optimisation scale."""
+Transform = Literal["log", "identity", "logit", "interval"]
+"""How a natural-scale parameter maps to the unconstrained optimisation scale.
+
+``"interval"`` maps to ``(Param.lower, Param.upper)`` through a scaled logistic.
+"""
 
 _EDGE_FRACTION = 1e-9
+_PAIR = 2
 
 EpochTimes = Sequence[float] | np.ndarray | jax.Array
 """Epoch end times as given by the caller (stored as a tuple of floats)."""
@@ -55,10 +66,15 @@ EpochTimes = Sequence[float] | np.ndarray | jax.Array
 
 @dataclasses.dataclass(frozen=True)
 class Param:
-    """A named scalar parameter and its transform."""
+    """A named scalar parameter and its transform.
+
+    ``lower`` and ``upper`` bound the parameter when ``transform="interval"``.
+    """
 
     name: str
     transform: Transform = "log"
+    lower: float = 0.0
+    upper: float = 1.0
 
 
 class RateModel(Protocol):
@@ -74,8 +90,19 @@ class RateModel(Protocol):
         """Observation time ``T``."""
         ...
 
-    def build(self, values: jax.Array) -> RateFunction:
-        """Return the rate function for natural-scale ``values``."""
+    @property
+    def n_epochs(self) -> int:
+        """Number of epochs (one more than the number of interior knots)."""
+        ...
+
+    def build(
+        self, values: jax.Array, epoch_end_times: jax.Array | None = None
+    ) -> RateFunction:
+        """Return the rate function for natural-scale ``values``.
+
+        ``epoch_end_times`` replaces the family's own epochs (used when the knot
+        times are being fitted); it may be a traced array.
+        """
         ...
 
     def constant_values(self, value: float) -> jax.Array:
@@ -120,13 +147,23 @@ class PiecewiseConstant:
         return tuple(Param(f"v{k}") for k in range(len(self.epoch_end_times)))
 
     @property
+    def n_epochs(self) -> int:
+        """Number of epochs."""
+        return len(self.epoch_end_times)
+
+    @property
     def end_time(self) -> float:
         """Observation time ``T``."""
         return float(self.epoch_end_times[-1])
 
-    def build(self, values: jax.Array) -> PiecewiseConstantRate:
+    def build(
+        self, values: jax.Array, epoch_end_times: jax.Array | None = None
+    ) -> PiecewiseConstantRate:
         """Return the piecewise-constant rate with the given epoch values."""
-        return PiecewiseConstantRate(values, jnp.asarray(self.epoch_end_times))
+        times = jnp.asarray(
+            self.epoch_end_times if epoch_end_times is None else epoch_end_times
+        )
+        return PiecewiseConstantRate(values, times)
 
     def constant_values(self, value: float) -> jax.Array:
         """Return the same rate in every epoch."""
@@ -185,9 +222,13 @@ class PiecewiseLinear:
         """Observation time ``T``."""
         return float(self.epoch_end_times[-1])
 
-    def build(self, values: jax.Array) -> PiecewiseLinearRate:
+    def build(
+        self, values: jax.Array, epoch_end_times: jax.Array | None = None
+    ) -> PiecewiseLinearRate:
         """Return the piecewise-linear rate with the given parameter values."""
-        times = jnp.asarray(self.epoch_end_times)
+        times = jnp.asarray(
+            self.epoch_end_times if epoch_end_times is None else epoch_end_times
+        )
         if self.continuous:
             return PiecewiseLinearRate.continuous(values, times)
         return PiecewiseLinearRate(
@@ -228,41 +269,200 @@ class PiecewiseLinear:
         return [[f"{prefix}start{k}", f"{prefix}end{k}"] for k in range(self.n_epochs)]
 
 
+KnotBounds = Sequence[float] | Sequence[Sequence[float]]
+"""One ``(low, high)`` range shared by all knots, or one range per knot."""
+
+
+def _knot_ranges(
+    n_knots: int, end_time: float, bounds: KnotBounds | None
+) -> tuple[tuple[float, float], ...]:
+    """Validate ``bounds`` and return one ``(low, high)`` pair per knot."""
+    if bounds is None:
+        return ((0.0, end_time),) * n_knots
+    items = list(bounds)
+    shared = len(items) == _PAIR and all(np.ndim(v) == 0 for v in items)
+    if shared:
+        ranges = ((float(items[0]), float(items[1])),) * n_knots  # type: ignore[arg-type]
+    else:
+        if len(items) != n_knots:
+            msg = f"bounds must be one (low, high) pair or {n_knots} pairs"
+            raise ValueError(msg)
+        pairs = [np.asarray(item, dtype=np.float64) for item in items]
+        if any(pair.shape != (_PAIR,) for pair in pairs):
+            msg = "each knot range must be a (low, high) pair"
+            raise ValueError(msg)
+        ranges = tuple((float(a), float(b)) for a, b in pairs)
+    if any(not (0.0 <= lo < hi <= end_time) for lo, hi in ranges):
+        msg = f"knot ranges must satisfy 0 <= low < high <= end_time ({end_time})"
+        raise ValueError(msg)
+    if not shared and any(a[1] > b[0] for a, b in itertools.pairwise(ranges)):
+        msg = "per-knot ranges must be ascending and must not overlap"
+        raise ValueError(msg)
+    return ranges
+
+
+@dataclasses.dataclass(frozen=True)
+class FreeKnots:
+    r"""Epoch boundaries that are fitted rather than fixed.
+
+    The $K$ interior knots $\tau_1 < \dots < \tau_K$ become parameters
+    ``tau0 .. tau{K-1}``, shared by the birth and death rates, so a model with
+    free knots has $K + 1$ epochs ending at the observation time.
+    Give only the number of knots to let each lie anywhere in $(0, T)$, or also
+    the range it may lie in.
+
+    Parameters
+    ----------
+    n_knots : int
+        Number of interior knots.
+    end_time : float
+        Observation time $T$ (the last epoch end, not a parameter).
+    bounds : (low, high) or sequence of K (low, high), optional
+        One range shared by all knots (the knots are then ordered after
+        fitting), or one range per knot, which must be ascending and not
+        overlap.
+        Default: $(0, T)$ for every knot.
+    initial : sequence of float, optional
+        Starting knot times, strictly increasing and inside their ranges.
+        Default: evenly spaced in a shared range, the midpoints of per-knot ranges.
+
+    Examples
+    --------
+    Two knots anywhere in the window, or one knot in $[300, 900]$:
+
+    >>> FreeKnots(2, end_time=1200.0).n_knots
+    2
+    >>> FreeKnots(1, end_time=1200.0, bounds=(300.0, 900.0)).initial
+    (600.0,)
+
+    """
+
+    n_knots: int
+    end_time: float
+    bounds: KnotBounds | None = None
+    initial: Sequence[float] | None = None
+
+    def __post_init__(self) -> None:
+        """Validate the ranges and freeze them (and the initial times) as tuples."""
+        if self.n_knots < 1:
+            msg = "n_knots must be at least 1"
+            raise ValueError(msg)
+        end = float(self.end_time)
+        if not end > 0:
+            msg = "end_time must be positive"
+            raise ValueError(msg)
+        ranges = _knot_ranges(self.n_knots, end, self.bounds)
+        if self.initial is None:
+            lo, hi = ranges[0]
+            if all(r == ranges[0] for r in ranges):
+                initial = tuple(
+                    lo + (hi - lo) * (k + 1) / (self.n_knots + 1)
+                    for k in range(self.n_knots)
+                )
+            else:
+                initial = tuple(0.5 * (a + b) for a, b in ranges)
+        else:
+            initial = tuple(float(t) for t in self.initial)
+            if len(initial) != self.n_knots:
+                msg = f"initial has {len(initial)} times, expected {self.n_knots}"
+                raise ValueError(msg)
+            if any(b <= a for a, b in itertools.pairwise(initial)) or any(
+                not lo < t < hi for t, (lo, hi) in zip(initial, ranges, strict=True)
+            ):
+                msg = "initial must be strictly increasing and inside the knot ranges"
+                raise ValueError(msg)
+        object.__setattr__(self, "end_time", end)
+        object.__setattr__(self, "bounds", ranges)
+        object.__setattr__(self, "initial", initial)
+
+    @property
+    def ranges(self) -> tuple[tuple[float, float], ...]:
+        """The ``(low, high)`` range of each knot."""
+        return self.bounds  # type: ignore[return-value]
+
+    @property
+    def initial_times(self) -> tuple[float, ...]:
+        """Starting knot times."""
+        return self.initial  # type: ignore[return-value]
+
+    @property
+    def params(self) -> tuple[Param, ...]:
+        """One interval-scale parameter ``tau{k}`` per knot."""
+        return tuple(
+            Param(f"tau{k}", "interval", lo, hi)
+            for k, (lo, hi) in enumerate(self.ranges)
+        )
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """Parameter names ``tau0 .. tau{K-1}``."""
+        return tuple(p.name for p in self.params)
+
+    def epoch_end_times(self, values: jax.Array) -> jax.Array:
+        """Sorted knot ``values`` followed by the observation time (differentiable)."""
+        return jnp.concatenate(
+            [jnp.sort(values), jnp.full(1, self.end_time, dtype=jnp.float64)]
+        )
+
+
 @dataclasses.dataclass(frozen=True)
 class BirthDeathModel:
     """A birth-rate family paired with a death-rate family.
 
     Parameters are named ``birth.<name>`` and ``death.<name>`` and listed birth
     first.
+    With ``knots`` the shared epoch boundaries ``tau<k>`` follow, and both
+    families must have ``knots.n_knots + 1`` epochs.
     """
 
     birth: RateModel
     death: RateModel
+    knots: FreeKnots | None = None
 
     def __post_init__(self) -> None:
-        """Check the two families share an observation window."""
+        """Check the two families share an observation window (and the knots)."""
         if not np.isclose(self.birth.end_time, self.death.end_time):
             msg = "birth and death models must share the observation time"
             raise ValueError(msg)
+        if self.knots is not None:
+            expected = self.knots.n_knots + 1
+            if self.birth.n_epochs != expected or self.death.n_epochs != expected:
+                msg = (
+                    f"with {self.knots.n_knots} free knots both families "
+                    f"need {expected} epochs"
+                )
+                raise ValueError(msg)
+            if not np.isclose(self.knots.end_time, self.end_time):
+                msg = "knots and rate families must share the observation time"
+                raise ValueError(msg)
 
     @classmethod
-    def piecewise_constant(cls, epoch_end_times: EpochTimes) -> "BirthDeathModel":
-        """Piecewise-constant birth and death rates on shared epochs."""
-        return cls(
-            PiecewiseConstant(epoch_end_times), PiecewiseConstant(epoch_end_times)
-        )
+    def piecewise_constant(
+        cls, epoch_end_times: EpochTimes | FreeKnots
+    ) -> "BirthDeathModel":
+        """Piecewise-constant birth and death rates on shared epochs.
+
+        Pass a :class:`FreeKnots` to fit the epoch boundaries as well.
+        """
+        epochs, knots = _template(epoch_end_times)
+        return cls(PiecewiseConstant(epochs), PiecewiseConstant(epochs), knots)
 
     @classmethod
     def piecewise_linear(
         cls,
-        epoch_end_times: EpochTimes,
+        epoch_end_times: EpochTimes | FreeKnots,
         *,
         continuous: bool = True,
     ) -> "BirthDeathModel":
-        """Piecewise-linear birth and death rates on shared epochs."""
+        """Piecewise-linear birth and death rates on shared epochs.
+
+        Pass a :class:`FreeKnots` to fit the epoch boundaries as well.
+        """
+        epochs, knots = _template(epoch_end_times)
         return cls(
-            PiecewiseLinear(epoch_end_times, continuous),
-            PiecewiseLinear(epoch_end_times, continuous),
+            PiecewiseLinear(epochs, continuous),
+            PiecewiseLinear(epochs, continuous),
+            knots,
         )
 
     @property
@@ -276,11 +476,30 @@ class BirthDeathModel:
         return len(self.birth.params)
 
     @property
+    def n_death(self) -> int:
+        """Number of death parameters."""
+        return len(self.death.params)
+
+    @property
+    def n_knots(self) -> int:
+        """Number of free knot times (0 when the epochs are fixed)."""
+        return 0 if self.knots is None else self.knots.n_knots
+
+    @property
     def params(self) -> tuple[Param, ...]:
-        """All parameters, birth first, with ``birth.``/``death.`` name prefixes."""
-        return tuple(
-            Param(f"birth.{p.name}", p.transform) for p in self.birth.params
-        ) + tuple(Param(f"death.{p.name}", p.transform) for p in self.death.params)
+        """All parameters: birth, death, then free knot times, with name prefixes."""
+        knots = () if self.knots is None else self.knots.params
+        return (
+            tuple(
+                dataclasses.replace(p, name=f"birth.{p.name}")
+                for p in self.birth.params
+            )
+            + tuple(
+                dataclasses.replace(p, name=f"death.{p.name}")
+                for p in self.death.params
+            )
+            + knots
+        )
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -297,27 +516,102 @@ class BirthDeathModel:
         """Names of the death parameters."""
         return [f"death.{p.name}" for p in self.death.params]
 
+    @property
+    def knot_names(self) -> list[str]:
+        """Names of the free knot-time parameters (empty with fixed epochs)."""
+        return [] if self.knots is None else list(self.knots.names)
+
     def rates(self, natural: jax.Array) -> tuple[RateFunction, RateFunction]:
         """Return the ``(birth, death)`` rate functions for natural parameters."""
+        n_b, n_d = self.n_birth, self.n_death
+        birth_values, death_values = natural[:n_b], natural[n_b : n_b + n_d]
+        if self.knots is None:
+            return self.birth.build(birth_values), self.death.build(death_values)
+        ends = self.knots.epoch_end_times(natural[n_b + n_d :])
         return (
-            self.birth.build(natural[: self.n_birth]),
-            self.death.build(natural[self.n_birth :]),
+            self.birth.build(birth_values, ends),
+            self.death.build(death_values, ends),
         )
 
-    def constant_natural(self, birth: float, death: float) -> jax.Array:
-        """Natural parameters for constant ``birth`` and ``death`` rates."""
+    def _knot_block(self, knot_times: ArrayLike | None) -> list[jax.Array]:
+        if self.knots is None:
+            return []
+        times = self.knots.initial_times if knot_times is None else knot_times
+        return [jnp.asarray(times, dtype=jnp.float64)]
+
+    def _at_knots(self, family: RateModel, knot_times: ArrayLike | None) -> RateModel:
+        """``family`` with its epochs replaced by the knot times (if knots are free)."""
+        if self.knots is None or not dataclasses.is_dataclass(family):
+            return family
+        times = self.knots.initial_times if knot_times is None else knot_times
+        ends = (*(float(t) for t in np.sort(np.asarray(times))), self.end_time)
+        return dataclasses.replace(family, epoch_end_times=ends)  # type: ignore[type-var]
+
+    def constant_natural(
+        self, birth: float, death: float, knot_times: ArrayLike | None = None
+    ) -> jax.Array:
+        """Natural parameters for constant ``birth`` and ``death`` rates.
+
+        Free knots start at ``knot_times`` (default: the initial times).
+        """
         return jnp.concatenate(
-            [self.birth.constant_values(birth), self.death.constant_values(death)]
+            [
+                self.birth.constant_values(birth),
+                self.death.constant_values(death),
+                *self._knot_block(knot_times),
+            ]
         )
 
-    def natural_from_rates(self, birth: RateFunction, death: RateFunction) -> jax.Array:
-        """Natural parameters approximating the given rate functions."""
+    def natural_from_rates(
+        self,
+        birth: RateFunction,
+        death: RateFunction,
+        knot_times: ArrayLike | None = None,
+    ) -> jax.Array:
+        """Natural parameters approximating the given rate functions.
+
+        Free knots are placed at ``knot_times`` (default: the initial times) and
+        the rates are evaluated on the epochs they define.
+        """
         return jnp.concatenate(
-            [self.birth.values_from_rate(birth), self.death.values_from_rate(death)]
+            [
+                self._at_knots(self.birth, knot_times).values_from_rate(birth),
+                self._at_knots(self.death, knot_times).values_from_rate(death),
+                *self._knot_block(knot_times),
+            ]
         )
 
     def swapped(self, natural: jax.Array) -> jax.Array | None:
-        """Return ``natural`` with birth and death exchanged, if the layouts match."""
+        """Return ``natural`` with birth and death exchanged, if the layouts match.
+
+        Free knot times stay where they are.
+        """
         if self.birth.params != self.death.params:
             return None
-        return jnp.concatenate([natural[self.n_birth :], natural[: self.n_birth]])
+        n_b, n_d = self.n_birth, self.n_death
+        return jnp.concatenate(
+            [natural[n_b : n_b + n_d], natural[:n_b], natural[n_b + n_d :]]
+        )
+
+    def canonical(self, natural: ArrayLike) -> NDArray[np.float64]:
+        """Return ``natural`` with the knot times in increasing order.
+
+        Works on any array whose last axis lists the parameters, so it also
+        orders posterior draws.
+        Models with fixed epochs are returned unchanged.
+        """
+        out = np.array(natural, dtype=np.float64)
+        if self.knots is not None:
+            start = self.n_birth + self.n_death
+            out[..., start:] = np.sort(out[..., start:], axis=-1)
+        return out
+
+
+def _template(
+    epoch_end_times: EpochTimes | FreeKnots,
+) -> tuple[EpochTimes, FreeKnots | None]:
+    """Epochs for the family templates, and the knot spec when knots are free."""
+    if isinstance(epoch_end_times, FreeKnots):
+        epochs = (*epoch_end_times.initial_times, epoch_end_times.end_time)
+        return epochs, epoch_end_times
+    return epoch_end_times, None

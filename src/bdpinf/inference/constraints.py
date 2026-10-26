@@ -21,7 +21,7 @@ from bdpinf.inference.rate_models import Param
 __all__ = ["CompiledConstraints", "Constraints"]
 
 _MIN_GROUP_SIZE = 2
-_CODES = {"identity": 0, "log": 1, "logit": 2}
+_CODES = {"identity": 0, "log": 1, "logit": 2, "interval": 3}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -36,6 +36,7 @@ class Constraints:
     equal : Sequence[Sequence[str]]
         Groups of at least two parameter names that must be equal.
         A parameter may not appear in a group and in ``fixed``.
+        Free knot times (``tau<k>``) cannot be tied.
 
     Examples
     --------
@@ -78,8 +79,12 @@ class Constraints:
                 msg = f"Unknown parameter '{name}' in fixed"
                 raise ValueError(msg)
             transform = params[index[name]].transform
-            lower_ok = value >= 0 if transform in ("log", "logit") else True
-            upper_ok = value <= 1 if transform == "logit" else True
+            param = params[index[name]]
+            if transform == "interval":
+                lower_ok, upper_ok = param.lower <= value, value <= param.upper
+            else:
+                lower_ok = value >= 0 if transform in ("log", "logit") else True
+                upper_ok = value <= 1 if transform == "logit" else True
             if not np.isfinite(value) or not lower_ok or not upper_ok:
                 msg = f"Fixed value for '{name}' is outside its domain: {value}"
                 raise ValueError(msg)
@@ -102,6 +107,9 @@ class Constraints:
                     raise ValueError(msg)
                 if i in seen:
                     msg = f"Parameter '{name}' appears in more than one group"
+                    raise ValueError(msg)
+                if params[i].transform == "interval":
+                    msg = f"Parameter '{name}' is a knot time and cannot be tied"
                     raise ValueError(msg)
                 seen.add(i)
                 members.append(i)
@@ -130,6 +138,8 @@ class Constraints:
                 [fixed_index.get(i, 0.0) for i in range(n)], dtype=np.float64
             ),
             codes=np.array([_CODES[p.transform] for p in params], dtype=np.int64),
+            lower=np.array([p.lower for p in params], dtype=np.float64),
+            upper=np.array([p.upper for p in params], dtype=np.float64),
         )
 
 
@@ -146,6 +156,8 @@ class CompiledConstraints:
     is_fixed: np.ndarray
     fixed_natural: np.ndarray
     codes: np.ndarray
+    lower: np.ndarray  # interval bounds (unused for other transforms)
+    upper: np.ndarray
 
     @property
     def n_free(self) -> int:
@@ -158,12 +170,14 @@ class CompiledConstraints:
         return tuple(self.params[i].name for i in self.free_indices)
 
     @property
-    def structure_key(self) -> tuple[tuple[int, ...], ...]:
+    def structure_key(self) -> tuple[tuple[float, ...], ...]:
         """Hashable description of the free/fixed/equal structure (no fixed values)."""
         return (
             tuple(int(v) for v in self.source),
             tuple(int(v) for v in self.is_fixed),
             tuple(int(v) for v in self.codes),
+            tuple(float(v) for v in self.lower),
+            tuple(float(v) for v in self.upper),
         )
 
     def expand(
@@ -184,10 +198,19 @@ class CompiledConstraints:
     ) -> jax.Array:
         """Map a full unconstrained vector to natural scale (fixed entries kept)."""
         u = unconstrained
+        unit = jax.nn.sigmoid(u)
         natural = jnp.where(
             self.codes == _CODES["log"],
             jnp.exp(u),
-            jnp.where(self.codes == _CODES["logit"], jax.nn.sigmoid(u), u),
+            jnp.where(
+                self.codes == _CODES["logit"],
+                unit,
+                jnp.where(
+                    self.codes == _CODES["interval"],
+                    self.lower + (self.upper - self.lower) * unit,
+                    u,
+                ),
+            ),
         )
         fixed = self.fixed_natural if fixed_natural is None else fixed_natural
         return jnp.where(self.is_fixed, fixed, natural)
@@ -202,8 +225,16 @@ class CompiledConstraints:
         safe = jnp.where(
             codes == _CODES["identity"], values, jnp.clip(values, 1e-300, None)
         )
+        lower, upper = self.lower[self.free_indices], self.upper[self.free_indices]
+        frac = jnp.clip((values - lower) / (upper - lower), 1e-12, 1.0 - 1e-12)
         return jnp.where(
             codes == _CODES["log"],
             jnp.log(safe),
-            jnp.where(codes == _CODES["logit"], jnp.log(safe / (1.0 - safe)), values),
+            jnp.where(
+                codes == _CODES["logit"],
+                jnp.log(safe / (1.0 - safe)),
+                jnp.where(
+                    codes == _CODES["interval"], jnp.log(frac / (1.0 - frac)), values
+                ),
+            ),
         )

@@ -82,6 +82,9 @@ class BayesianPriorConfig:
         Per-family overrides; ``None`` falls back to ``loc`` / ``scale``.
     by_name : Mapping[str, tuple[float, float]]
         ``{"birth.v0": (loc, scale), ...}``.
+    knot_loc, knot_scale : float
+        Normal prior on the logit of each free knot time within its range.
+        The default (0, 1.7) is close to uniform over the range.
 
     Examples
     --------
@@ -102,6 +105,8 @@ class BayesianPriorConfig:
     death_loc: float | Sequence[float] | None = None
     death_scale: float | Sequence[float] | None = None
     by_name: Mapping[str, tuple[float, float]] = dataclasses.field(default_factory=dict)
+    knot_loc: float = 0.0
+    knot_scale: float = 1.7
 
     def resolve_tensors(
         self, n_epochs: int
@@ -143,18 +148,19 @@ class BayesianPriorConfig:
                 raise ValueError(msg)
             return vec
 
-        n_birth = model.n_birth
-        n_death = len(model.names) - n_birth
+        n_birth, n_death, n_knots = model.n_birth, model.n_death, model.n_knots
         locs = np.concatenate(
             [
                 _family(self.birth_loc, self.loc, n_birth),
                 _family(self.death_loc, self.loc, n_death),
+                np.full(n_knots, self.knot_loc, dtype=np.float64),
             ]
         )
         scales = np.concatenate(
             [
                 _family(self.birth_scale, self.scale, n_birth),
                 _family(self.death_scale, self.scale, n_death),
+                np.full(n_knots, self.knot_scale, dtype=np.float64),
             ]
         )
         for name, (loc, scale) in self.by_name.items():
@@ -255,7 +261,19 @@ class BayesianResult:
     @property
     def death_samples(self) -> NDArray[np.float64]:
         """Pooled draws of the death parameters, shape ``[n_draws, n_death]``."""
-        return self.samples[:, self.model.n_birth :]
+        return self.samples[
+            :, self.model.n_birth : self.model.n_birth + self.model.n_death
+        ]
+
+    @property
+    def knot_samples(self) -> NDArray[np.float64] | None:
+        """Pooled draws of the free knot times (sorted), or ``None`` for fixed epochs.
+
+        Shape ``[n_draws, n_knots]``.
+        """
+        if self.model.knots is None:
+            return None
+        return self.samples[:, self.model.n_birth + self.model.n_death :]
 
     @property
     def posterior_samples(self) -> dict[str, NDArray[np.float64]]:
@@ -278,6 +296,9 @@ class BayesianResult:
     def to_dict(self) -> dict[str, Any]:
         """Return the posterior as the dict layout used by the persistence helpers.
 
+        With free knot times, ``knot_times`` (posterior means), ``knot_times_90_ci``
+        and ``posterior_samples["knot_times"]`` are added.
+
         Rates are split into ``birth_rates`` and ``death_rates`` (the epoch rates
         of a piecewise-constant model; the knot values of other families), with
         posterior means, 90 % credible intervals, pooled and per-chain samples on
@@ -287,7 +308,7 @@ class BayesianResult:
         """
         n = self.model.n_birth
         birth_c = self.samples_by_chain[..., :n]
-        death_c = self.samples_by_chain[..., n:]
+        death_c = self.samples_by_chain[..., n : n + self.model.n_death]
         birth, death = self.birth_samples, self.death_samples
 
         def log(x: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -308,7 +329,8 @@ class BayesianResult:
                 ("death_rates", self.model.death_names),
             )
         }
-        return {
+        knot_times = self.knot_samples
+        out: dict[str, Any] = {
             "success": True,
             "birth_rates": birth.mean(axis=0),
             "death_rates": death.mean(axis=0),
@@ -333,6 +355,11 @@ class BayesianResult:
             "mcmc_config": dict(self.mcmc_config),
             "n_epochs": n,
         }
+        if knot_times is not None:
+            out["knot_times"] = knot_times.mean(axis=0)
+            out["knot_times_90_ci"] = np.quantile(knot_times, [0.05, 0.95], axis=0).T
+            out["posterior_samples"]["knot_times"] = knot_times
+        return out
 
     @property
     def r_hat(self) -> dict[str, float]:
@@ -496,6 +523,13 @@ def fit_bayesian(
     Returns
     -------
     BayesianResult
+        With free knot times (:class:`~bdpinf.inference.rate_models.FreeKnots`)
+        the knot draws are sorted within each draw, which for a shared range
+        removes label switching exactly; ``free_by_chain`` is left unsorted.
+        Piecewise-constant rates make the likelihood jump where a knot crosses
+        an observed ``T - age``, which NUTS handles less efficiently (check
+        ``num_divergences``); continuous piecewise-linear rates sample more
+        smoothly.
 
     Raises
     ------
@@ -546,9 +580,8 @@ def fit_bayesian(
     )
     n_chains, n_draws, _ = free_by_chain.shape
     expand = jax.jit(jax.vmap(compiled.expand))
-    natural = np.asarray(
-        expand(jnp.asarray(free_by_chain.reshape(-1, free_by_chain.shape[-1]))),
-        dtype=np.float64,
+    natural = model.canonical(
+        expand(jnp.asarray(free_by_chain.reshape(-1, free_by_chain.shape[-1])))
     ).reshape(n_chains, n_draws, -1)
 
     varying = {

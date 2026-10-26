@@ -100,6 +100,7 @@ reference:
       - inference.fitting.profile_likelihood_interval
       - inference.fitting.moment_initial_rates
       - inference.rate_models
+      - inference.knots
       - inference.constraints
       - inference.likelihood.AgeData
       - inference.likelihood.log_likelihood
