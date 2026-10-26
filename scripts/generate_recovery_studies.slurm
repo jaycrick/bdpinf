@@ -21,13 +21,20 @@
 # efficiency (35.94 GB peak). Right-sized to 24 cpus / 48G / 10h, leaving
 # ~40% headroom over both observed peaks rather than requesting 32 cores
 # the job never sustained.
+#
+# Logs land in repo-root logs/ (gitignored, kept out of the _output/ render
+# tree so they aren't clobbered by re-rendering or _output/-only rsyncs; see
+# README.md). The relative path requires submitting from the repo root ---
+# both scripts/render_all.sh and a direct `sbatch` from the repo root satisfy
+# this. %N disambiguates jobs submitted from different HPC clusters, since
+# %j alone is only unique within one SLURM controller.
 #SBATCH --job-name=generate-recovery-studies
 #SBATCH --account=punim1793
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=24
 #SBATCH --mem-per-cpu=2G
 #SBATCH --time=10:00:00
-#SBATCH --output=_output/slurm-generate-recovery-studies-%j.log
+#SBATCH --output=logs/slurm-generate-recovery-studies-%j-%N.log
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"

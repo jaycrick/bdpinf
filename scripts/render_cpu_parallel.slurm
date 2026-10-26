@@ -32,13 +32,21 @@
 # smaller cpu count doesn't undershoot the 19.81 GB peak). Job 26813064 did
 # not render qmd_scripts/validation/bayesian_multi_epoch/, so retune after
 # measuring a run of the current notebook set.
+#
+# Logs land in repo-root logs/ (gitignored, kept out of the _output/ render
+# tree so they aren't clobbered by re-rendering or _output/-only rsyncs; see
+# README.md). The relative path requires submitting from the repo root ---
+# both scripts/render_all.sh / scripts/render_only.sh and a direct `sbatch`
+# from the repo root satisfy this. %N disambiguates jobs submitted from
+# different HPC clusters, since %j alone is only unique within one SLURM
+# controller.
 #SBATCH --job-name=render-cpu-parallel
 #SBATCH --account=punim1793
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=3G
 #SBATCH --time=03:00:00
-#SBATCH --output=_output/slurm-cpu-parallel-%j.log
+#SBATCH --output=logs/slurm-cpu-parallel-%j-%N.log
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"

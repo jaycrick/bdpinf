@@ -17,6 +17,7 @@
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+mkdir -p logs
 
 job_name="bdpinf-render"
 

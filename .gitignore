@@ -12,6 +12,10 @@ _output/
 _freeze/
 *.quarto_ipynb*
 
+# SLURM render logs --- diagnostics kept out of the _output/ render tree.
+logs/*
+!logs/.gitkeep
+
 # Python.gitignore
 # Byte-compiled / optimized / DLL files
 __pycache__/

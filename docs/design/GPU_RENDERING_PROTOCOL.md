@@ -64,6 +64,11 @@ will load with broken styling and missing figures.
 rsync -avz spartan:/path/to/bdpinf/_output/ ~/bdpinf/_output/
 ```
 
+This `_output/`-only pull does not carry SLURM job logs --- those land in
+repo-root `logs/` (gitignored, kept out of the render tree), not `_output/`.
+Either add `logs/` to the rsync above or use the whole-repo pull in
+`README.md`'s "HPC / batch rendering" section, which covers both.
+
 Then open the rendered page directly:
 
 ```bash

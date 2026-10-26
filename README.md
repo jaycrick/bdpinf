@@ -160,9 +160,13 @@ pull the remote checkout over the local one with `rsync`
 (`<hpc-host>` is your SSH host alias, and the paths are wherever each checkout lives):
 
 ```bash
-rsync -varzP --exclude="/.*" <hpc-host>:/path/to/remote/bdpinf/ /path/to/local/bdpinf
+rsync -avzP --exclude="/.*" <hpc-host>:/path/to/remote/bdpinf/ /path/to/local/bdpinf
 ```
 
 The trailing slash on the source copies its contents rather than the directory itself,
 and `--exclude="/.*"` skips top-level dotfiles and directories (`.git`, `.venv`, …)
 so each machine keeps its own environment and git state.
+This is an update-only pull (no `--delete`), so local-only files survive the sync.
+SLURM job logs land in repo-root `logs/` rather than inside `_output/`
+(the render tree a `quarto render` wipes and regenerates on every run),
+so this whole-repo pull carries both along without one clobbering the other.

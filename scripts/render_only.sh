@@ -9,5 +9,6 @@
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+mkdir -p logs
 
 sbatch scripts/render_cpu_parallel.slurm
