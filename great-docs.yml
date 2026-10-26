@@ -114,6 +114,7 @@ reference:
     contents:
       - simulation.simulator.simulate_birth_death_process
       - simulation.simulator.simulate_birth_death_lifespans
+      - simulation.linear_rates.simulate_birth_death_linear
       - simulation.conditioned.simulate_birth_death_process_from_contour_process
       - simulation.conditioned.simulate_subcritical_survival_splitting
       - name: simulation.conditioned.ConditionedTrajectory
