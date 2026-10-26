@@ -30,6 +30,15 @@ cd bdpinf
 uv sync
 ```
 
+On an HPC login node (no display for the HTTPS askpass prompt), clone over
+SSH instead, using a deploy key or your own key registered with GitHub:
+
+```sh
+git clone ssh://git@github.com/jaycrick/bdpinf.git
+cd bdpinf
+uv sync
+```
+
 For development (includes testing and documentation tools):
 
 ```sh
