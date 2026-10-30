@@ -52,6 +52,7 @@ KNOT_METHODS = ("brent", "nelder-mead", "de-profile", "grid-newton", "profile")
 _MAX_REFINE_EVALS_PER_KNOT = 60
 _MAX_BRENT_SWEEPS = 5
 _N_NEWTON_STARTS = 3
+_LOG_EVERY = 10
 
 
 @dataclasses.dataclass(frozen=True)
@@ -293,6 +294,12 @@ def fit_knots(
                 tried[key] = value = result.log_likelihood
                 if value > best["ll"]:
                     best["ll"], best["natural"] = value, result.natural
+            if len(tried) % _LOG_EVERY == 0:
+                logger.info(
+                    "fit_knots: %d rate fits, best log-likelihood %.4f",
+                    len(tried),
+                    best["ll"],
+                )
         if value > track["ll"]:
             track["ll"], track["taus"] = value, free
         return value
