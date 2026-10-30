@@ -547,6 +547,46 @@ _OBJECTIVES: dict[tuple[Any, ...], _Objective] = {}
 _MAX_CACHED_OBJECTIVES = 32
 
 
+_HESSIAN_MODES = ("fwd-fwd", "fwd-rev", "fd-grad")
+_FD_STEP = 1e-5
+
+
+def _hessian_function(penalised: Callable[..., jax.Array], mode: str) -> Any:
+    """Return the Hessian of ``penalised`` in its first argument.
+
+    ``"fwd-fwd"`` is exact and compiles quickly for small models, but its
+    compile time and memory grow sharply with the number of rate segments;
+    ``"fwd-rev"`` differentiates the reverse-mode gradient forward;
+    ``"fd-grad"`` takes central differences of the gradient, which needs no
+    second-order compilation at all.
+    """
+    if mode == "fwd-fwd":
+        return jax.jacfwd(jax.jacfwd(penalised))
+    if mode == "fwd-rev":
+        return jax.jacfwd(jax.grad(penalised))
+    if mode == "fd-grad":
+        grad = jax.grad(penalised)
+
+        def hessian(free: jax.Array, *args: jax.Array) -> jax.Array:
+            step = _FD_STEP * jnp.maximum(1.0, jnp.abs(free))
+            moves = jnp.diag(step)
+
+            def up_grad(move: jax.Array) -> jax.Array:
+                return grad(free + move, *args)
+
+            def down_grad(move: jax.Array) -> jax.Array:
+                return grad(free - move, *args)
+
+            up = jax.vmap(up_grad)(moves)
+            down = jax.vmap(down_grad)(moves)
+            h = (up - down) / (2.0 * step[:, None])
+            return 0.5 * (h + h.T)
+
+        return hessian
+    msg = f"Unknown hessian_mode '{mode}'. Choose from {list(_HESSIAN_MODES)}."
+    raise ValueError(msg)
+
+
 def _objective(
     model: BirthDeathModel,
     compiled: CompiledConstraints,
@@ -558,6 +598,7 @@ def _objective(
     condition_on_survival: bool,
     n_nodes: int,
     has_ranges: bool = False,
+    hessian_mode: str = "fwd-fwd",
 ) -> _Objective:
     """Return the jitted objective for this model and constraint structure.
 
@@ -579,6 +620,7 @@ def _objective(
         condition_on_survival,
         n_nodes,
         has_ranges,
+        hessian_mode,
     )
     cached = _OBJECTIVES.get(key)
     if cached is not None:
@@ -618,7 +660,7 @@ def _objective(
     objective = _Objective(
         nll=jax.jit(penalised),
         value_and_grad=jax.jit(jax.value_and_grad(penalised)),
-        hessian=jax.jit(jax.jacfwd(jax.jacfwd(penalised))),
+        hessian=jax.jit(_hessian_function(penalised, hessian_mode)),
     )
     if len(_OBJECTIVES) >= _MAX_CACHED_OBJECTIVES:
         _OBJECTIVES.clear()
@@ -644,6 +686,7 @@ def _problem(
     condition_on_survival: bool = True,
     n_nodes: int = DEFAULT_NODES,
     pad_to_bucket: bool = True,
+    hessian_mode: str = "fwd-fwd",
 ) -> _Problem:
     """Bind the jitted objective for ``model`` and ``constraints`` to ``data``."""
     compiled = constraints.compile(model.params)
@@ -657,6 +700,7 @@ def _problem(
         condition_on_survival=condition_on_survival,
         n_nodes=n_nodes,
         has_ranges=data.has_ranges,
+        hessian_mode=hessian_mode,
     )
     n_rest = (
         len(data.non_spine_ages) if data.n_non_spine is None else int(data.n_non_spine)
