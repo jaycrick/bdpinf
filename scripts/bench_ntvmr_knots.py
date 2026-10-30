@@ -59,6 +59,7 @@ from bdpinf.simulation import simulate_ages_from_rates
 
 METHODS = ("brent", "de-profile", "grid-newton", "nelder-mead", "profile")
 HIT_TOLS = (1e-3, 0.1, 1.0)
+HESSIAN_MODE = "fd-grad"  # 4x faster per call than the exact forms; same to 1e-10
 N_CANDIDATES = 64  # a 12-point scan is too sparse in five dimensions
 MAX_SIZE_FACTOR = 5  # memory guard: drop populations larger than this times n
 DATA_PATH = Path(__file__).parent / "data" / "ntvmr_benchmark.json"
@@ -176,6 +177,7 @@ def run_method(
             methods=method,
             n_candidates=N_CANDIDATES,
             seed=seed,
+            hessian_mode=HESSIAN_MODE,
         )
     except (ValueError, RuntimeError) as exc:
         return {
@@ -279,6 +281,7 @@ def fit_truth(spec: dict[str, Any], starts: int, seed: int = 209) -> dict[str, A
         n_starts=starts,
         perturb_std=0.1,
         seed=seed,
+        hessian_mode=HESSIAN_MODE,
     )
     seconds = time.perf_counter() - began
     print(

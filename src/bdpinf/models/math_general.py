@@ -83,6 +83,7 @@ class GeneralTerms(NamedTuple):
     lam_total: jax.Array
     log_i_before: jax.Array  # (S,) log of the mu-integral over earlier segments
     log_i_after: jax.Array  # (S,) log of the mu-integral over later segments
+    log_l_before: jax.Array  # (S,) log of the lambda-integral over earlier segments
 
 
 AgeTerms = NestedTerms | GeneralTerms
@@ -166,6 +167,7 @@ def general_terms(
         log_l_total = log_l_seg[0]
         log_i_before = jnp.full_like(log_i_seg, LOG_ZERO)
         log_i_after = jnp.full_like(log_i_seg, LOG_ZERO)
+        log_l_before = jnp.full_like(log_l_seg, LOG_ZERO)
     else:
         cum_i = jax.lax.cumlogsumexp(log_i_seg)
         log_i_total = cum_i[-1]
@@ -177,6 +179,8 @@ def general_terms(
                 jnp.full((1,), LOG_ZERO),
             ]
         )
+        cum_l = jax.lax.cumlogsumexp(log_l_seg)
+        log_l_before = jnp.concatenate([jnp.full((1,), LOG_ZERO), cum_l[:-1]])
     zero, end = jnp.zeros_like(edges[-1]), edges[-1]
     return GeneralTerms(
         birth=birth,
@@ -189,6 +193,7 @@ def general_terms(
         lam_total=birth.integral(zero, end),
         log_i_before=log_i_before,
         log_i_after=log_i_after,
+        log_l_before=log_l_before,
     )
 
 
@@ -253,6 +258,45 @@ def _log_w_at(terms: GeneralTerms, s: jax.Array, k: jax.Array) -> jax.Array:
     zero = jnp.zeros_like(s)
     gamma_s = birth.integral(zero, s) - death.integral(zero, s)
     return gamma_s + jnp.logaddexp(0.0, log_i_s)
+
+
+def log_non_spine_cdf_kernel(terms: GeneralTerms, s: jax.Array) -> jax.Array:
+    r"""$\ln G(s)$ with $G = (\mathcal W(s) - 1)\,e^{-M(s,T]}$, one partial integral.
+
+    $G' = \lambda\mathcal W e^{-M}$ and $G(0) = 0$, so the non-spine mass of the
+    ages $[a_1, a_2]$ is $[G(T-a_1) - G(T-a_2)] / (\mathcal W(T) - 1)$.
+    Uses $\mathcal W(s) - 1 = e^{\Gamma(0,s]} L(s)$ with $L$ the
+    $\lambda$-integral, which is subtraction-free in log space.
+    """
+    birth, death = terms.birth, terms.death
+    end = terms.edges[-1]
+    k = _segment_of(terms, s)
+    part = _log_integral(birth, birth, death, terms.edges[k], s, terms.n_nodes)
+    log_l_s = jnp.logaddexp(terms.log_l_before[k], part)
+    zero = jnp.zeros_like(s)
+    gamma_s = birth.integral(zero, s) - death.integral(zero, s)
+    return gamma_s + log_l_s - death.integral(s, end)
+
+
+def log_spine_cdf_kernel(terms: GeneralTerms, s: jax.Array) -> jax.Array:
+    r"""$\ln H(s)$, the CDF of the spine's birth time $s$ (atom at $s = 0$).
+
+    $H(s) = e^{-\Lambda(s,T]}(L_\mu(s,T) + e^{\Gamma(s,T]})$ with
+    $H(T) = 1$, so the spine mass of the ages $[a_1, a_2]$ is
+    $H(T-a_1) - H(T-a_2)$, and the range that contains $T$ takes the atom.
+    """
+    birth, death = terms.birth, terms.death
+    end = terms.edges[-1]
+    k = _segment_of(terms, s)
+    part = _log_integral(death, birth, death, s, terms.edges[k + 1], terms.n_nodes)
+    log_l_mu = restore_neg_inf(
+        terms.gamma_total + jnp.logaddexp(part, terms.log_i_after[k])
+    )
+    zero = jnp.zeros_like(s)
+    gamma_s = birth.integral(zero, s) - death.integral(zero, s)
+    return -birth.integral(s, end) + jnp.logaddexp(
+        log_l_mu, terms.gamma_total - gamma_s
+    )
 
 
 def log_nested_w(terms: AgeTerms, b: jax.Array) -> jax.Array:

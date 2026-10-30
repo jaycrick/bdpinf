@@ -392,6 +392,7 @@ def fit_knots(
             condition_on_survival=fit_kwargs.get("condition_on_survival", True),
             n_nodes=fit_kwargs.get("n_nodes", DEFAULT_NODES),
             pad_to_bucket=fit_kwargs.get("pad_to_bucket", True),
+            hessian_mode=fit_kwargs.get("hessian_mode", "fwd-fwd"),
         )
         profile(initial)
         start_fit = fit_at(initial, compute_covariance=False)

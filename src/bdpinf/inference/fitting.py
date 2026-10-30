@@ -748,6 +748,7 @@ def fit(
     compute_covariance: bool = True,
     n_nodes: int = DEFAULT_NODES,
     pad_to_bucket: bool = True,
+    hessian_mode: str = "fwd-fwd",
 ) -> FitResult:
     r"""Fit a birth-death rate model to age data by maximum likelihood.
 
@@ -795,6 +796,12 @@ def fit(
         two so that fits with similar sample sizes share one compilation of the
         gradient and Hessian, which otherwise dominates the run time.
         Results are identical to the unpadded fit.
+    hessian_mode : {"fwd-fwd", "fwd-rev", "fd-grad"}
+        How the Hessian is computed.
+        ``"fd-grad"`` (central differences of the gradient, accurate to about
+        1e-10 relative) needs no second-order compilation and was about 4 times
+        faster per call than the exact forms on a 13-rate piecewise-linear
+        model; ``"fwd-fwd"`` (exact, the default) and ``"fwd-rev"`` are exact.
 
     Returns
     -------
@@ -824,6 +831,7 @@ def fit(
         condition_on_survival=condition_on_survival,
         n_nodes=n_nodes,
         pad_to_bucket=pad_to_bucket,
+        hessian_mode=hessian_mode,
     )
     compiled = problem.compiled
     nll = problem.nll

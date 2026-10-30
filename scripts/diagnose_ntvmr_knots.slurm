@@ -2,11 +2,16 @@
 # SLURM job: diagnose the cost of the NTVMR multi-knot benchmark on the HPC,
 # using many cores at once (scripts/bench_ntvmr_knots.py).
 #
-# A local attempt showed that compiling the Hessian takes ~5 minutes and that a
-# five-start fit of the truth had not finished after an hour, so the full
-# benchmark cannot be sized yet.
-# This job answers it in one go, running independent single-thread processes in
-# parallel (12 cores) that share one JAX compilation cache (_output/jax_cache):
+# The first run of this job was OOM-killed: the range masses were integrated by
+# quadrature over every piece of every range, so one gradient took 0.2 s and the
+# Hessian needed tens of GB.
+# They now use cumulative functions at the range endpoints (about 60x cheaper,
+# 1 ms per likelihood) and the benchmark uses a finite-difference Hessian
+# (scripts/diagnose_hessian_compile.slurm measured the alternatives), so the
+# processes below need a few GB each.
+# This job times what the full benchmark will cost, running independent
+# single-thread processes in parallel (12 cores) that share one JAX compilation
+# cache (_output/jax_cache):
 #
 #   A. fit the truth (all knots fixed) with 1 start and with 5 starts, at once,
 #      so we see which is slow and how many iterations each needs;

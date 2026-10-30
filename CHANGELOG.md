@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- `models.math_age_masses.cdf_log_masses`, `math_general.log_non_spine_cdf_kernel`, `log_spine_cdf_kernel`: range masses for non-piecewise-constant rates from the cumulative functions at the range endpoints, about 60 times cheaper than quadrature over every piece (1 ms against 61 ms per likelihood on 356 ranges), and equal to it to 1e-11.
+- `inference.fit` gains `hessian_mode` (`"fwd-fwd"` exact and default, `"fwd-rev"`, or `"fd-grad"`, central differences of the gradient).
 - `inference.AgeData.from_ranges`, `models.math_age_masses`: interval-censored ages, where each age is only known to lie in a range and the likelihood averages the age density uniformly over it (closed form for piecewise-constant rates, Gauss-Legendre otherwise); `fit` and `fit_bayesian` accept it.
 - `inference.fit_knots` gains `methods`: `"brent"` by default, or several of `"brent"`, `"de-profile"`, `"grid-newton"`, `"nelder-mead"` and `"profile"` (the previous grid search), keeping the best estimate (`KnotFitResult.method`, `method_results`, `KNOT_METHODS`).
   Knots named in `constraints.fixed` are left out of the search.

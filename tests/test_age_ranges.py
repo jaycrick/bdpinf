@@ -48,6 +48,18 @@ class TestAgeRanges:
         np.testing.assert_allclose(exact[0], numeric[0], atol=1e-6)
         np.testing.assert_allclose(exact[1], numeric[1], atol=1e-6)
 
+    def test_cumulative_form_matches_quadrature_for_linear_rates(self) -> None:
+        model = BirthDeathModel.piecewise_linear([3.0, 7.0, _T])
+        natural = jnp.array([1.0, 0.8, 0.5, 0.3, 0.0, 0.2, 0.3, 0.4])
+        terms = terms_for(*model.rates(natural))
+        # Ranges that cut a knot, sit inside an epoch, and touch both ends.
+        lo = jnp.array([0.0, 1.0, 2.5, 6.0, 8.0])
+        hi = jnp.array([1.0, 2.0, 4.0, 9.0, _T])
+        fast = range_log_masses(terms, lo, hi)
+        slow = range_log_masses(terms, lo, hi, quadrature=True)
+        np.testing.assert_allclose(fast[0], slow[0], atol=1e-8)
+        np.testing.assert_allclose(fast[1], slow[1], atol=1e-8)
+
     def test_masses_over_a_partition_sum_to_one(self) -> None:
         _, birth, death = _rates()
         non_spine, spine = range_log_masses(

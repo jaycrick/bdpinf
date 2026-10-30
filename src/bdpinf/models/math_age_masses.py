@@ -21,8 +21,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from bdpinf.models import math_nested
 from bdpinf.models.math_general import (
     AgeTerms,
+    GeneralTerms,
+    log_non_spine_cdf_kernel,
+    log_spine_cdf_kernel,
     non_spine_log_density,
     spine_log_atom,
     spine_log_density,
@@ -38,6 +42,7 @@ from bdpinf.models.math_nested import (
 )
 
 __all__ = [
+    "cdf_log_masses",
     "closed_form_log_masses",
     "quadrature_log_masses",
     "range_log_masses",
@@ -157,14 +162,43 @@ def quadrature_log_masses(
     return jnp.log(non_spine), jnp.log(continuous + atom)
 
 
+def cdf_log_masses(
+    terms: GeneralTerms, lo: jax.Array, hi: jax.Array
+) -> tuple[jax.Array, jax.Array]:
+    """Log masses of ``[lo, hi]`` from the cumulative functions at the endpoints.
+
+    Equal to :func:`quadrature_log_masses` but needs one short partial-segment
+    integral per endpoint instead of a density quadrature over every piece of
+    every range, which makes the likelihood and its derivatives far cheaper.
+    """
+    end = terms.edges[-1]
+    s_big = jnp.clip(end - lo, 0.0, end)
+    s_small = jnp.clip(end - hi, 0.0, end)
+    never = jnp.zeros_like(lo, dtype=bool)
+    non_spine = _log_diff(
+        log_non_spine_cdf_kernel(terms, s_big),
+        log_non_spine_cdf_kernel(terms, s_small),
+        lower_is_zero=never,
+    ) - math_nested.log_nested_w_minus_one(terms)
+    spine = _log_diff(
+        log_spine_cdf_kernel(terms, s_big),
+        log_spine_cdf_kernel(terms, s_small),
+        lower_is_zero=hi >= end,
+    )
+    return non_spine, spine
+
+
 def range_log_masses(
     terms: AgeTerms, lo: jax.Array, hi: jax.Array, *, quadrature: bool = False
 ) -> tuple[jax.Array, jax.Array]:
     """Log masses of ``[lo, hi]``: closed form for piecewise-constant rates.
 
-    Set ``quadrature`` to integrate piecewise-constant rates numerically too
-    (used to cross-check the closed form).
+    Other rates use the cumulative-function form (:func:`cdf_log_masses`).
+    Set ``quadrature`` to integrate the densities numerically instead, which is
+    slower but independent (used to cross-check the other two).
     """
-    if isinstance(terms, NestedTerms) and not quadrature:
+    if quadrature:
+        return quadrature_log_masses(terms, lo, hi)
+    if isinstance(terms, NestedTerms):
         return closed_form_log_masses(terms, lo, hi)
-    return quadrature_log_masses(terms, lo, hi)
+    return cdf_log_masses(terms, lo, hi)
