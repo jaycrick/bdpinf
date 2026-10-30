@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- `inference.AgeData.from_ranges`, `models.math_age_masses`: interval-censored ages, where each age is only known to lie in a range and the likelihood averages the age density uniformly over it (closed form for piecewise-constant rates, Gauss-Legendre otherwise); `fit` and `fit_bayesian` accept it.
+- `inference.fit_knots` gains `methods`: `"brent"` by default, or several of `"brent"`, `"de-profile"`, `"grid-newton"`, `"nelder-mead"` and `"profile"` (the previous grid search), keeping the best estimate (`KnotFitResult.method`, `method_results`, `KNOT_METHODS`).
+  Knots named in `constraints.fixed` are left out of the search.
+  The default is no longer the 64-point grid search; pass `methods="profile", n_candidates=64` for it.
 - `inference.FreeKnots`, `inference.fit_knots`: fit the epoch boundaries (knot times) of piecewise-constant or piecewise-linear rates by maximum likelihood (profile search over the knots, then a joint polish) or with `fit_bayesian`, giving either just the number of knots or also their allowed ranges.
 - `simulation.simulate_birth_death_linear`: exact event simulation for linear (or piecewise-linear) birth and death rates by inverting the cumulative hazard.
 - `simulation.simulate_bdp_ages_given_size`: sample one spine and n-1 non-spine ages at a fixed population size.

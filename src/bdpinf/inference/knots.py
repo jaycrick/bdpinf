@@ -3,17 +3,27 @@ r"""Global search for free knot times by maximum likelihood.
 With piecewise-constant rates the likelihood is discontinuous in a knot time
 (it jumps where the knot crosses an observed $T - a$), so Newton steps over the
 knots alone are unreliable.
-:func:`fit_knots` instead *profiles* the knots: it fits the rates by Newton at
-each candidate knot placement, scans candidates over the allowed ranges, and
-refines the best ones with a derivative-free search.
+With exact ages and piecewise-linear rates, or with ages known only to lie in
+ranges (:meth:`~bdpinf.inference.likelihood.AgeData.from_ranges`), it is
+continuous but can have several local maxima.
+:func:`fit_knots` therefore *profiles* the knots: it fits the rates by Newton at
+each candidate knot placement and searches over the placements.
 The knots enter :func:`~bdpinf.inference.fitting.fit` as fixed parameters, so
 the jitted objective is compiled once for the whole search.
+
+Several search methods are available (see :data:`KNOT_METHODS`).
+By default only ``"brent"`` runs, which was the cheapest reliable method on
+simulated date-range data.
+Give several names to run them all and keep the best estimate, because each
+method misses the global maximum in a different set of data sets.
 """
 
 import dataclasses
 import logging
 import math
+import time
 import warnings
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -22,15 +32,51 @@ import scipy.stats.qmc
 from numpy.typing import NDArray
 
 from bdpinf.inference.constraints import Constraints
-from bdpinf.inference.fitting import FitResult, fit
+from bdpinf.inference.fitting import (
+    _PENALTY,  # pyright: ignore[reportPrivateUsage]
+    FitResult,
+    _problem,  # pyright: ignore[reportPrivateUsage]
+    fit,
+)
 from bdpinf.inference.likelihood import AgeData
 from bdpinf.inference.rate_models import BirthDeathModel
+from bdpinf.models.math_general import DEFAULT_NODES
 
-__all__ = ["KnotFitResult", "fit_knots"]
+__all__ = ["KNOT_METHODS", "KnotFitResult", "MethodResult", "fit_knots"]
 
 logger = logging.getLogger(__name__)
 
+KNOT_METHODS = ("brent", "nelder-mead", "de-profile", "grid-newton", "profile")
+"""Names accepted by the ``methods`` argument of :func:`fit_knots`."""
+
 _MAX_REFINE_EVALS_PER_KNOT = 60
+_MAX_BRENT_SWEEPS = 5
+_N_NEWTON_STARTS = 3
+
+
+@dataclasses.dataclass(frozen=True)
+class MethodResult:
+    """The best placement found by one search method.
+
+    Attributes
+    ----------
+    knot_times : NDArray
+        Knot times of the best placement (fixed knots included), increasing.
+    log_likelihood : float
+        Log-likelihood there, with the rates re-fitted.
+    seconds : float
+        Wall time of this method.
+    n_fits : int
+        Rate fits it needed.
+        Placements already tried by an earlier method in the same call are
+        free, so later methods can look cheaper than they are.
+
+    """
+
+    knot_times: NDArray[np.float64]
+    log_likelihood: float
+    seconds: float
+    n_fits: int
 
 
 @dataclasses.dataclass(frozen=True)
@@ -42,7 +88,7 @@ class KnotFitResult:
     fit : FitResult
         The fit at the selected knot times.
         Its covariance is conditional on the knots unless the joint polish
-        was accepted (``fit.constraints.fixed`` then has no ``tau`` entries).
+        was accepted (``fit.constraints.fixed`` then has no free ``tau`` entries).
         Usable as ``init`` for :func:`~bdpinf.inference.fitting.fit` and
         :func:`~bdpinf.inference.bayesian.fit_bayesian`.
     knot_times : NDArray
@@ -50,10 +96,15 @@ class KnotFitResult:
     log_likelihood : float
         Maximised log-likelihood.
     profile_points : NDArray
-        Every knot placement tried, shape ``[n_tried, n_knots]``.
+        Every free-knot placement tried by any method,
+        shape ``[n_tried, n_free_knots]``.
     profile_log_likelihood : NDArray
         Log-likelihood with the rates re-fitted at each placement (``-inf`` where
         no fit was possible).
+    method : str
+        The method whose placement was selected.
+    method_results : dict[str, MethodResult]
+        What every method found, in the order they ran.
 
     """
 
@@ -62,10 +113,12 @@ class KnotFitResult:
     log_likelihood: float
     profile_points: NDArray[np.float64]
     profile_log_likelihood: NDArray[np.float64]
+    method: str = "brent"
+    method_results: dict[str, MethodResult] = dataclasses.field(default_factory=dict)
 
 
 def _candidates(
-    ranges: tuple[tuple[float, float], ...], n_candidates: int, seed: int | None
+    ranges: Sequence[tuple[float, float]], n_candidates: int, seed: int | None
 ) -> NDArray[np.float64]:
     """Candidate knot placements, one row each (sorted within the row)."""
     lo = np.array([r[0] for r in ranges])
@@ -83,12 +136,24 @@ def _key(taus: NDArray[np.float64]) -> tuple[float, ...]:
     return tuple(float(t) for t in np.round(np.sort(taus), 9))
 
 
+def _as_methods(methods: str | Sequence[str]) -> tuple[str, ...]:
+    """Validate ``methods`` and drop repeats, keeping the order."""
+    names = (methods,) if isinstance(methods, str) else tuple(methods)
+    unknown = [m for m in names if m not in KNOT_METHODS]
+    if unknown or not names:
+        msg = f"Unknown knot methods {unknown}; choose from {list(KNOT_METHODS)}."
+        raise ValueError(msg)
+    return tuple(dict.fromkeys(names))
+
+
 def fit_knots(
     data: AgeData,
     model: BirthDeathModel,
     *,
     constraints: Constraints | None = None,
-    n_candidates: int = 64,
+    methods: str | Sequence[str] = "brent",
+    n_candidates: int = 12,
+    knot_tol: float | Sequence[float] | None = None,
     refine: bool = True,
     n_refine: int = 2,
     polish: bool = True,
@@ -100,27 +165,50 @@ def fit_knots(
     Parameters
     ----------
     data : AgeData
-        Observed ages.
+        Observed ages or age ranges.
     model : BirthDeathModel
         Must have free knots (built from a
         :class:`~bdpinf.inference.rate_models.FreeKnots`); the number of knots
         and their allowed ranges come from there.
     constraints : Constraints, optional
-        Constraints on the rate parameters (knot times cannot be constrained).
+        Constraints on the rate parameters.
+        Knots may be fixed (for example ``fixed={"tau1": 800.0}``) and are then
+        left out of the search, but cannot appear in equality groups.
+    methods : str or sequence of str
+        The search method, or several to run and compare, keeping the best
+        placement.
+        Any of :data:`KNOT_METHODS`:
+
+        ``"brent"``
+            Bounded Brent search of the profile (cyclic over the knots when
+            there are several), with no starting grid.
+        ``"de-profile"``
+            Differential evolution over the profile.
+        ``"grid-newton"``
+            A coarse scan of ``n_candidates`` placements, then joint Newton on
+            rates and knots from the best three.
+        ``"nelder-mead"``
+            Derivative-free Nelder-Mead on rates and knots together.
+        ``"profile"``
+            The scan, then Nelder-Mead on the profile from the best
+            ``n_refine`` placements (with ``refine=False``, the scan alone).
     n_candidates : int
-        Placements scanned before refining: an even grid for one knot, a
-        scrambled Sobol sequence (rounded up to a power of two) for several.
+        Placements scanned by ``"grid-newton"`` and ``"profile"``: an even grid
+        for one knot, a scrambled Sobol sequence (rounded up to a power of two)
+        for several.
+    knot_tol : float or sequence of float, optional
+        Absolute knot precision for ``"brent"``, one value or one per free knot.
+        Default: 1e-3 of each knot's range.
     refine : bool
-        Refine the best placements with Nelder-Mead on the unconstrained
-        scale (each evaluation re-fits the rates).
+        With ``"profile"``, refine the best scanned placements.
     n_refine : int
-        Number of best scanned placements to refine from.
+        With ``"profile"``, how many of the best placements to refine from.
     polish : bool
         Finish with a joint fit of rates and knots from the best placement,
         kept if it converges without lowering the likelihood.
-        This gives knot standard errors for smooth (piecewise-linear) rates.
+        This gives knot standard errors for smooth rates.
     seed : int, optional
-        Seed for the Sobol sequence.
+        Seed for the Sobol sequence and differential evolution.
     **fit_kwargs
         Forwarded to :func:`~bdpinf.inference.fitting.fit` (for example
         ``n_starts``, ``n_nodes``, or ``init`` for the first placement).
@@ -132,33 +220,55 @@ def fit_knots(
     Raises
     ------
     ValueError
-        If the model has no free knots, constraints touch the knots, or no
-        placement gives a finite likelihood.
+        If the model has no free knots, every knot is fixed, constraints put a
+        knot in an equality group, a method name is unknown, or no placement
+        gives a finite likelihood.
 
     """
     knots = model.knots
     if knots is None:
         msg = "fit_knots needs a model with free knots (see FreeKnots)"
         raise ValueError(msg)
+    names = _as_methods(methods)
     user = constraints or Constraints()
     tau_names = set(knots.names)
-    if tau_names & set(user.fixed) or any(tau_names & set(g) for g in user.equal):
+    if tau_names & {n for g in user.equal for n in g}:
         msg = "Knot times cannot appear in constraints for fit_knots"
         raise ValueError(msg)
+    free_idx = [i for i, n in enumerate(knots.names) if n not in user.fixed]
+    if not free_idx:
+        msg = "Knot times cannot all be fixed for fit_knots"
+        raise ValueError(msg)
+    free_names = [knots.names[i] for i in free_idx]
+    ranges = [knots.ranges[i] for i in free_idx]
+    initial = np.array([knots.initial_times[i] for i in free_idx])
+    lo = np.array([r[0] for r in ranges])
+    hi = np.array([r[1] for r in ranges])
+    if knot_tol is None:
+        tol = 1e-3 * (hi - lo)
+    else:
+        tol = np.broadcast_to(np.asarray(knot_tol, dtype=np.float64), lo.shape)
     fit_kwargs.pop("compute_covariance", None)
     init = fit_kwargs.pop("init", None)
-    lo = np.array([r[0] for r in knots.ranges])
-    hi = np.array([r[1] for r in knots.ranges])
     n_rates = model.n_birth + model.n_death
+    fixed_knots = {n: user.fixed[n] for n in knots.names if n in user.fixed}
 
     tried: dict[tuple[float, ...], float] = {}
     best: dict[str, Any] = {"ll": -np.inf, "natural": None}
+    track: dict[str, Any] = {"ll": -np.inf, "taus": None, "fits": 0}
 
-    def fit_at(taus: NDArray[np.float64], **extra: Any) -> FitResult:
-        fixed = {**user.fixed, **dict(zip(knots.names, np.sort(taus), strict=True))}
+    def all_knots(free: NDArray[np.float64]) -> NDArray[np.float64]:
+        values = dict(zip(free_names, np.sort(free), strict=True)) | fixed_knots
+        return np.array([values[n] for n in knots.names])
+
+    def free_of(natural: NDArray[np.float64]) -> NDArray[np.float64]:
+        return np.asarray(natural)[n_rates:][free_idx]
+
+    def fit_at(free: NDArray[np.float64], **extra: Any) -> FitResult:
+        fixed = {**user.fixed, **dict(zip(free_names, np.sort(free), strict=True))}
         start = init
         if best["natural"] is not None:
-            start = np.concatenate([best["natural"][:n_rates], np.sort(taus)])
+            start = np.concatenate([best["natural"][:n_rates], all_knots(free)])
         return fit(
             data,
             model,
@@ -167,29 +277,139 @@ def fit_knots(
             **{**fit_kwargs, **extra},
         )
 
-    def profile(taus: NDArray[np.float64]) -> float:
-        key = _key(taus)
+    def profile(free: NDArray[np.float64]) -> float:
+        free = np.sort(np.asarray(free, dtype=np.float64))
+        key = _key(free)
         if key in tried:
-            return tried[key]
-        try:
-            result = fit_at(taus, compute_covariance=False)
-        except ValueError as exc:
-            logger.debug("no fit at knots %s: %s", key, exc)
-            tried[key] = -np.inf
-            return -np.inf
-        tried[key] = result.log_likelihood
-        if result.log_likelihood > best["ll"]:
-            best["ll"], best["natural"] = result.log_likelihood, result.natural
-        return result.log_likelihood
+            value = tried[key]
+        else:
+            track["fits"] += 1
+            try:
+                result = fit_at(free, compute_covariance=False)
+            except ValueError as exc:
+                logger.debug("no fit at knots %s: %s", key, exc)
+                tried[key] = value = -np.inf
+            else:
+                tried[key] = value = result.log_likelihood
+                if value > best["ll"]:
+                    best["ll"], best["natural"] = value, result.natural
+        if value > track["ll"]:
+            track["ll"], track["taus"] = value, free
+        return value
 
-    candidates = _candidates(knots.ranges, n_candidates, seed)
-    for row in candidates:
-        profile(row)
-    if best["natural"] is None:
-        msg = "No knot placement gives a finite likelihood"
-        raise ValueError(msg)
+    def brent() -> None:
+        if len(ranges) == 1:
+            scipy.optimize.minimize_scalar(
+                lambda t: -profile(np.array([t])),
+                bounds=(lo[0], hi[0]),
+                method="bounded",
+                options={"xatol": float(tol[0])},
+            )
+            return
+        current = initial.copy()
+        profile(current)
+        for _ in range(_MAX_BRENT_SWEEPS):
+            moved = 0.0
+            for j in range(len(ranges)):
+                low = max(lo[j], current[j - 1]) if j > 0 else lo[j]
+                high = min(hi[j], current[j + 1]) if j + 1 < len(current) else hi[j]
+                if not high > low:
+                    continue
 
-    if refine:
+                def along(t: float, j: int = j) -> float:
+                    trial = current.copy()
+                    trial[j] = t
+                    return -profile(trial)
+
+                step = scipy.optimize.minimize_scalar(
+                    along,
+                    bounds=(low, high),
+                    method="bounded",
+                    options={"xatol": float(tol[j])},
+                )
+                if -step.fun >= profile(current):
+                    moved = max(moved, abs(float(step.x) - current[j]))
+                    current[j] = step.x
+            if moved <= float(np.max(tol)):
+                break
+
+    def de_profile() -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # Sobol wants a power-of-two population
+            scipy.optimize.differential_evolution(
+                lambda t: -profile(t),
+                ranges,
+                popsize=8,
+                maxiter=15,
+                tol=1e-4,
+                seed=seed,
+                polish=False,
+                init="sobol",
+            )
+
+    def scan() -> NDArray[np.float64]:
+        candidates = _candidates(ranges, n_candidates, seed)
+        for row in candidates:
+            profile(row)
+        return candidates
+
+    def grid_newton() -> None:
+        candidates = scan()
+        order = np.argsort([-tried[_key(row)] for row in candidates])
+        for row in candidates[order[:_N_NEWTON_STARTS]]:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    start = fit_at(row, compute_covariance=False)
+                    joint = fit(
+                        data,
+                        model,
+                        constraints=user,
+                        init=start.natural,
+                        compute_covariance=False,
+                        **fit_kwargs,
+                    )
+                except ValueError:
+                    continue
+            if joint.log_likelihood > track["ll"] and np.isfinite(joint.log_likelihood):
+                track["ll"], track["taus"] = (
+                    joint.log_likelihood,
+                    free_of(joint.natural),
+                )
+
+    def nelder_mead() -> None:
+        problem = _problem(
+            data,
+            model,
+            user,
+            condition_on_survival=fit_kwargs.get("condition_on_survival", True),
+            n_nodes=fit_kwargs.get("n_nodes", DEFAULT_NODES),
+            pad_to_bucket=fit_kwargs.get("pad_to_bucket", True),
+        )
+        profile(initial)
+        start_fit = fit_at(initial, compute_covariance=False)
+        x = np.asarray(problem.compiled.reduce(start_fit.natural), dtype=np.float64)
+
+        def value(u: NDArray[np.float64]) -> float:
+            return float(problem.nll(u))
+
+        res = None
+        for _ in range(2):  # restart from the optimum to escape a collapsed simplex
+            res = scipy.optimize.minimize(
+                value,
+                x,
+                method="Nelder-Mead",
+                options={"xatol": 1e-6, "fatol": 1e-8, "maxfev": 3000},
+            )
+            x = np.asarray(res.x)
+        if res is not None and res.fun < _PENALTY and -res.fun > track["ll"]:
+            natural = np.asarray(problem.compiled.expand(x))
+            track["ll"], track["taus"] = -float(res.fun), free_of(natural)
+
+    def profile_search() -> None:
+        candidates = scan()
+        if not refine:
+            return
         order = np.argsort([-tried[_key(row)] for row in candidates])
 
         def to_knots(u: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -204,12 +424,38 @@ def fit_knots(
                 options={
                     "xatol": 1e-3,
                     "fatol": 1e-9,
-                    "maxfev": _MAX_REFINE_EVALS_PER_KNOT * len(knots.ranges),
+                    "maxfev": _MAX_REFINE_EVALS_PER_KNOT * len(ranges),
                 },
             )
 
-    best_taus = np.sort(best["natural"][n_rates:])
-    chosen = fit_at(best_taus)
+    searches = {
+        "brent": brent,
+        "de-profile": de_profile,
+        "grid-newton": grid_newton,
+        "nelder-mead": nelder_mead,
+        "profile": profile_search,
+    }
+    found: dict[str, MethodResult] = {}
+    for name in names:
+        track.update(ll=-np.inf, taus=None, fits=0)
+        began = time.perf_counter()
+        searches[name]()
+        if track["taus"] is None or not np.isfinite(track["ll"]):
+            logger.debug("method %s found no finite placement", name)
+            continue
+        found[name] = MethodResult(
+            knot_times=all_knots(track["taus"]),
+            log_likelihood=float(track["ll"]),
+            seconds=time.perf_counter() - began,
+            n_fits=int(track["fits"]),
+        )
+    if not found:
+        msg = "No knot placement gives a finite likelihood"
+        raise ValueError(msg)
+
+    winner = max(found, key=lambda m: found[m].log_likelihood)
+    best_free = np.array([found[winner].knot_times[i] for i in free_idx])
+    chosen = fit_at(best_free)
     if polish:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -239,4 +485,6 @@ def fit_knots(
         log_likelihood=chosen.log_likelihood,
         profile_points=np.array(list(tried)),
         profile_log_likelihood=np.array(list(tried.values())),
+        method=winner,
+        method_results=found,
     )

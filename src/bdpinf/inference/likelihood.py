@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from bdpinf.models.math_age_masses import range_log_masses
 from bdpinf.models.math_general import (
     DEFAULT_NODES,
     AgeTerms,
@@ -107,6 +108,12 @@ class AgeData:
     n_non_spine : int | jax.Array | None
         Number of genuine entries in ``non_spine_ages`` when it has been padded
         (see :meth:`padded`); ``None`` means all entries are genuine.
+    upper_ages : jax.Array | None
+        Set for interval-censored data (see :meth:`from_ranges`): each age is
+        known only to lie in ``[non_spine_ages, upper_ages]``.
+    weights : jax.Array | None
+        For ranges, how many observations share each distinct range
+        (zero for padding).
 
     """
 
@@ -117,10 +124,19 @@ class AgeData:
     use_unknown_spine: bool
     initial_population: int = 1
     n_non_spine: int | jax.Array | None = None
+    upper_ages: jax.Array | None = None
+    weights: jax.Array | None = None
+
+    @property
+    def has_ranges(self) -> bool:
+        """Whether the ages are interval-censored (see :meth:`from_ranges`)."""
+        return self.upper_ages is not None
 
     @property
     def n_observations(self) -> int:
         """Number of observed ages (spine included)."""
+        if self.weights is not None:
+            return round(float(np.asarray(self.weights).sum()))
         n_spine = 0 if self.spine_ages is None else len(self.spine_ages)
         n_rest = (
             len(self.non_spine_ages)
@@ -147,6 +163,17 @@ class AgeData:
         # Pad on the host: jnp ops on a new length would each trigger a compile.
         current = np.asarray(self.non_spine_ages, dtype=np.float64)
         filler = np.full(size - len(current), 0.5 * self.end_time, dtype=np.float64)
+        if self.upper_ages is not None and self.weights is not None:
+            # Padding ranges are valid (lo < hi) and carry zero weight.
+            upper = np.asarray(self.upper_ages, dtype=np.float64)
+            weights = np.asarray(self.weights, dtype=np.float64)
+            return dataclasses.replace(
+                self,
+                non_spine_ages=jnp.asarray(np.concatenate([current, filler])),
+                upper_ages=jnp.asarray(np.concatenate([upper, filler + 1.0])),
+                weights=jnp.asarray(np.concatenate([weights, np.zeros_like(filler)])),
+                n_non_spine=n,
+            )
         return dataclasses.replace(
             self,
             non_spine_ages=jnp.asarray(np.concatenate([current, filler])),
@@ -246,6 +273,75 @@ class AgeData:
         )
 
     @classmethod
+    def from_ranges(
+        cls,
+        lower_ages: ArrayLike,
+        upper_ages: ArrayLike,
+        end_time: float,
+        *,
+        population_size: int | None = None,
+        initial_population: int = 1,
+    ) -> "AgeData":
+        r"""Build from ages that are only known to lie in ranges.
+
+        Each observation is a range $[lo, hi]$ of ages, and its likelihood is the
+        age density averaged uniformly over the range.
+        An exact year $y$ is the range $[y, y+1)$ (the lower age is
+        ``current_year - upper_year``).
+        Ranges are not clipped, because the data cannot know the support of the
+        birth rate; clip them to it first.
+        The spine is always marginalised over, and duplicate ranges are merged
+        into counts.
+
+        Parameters
+        ----------
+        lower_ages, upper_ages : array-like
+            Youngest and oldest age of each observation, with
+            ``0 <= lower < upper <= end_time``.
+        end_time : float
+            Observation time ``T`` (positive).
+        population_size : int, optional
+            Population count; defaults to the number of observations.
+        initial_population : int
+            Individuals at time 0.
+
+        Raises
+        ------
+        ValueError
+            If there are no ranges, the arrays differ in length, or a range
+            falls outside ``[0, end_time]`` or has no width.
+
+        """
+        if end_time <= 0:
+            msg = "Observation time must be positive."
+            raise ValueError(msg)
+        lo = np.asarray(lower_ages, dtype=np.float64).reshape(-1)
+        hi = np.asarray(upper_ages, dtype=np.float64).reshape(-1)
+        if lo.size == 0:
+            msg = "No valid data points for fitting"
+            raise ValueError(msg)
+        if lo.shape != hi.shape:
+            msg = "lower_ages and upper_ages must have the same length"
+            raise ValueError(msg)
+        if np.any(lo < 0) or np.any(hi > end_time) or np.any(hi <= lo):
+            msg = f"Ranges must satisfy 0 <= lower < upper <= {end_time}."
+            raise ValueError(msg)
+        pairs, counts = np.unique(
+            np.stack([lo, hi], axis=1), axis=0, return_counts=True
+        )
+        n = int(lo.size) if population_size is None else int(population_size)
+        return cls(
+            non_spine_ages=jnp.asarray(pairs[:, 0]),
+            spine_ages=None,
+            ns=jnp.asarray([n], dtype=jnp.int32),
+            end_time=float(end_time),
+            use_unknown_spine=True,
+            initial_population=initial_population,
+            upper_ages=jnp.asarray(pairs[:, 1]),
+            weights=jnp.asarray(counts, dtype=jnp.float64),
+        )
+
+    @classmethod
     def from_data_frame(
         cls,
         df: "Any",
@@ -291,8 +387,19 @@ def log_likelihood_rates(
     (see :func:`bdpinf.models.math_general.terms_for`).
     Safe under ``jit`` and ``grad``; returns ``-inf`` for invalid parameters.
     """
+    terms = terms_for(birth, death, n_nodes=n_nodes)
+    if data.upper_ages is not None and data.weights is not None:
+        return _range_log_likelihood(
+            terms,
+            data.non_spine_ages,
+            data.upper_ages,
+            data.weights,
+            data.ns,
+            initial_population=data.initial_population,
+            condition_on_survival=condition_on_survival,
+        )
     return _log_likelihood_core(
-        terms_for(birth, death, n_nodes=n_nodes),
+        terms,
         data.non_spine_ages,
         data.spine_ages,
         data.ns,
@@ -511,6 +618,43 @@ def log_likelihood(
         condition_on_survival=condition_on_survival,
         use_unknown_spine_marginal=use_unknown_spine_marginal,
     )
+
+
+def _range_log_likelihood(
+    terms: AgeTerms,
+    lo: jnp.ndarray,
+    hi: jnp.ndarray,
+    weights: jnp.ndarray,
+    ns: jnp.ndarray,
+    *,
+    initial_population: int = 1,
+    condition_on_survival: bool = True,
+) -> jnp.ndarray:
+    """Log-likelihood of ages known only to lie in ``[lo, hi]`` (unknown spine).
+
+    ``weights`` count the observations sharing each range (0 for padding).
+    The unknown-spine mixture is a sum of products, so integrating it over a box
+    of ranges replaces every density by the matching range mass: the likelihood
+    is exact.
+    """
+    log_p = calculate_populations_log_lik_from_terms(
+        terms,
+        ns,
+        initial_population=initial_population,
+        condition_on_survival=condition_on_survival,
+    )
+    log_f, log_f_spine = range_log_masses(terms, lo, hi)
+    log_width = jnp.log(hi - lo)
+    log_f = log_f - log_width
+    log_f_spine = log_f_spine - log_width
+    live = weights > 0
+    w_safe = jnp.where(live, weights, 1.0)
+    ratio = jnp.where(live, jnp.log(w_safe) + log_f_spine - log_f, -jnp.inf)
+    ratio_max = jax.lax.stop_gradient(jnp.max(ratio))
+    log_sum_exp = jnp.log(jnp.sum(jnp.exp(ratio - ratio_max))) + ratio_max
+    ages_ll = jnp.sum(jnp.where(live, weights * log_f, 0.0)) - jnp.log(jnp.sum(weights))
+    total = log_p + ages_ll + log_sum_exp
+    return jnp.where(jnp.isfinite(total), total, -jnp.inf)
 
 
 def _log_likelihood_core(

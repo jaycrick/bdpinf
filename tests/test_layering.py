@@ -25,6 +25,7 @@ _LAYERS: dict[str, int] = {
     "bdpinf.models.math_nested": 1,
     "bdpinf.models.math_age_densities": 2,
     "bdpinf.models.math_general": 2,
+    "bdpinf.models.math_age_masses": 2,
     "bdpinf.models": 2,
     "bdpinf.inference.bayesian": 3,
     "bdpinf.inference.constraints": 3,

@@ -397,6 +397,8 @@ def exact_problem(
         jnp.asarray(data.ns),
         jnp.asarray(compiled.fixed_natural),
         jnp.asarray(n_rest),
+        jnp.zeros(0),
+        jnp.zeros(0),
     )
     return Problem(
         lambda u: objective.nll(u, *runtime),

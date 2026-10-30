@@ -20,7 +20,7 @@ import dataclasses
 import logging
 import math
 import warnings
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any
 
 import jax
@@ -239,6 +239,11 @@ def _all_ages(data: AgeData) -> NDArray[np.float64]:
     rest = np.asarray(data.non_spine_ages, dtype=np.float64)
     if data.n_non_spine is not None:
         rest = rest[: int(data.n_non_spine)]
+    if data.upper_ages is not None and data.weights is not None:
+        # Interval-censored: range midpoints, repeated by their counts.
+        upper = np.asarray(data.upper_ages, dtype=np.float64)[: len(rest)]
+        counts = np.rint(np.asarray(data.weights)[: len(rest)]).astype(np.int64)
+        return np.repeat(0.5 * (rest + upper), counts)
     if data.spine_ages is None:
         return rest
     return np.concatenate([rest, np.asarray(data.spine_ages, dtype=np.float64)])
@@ -552,6 +557,7 @@ def _objective(
     end_time: float,
     condition_on_survival: bool,
     n_nodes: int,
+    has_ranges: bool = False,
 ) -> _Objective:
     """Return the jitted objective for this model and constraint structure.
 
@@ -572,6 +578,7 @@ def _objective(
         end_time,
         condition_on_survival,
         n_nodes,
+        has_ranges,
     )
     cached = _OBJECTIVES.get(key)
     if cached is not None:
@@ -584,6 +591,8 @@ def _objective(
         ns: jax.Array,
         fixed_natural: jax.Array,
         n_valid: jax.Array,
+        upper: jax.Array,
+        weights: jax.Array,
     ) -> jax.Array:
         birth, death = model.rates(compiled.expand(free, fixed_natural))
         data = AgeData(
@@ -593,7 +602,9 @@ def _objective(
             end_time=end_time,
             use_unknown_spine=use_unknown_spine,
             initial_population=initial_population,
-            n_non_spine=n_valid,
+            n_non_spine=None if has_ranges else n_valid,
+            upper_ages=upper if has_ranges else None,
+            weights=weights if has_ranges else None,
         )
         log_lik = log_likelihood_rates(
             data,
@@ -613,6 +624,68 @@ def _objective(
         _OBJECTIVES.clear()
     _OBJECTIVES[key] = objective
     return objective
+
+
+@dataclasses.dataclass(frozen=True)
+class _Problem:
+    """A compiled objective of the free parameters, bound to one dataset."""
+
+    compiled: CompiledConstraints
+    nll: Callable[[jax.Array], jax.Array]
+    value_and_grad: Callable[[jax.Array], tuple[jax.Array, jax.Array]]
+    hessian: Callable[[jax.Array], jax.Array]
+
+
+def _problem(
+    data: AgeData,
+    model: BirthDeathModel,
+    constraints: Constraints,
+    *,
+    condition_on_survival: bool = True,
+    n_nodes: int = DEFAULT_NODES,
+    pad_to_bucket: bool = True,
+) -> _Problem:
+    """Bind the jitted objective for ``model`` and ``constraints`` to ``data``."""
+    compiled = constraints.compile(model.params)
+    objective = _objective(
+        model,
+        compiled,
+        has_spine=data.spine_ages is not None,
+        use_unknown_spine=data.use_unknown_spine,
+        initial_population=data.initial_population,
+        end_time=data.end_time,
+        condition_on_survival=condition_on_survival,
+        n_nodes=n_nodes,
+        has_ranges=data.has_ranges,
+    )
+    n_rest = (
+        len(data.non_spine_ages) if data.n_non_spine is None else int(data.n_non_spine)
+    )
+    padded = (
+        data
+        if pad_to_bucket is False or data.n_non_spine is not None
+        else data.padded(_bucket(n_rest))
+    )
+    runtime = (
+        jnp.asarray(padded.non_spine_ages),
+        jnp.zeros(0) if data.spine_ages is None else jnp.asarray(data.spine_ages),
+        jnp.asarray(data.ns),
+        jnp.asarray(compiled.fixed_natural),
+        jnp.asarray(n_rest),
+        jnp.zeros(0) if padded.upper_ages is None else jnp.asarray(padded.upper_ages),
+        jnp.zeros(0) if padded.weights is None else jnp.asarray(padded.weights),
+    )
+
+    def nll(free: jax.Array) -> jax.Array:
+        return objective.nll(free, *runtime)
+
+    def value_and_grad(free: jax.Array) -> tuple[jax.Array, jax.Array]:
+        return objective.value_and_grad(free, *runtime)
+
+    def hessian(free: jax.Array) -> jax.Array:
+        return objective.hessian(free, *runtime)
+
+    return _Problem(compiled, nll, value_and_grad, hessian)
 
 
 def fit(
@@ -700,41 +773,18 @@ def fit(
         )
         raise ValueError(msg)
     constraints = constraints or Constraints()
-    compiled = constraints.compile(model.params)
-    objective = _objective(
+    problem = _problem(
+        data,
         model,
-        compiled,
-        has_spine=data.spine_ages is not None,
-        use_unknown_spine=data.use_unknown_spine,
-        initial_population=data.initial_population,
-        end_time=data.end_time,
+        constraints,
         condition_on_survival=condition_on_survival,
         n_nodes=n_nodes,
+        pad_to_bucket=pad_to_bucket,
     )
-    n_rest = (
-        len(data.non_spine_ages) if data.n_non_spine is None else int(data.n_non_spine)
-    )
-    padded = (
-        data
-        if pad_to_bucket is False or data.n_non_spine is not None
-        else data.padded(_bucket(n_rest))
-    )
-    runtime = (
-        jnp.asarray(padded.non_spine_ages),
-        jnp.zeros(0) if data.spine_ages is None else jnp.asarray(data.spine_ages),
-        jnp.asarray(data.ns),
-        jnp.asarray(compiled.fixed_natural),
-        jnp.asarray(n_rest),
-    )
-
-    def nll(free: jax.Array) -> jax.Array:
-        return objective.nll(free, *runtime)
-
-    def value_and_grad(free: jax.Array) -> tuple[jax.Array, jax.Array]:
-        return objective.value_and_grad(free, *runtime)
-
-    def hessian(free: jax.Array) -> jax.Array:
-        return objective.hessian(free, *runtime)
+    compiled = problem.compiled
+    nll = problem.nll
+    value_and_grad = problem.value_and_grad
+    hessian = problem.hessian
 
     n_obs = max(1, data.n_observations)
     grad_tol = tol * n_obs

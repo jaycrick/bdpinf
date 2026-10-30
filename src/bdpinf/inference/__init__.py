@@ -18,7 +18,7 @@ from .fitting import (
     moment_initial_rates,
     profile_likelihood_interval,
 )
-from .knots import KnotFitResult, fit_knots
+from .knots import KNOT_METHODS, KnotFitResult, MethodResult, fit_knots
 from .likelihood import (
     AgeData,
     calculate_unknown_spine_mixture_age_density,
@@ -46,6 +46,7 @@ from .uncertainty import (
 )
 
 __all__ = [
+    "KNOT_METHODS",
     "AgeData",
     "BayesianMCMCConfig",
     "BayesianPriorConfig",
@@ -56,6 +57,7 @@ __all__ = [
     "FitResult",
     "FreeKnots",
     "KnotFitResult",
+    "MethodResult",
     "Param",
     "PiecewiseConstant",
     "PiecewiseLinear",

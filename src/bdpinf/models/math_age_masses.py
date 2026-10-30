@@ -1,0 +1,170 @@
+r"""Probabilities that an age lies in a range, for interval-censored ages.
+
+An age known only to lie in $[lo, hi]$ contributes the age density averaged
+uniformly over the range, $(1/w)\int_{lo}^{hi} f(a)\,da$ with $w = hi - lo$.
+For piecewise-constant rates the masses have closed forms (no quadrature),
+using $\mathcal W' = \gamma\mathcal W + \mu$:
+
+- non-spine: $G(s) = (\mathcal W(s) - 1)\,e^{-M(s,T]}$ has
+  $G' = \lambda\mathcal W e^{-M}$,
+  so $\Pr(lo \le A \le hi) = [G(T-lo) - G(T-hi)] / (\mathcal W(T) - 1)$;
+- spine: $H(s) = e^{-\Lambda(s,T]}(L_\mu(s,T) + e^{\Gamma(s,T]})$ has
+  $H' = \lambda e^{-\Lambda} L_\mu$, $H(T) = 1$ and $H(0) = $ the atom at
+  $A^* = T$, so the range containing $T$ takes the founder's atom.
+
+Other rates integrate each density by Gauss-Legendre quadrature, cutting each
+range at the ages $T - \tau$ where the rates change, so the masses stay smooth
+as a knot moves through a range.
+"""
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+from bdpinf.models.math_general import (
+    AgeTerms,
+    non_spine_log_density,
+    spine_log_atom,
+    spine_log_density,
+)
+from bdpinf.models.math_nested import (
+    LOG_ZERO,
+    NestedTerms,
+    _epoch_index,  # pyright: ignore[reportPrivateUsage]
+    _log_kappa_minus,  # pyright: ignore[reportPrivateUsage]
+    _log_or_floor,  # pyright: ignore[reportPrivateUsage]
+    _row,  # pyright: ignore[reportPrivateUsage]
+    log_nested_w_minus_one,
+)
+
+__all__ = [
+    "closed_form_log_masses",
+    "quadrature_log_masses",
+    "range_log_masses",
+]
+
+_RANGE_NODES = 16
+
+
+def _log_l_before(terms: NestedTerms) -> jax.Array:
+    r"""$\ln L(\tau_{k-1})$ per epoch (``LOG_ZERO`` for the first epoch)."""
+    durations = terms.times - terms.starts
+    l_terms = (
+        _log_or_floor(terms.birth_rates)
+        - terms.gamma_before
+        + _log_kappa_minus(terms.growth, durations)
+    )
+    cumulative = jax.lax.cumlogsumexp(l_terms)
+    return jnp.concatenate([jnp.full((1,), LOG_ZERO), cumulative[:-1]])
+
+
+def _log_g(terms: NestedTerms, log_l_before: jax.Array, s: jax.Array) -> jax.Array:
+    r"""$\ln G(s)$ with $G = (\mathcal W - 1)e^{-M(s,T]}$."""
+    row = _row(terms, s)
+    u = s - row.start
+    rem = row.time - s
+    k = _epoch_index(terms.times, s)
+    partial = (
+        _log_or_floor(row.birth) - row.gamma_before + _log_kappa_minus(row.growth, u)
+    )
+    log_l = jnp.logaddexp(jnp.take(log_l_before, k), partial)
+    gamma_s = row.gamma_before + row.growth * u
+    return gamma_s + log_l - (row.death * rem + row.mu_after)
+
+
+def _log_h(terms: NestedTerms, s: jax.Array) -> jax.Array:
+    r"""$\ln H(s)$, the CDF of the spine's birth time (atom at ``s = 0``)."""
+    row = _row(terms, s)
+    u = s - row.start
+    rem = row.time - s
+    partial = (
+        row.log_death
+        + (terms.gamma_total - row.gamma_end)
+        + row.growth * rem
+        + _log_kappa_minus(row.growth, rem)
+    )
+    log_l_mu = jnp.logaddexp(partial, row.log_spine_after)
+    gamma_to_end = terms.gamma_total - (row.gamma_before + row.growth * u)
+    return -(row.birth * rem + row.lam_after) + jnp.logaddexp(log_l_mu, gamma_to_end)
+
+
+def _log_diff(
+    upper: jax.Array, lower: jax.Array, *, lower_is_zero: jax.Array
+) -> jax.Array:
+    """``log(exp(upper) - exp(lower))``, with ``lower`` treated as 0 where flagged."""
+    delta = jnp.where(lower_is_zero, -jnp.inf, lower - upper)
+    return upper + jnp.log1p(-jnp.exp(delta))
+
+
+def closed_form_log_masses(
+    terms: NestedTerms, lo: jax.Array, hi: jax.Array
+) -> tuple[jax.Array, jax.Array]:
+    """Log masses of ``[lo, hi]`` under the non-spine and spine age laws (exact).
+
+    Valid for piecewise-constant rates only.
+    """
+    end = terms.times[-1]
+    s_big = jnp.clip(end - lo, 0.0, end)
+    s_small = jnp.clip(end - hi, 0.0, end)
+    log_l_before = _log_l_before(terms)
+    never = jnp.zeros_like(lo, dtype=bool)
+    non_spine = _log_diff(
+        _log_g(terms, log_l_before, s_big),
+        _log_g(terms, log_l_before, s_small),
+        lower_is_zero=never,
+    ) - log_nested_w_minus_one(terms)
+    spine = _log_diff(
+        _log_h(terms, s_big), _log_h(terms, s_small), lower_is_zero=hi >= end
+    )
+    return non_spine, spine
+
+
+def _end_time(terms: AgeTerms) -> jax.Array:
+    """Observation time of either kind of terms."""
+    return terms.times[-1] if isinstance(terms, NestedTerms) else terms.edges[-1]
+
+
+def _interior_breakpoints(terms: AgeTerms) -> jax.Array:
+    """Interior epoch boundaries (birth times where the rates are not smooth)."""
+    if isinstance(terms, NestedTerms):
+        return terms.times[:-1]
+    return terms.edges[1:-1]
+
+
+def quadrature_log_masses(
+    terms: AgeTerms, lo: jax.Array, hi: jax.Array, n_nodes: int = _RANGE_NODES
+) -> tuple[jax.Array, jax.Array]:
+    """Log masses of ``[lo, hi]`` by Gauss-Legendre quadrature (any rates)."""
+    nodes_np, weights_np = np.polynomial.legendre.leggauss(n_nodes)
+    nodes, weights = jnp.asarray(nodes_np), jnp.asarray(weights_np)
+    end = _end_time(terms)
+    cuts = jnp.clip(
+        end - _interior_breakpoints(terms)[None, :], lo[:, None], hi[:, None]
+    )
+    points = jnp.sort(jnp.concatenate([lo[:, None], cuts, hi[:, None]], axis=1), axis=1)
+    left, right = points[:, :-1], points[:, 1:]
+    half = 0.5 * (right - left)
+    x = left[..., None] + half[..., None] * (nodes + 1.0)
+    flat = x.reshape(-1)
+
+    def integrate(log_density: jax.Array) -> jax.Array:
+        dens = jnp.exp(log_density.reshape(x.shape))
+        return jnp.sum(jnp.sum(weights * dens, axis=-1) * half, axis=-1)
+
+    non_spine = integrate(non_spine_log_density(terms, flat))
+    continuous = integrate(spine_log_density(terms, flat, atom_at_boundary=False))
+    atom = jnp.where(hi >= end, jnp.exp(spine_log_atom(terms)), 0.0)
+    return jnp.log(non_spine), jnp.log(continuous + atom)
+
+
+def range_log_masses(
+    terms: AgeTerms, lo: jax.Array, hi: jax.Array, *, quadrature: bool = False
+) -> tuple[jax.Array, jax.Array]:
+    """Log masses of ``[lo, hi]``: closed form for piecewise-constant rates.
+
+    Set ``quadrature`` to integrate piecewise-constant rates numerically too
+    (used to cross-check the closed form).
+    """
+    if isinstance(terms, NestedTerms) and not quadrature:
+        return closed_form_log_masses(terms, lo, hi)
+    return quadrature_log_masses(terms, lo, hi)

@@ -387,6 +387,8 @@ class _ModelData:
     end_time: float
     use_unknown_spine: bool
     initial_population: int
+    upper_ages: NDArray[np.float64] | None = None
+    weights: NDArray[np.float64] | None = None
 
     @classmethod
     def from_age_data(cls, data: AgeData) -> _ModelData:
@@ -401,6 +403,16 @@ class _ModelData:
             end_time=data.end_time,
             use_unknown_spine=data.use_unknown_spine,
             initial_population=data.initial_population,
+            upper_ages=(
+                None
+                if data.upper_ages is None
+                else np.asarray(data.upper_ages, dtype=np.float64)
+            ),
+            weights=(
+                None
+                if data.weights is None
+                else np.asarray(data.weights, dtype=np.float64)
+            ),
         )
 
     def to_age_data(self) -> AgeData:
@@ -413,6 +425,10 @@ class _ModelData:
             end_time=self.end_time,
             use_unknown_spine=self.use_unknown_spine,
             initial_population=self.initial_population,
+            upper_ages=None
+            if self.upper_ages is None
+            else jnp.asarray(self.upper_ages),
+            weights=None if self.weights is None else jnp.asarray(self.weights),
         )
 
 

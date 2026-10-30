@@ -80,6 +80,7 @@ reference:
       - models.math_extinction
       - models.math_nested
       - models.math_general
+      - models.math_age_masses
       - models.math_age_densities
       - models.rate_functions
       - models.math_populations

@@ -1285,9 +1285,8 @@ def summarise_sim1000(
         got = [r["methods"][method] for r in records]
         ll = np.array([g["log_likelihood"] for g in got])
         gap = ll - best_ll
-        secs = np.array(
-            [g["seconds"] for r, g in zip(records, got, strict=True) if r["warm"]]
-        )
+        # One-replicate shards are all cold, so every replicate carries one compile.
+        secs = np.array([g["seconds"] for g in got])
         speed.append(
             {
                 "method": method,
@@ -1319,6 +1318,7 @@ def summarise_sim1000(
                 }
             )
         se = np.array([g["se"][tau] for g in got], dtype=float)
+        se[se <= 0] = np.nan  # profile-type fits have no joint Hessian for the knot
         err_tau = np.abs(est[:, tau] - truth[tau])
         wald_ok = np.isfinite(se) & ok
         row: dict[str, Any] = {
@@ -1342,14 +1342,17 @@ def summarise_sim1000(
             row["profile_median_width"] = float(np.median(pi[have, 1] - pi[have, 0]))
         intervals.append(row)
         for label, mask in (
-            ("n < median", sizes < np.median(sizes)),
-            ("n >= median", sizes >= np.median(sizes)),
+            ("n < 10", sizes < 10),
+            ("10 <= n < 30", (sizes >= 10) & (sizes < 30)),
+            ("30 <= n < 100", (sizes >= 30) & (sizes < 100)),
+            ("n >= 100", sizes >= 100),
         ):
             if mask.any():
                 by_size.append(
                     {
                         "method": method,
                         "group": label,
+                        "replicates": int(mask.sum()),
                         "hit_rate": float(np.mean(gap[mask] >= -HIT_TOL)),
                         "median_abs_tau_err": float(np.median(err_tau[mask])),
                     }
