@@ -904,8 +904,11 @@ def fit(
     if compiled.n_free > 0:
         hess = np.asarray(hessian(jnp.asarray(x_best)), dtype=np.float64)
         hess = 0.5 * (hess + hess.T)
-        min_eig = float(np.linalg.eigvalsh(hess).min())
-        if compute_covariance:
+        try:
+            min_eig = float(np.linalg.eigvalsh(hess).min())
+        except np.linalg.LinAlgError:  # non-finite Hessian at a failed fit
+            min_eig = None
+        if compute_covariance and min_eig is not None:
             if not converged:
                 warnings.warn(
                     "Estimating uncertainty from a fit that did not converge; the "
@@ -928,7 +931,11 @@ def fit(
         np.any(x_best[free_codes == 1] < _BOUNDARY_LOG_RATE)
         or np.any(np.abs(x_best[free_codes == 3]) > _BOUNDARY_LOG_RATE)
     )
-    interior = bool(converged and not boundary and (min_eig is None or min_eig > 0))
+    interior = bool(
+        converged
+        and not boundary
+        and (min_eig > 0 if min_eig is not None else compiled.n_free == 0)
+    )
 
     return FitResult(
         model=model,

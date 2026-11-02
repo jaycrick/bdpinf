@@ -12,15 +12,20 @@ The knots enter :func:`~bdpinf.inference.fitting.fit` as fixed parameters, so
 the jitted objective is compiled once for the whole search.
 
 Several search methods are available (see :data:`KNOT_METHODS`).
-By default only ``"brent"`` runs, which was the cheapest reliable method on
-simulated date-range data.
-Give several names to run them all and keep the best estimate, because each
-method misses the global maximum in a different set of data sets.
+By default only ``"grid-newton"`` runs, which gave the best accuracy for its
+cost when several knots are free.
+Give several names (or ``"thorough"``, which is :data:`THOROUGH_KNOT_METHODS`)
+to run them all and keep the best estimate, because each method misses the
+global maximum in a different set of data sets.
+With ``workers`` the methods run in parallel processes.
 """
 
+import concurrent.futures
 import dataclasses
 import logging
 import math
+import multiprocessing
+import os
 import time
 import warnings
 from collections.abc import Sequence
@@ -48,6 +53,9 @@ logger = logging.getLogger(__name__)
 
 KNOT_METHODS = ("brent", "nelder-mead", "de-profile", "grid-newton", "profile")
 """Names accepted by the ``methods`` argument of :func:`fit_knots`."""
+
+THOROUGH_KNOT_METHODS = ("brent", "de-profile", "grid-newton")
+"""The methods ``methods="thorough"`` runs: the best triple in the NTVMR benchmark."""
 
 _MAX_REFINE_EVALS_PER_KNOT = 60
 _MAX_BRENT_SWEEPS = 5
@@ -139,6 +147,8 @@ def _key(taus: NDArray[np.float64]) -> tuple[float, ...]:
 
 def _as_methods(methods: str | Sequence[str]) -> tuple[str, ...]:
     """Validate ``methods`` and drop repeats, keeping the order."""
+    if methods == "thorough":
+        return THOROUGH_KNOT_METHODS
     names = (methods,) if isinstance(methods, str) else tuple(methods)
     unknown = [m for m in names if m not in KNOT_METHODS]
     if unknown or not names:
@@ -147,18 +157,50 @@ def _as_methods(methods: str | Sequence[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(names))
 
 
+def _run_one_method(job: tuple[str, dict[str, Any]]) -> tuple[str, MethodResult | None]:
+    """Run one method in a worker process and return its result (if any)."""
+    name, kwargs = job
+    try:
+        got = fit_knots(methods=(name,), **kwargs)
+    except ValueError:
+        return name, None
+    return name, got.method_results.get(name)
+
+
+def _parallel_methods(
+    names: tuple[str, ...], workers: int, kwargs: dict[str, Any]
+) -> dict[str, MethodResult]:
+    """Run each method in its own single-threaded process, in the given order."""
+    old = os.environ.get("XLA_FLAGS")
+    flags = "--xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1"
+    os.environ["XLA_FLAGS"] = f"{old} {flags}" if old else flags
+    try:
+        context = multiprocessing.get_context("spawn")
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=min(workers, len(names)), mp_context=context
+        ) as pool:
+            done = dict(pool.map(_run_one_method, [(n, kwargs) for n in names]))
+    finally:
+        if old is None:
+            os.environ.pop("XLA_FLAGS", None)
+        else:
+            os.environ["XLA_FLAGS"] = old
+    return {n: r for n in names if (r := done[n]) is not None}
+
+
 def fit_knots(
     data: AgeData,
     model: BirthDeathModel,
     *,
     constraints: Constraints | None = None,
-    methods: str | Sequence[str] = "brent",
+    methods: str | Sequence[str] = "grid-newton",
     n_candidates: int = 12,
     knot_tol: float | Sequence[float] | None = None,
     refine: bool = True,
     n_refine: int = 2,
     polish: bool = True,
     seed: int | None = None,
+    workers: int | None = None,
     **fit_kwargs: Any,
 ) -> KnotFitResult:
     r"""Fit rates and knot times by profile likelihood over the knots.
@@ -177,7 +219,7 @@ def fit_knots(
         left out of the search, but cannot appear in equality groups.
     methods : str or sequence of str
         The search method, or several to run and compare, keeping the best
-        placement.
+        placement; ``"thorough"`` runs :data:`THOROUGH_KNOT_METHODS`.
         Any of :data:`KNOT_METHODS`:
 
         ``"brent"``
@@ -210,6 +252,12 @@ def fit_knots(
         This gives knot standard errors for smooth rates.
     seed : int, optional
         Seed for the Sobol sequence and differential evolution.
+    workers : int, optional
+        With several methods, run them in up to this many parallel processes
+        (single-threaded each, so give about one core per method).
+        The profile points of the returned result then come from the final
+        fits only, and the processes recompile the objective unless
+        ``JAX_COMPILATION_CACHE_DIR`` is set.
     **fit_kwargs
         Forwarded to :func:`~bdpinf.inference.fitting.fit` (for example
         ``n_starts``, ``n_nodes``, or ``init`` for the first placement).
@@ -444,7 +492,25 @@ def fit_knots(
         "profile": profile_search,
     }
     found: dict[str, MethodResult] = {}
-    for name in names:
+    if workers is not None and workers > 1 and len(names) > 1:
+        found = _parallel_methods(
+            names,
+            workers,
+            {
+                "data": data,
+                "model": model,
+                "constraints": constraints,
+                "n_candidates": n_candidates,
+                "knot_tol": knot_tol,
+                "refine": refine,
+                "n_refine": n_refine,
+                "polish": False,
+                "seed": seed,
+                "init": init,
+                **fit_kwargs,
+            },
+        )
+    for name in () if found else names:
         track.update(ll=-np.inf, taus=None, fits=0)
         began = time.perf_counter()
         searches[name]()

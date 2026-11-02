@@ -8,7 +8,7 @@ import pytest
 from bdpinf.inference.bayesian import BayesianMCMCConfig, fit_bayesian
 from bdpinf.inference.constraints import Constraints
 from bdpinf.inference.fitting import fit
-from bdpinf.inference.knots import KNOT_METHODS, fit_knots
+from bdpinf.inference.knots import KNOT_METHODS, THOROUGH_KNOT_METHODS, fit_knots
 from bdpinf.inference.likelihood import AgeData, log_likelihood_rates
 from bdpinf.inference.rate_models import BirthDeathModel, FreeKnots
 from bdpinf.models.rate_functions import PiecewiseConstantRate
@@ -197,6 +197,18 @@ class TestKnotMethods:
         top = max(r.log_likelihood for r in result.method_results.values())
         assert result.method_results[result.method].log_likelihood == top
         assert result.log_likelihood >= top - 1e-6
+
+    def test_default_is_grid_newton(self, data: AgeData) -> None:
+        model = BirthDeathModel.piecewise_constant(FreeKnots(1, _T))
+        result = fit_knots(data, model, seed=0)
+        assert list(result.method_results) == ["grid-newton"]
+
+    def test_thorough_runs_the_three_methods_in_parallel(self, data: AgeData) -> None:
+        model = BirthDeathModel.piecewise_constant(FreeKnots(1, _T))
+        serial = fit_knots(data, model, methods="thorough", seed=0)
+        parallel = fit_knots(data, model, methods="thorough", seed=0, workers=3)
+        assert list(parallel.method_results) == list(THOROUGH_KNOT_METHODS)
+        assert parallel.log_likelihood == pytest.approx(serial.log_likelihood, abs=1e-4)
 
     def test_unknown_method_raises(self, data: AgeData) -> None:
         model = BirthDeathModel.piecewise_constant(FreeKnots(1, _T))
