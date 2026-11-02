@@ -8,7 +8,7 @@ import pytest
 from bdpinf.inference.bayesian import BayesianMCMCConfig, fit_bayesian
 from bdpinf.inference.constraints import Constraints
 from bdpinf.inference.fitting import fit
-from bdpinf.inference.knots import KNOT_METHODS, THOROUGH_KNOT_METHODS, fit_knots
+from bdpinf.inference.knots import fit_knots
 from bdpinf.inference.likelihood import AgeData, log_likelihood_rates
 from bdpinf.inference.rate_models import BirthDeathModel, FreeKnots
 from bdpinf.models.rate_functions import PiecewiseConstantRate
@@ -140,7 +140,7 @@ class TestFitKnots:
         result = fit_knots(data, model, seed=0)
         assert abs(result.knot_times[0] - _TRUE_KNOT) < 8.0
         assert result.fit.params["birth.v0"] > result.fit.params["birth.v1"]
-        assert result.profile_points.shape[1] == 1
+        assert result.method == "brent"
         assert result.log_likelihood == pytest.approx(result.fit.log_likelihood)
 
     def test_respects_bounds(self, data: AgeData) -> None:
@@ -159,7 +159,8 @@ class TestFitKnots:
 
     def test_two_knots_sorted(self, data: AgeData) -> None:
         model = BirthDeathModel.piecewise_constant(FreeKnots(2, _T))
-        result = fit_knots(data, model, n_candidates=16, n_refine=1, seed=0)
+        result = fit_knots(data, model, n_candidates=16, seed=0)
+        assert result.method == "grid-newton"
         assert result.knot_times.shape == (2,)
         assert result.knot_times[0] < result.knot_times[1]
 
@@ -172,49 +173,23 @@ class TestFitKnots:
 
 
 class TestKnotMethods:
-    """Test the search methods of fit_knots."""
+    """Test the default and thorough searches of fit_knots."""
 
-    @pytest.mark.parametrize("method", ["brent", "de-profile", "grid-newton"])
-    def test_each_method_recovers_knot(self, data: AgeData, method: str) -> None:
+    def test_thorough_runs_three_methods_and_keeps_the_best(
+        self, data: AgeData
+    ) -> None:
         model = BirthDeathModel.piecewise_constant(FreeKnots(1, _T))
-        result = fit_knots(data, model, methods=method, seed=0)
-        assert result.method == method
-        assert list(result.method_results) == [method]
-        assert abs(result.knot_times[0] - _TRUE_KNOT) < 10.0
-
-    def test_nelder_mead_runs(self, data: AgeData) -> None:
-        model = BirthDeathModel.piecewise_constant(
-            FreeKnots(1, _T, bounds=(30.0, 70.0))
-        )
-        result = fit_knots(data, model, methods="nelder-mead", seed=0)
-        assert 30.0 <= result.knot_times[0] <= 70.0
-
-    def test_several_methods_keep_the_best(self, data: AgeData) -> None:
-        model = BirthDeathModel.piecewise_constant(FreeKnots(1, _T))
+        default = fit_knots(data, model, seed=0)
+        serial = fit_knots(data, model, thorough=True, workers=1, seed=0)
+        parallel = fit_knots(data, model, thorough=True, workers=3, seed=0)
         names = ["brent", "de-profile", "grid-newton"]
-        result = fit_knots(data, model, methods=names, seed=0)
-        assert list(result.method_results) == names
-        top = max(r.log_likelihood for r in result.method_results.values())
-        assert result.method_results[result.method].log_likelihood == top
-        assert result.log_likelihood >= top - 1e-6
-
-    def test_default_is_grid_newton(self, data: AgeData) -> None:
-        model = BirthDeathModel.piecewise_constant(FreeKnots(1, _T))
-        result = fit_knots(data, model, seed=0)
-        assert list(result.method_results) == ["grid-newton"]
-
-    def test_thorough_runs_the_three_methods_in_parallel(self, data: AgeData) -> None:
-        model = BirthDeathModel.piecewise_constant(FreeKnots(1, _T))
-        serial = fit_knots(data, model, methods="thorough", seed=0)
-        parallel = fit_knots(data, model, methods="thorough", seed=0, workers=3)
-        assert list(parallel.method_results) == list(THOROUGH_KNOT_METHODS)
+        assert list(serial.method_results) == names
+        assert list(parallel.method_results) == names
+        top = max(r.log_likelihood for r in serial.method_results.values())
+        assert serial.method_results[serial.method].log_likelihood == top
+        assert serial.log_likelihood >= default.log_likelihood - 1e-6
+        assert parallel.method == serial.method
         assert parallel.log_likelihood == pytest.approx(serial.log_likelihood, abs=1e-4)
-
-    def test_unknown_method_raises(self, data: AgeData) -> None:
-        model = BirthDeathModel.piecewise_constant(FreeKnots(1, _T))
-        with pytest.raises(ValueError, match="Unknown knot methods"):
-            fit_knots(data, model, methods=["brent", "nope"])
-        assert "brent" in KNOT_METHODS
 
     def test_fixed_knot_is_left_out_of_the_search(self, data: AgeData) -> None:
         model = BirthDeathModel.piecewise_constant(
@@ -223,17 +198,16 @@ class TestKnotMethods:
         result = fit_knots(
             data, model, constraints=Constraints(fixed={"tau1": 90.0}), seed=0
         )
+        assert result.method == "brent"
         assert result.knot_times[1] == pytest.approx(90.0)
-        assert result.profile_points.shape[1] == 1
 
-    @pytest.mark.parametrize("method", ["brent", "de-profile"])
-    def test_two_free_knots(self, data: AgeData, method: str) -> None:
+    def test_two_free_knots_default_to_grid_newton(self, data: AgeData) -> None:
         model = BirthDeathModel.piecewise_constant(
             FreeKnots(2, _T, bounds=[(10.0, 80.0), (80.0, 99.0)])
         )
-        result = fit_knots(data, model, methods=method, seed=0)
+        result = fit_knots(data, model, n_candidates=16, seed=0)
+        assert result.method == "grid-newton"
         assert result.knot_times[0] < result.knot_times[1]
-        assert result.profile_points.shape[1] == 2
 
 
 class TestJointFit:

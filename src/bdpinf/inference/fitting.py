@@ -58,6 +58,7 @@ _BOUNDARY_LOG_RATE = -12.0
 
 _METHODS = ("trust-exact", "L-BFGS-B")
 _MIN_GROUP = 2
+_THOROUGH_STARTS = 5
 
 
 @dataclasses.dataclass(frozen=True)
@@ -668,70 +669,6 @@ def _objective(
     return objective
 
 
-@dataclasses.dataclass(frozen=True)
-class _Problem:
-    """A compiled objective of the free parameters, bound to one dataset."""
-
-    compiled: CompiledConstraints
-    nll: Callable[[jax.Array], jax.Array]
-    value_and_grad: Callable[[jax.Array], tuple[jax.Array, jax.Array]]
-    hessian: Callable[[jax.Array], jax.Array]
-
-
-def _problem(
-    data: AgeData,
-    model: BirthDeathModel,
-    constraints: Constraints,
-    *,
-    condition_on_survival: bool = True,
-    n_nodes: int = DEFAULT_NODES,
-    pad_to_bucket: bool = True,
-    hessian_mode: str = "fwd-fwd",
-) -> _Problem:
-    """Bind the jitted objective for ``model`` and ``constraints`` to ``data``."""
-    compiled = constraints.compile(model.params)
-    objective = _objective(
-        model,
-        compiled,
-        has_spine=data.spine_ages is not None,
-        use_unknown_spine=data.use_unknown_spine,
-        initial_population=data.initial_population,
-        end_time=data.end_time,
-        condition_on_survival=condition_on_survival,
-        n_nodes=n_nodes,
-        has_ranges=data.has_ranges,
-        hessian_mode=hessian_mode,
-    )
-    n_rest = (
-        len(data.non_spine_ages) if data.n_non_spine is None else int(data.n_non_spine)
-    )
-    padded = (
-        data
-        if pad_to_bucket is False or data.n_non_spine is not None
-        else data.padded(_bucket(n_rest))
-    )
-    runtime = (
-        jnp.asarray(padded.non_spine_ages),
-        jnp.zeros(0) if data.spine_ages is None else jnp.asarray(data.spine_ages),
-        jnp.asarray(data.ns),
-        jnp.asarray(compiled.fixed_natural),
-        jnp.asarray(n_rest),
-        jnp.zeros(0) if padded.upper_ages is None else jnp.asarray(padded.upper_ages),
-        jnp.zeros(0) if padded.weights is None else jnp.asarray(padded.weights),
-    )
-
-    def nll(free: jax.Array) -> jax.Array:
-        return objective.nll(free, *runtime)
-
-    def value_and_grad(free: jax.Array) -> tuple[jax.Array, jax.Array]:
-        return objective.value_and_grad(free, *runtime)
-
-    def hessian(free: jax.Array) -> jax.Array:
-        return objective.hessian(free, *runtime)
-
-    return _Problem(compiled, nll, value_and_grad, hessian)
-
-
 def fit(
     data: AgeData,
     model: BirthDeathModel,
@@ -739,7 +676,8 @@ def fit(
     constraints: Constraints | None = None,
     init: InitSpec | None = None,
     method: str = "trust-exact",
-    n_starts: int = 1,
+    n_starts: int | None = None,
+    thorough: bool = False,
     perturb_std: float = 0.3,
     seed: int | None = None,
     tol: float = 1e-6,
@@ -770,13 +708,16 @@ def fit(
     method : {"trust-exact", "L-BFGS-B"}
         Primary optimiser.
         The other one is the fallback if the primary stalls.
-    n_starts : int
-        Number of starts.
+    n_starts : int, optional
+        Number of starts (default 1, or 5 with ``thorough``).
         With more than one, the second start exchanges birth and death (when
         the two families have the same layout), because ages alone are
         symmetric in the two rates; further starts perturb the first on the
         unconstrained scale by ``perturb_std``.
         The start with the highest likelihood is returned.
+    thorough : bool
+        Use 5 starts (the given one, the birth-death swap and three
+        perturbed ones) unless ``n_starts`` is given, and keep the best.
     perturb_std : float
         Standard deviation of the unconstrained-scale perturbation.
     seed : int, optional
@@ -824,19 +765,47 @@ def fit(
         )
         raise ValueError(msg)
     constraints = constraints or Constraints()
-    problem = _problem(
-        data,
+    if n_starts is None:
+        n_starts = _THOROUGH_STARTS if thorough else 1
+    compiled = constraints.compile(model.params)
+    objective = _objective(
         model,
-        constraints,
+        compiled,
+        has_spine=data.spine_ages is not None,
+        use_unknown_spine=data.use_unknown_spine,
+        initial_population=data.initial_population,
+        end_time=data.end_time,
         condition_on_survival=condition_on_survival,
         n_nodes=n_nodes,
-        pad_to_bucket=pad_to_bucket,
+        has_ranges=data.has_ranges,
         hessian_mode=hessian_mode,
     )
-    compiled = problem.compiled
-    nll = problem.nll
-    value_and_grad = problem.value_and_grad
-    hessian = problem.hessian
+    n_rest = (
+        len(data.non_spine_ages) if data.n_non_spine is None else int(data.n_non_spine)
+    )
+    padded = (
+        data
+        if pad_to_bucket is False or data.n_non_spine is not None
+        else data.padded(_bucket(n_rest))
+    )
+    runtime = (
+        jnp.asarray(padded.non_spine_ages),
+        jnp.zeros(0) if data.spine_ages is None else jnp.asarray(data.spine_ages),
+        jnp.asarray(data.ns),
+        jnp.asarray(compiled.fixed_natural),
+        jnp.asarray(n_rest),
+        jnp.zeros(0) if padded.upper_ages is None else jnp.asarray(padded.upper_ages),
+        jnp.zeros(0) if padded.weights is None else jnp.asarray(padded.weights),
+    )
+
+    def nll(free: jax.Array) -> jax.Array:
+        return objective.nll(free, *runtime)
+
+    def value_and_grad(free: jax.Array) -> tuple[jax.Array, jax.Array]:
+        return objective.value_and_grad(free, *runtime)
+
+    def hessian(free: jax.Array) -> jax.Array:
+        return objective.hessian(free, *runtime)
 
     n_obs = max(1, data.n_observations)
     grad_tol = tol * n_obs

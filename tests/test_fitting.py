@@ -345,6 +345,16 @@ class TestMultiStart:
             max(s.log_likelihood for s in result.starts)
         )
 
+    def test_thorough_uses_five_starts_and_keeps_the_best(self) -> None:
+        ages = _simulate([1.0], [0.6], [9.0], seed=2)
+        data = AgeData.from_groups([ages], 9.0)
+        model = BirthDeathModel.piecewise_constant([9.0])
+        result = fit(data, model, thorough=True, seed=0, compute_covariance=False)
+        assert len(result.starts) == 5
+        assert result.log_likelihood == pytest.approx(
+            max(s.log_likelihood for s in result.starts)
+        )
+
     def test_seeded_restarts_are_reproducible(self) -> None:
         ages = _simulate([1.0], [0.6], [9.0], seed=2)
         data = AgeData.from_groups([ages], 9.0)

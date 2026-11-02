@@ -19,8 +19,6 @@ from .fitting import (
     profile_likelihood_interval,
 )
 from .knots import (
-    KNOT_METHODS,
-    THOROUGH_KNOT_METHODS,
     KnotFitResult,
     MethodResult,
     fit_knots,
@@ -52,8 +50,6 @@ from .uncertainty import (
 )
 
 __all__ = [
-    "KNOT_METHODS",
-    "THOROUGH_KNOT_METHODS",
     "AgeData",
     "BayesianMCMCConfig",
     "BayesianPriorConfig",

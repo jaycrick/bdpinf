@@ -8,9 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `models.math_age_masses.cdf_log_masses`, `math_general.log_non_spine_cdf_kernel`, `log_spine_cdf_kernel`: range masses for non-piecewise-constant rates from the cumulative functions at the range endpoints, about 60 times cheaper than quadrature over every piece (1 ms against 61 ms per likelihood on 356 ranges), and equal to it to 1e-11.
 - `inference.fit` gains `hessian_mode` (`"fwd-fwd"` exact and default, `"fwd-rev"`, or `"fd-grad"`, central differences of the gradient).
 - `inference.AgeData.from_ranges`, `models.math_age_masses`: interval-censored ages, where each age is only known to lie in a range and the likelihood averages the age density uniformly over it (closed form for piecewise-constant rates, Gauss-Legendre otherwise); `fit` and `fit_bayesian` accept it.
-- `inference.fit_knots` gains `methods`: `"grid-newton"` by default (`"thorough"` runs brent, de-profile and grid-newton, in parallel processes with `workers`), or several of `"brent"`, `"de-profile"`, `"grid-newton"`, `"nelder-mead"` and `"profile"` (the previous grid search), keeping the best estimate (`KnotFitResult.method`, `method_results`, `KNOT_METHODS`).
+- `inference.fit_knots` searches with `"brent"` for one free knot and `"grid-newton"` for several; `thorough=True` runs brent, de-profile and grid-newton in parallel processes (`workers`) and keeps the best (`KnotFitResult.method`, `method_results`).
   Knots named in `constraints.fixed` are left out of the search.
-  The default is no longer the 64-point grid search; pass `methods="profile", n_candidates=64` for it.
+- `inference.fit` gains `thorough` (5 starts instead of 1).
 - `inference.FreeKnots`, `inference.fit_knots`: fit the epoch boundaries (knot times) of piecewise-constant or piecewise-linear rates by maximum likelihood (profile search over the knots, then a joint polish) or with `fit_bayesian`, giving either just the number of knots or also their allowed ranges.
 - `simulation.simulate_birth_death_linear`: exact event simulation for linear (or piecewise-linear) birth and death rates by inverting the cumulative hazard.
 - `simulation.simulate_bdp_ages_given_size`: sample one spine and n-1 non-spine ages at a fixed population size.
