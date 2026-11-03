@@ -9,7 +9,7 @@ abstract: >
 authors:
   - family-names: "Uni Mac"
     given-names: "J"
-version: "0.2.0"
+version: "0.3.0"
 license: MIT
 repository-code: "https://github.com/jaycrick/bdpinf"
-date-released: "2026-10-23"
+date-released: "2026-11-03"

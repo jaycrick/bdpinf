@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] --- 2026-11-03
+
+**Breaking:** the simulators moved to `bdsurv` (pinned at `2c77b3a`), and `fit_knots(methods=...)` is replaced by `thorough`.
+
 - `simulation`: the Gillespie, lifespan-at-birth, linear-rate and era-conditioning simulators now live in `bdsurv`, pinned by commit (`2c77b3a`).
   `simulate_birth_death_process`, `simulate_birth_death_lifespans` and `simulate_birth_death_linear` keep their names and signatures as thin adapters (`simulation.forward`) returning `BirthDeathProcess`; `simulate_birth_death_lifespans_arrays`, `LifespanSimulationArrays` and the era-conditioning functions are re-exported from `bdsurv`.
   The `simulation.linear_rates` and `simulation.survival_conditioning` modules are removed, and `death_time` in the records is now NaN (not `None`) for survivors.

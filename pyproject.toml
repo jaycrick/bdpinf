@@ -1,6 +1,6 @@
 [project]
 name = "bdpinf"
-version = "0.2.0"
+version = "0.3.0"
 description = "Inference, simulation, and visualisation for linear birth-death (branching) processes."
 readme = "README.md"
 requires-python = ">=3.13"
