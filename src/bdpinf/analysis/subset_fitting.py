@@ -89,6 +89,39 @@ class SubsetFitResult:
     epoch_results: list[dict[str, Any]] = field(default_factory=list)
 
 
+def _range_columns(
+    early_column: str | None, late_column: str | None
+) -> tuple[str, str] | None:
+    """Validate that the date-range columns are given together."""
+    if early_column is None and late_column is None:
+        return None
+    if early_column is None or late_column is None:
+        msg = "early_column and late_column must be given together"
+        raise ValueError(msg)
+    return early_column, late_column
+
+
+def _subset_age_data(
+    frame: pd.DataFrame,
+    ages: NDArray[np.float64],
+    times: NDArray[np.float64],
+    epochs: Sequence[tuple[int, int, str]],
+    start_time: int | float,
+    range_cols: tuple[str, str] | None,
+) -> Any:
+    """Point-age or date-range ``AgeData`` for one subset."""
+    from bdpinf.inference import AgeData
+
+    if range_cols is None:
+        return AgeData.from_groups([ages], float(times[-1]))
+    return AgeData.from_year_ranges(
+        frame[range_cols[0]].to_numpy(dtype=np.float64),
+        frame[range_cols[1]].to_numpy(dtype=np.float64),
+        start_year=float(start_time),
+        observation_year=float(epochs[-1][1]),
+    )
+
+
 def fit_subset(
     subset: DataSubset,
     epochs: Sequence[tuple[int, int, str]],
@@ -96,6 +129,8 @@ def fit_subset(
     start_time: int | float,
     age_column: str,
     random_seed: int,
+    early_column: str | None = None,
+    late_column: str | None = None,
     **fit_kwargs: Any,
 ) -> SubsetFitResult:
     """Fit a birth-death process to one data subset.
@@ -118,6 +153,12 @@ def fit_subset(
         Column in ``subset.frame`` holding the creation years.
     random_seed : int
         Random seed forwarded to :func:`~bdpinf.inference.fit`.
+    early_column, late_column : str, optional
+        Columns holding each individual's earliest and latest creation year.
+        When both are given the fit is over those date ranges
+        (:meth:`~bdpinf.inference.AgeData.from_year_ranges`) instead of the
+        point years in ``age_column``, which then only supplies the plotted
+        ``ages`` and per-epoch counts.
     **fit_kwargs
         Additional keyword arguments forwarded to :func:`~bdpinf.inference.fit`
         (e.g. ``method``, ``n_starts``, ``perturb_std``, ``tol``).
@@ -129,7 +170,7 @@ def fit_subset(
         empty.  The result never raises — all exceptions are caught and
         logged as warnings.
     """
-    from bdpinf.inference import AgeData, BirthDeathModel, fit
+    from bdpinf.inference import BirthDeathModel, fit
     from bdpinf.process import BirthDeathProcess
 
     frame = subset.frame
@@ -164,6 +205,9 @@ def fit_subset(
         return _fail(
             f"too few individuals ({n_total}) or missing column '{age_column}'"
         )
+    range_cols = _range_columns(early_column, late_column)
+    if range_cols is not None and not set(range_cols) <= set(frame.columns):
+        return _fail(f"missing date-range columns {range_cols}")
 
     # Build BirthDeathProcess
     try:
@@ -201,7 +245,7 @@ def fit_subset(
     # Run the fit
     try:
         result = fit(
-            AgeData.from_groups([ages_np], float(times[-1])),
+            _subset_age_data(frame, ages_np, times, epochs, start_time, range_cols),
             BirthDeathModel.piecewise_constant(times),
             seed=random_seed,
             **fit_kwargs,
@@ -313,6 +357,9 @@ class BayesianSubsetConfig:
         NumPyro prior configuration for this subset.
     age_column : str
         Column in ``subset.frame`` holding the creation years.
+    early_column, late_column : str, optional
+        Columns with the earliest and latest creation year; when both are given
+        the fit is over those date ranges and ``age_column`` is not fitted.
     """
 
     subset: DataSubset
@@ -320,6 +367,8 @@ class BayesianSubsetConfig:
     start_time: int
     prior_config: BayesianPriorConfig
     age_column: str
+    early_column: str | None = None
+    late_column: str | None = None
 
 
 def fit_subset_bayesian(
@@ -370,7 +419,6 @@ def fit_subset_bayesian(
         ``mle_death_rates``, ``mle_success``, ``elapsed``, ``success``.
     """
     from bdpinf.inference import (
-        AgeData,
         BirthDeathModel,
         FitResult,
         fit,
@@ -385,8 +433,13 @@ def fit_subset_bayesian(
     n_epochs = len(epochs)
     ep_names = [e[2] for e in epochs]
 
+    range_cols = _range_columns(config.early_column, config.late_column)
     # Guard: insufficient data
-    if len(subset.frame) < 2 or age_column not in subset.frame.columns:
+    if (
+        len(subset.frame) < 2
+        or age_column not in subset.frame.columns
+        or (range_cols is not None and not set(range_cols) <= set(subset.frame.columns))
+    ):
         logger.warning(
             "Bayesian fit skipped for %s: insufficient data (n=%d)",
             subset.key,
@@ -423,7 +476,14 @@ def fit_subset_bayesian(
     times_np: NDArray[np.float64] = np.asarray(
         bdp.adjusted_epoch_end_times, dtype=np.float64
     )
-    data = AgeData.from_groups([all_ages_np], float(times_np[-1]))
+    data = _subset_age_data(
+        subset.frame,
+        all_ages_np,
+        times_np,
+        epochs,
+        start_time,
+        _range_columns(config.early_column, config.late_column),
+    )
     model = BirthDeathModel.piecewise_constant(times_np)
 
     # MLE reference fit (for NUTS initialisation)
@@ -531,7 +591,10 @@ def fit_subsets_bayesian(
     valid = [
         c
         for c in configs
-        if len(c.subset.frame) >= 2 and c.age_column in c.subset.frame.columns
+        if len(c.subset.frame) >= 2
+        and c.age_column in c.subset.frame.columns
+        and {x for x in (c.early_column, c.late_column) if x is not None}
+        <= set(c.subset.frame.columns)
     ]
 
     results: list[dict[str, Any]] = Parallel(n_jobs=n_jobs)(  # type: ignore[assignment]

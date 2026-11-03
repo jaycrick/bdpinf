@@ -120,3 +120,50 @@ class TestAgeRanges:
             rng_seed=0,
         )
         assert np.all(np.isfinite(result.samples))
+
+
+class TestFromYearRanges:
+    """Test AgeData.from_year_ranges."""
+
+    def test_interior_range(self) -> None:
+        data = AgeData.from_year_ranges(
+            [300.0], [399.0], start_year=100, observation_year=2000
+        )
+        assert data.has_ranges
+        assert data.end_time == 1900.0
+        np.testing.assert_allclose(data.non_spine_ages, [2000 - 400])
+        np.testing.assert_allclose(data.upper_ages, [2000 - 300])
+
+    def test_clipped_to_support(self) -> None:
+        data = AgeData.from_year_ranges(
+            [50.0], [150.0], start_year=100, observation_year=2000
+        )
+        np.testing.assert_allclose(data.upper_ages, [2000 - 100])
+
+    def test_outside_support_kept_one_year_wide(self) -> None:
+        data = AgeData.from_year_ranges(
+            [1990.0, 2010.0], [2005.0, 2020.0], start_year=100, observation_year=2000
+        )
+        lower = np.asarray(data.non_spine_ages)
+        assert np.all(np.asarray(data.upper_ages) - lower >= 1.0)
+        assert np.all(lower >= 0.0)
+
+    def test_initial_population(self) -> None:
+        data = AgeData.from_year_ranges(
+            [300.0],
+            [399.0],
+            start_year=100,
+            observation_year=2000,
+            initial_population=5,
+        )
+        assert data.initial_population == 5
+
+    def test_length_mismatch_raises(self) -> None:
+        with pytest.raises(ValueError, match="same length"):
+            AgeData.from_year_ranges(
+                [1.0, 2.0], [3.0], start_year=0, observation_year=10
+            )
+
+    def test_bad_window_raises(self) -> None:
+        with pytest.raises(ValueError, match="later than"):
+            AgeData.from_year_ranges([1.0], [2.0], start_year=10, observation_year=10)

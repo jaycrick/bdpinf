@@ -342,6 +342,66 @@ class AgeData:
         )
 
     @classmethod
+    def from_year_ranges(
+        cls,
+        early_year: ArrayLike,
+        late_year: ArrayLike,
+        *,
+        start_year: float,
+        observation_year: float,
+        initial_population: int = 1,
+    ) -> "AgeData":
+        r"""Build range-censored ages from calendar-year date ranges.
+
+        An individual dated ``[early, late]`` was created in some year of
+        ``[early, late + 1)``, so its age, measured back from
+        ``observation_year``, lies in
+        ``[observation_year - (late + 1), observation_year - early]``.
+        Each range is clipped to the birth support
+        ``[start_year, observation_year]`` and kept at least one year wide, so a
+        range lying wholly outside the support still contributes its nearest
+        year.  Then it is passed to :meth:`from_ranges` with end time
+        ``observation_year - start_year``.
+
+        Parameters
+        ----------
+        early_year, late_year : array-like
+            Earliest and latest creation year of each individual
+            (``late_year`` below ``early_year`` is raised to it).
+        start_year : float
+            First year of the birth support (time zero of the model).
+        observation_year : float
+            Year of observation, the end of the last epoch.
+        initial_population : int
+            Individuals at time 0.
+
+        Raises
+        ------
+        ValueError
+            If the arrays differ in length or are empty, or
+            ``observation_year <= start_year``.
+
+        """
+        early = np.asarray(early_year, dtype=np.float64).reshape(-1)
+        late = np.asarray(late_year, dtype=np.float64).reshape(-1)
+        if early.shape != late.shape:
+            msg = "early_year and late_year must have the same length"
+            raise ValueError(msg)
+        if observation_year <= start_year:
+            msg = "observation_year must be later than start_year"
+            raise ValueError(msg)
+        late = np.maximum(late, early)
+        upper = np.minimum(late + 1.0, observation_year)
+        lower = np.maximum(np.minimum(early, upper - 1.0), start_year)
+        upper = np.maximum(upper, lower + 1.0)
+        return cls.from_ranges(
+            observation_year - upper,
+            observation_year - lower,
+            float(observation_year - start_year),
+            initial_population=initial_population,
+        )
+
+    @classmethod
     def from_data_frame(
         cls,
         df: "Any",

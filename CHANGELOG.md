@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.1] --- 2026-11-03
+
+- `inference.AgeData.from_year_ranges`: range-censored ages from calendar-year `[early, late]` date ranges, clipped to the birth support and measured back from the observation year.
+- `analysis.subset_fitting`: `fit_subset`, `BayesianSubsetConfig` and `fit_subset_bayesian` take `early_column` and `late_column` and then fit over those date ranges (`age_column` still supplies the plotted ages and per-epoch counts).
+
 ## [0.3.0] --- 2026-11-03
 
 **Breaking:** the simulators moved to `bdsurv` (pinned at `2c77b3a`), and `fit_knots(methods=...)` is replaced by `thorough`.

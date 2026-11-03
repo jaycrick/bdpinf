@@ -25,8 +25,67 @@ def _make_subset(
     return DataSubset(key=key, label=key.replace("_", " ").title(), frame=frame)
 
 
+def _make_range_subset(n: int = 40) -> DataSubset:
+    rng = np.random.default_rng(7)
+    mid = rng.integers(200, 1900, size=n).astype(float)
+    frame = pd.DataFrame({"year": mid, "early": mid - 40, "late": mid + 40})
+    return DataSubset(key="ranged", label="Ranged", frame=frame)
+
+
 class TestFitSubset:
     """Test fit_subset."""
+
+    def test_fits_over_date_ranges(self) -> None:
+        fit = fit_subset(
+            _make_range_subset(),
+            epochs=[(100, 2000, "100-2000 CE")],
+            start_time=100,
+            age_column="year",
+            early_column="early",
+            late_column="late",
+            random_seed=42,
+        )
+        assert fit.success
+        assert np.isfinite(fit.log_likelihood)
+
+    def test_range_log_likelihood_differs_from_point_fit(self) -> None:
+        kwargs = {
+            "epochs": [(100, 2000, "100-2000 CE")],
+            "start_time": 100,
+            "age_column": "year",
+            "random_seed": 42,
+        }
+        ranged = fit_subset(
+            _make_range_subset(),
+            early_column="early",
+            late_column="late",
+            **kwargs,
+        )
+        point = fit_subset(_make_range_subset(), **kwargs)
+        assert ranged.log_likelihood != point.log_likelihood
+
+    def test_one_range_column_raises(self) -> None:
+        with pytest.raises(ValueError, match="together"):
+            fit_subset(
+                _make_range_subset(),
+                epochs=[(100, 2000, "100-2000 CE")],
+                start_time=100,
+                age_column="year",
+                early_column="early",
+                random_seed=42,
+            )
+
+    def test_missing_range_column_returns_failure(self) -> None:
+        fit = fit_subset(
+            _make_range_subset(),
+            epochs=[(100, 2000, "100-2000 CE")],
+            start_time=100,
+            age_column="year",
+            early_column="nope",
+            late_column="late",
+            random_seed=42,
+        )
+        assert not fit.success
 
     def test_returns_subset_fit_result(self) -> None:
         subset = _make_subset()
