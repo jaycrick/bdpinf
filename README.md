@@ -7,9 +7,10 @@
 Inference, simulation, and visualisation for linear birth-death (branching)
 processes: MLE fitting (JAX, JIT-compiled) and Bayesian inference
 (NumPyro/NUTS) for single- and multi-epoch birth/death rates, Gillespie and
-lifespan-at-birth simulators, multilevel splitting for rare-event
-extinction-probability estimation, and a shared Altair chart theme/export
-chokepoint.
+lifespan-at-birth simulators and multilevel splitting for rare-event
+simulation (implemented in [`bdsurv`](https://github.com/jaycrick/bdsurv) and
+wrapped here to return `BirthDeathProcess`), and a shared Altair chart
+theme/export chokepoint.
 No domain-specific content --- see
 [`nt-manuscripts`](https://github.com/jaycrick/nt-manuscripts) for the New
 Testament manuscript application built on top of this library.
@@ -81,8 +82,9 @@ uv run quarto render
   splines) and constraints by parameter name,
   with a Quarto research-notebook site of validation studies against
   synthetic data with known ground-truth parameters
-- Gillespie and lifespan-at-birth simulators, plus multilevel splitting for
-  estimating small extinction probabilities
+- Gillespie, lifespan-at-birth and linear-rate simulators, plus survival-conditioned
+  simulation (contour process, multilevel splitting), delegated to `bdsurv`
+  and returned as `BirthDeathProcess`
 - A shared Altair chart theme and export chokepoint (`visualization.save_chart`)
 - Generic KDE-quantile date-range resampling (`analysis.date_density`) and its
   vectorized bootstrap extension (`analysis.bootstrap_date_density`) for

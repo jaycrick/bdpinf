@@ -35,11 +35,13 @@ $$
 $$
 
 Resampling survivors at each level concentrates computation on rare surviving lineages.
+`bdsurv` uses the levels to return conditioned trees rather than a survival-probability estimate;
+for the exact $P(\tau>T)$, use `bdpinf.models.math_extinction.calculate_extinction_pr`.
 See `bdsurv`'s `docs/splitting.md` for the full derivation.
 
 The simulator comes from [`bdsurv`](https://github.com/jaycrick/bdsurv); the Altair
 plotting helpers (`plot_conditioned_trajectories`,
-`plot_empirical_population_mean`, `plot_level_survival_probabilities`) come from
+`plot_empirical_population_mean`) come from
 `bdpinf`.
 They read only the `times`/`populations`/`particle_id` fields common to any
 conditioned trajectory, so they work unchanged against `bdsurv`'s own
@@ -48,17 +50,14 @@ conditioned trajectory, so they work unchanged against `bdsurv`'s own
 ## Setup
 
 ```{python}
-import numpy as np
 from bdsurv import (
     SplittingConfig,
-    select_level_times_for_band,
     simulate_subcritical_survival_splitting,
 )
 
 from bdpinf.visualization import (
     plot_conditioned_trajectories,
     plot_empirical_population_mean,
-    plot_level_survival_probabilities,
 )
 ```
 
@@ -86,17 +85,12 @@ splitting_config = SplittingConfig(
 
 splitting_result = simulate_subcritical_survival_splitting(splitting_config)
 
-print(
-    f"Estimated survival probability P(tau > T): {splitting_result.survival_probability_estimate:.6e}"
-)
 print(f"Final survivor bank size: {splitting_result.final_survivor_count}")
 print(
     f"Returned conditioned trajectories: {len(splitting_result.conditioned_trajectories)}"
 )
-print(
-    "Product check: ",
-    f"{np.prod(splitting_result.level_survival_probabilities):.6e}",
-)
+print(f"Replicates per level: {splitting_result.replicates.tolist()}")
+print(f"Attempts (1 + restarts): {splitting_result.n_attempts}")
 ```
 
 By default, splitting now returns all terminal survivors in
@@ -125,45 +119,26 @@ fig_mean = plot_empirical_population_mean(
 fig_mean
 ```
 
-## Estimated survival probabilities across levels
+## Reusing a level grid
+
+`bdsurv` selects the level grid and replicate counts inside each call.
+To skip that search on later runs, pass the first run's grid and replicates back in:
 
 ```{python}
-fig_level_probs = plot_level_survival_probabilities(
-    level_times=splitting_result.level_times,
-    level_survival_probabilities=splitting_result.level_survival_probabilities,
-    title="Level-wise Conditional Survival Estimates",
-)
-fig_level_probs
-```
-
-## Predetermining the level grid and splitting factor
-
-`select_level_times_for_band` is the public API for the auto-grid-selection logic.
-Call it once outside any benchmark loop to avoid repeating the grid search:
-
-```{python}
-precomputed_levels = select_level_times_for_band(
-    birth_rate=birth_rate,
-    death_rate=death_rate,
-    terminal_time=terminal_time,
-)
-print(f"Auto-selected grid: {len(precomputed_levels) - 1} levels")
-
-# Pass the precomputed grid (and optionally pin the splitting factor R)
-# so the timed simulation call does no grid search.
 config_pinned = SplittingConfig(
     birth_rate=birth_rate,
     death_rate=death_rate,
     terminal_time=terminal_time,
     n_particles=n_particles,
-    level_times=precomputed_levels.tolist(),
-    splitting_factor=splitting_result.splitting_factor,
+    level_times=splitting_result.level_times.tolist(),
+    replicates=splitting_result.replicates.tolist(),
     random_seed=random_seed + 1,
 )
 result_pinned = simulate_subcritical_survival_splitting(config_pinned)
 print(
-    f"Pinned-grid estimate: {result_pinned.survival_probability_estimate:.6e} "
-    f"(splitting_factor R={result_pinned.splitting_factor})"
+    f"Pinned-grid run: {result_pinned.final_survivor_count} survivors "
+    f"after {result_pinned.n_attempts} attempt(s), "
+    f"replicates R_i={result_pinned.replicates.tolist()}"
 )
 ```
 

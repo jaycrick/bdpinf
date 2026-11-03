@@ -509,7 +509,7 @@ def bootstrap_target_ranges(
     interval as the acceptance window for each era.  The **last era is
     always unconditioned** (its bounds are set to ``[0, 2^31 - 1]``),
     matching the convention of
-    :func:`~bdpinf.simulation.survival_conditioning.build_target_ranges`.
+    :func:`bdsurv.build_target_ranges`.
 
     Parameters
     ----------

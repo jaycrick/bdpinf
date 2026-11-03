@@ -1,7 +1,7 @@
 """Adapters wrapping the `bdsurv` survival-conditioned simulators.
 
 `simulate_birth_death_process_from_contour_process` (exact contour-process
-reconstruction) and `simulate_subcritical_survival_splitting` (fixed-factor
+reconstruction) and `simulate_subcritical_survival_splitting` (adaptive-grid
 RESTART multilevel splitting) are implemented in the standalone `bdsurv`
 package, which does not depend on this package's inference stack.
 `bdsurv` returns its own lightweight `SimulatedTree` (a records DataFrame plus
@@ -91,7 +91,7 @@ def simulate_birth_death_process_from_contour_process(
 def simulate_subcritical_survival_splitting(
     config: SplittingConfig,
 ) -> SplittingSimulationResult:
-    """Run fixed-factor enrichment (RESTART) splitting to estimate subcritical survival.
+    """Run adaptive-grid multilevel (RESTART) splitting for subcritical survival.
 
     Thin wrapper around ``bdsurv.simulate_subcritical_survival_splitting`` that
     converts each conditioned trajectory's ``SimulatedTree`` into a canonical

@@ -94,37 +94,3 @@ def plot_empirical_population_mean(
         )
         .properties(title=title)
     )
-
-
-def plot_level_survival_probabilities(
-    *,
-    level_times: np.ndarray,
-    level_survival_probabilities: np.ndarray,
-    title: str = "Estimated Survival Probabilities Across Levels",
-) -> alt.Chart:
-    """Plot level-wise conditional survival probabilities."""
-    if len(level_times) != len(level_survival_probabilities) + 1:
-        msg = (
-            "level_times must include t0; probabilities are defined for level intervals"
-        )
-        raise ValueError(msg)
-
-    frame = pd.DataFrame(
-        {
-            "Level time": np.asarray(level_times[1:], dtype=float),
-            "Probability": np.asarray(level_survival_probabilities, dtype=float),
-        }
-    )
-    return (
-        alt.Chart(frame)
-        .mark_line(point=_point(PTOLQUAL[1]), strokeWidth=2, color=PTOLQUAL[1])
-        .encode(
-            x=alt.X("Level time:Q", title="Level time"),
-            y=alt.Y(
-                "Probability:Q",
-                title="Probability",
-                scale=alt.Scale(domain=[0.0, 1.0]),
-            ),
-        )
-        .properties(title=title)
-    )

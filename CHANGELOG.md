@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- `simulation`: the Gillespie, lifespan-at-birth, linear-rate and era-conditioning simulators now live in `bdsurv`, pinned by commit (`2c77b3a`).
+  `simulate_birth_death_process`, `simulate_birth_death_lifespans` and `simulate_birth_death_linear` keep their names and signatures as thin adapters (`simulation.forward`) returning `BirthDeathProcess`; `simulate_birth_death_lifespans_arrays`, `LifespanSimulationArrays` and the era-conditioning functions are re-exported from `bdsurv`.
+  The `simulation.linear_rates` and `simulation.survival_conditioning` modules are removed, and `death_time` in the records is now NaN (not `None`) for survivors.
+- `simulation.conditioned`: splitting follows the adaptive `bdsurv` API (`SplittingConfig.replicates` and `max_restarts` replace `splitting_factor`; the result no longer has `survival_probability_estimate` or `level_survival_probabilities`).
+- `tests/test_bdsurv_cross_checks.py`: the maths `bdsurv` duplicates (extinction and survival probabilities, level grid and replicates, death-time and event-time samplers, simulated extinction frequency) is checked against `bdpinf.models`.
+- `visualization.plot_level_survival_probabilities`: removed, since `bdsurv` no longer reports per-level survival probabilities.
 - `models.math_age_masses.cdf_log_masses`, `math_general.log_non_spine_cdf_kernel`, `log_spine_cdf_kernel`: range masses for non-piecewise-constant rates from the cumulative functions at the range endpoints, about 60 times cheaper than quadrature over every piece (1 ms against 61 ms per likelihood on 356 ranges), and equal to it to 1e-11.
 - `inference.fit` gains `hessian_mode` (`"fwd-fwd"` exact and default, `"fwd-rev"`, or `"fd-grad"`, central differences of the gradient).
 - `inference.AgeData.from_ranges`, `models.math_age_masses`: interval-censored ages, where each age is only known to lie in a range and the likelihood averages the age density uniformly over it (closed form for piecewise-constant rates, Gauss-Legendre otherwise); `fit` and `fit_bayesian` accept it.

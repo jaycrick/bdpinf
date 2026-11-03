@@ -507,8 +507,8 @@ class TestIntegration:
             random_seed=42,
         )
         result = simulate_subcritical_survival_splitting(config)
-        assert result.survival_probability_estimate > 0
-        assert result.survival_probability_estimate < 1
+        assert result.final_survivor_count > 0
+        assert result.n_attempts >= 1
         # particle_genealogy should be a DataFrame with genealogy columns
         pg = result.particle_genealogy
         assert isinstance(pg, pd.DataFrame)

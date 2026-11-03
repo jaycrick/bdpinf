@@ -24,7 +24,7 @@ proportion of ever-created records still alive today via an analytic
 Horvitz--Thompson (HT) estimator.
 This library also provides a second,
 simulation-based estimator of the same quantity: the multilevel-splitting /
-sequential-ABC scheme in `bdpinf.simulation.survival_conditioning`.
+sequential-ABC scheme in `bdsurv.era_conditioning`.
 It conditions forward lifespan
 simulations on the *observed per-epoch survivor counts* and reads the total
 population ever created off the matched trajectories, giving

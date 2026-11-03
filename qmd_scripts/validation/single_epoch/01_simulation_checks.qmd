@@ -68,6 +68,9 @@ figures_dir.mkdir(parents=True, exist_ok=True)
 
 ## Simulate Age Vectors
 
+The forward simulators come from `bdsurv`;
+their stand-alone speed benchmarks are in `bdsurv/benchmarks/simulator_speed.qmd`.
+
 ```{python}
 num_sims = 5_000
 birth_rate = 0.005

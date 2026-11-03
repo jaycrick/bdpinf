@@ -47,7 +47,6 @@ from .plotting import (
 from .splitting_plots import (
     plot_conditioned_trajectories,
     plot_empirical_population_mean,
-    plot_level_survival_probabilities,
 )
 
 __all__ = [
@@ -67,7 +66,6 @@ __all__ = [
     "plot_creation_year_fit",
     "plot_date_range_kde_comparison",
     "plot_empirical_population_mean",
-    "plot_level_survival_probabilities",
     "posterior_rate_correlation",
     "posterior_rates_chart",
     "ppc_chart",

@@ -22,10 +22,10 @@ __compile_start = time.perf_counter()
 Two algorithms produce a single-epoch birth--death process conditioned on survival to
 a terminal time $T$, operating in the strictly subcritical regime ($\lambda < \mu$):
 
-  | Method                   | Per-run output                                                            | Conditioning mechanism                               |
-  | ------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------- |
-  | **Contour process**      | one conditioned tree per call                                             | exact: spine excursion is constructed to reach $T$   |
-  | **Multilevel splitting** | survival probability estimate; conditioned trees from surviving particles | fixed-factor (R-fold) enrichment at level boundaries |
+  | Method                   | Per-run output                             | Conditioning mechanism                             |
+  | ------------------------ | ------------------------------------------ | -------------------------------------------------- |
+  | **Contour process**      | one conditioned tree per call              | exact: spine excursion is constructed to reach $T$ |
+  | **Multilevel splitting** | conditioned trees from surviving particles | per-level replicate (RESTART) enrichment           |
 
 This notebook benchmarks both methods across three parameter regimes with a shared
 birth rate $\lambda = 1$ and death rates $\mu \in \{1.1, 2, 10\}$ at terminal time
@@ -38,11 +38,12 @@ The simulators come from the standalone
 densities, KDE utilities and Altair theme come from `bdpinf`, so the paper's
 experiment section plots simulated draws against theory.
 
-**Splitting: fixed-factor enrichment (RESTART).** The level grid is auto-selected via
-`select_level_times_for_band` so the per-increment single-particle extinction probability
-lies in $[e^{-2}, 0.5]$, keeping $R = \lceil 1/p_\text{ext} \rceil \in [2, 8]$.
-The level grid and $R$ are **precomputed once per regime outside the timed benchmark**,
-so grid-selection cost does not inflate the splitting runtime comparison.
+**Splitting: per-level replicate enrichment (RESTART).** `bdsurv` selects the level grid and
+the replicate count $R_i$ of each level interval inside every call, from the closed-form
+single-particle survival probability.
+That search is negligible next to the simulation, so it is left inside the timed call.
+The full cost comparison of the two methods over a grid of death rates and horizons is in
+`bdsurv/benchmarks/method_comparison.qmd`.
 
 **Spine labelling caveat.** The two methods use different spine conventions: the
 contour simulator marks the individual at the top of the genealogy stack when $T$
@@ -64,7 +65,6 @@ import numpy as np
 import pandas as pd
 from bdsurv import (
     SplittingConfig,
-    select_level_times_for_band,
     simulate_birth_death_process_from_contour_process,
     simulate_subcritical_survival_splitting,
 )
@@ -126,8 +126,7 @@ def extract_ages_from_process(
 
 The three regimes share $\lambda = 1$ and $T = 20$ but differ in $\mu$.
 The level
-grid and splitting factor $R$ are predetermined here --- outside any timed code --- so that
-the benchmark cells measure only the simulation cost.
+grid and replicate counts $R_i$ are chosen by `bdsurv` inside each splitting call.
 
 ```{python}
 BIRTH_RATE = 1.0
@@ -142,41 +141,18 @@ N_PARTICLES_CORRECTNESS = 1000  # splitting particle cap (correctness run)
 
 DEATH_RATES = [1.1, 2.0, 10.0]
 
-# Precompute level grids and R values (not timed)
-regime_grids: list[np.ndarray] = []
-regime_r_values: list[int] = []
+print(f"{'death_rate':>12} | {'P(survive to T)':>18}")
+print(f"{'-' * 12}-+-{'-' * 18}")
 for dr in DEATH_RATES:
-    lvl = select_level_times_for_band(
-        birth_rate=BIRTH_RATE,
-        death_rate=dr,
-        terminal_time=TERMINAL_TIME,
-    )
-    regime_grids.append(lvl)
-    first_inc = float(lvl[1]) - float(lvl[0])
-    # R = ceil(1 / pr_ext) for the first increment
-    from bdsurv.splitting import (
-        _calculate_extinction_probability,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    pr = _calculate_extinction_probability(
-        birth_rate=BIRTH_RATE,
-        death_rate=dr,
-        interval_time=first_inc,
-    )
-    regime_r_values.append(int(np.ceil(1.0 / pr)))
-
-print(f"{'death_rate':>12} | {'levels':>8} | {'R':>4} | {'P(survive to T)':>18}")
-print(f"{'-' * 12}-+-{'-' * 8}-+-{'-' * 4}-+-{'-' * 18}")
-for dr, lvl, r in zip(DEATH_RATES, regime_grids, regime_r_values):
     p_survive = 1.0 - float(calculate_extinction_pr(BIRTH_RATE, dr, TERMINAL_TIME))
-    print(f"{dr:>12.1f} | {len(lvl) - 1:>8d} | {r:>4d} | {p_survive:>18.6e}")
+    print(f"{dr:>12.1f} | {p_survive:>18.6e}")
 ```
 
 ## Speed Benchmark
 
 Contour calls are run serially (embarrassingly parallel in practice).
 Splitting is
-run once per regime with the precomputed grid --- **no grid-selection cost included**.
+run once per regime, including `bdsurv`'s closed-form grid selection.
 
 ```{python}
 speed_results: list[dict[str, Any]] = []
@@ -185,7 +161,7 @@ speed_results: list[dict[str, Any]] = []
 # across regimes below -- only `dr` varies, so timings stay comparable.
 speed_seeds = derive_worker_seeds(SEED, N_SPEED_CONTOUR)
 
-for dr, lvl, r in zip(DEATH_RATES, regime_grids, regime_r_values):
+for dr in DEATH_RATES:
     # --- Contour (serial) ---
     t0 = time.perf_counter()
     for i in range(N_SPEED_CONTOUR):
@@ -197,14 +173,12 @@ for dr, lvl, r in zip(DEATH_RATES, regime_grids, regime_r_values):
         )
     contour_time = time.perf_counter() - t0
 
-    # --- Splitting (pinned grid + R) ---
+    # --- Splitting ---
     speed_config = SplittingConfig(
         birth_rate=BIRTH_RATE,
         death_rate=dr,
         terminal_time=TERMINAL_TIME,
         n_particles=N_PARTICLES_SPEED,
-        level_times=lvl.tolist(),
-        splitting_factor=r,
         random_seed=SEED,
         n_conditioned_trajectories=None,
     )
@@ -220,8 +194,8 @@ for dr, lvl, r in zip(DEATH_RATES, regime_grids, regime_r_values):
             "contour_per_tree_s": contour_time / N_SPEED_CONTOUR,
             "splitting_total_s": splitting_time,
             "splitting_trees": splitting_trees,
-            "splitting_estimate": sp_result.survival_probability_estimate,
-            "splitting_r": sp_result.splitting_factor,
+            "splitting_attempts": sp_result.n_attempts,
+            "splitting_first_replicate": int(sp_result.replicates[0]),
             "splitting_initial": sp_result.initial_particle_count,
             "n_levels": len(sp_result.level_times) - 1,
         }
@@ -232,7 +206,7 @@ print("SPEED BENCHMARK")
 print("=" * 90)
 hdr = (
     f"{'mu':>5} | {'Contour total':>14} | {'Contour/tree':>13} | "
-    f"{'Splitting total':>16} | {'Splitting trees':>16} | R"
+    f"{'Splitting total':>16} | {'Splitting trees':>16} | Attempts"
 )
 print(hdr)
 print("-" * len(hdr))
@@ -242,25 +216,11 @@ for row in speed_results:
     c_pt = float(row["contour_per_tree_s"])
     s_tot = float(row["splitting_total_s"])
     s_tr = int(row["splitting_trees"])
-    s_r = int(row["splitting_r"])
+    s_att = int(row["splitting_attempts"])
     print(
         f"{dr_val:>5.1f} | {c_tot:>13.3f}s | {c_pt:>12.5f}s | "
-        f"{s_tot:>15.3f}s | {s_tr:>16d} | {s_r}"
+        f"{s_tot:>15.3f}s | {s_tr:>16d} | {s_att}"
     )
-
-print()
-print("=" * 90)
-print("SURVIVAL-PROBABILITY CROSS-CHECK")
-print("=" * 90)
-print(f"{'mu':>5} | {'Theoretical P(T)':>18} | {'Splitting estimate':>20}")
-print("-" * 48)
-for row in speed_results:
-    dr_val = float(row["death_rate"])
-    theoretical = 1.0 - float(
-        calculate_extinction_pr(BIRTH_RATE, dr_val, TERMINAL_TIME)
-    )
-    est = float(row["splitting_estimate"])
-    print(f"{dr_val:>5.1f} | {theoretical:>18.6e} | {est:>20.6e}")
 ```
 
 ## Correctness Data: Pooled Age Samples
@@ -284,9 +244,7 @@ def _run_contour_regime(
 # Per-regime correctness data storage
 regime_data: list[dict[str, Any]] = []
 
-for regime_idx, (dr, lvl, r) in enumerate(
-    zip(DEATH_RATES, regime_grids, regime_r_values)
-):
+for regime_idx, dr in enumerate(DEATH_RATES):
     # Contour: parallel. jax.random.split per regime gives an explicit
     # independence guarantee per worker seed, unlike sequential-integer offsets.
     contour_seeds = derive_worker_seeds(SEED + regime_idx * 10_000, N_CONTOUR_TREES)
@@ -302,14 +260,12 @@ for regime_idx, (dr, lvl, r) in enumerate(
         np.concatenate(ns_parts) if ns_parts else np.array([], dtype=np.float64)
     )
 
-    # Splitting: pinned grid + R
+    # Splitting
     correctness_config = SplittingConfig(
         birth_rate=BIRTH_RATE,
         death_rate=dr,
         terminal_time=TERMINAL_TIME,
         n_particles=N_PARTICLES_CORRECTNESS,
-        level_times=lvl.tolist(),
-        splitting_factor=r,
         random_seed=SEED + 1_000 + regime_idx * 10_000,
         n_conditioned_trajectories=None,
     )
@@ -336,7 +292,6 @@ for regime_idx, (dr, lvl, r) in enumerate(
             "contour_non_spine": contour_non_spine_ages,
             "splitting_spine": sp_spine_ages,
             "splitting_non_spine": sp_non_spine_ages,
-            "splitting_estimate": sp_result.survival_probability_estimate,
         }
     )
 
