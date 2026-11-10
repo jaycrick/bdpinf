@@ -1,12 +1,12 @@
 [project]
 name = "bdpinf"
-version = "0.3.1"
+version = "0.3.2"
 description = "Inference, simulation, and visualisation for linear birth-death (branching) processes."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
   "altair>=6.0.0",
-  "bdsurv>=0.3.0",
+  "bdsurv>=0.4.0",
   "beartype>=0.19.0",
   "itables>=2.7.0",
   "jax>=0.4.38",
@@ -25,7 +25,7 @@ dependencies = [
 # changes; its tags are for internal tracking only).  For local co-development,
 # temporarily point this at `{ path = "../bdsurv", editable = true }`.
 [tool.uv.sources]
-bdsurv = { git = "ssh://git@github.com/jaycrick/bdsurv.git", rev = "2c77b3a" }
+bdsurv = { git = "ssh://git@github.com/jaycrick/bdsurv.git", rev = "c758873" }
 
 [dependency-groups]
 gpu = [

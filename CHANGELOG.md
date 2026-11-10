@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.2] --- 2026-11-11
+
+- `simulation`: `bdsurv` pin moved to 0.4.0 (`c758873`, tag `v0.4.0`), which adds the conditioned contour simulators (`simulate_contour_given_population`, `simulate_contour_given_ages`) and the linear-rate contour process and splitting; the dependency floor is now `bdsurv>=0.4.0`.
+
 ## [0.3.1] --- 2026-11-03
 
 - `inference.AgeData.from_year_ranges`: range-censored ages from calendar-year `[early, late]` date ranges, clipped to the birth support and measured back from the observation year.
