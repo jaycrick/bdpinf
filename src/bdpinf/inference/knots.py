@@ -24,6 +24,10 @@ knots when there are several), ``"de-profile"`` (differential evolution over
 the profile) and ``"grid-newton"``, in parallel processes, and the best
 placement is kept, because each method misses the global maximum on different
 data sets (90% at the best likelihood for one knot, 91% for five).
+
+``FreeKnots(min_spacing=...)`` keeps knots apart: no placement closer than that
+between any two sorted knots (fixed knots included) is evaluated as a candidate
+or returned.
 """
 
 import concurrent.futures
@@ -55,6 +59,10 @@ _THOROUGH_METHODS = ("brent", "de-profile", "grid-newton")
 _MAX_BRENT_SWEEPS = 5
 _N_NEWTON_STARTS = 3
 _LOG_EVERY = 10
+_SLACK = 1e-9
+_MIN_VALID_CANDIDATES = 4
+_MAX_REDRAWS = 8
+_DE_MIN_POPULATION = 5
 
 
 @dataclasses.dataclass(frozen=True)
@@ -110,19 +118,103 @@ class KnotFitResult:
     method_results: dict[str, MethodResult]
 
 
-def _candidates(
-    ranges: Sequence[tuple[float, float]], n_candidates: int, seed: int | None
+def _spacing_ok(knots: Any, min_spacing: float) -> bool:
+    """Whether the sorted ``knots`` are all at least ``min_spacing`` apart."""
+    if min_spacing <= 0:
+        return True
+    ordered = np.sort(np.asarray(knots, dtype=np.float64))
+    return bool(np.all(np.diff(ordered) >= min_spacing - _SLACK))
+
+
+def _repair(
+    rows: NDArray[np.float64],
+    lo: NDArray[np.float64],
+    hi: NDArray[np.float64],
+    spacing: float,
 ) -> NDArray[np.float64]:
-    """Candidate knot placements, one row each (sorted within the row)."""
+    """Push each sorted row apart to ``spacing`` inside its ranges (vectorised)."""
+    out = np.clip(np.sort(rows, axis=1), lo, hi)
+    for j in range(1, out.shape[1]):
+        out[:, j] = np.maximum(out[:, j], out[:, j - 1] + spacing)
+    for j in range(out.shape[1] - 1, -1, -1):
+        out[:, j] = np.minimum(out[:, j], hi[j])
+        if j + 1 < out.shape[1]:
+            out[:, j] = np.minimum(out[:, j], out[:, j + 1] - spacing)
+    return out
+
+
+def _valid_rows(
+    rows: NDArray[np.float64],
+    lo: NDArray[np.float64],
+    hi: NDArray[np.float64],
+    spacing: float,
+    fixed: NDArray[np.float64],
+) -> NDArray[np.bool_]:
+    """Rows inside the ranges and ``spacing`` apart (fixed knots included)."""
+    ok = np.all((rows >= lo - _SLACK) & (rows <= hi + _SLACK), axis=1)
+    if rows.shape[1] > 1:
+        ok &= np.all(np.diff(rows, axis=1) >= spacing - _SLACK, axis=1)
+    for f in fixed:
+        ok &= np.all(np.abs(rows - f) >= spacing - _SLACK, axis=1)
+    return ok
+
+
+def _candidates(
+    ranges: Sequence[tuple[float, float]],
+    n_candidates: int,
+    seed: int | None,
+    *,
+    min_spacing: float = 0.0,
+    fixed: NDArray[np.float64] | None = None,
+) -> NDArray[np.float64]:
+    """Candidate knot placements, one row each (sorted within the row).
+
+    With ``min_spacing > 0`` violating rows are repaired or dropped and the
+    set is redrawn larger when too few valid rows remain.
+
+    Raises
+    ------
+    ValueError
+        If no placement at that spacing exists.
+
+    """
     lo = np.array([r[0] for r in ranges])
     hi = np.array([r[1] for r in ranges])
-    if len(ranges) == 1:
-        return np.linspace(lo[0], hi[0], n_candidates + 2)[1:-1, None]
-    sobol = scipy.stats.qmc.Sobol(
-        d=len(ranges), scramble=True, rng=np.random.default_rng(seed)
-    )
-    unit = sobol.random_base2(max(1, math.ceil(math.log2(n_candidates))))
-    return np.sort(lo + (hi - lo) * unit, axis=1)
+    fixed_knots = np.asarray([] if fixed is None else fixed, dtype=np.float64)
+    if min_spacing <= 0:
+        if len(ranges) == 1:
+            return np.linspace(lo[0], hi[0], n_candidates + 2)[1:-1, None]
+        sobol = scipy.stats.qmc.Sobol(
+            d=len(ranges), scramble=True, rng=np.random.default_rng(seed)
+        )
+        unit = sobol.random_base2(max(1, math.ceil(math.log2(n_candidates))))
+        return np.sort(lo + (hi - lo) * unit, axis=1)
+
+    rows = np.empty((0, len(ranges)))
+    size = n_candidates
+    for attempt in range(_MAX_REDRAWS):
+        if len(ranges) == 1:
+            grid = np.linspace(lo[0], hi[0], size + 2)[1:-1, None]
+        else:
+            sobol = scipy.stats.qmc.Sobol(
+                d=len(ranges),
+                scramble=True,
+                rng=np.random.default_rng(None if seed is None else seed + attempt),
+            )
+            unit = sobol.random_base2(max(1, math.ceil(math.log2(size))))
+            grid = _repair(lo + (hi - lo) * unit, lo, hi, min_spacing)
+        grid = grid[_valid_rows(grid, lo, hi, min_spacing, fixed_knots)]
+        rows = np.unique(np.round(grid, 9), axis=0)
+        if len(rows) >= min(_MIN_VALID_CANDIDATES, n_candidates):
+            return rows
+        size *= 4
+    if len(rows) == 0:
+        msg = (
+            f"No placement of {len(ranges)} free knots at least {min_spacing} "
+            "apart (and from the fixed knots) fits in the knot ranges"
+        )
+        raise ValueError(msg)
+    return rows
 
 
 def _key(taus: NDArray[np.float64]) -> tuple[float, ...]:
@@ -160,6 +252,45 @@ def _run_methods(
     tol = 1e-3 * (hi - lo)
     n_rates = model.n_birth + model.n_death
     fixed_knots = {n: user.fixed[n] for n in knots.names if n in user.fixed}
+    spacing = knots.min_spacing
+    fixed_vals = np.array(sorted(fixed_knots.values()), dtype=np.float64)
+
+    def valid(free: NDArray[np.float64]) -> bool:
+        if spacing <= 0:
+            return True
+        return _spacing_ok(np.concatenate([np.asarray(free), fixed_vals]), spacing)
+
+    def intervals(low: float, high: float) -> list[tuple[float, float]]:
+        """``[low, high]`` minus the zones within ``spacing`` of a fixed knot."""
+        parts = [(low, high)]
+        if spacing <= 0:
+            return parts
+        for f in fixed_vals:
+            cut: list[tuple[float, float]] = []
+            for a, b in parts:
+                left = min(b, f - spacing)
+                right = max(a, f + spacing)
+                if left > a:
+                    cut.append((a, left))
+                if b > right:
+                    cut.append((right, b))
+            parts = cut
+        return parts
+
+    def bounded(
+        fun: Any, low: float, high: float, xatol: float
+    ) -> tuple[float, float] | None:
+        """Best ``(x, -fun)`` of a bounded scalar search over the valid intervals."""
+        best_step = None
+        for a, b in intervals(low, high):
+            if not b > a:
+                continue
+            step = scipy.optimize.minimize_scalar(
+                fun, bounds=(a, b), method="bounded", options={"xatol": xatol}
+            )
+            if best_step is None or step.fun < best_step.fun:
+                best_step = step
+        return None if best_step is None else (float(best_step.x), -best_step.fun)
 
     tried: dict[tuple[float, ...], float] = {}
     best: dict[str, Any] = {"ll": -np.inf, "natural": None}
@@ -191,6 +322,9 @@ def _run_methods(
         key = _key(free)
         if key in tried:
             return tried[key]
+        if not valid(free):
+            tried[key] = -np.inf
+            return -np.inf
         track["fits"] += 1
         try:
             result = fit_at(free, compute_covariance=False)
@@ -212,20 +346,31 @@ def _run_methods(
 
     def brent() -> None:
         if len(ranges) == 1:
-            scipy.optimize.minimize_scalar(
-                lambda t: -profile(np.array([t])),
-                bounds=(lo[0], hi[0]),
-                method="bounded",
-                options={"xatol": float(tol[0])},
-            )
+
+            def single(t: float) -> float:
+                return -profile(np.array([t]))
+
+            bounded(single, lo[0], hi[0], float(tol[0]))
             return
         current = initial.copy()
+        if not valid(current):
+            current = _candidates(
+                ranges,
+                job.n_candidates,
+                job.seed,
+                min_spacing=spacing,
+                fixed=fixed_vals,
+            )[0]
         profile(current)
         for _ in range(_MAX_BRENT_SWEEPS):
             moved = 0.0
             for j in range(len(ranges)):
-                low = max(lo[j], current[j - 1]) if j > 0 else lo[j]
-                high = min(hi[j], current[j + 1]) if j + 1 < len(current) else hi[j]
+                low = max(lo[j], current[j - 1] + spacing) if j > 0 else lo[j]
+                high = (
+                    min(hi[j], current[j + 1] - spacing)
+                    if j + 1 < len(current)
+                    else hi[j]
+                )
                 if not high > low:
                     continue
 
@@ -234,19 +379,25 @@ def _run_methods(
                     trial[j] = t
                     return -profile(trial)
 
-                step = scipy.optimize.minimize_scalar(
-                    along,
-                    bounds=(low, high),
-                    method="bounded",
-                    options={"xatol": float(tol[j])},
-                )
-                if -step.fun >= profile(current):
-                    moved = max(moved, abs(float(step.x) - current[j]))
-                    current[j] = step.x
+                step = bounded(along, low, high, float(tol[j]))
+                if step is not None and step[1] >= profile(current):
+                    moved = max(moved, abs(step[0] - current[j]))
+                    current[j] = step[0]
             if moved <= float(np.max(tol)):
                 break
 
     def de_profile() -> None:
+        population: Any = "sobol"
+        if spacing > 0:
+            population = _candidates(
+                ranges,
+                8 * len(ranges),
+                job.seed,
+                min_spacing=spacing,
+                fixed=fixed_vals,
+            )
+            if len(population) < _DE_MIN_POPULATION:
+                population = np.resize(population, (_DE_MIN_POPULATION, len(ranges)))
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # Sobol wants a power-of-two population
             scipy.optimize.differential_evolution(
@@ -257,11 +408,13 @@ def _run_methods(
                 tol=1e-4,
                 seed=job.seed,
                 polish=False,
-                init="sobol",
+                init=population,
             )
 
     def grid_newton() -> None:
-        candidates = _candidates(ranges, job.n_candidates, job.seed)
+        candidates = _candidates(
+            ranges, job.n_candidates, job.seed, min_spacing=spacing, fixed=fixed_vals
+        )
         for row in candidates:
             profile(row)
         order = np.argsort([-tried[_key(row)] for row in candidates])
@@ -280,7 +433,9 @@ def _run_methods(
                     )
                 except ValueError:
                     continue
-            if np.isfinite(joint.log_likelihood):
+            if np.isfinite(joint.log_likelihood) and _spacing_ok(
+                np.asarray(joint.natural)[n_rates:], spacing
+            ):
                 taus = np.asarray(joint.natural)[n_rates:][free_idx]
                 record(joint.log_likelihood, taus, joint.natural)
 
@@ -352,8 +507,8 @@ def fit_knots(
         Observed ages or age ranges.
     model : BirthDeathModel
         Must have free knots (built from a
-        :class:`~bdpinf.inference.rate_models.FreeKnots`); the number of knots
-        and their allowed ranges come from there.
+        :class:`~bdpinf.inference.rate_models.FreeKnots`); the number of knots,
+        their allowed ranges and their ``min_spacing`` come from there.
     constraints : Constraints, optional
         Constraints on the rate parameters.
         Knots may be fixed (for example ``fixed={"tau1": 800.0}``) and are then
@@ -393,7 +548,8 @@ def fit_knots(
     ------
     ValueError
         If the model has no free knots, every knot is fixed, constraints put a
-        knot in an equality group, or no placement gives a finite likelihood.
+        knot in an equality group, fixed knots are closer than ``min_spacing``,
+        no placement fits at that spacing, or none gives a finite likelihood.
 
     """
     knots = model.knots
@@ -407,6 +563,10 @@ def fit_knots(
     free_idx = [i for i, n in enumerate(knots.names) if n not in user.fixed]
     if not free_idx:
         msg = "Knot times cannot all be fixed for fit_knots"
+        raise ValueError(msg)
+    fixed_knots = [user.fixed[n] for n in knots.names if n in user.fixed]
+    if not _spacing_ok(fixed_knots, knots.min_spacing):
+        msg = f"Fixed knots are closer than min_spacing ({knots.min_spacing})"
         raise ValueError(msg)
     fit_kwargs.pop("compute_covariance", None)
     init = fit_kwargs.pop("init", None)
@@ -459,6 +619,7 @@ def fit_knots(
                 joint = None
         if (
             joint is not None
+            and _spacing_ok(joint.knot_times, knots.min_spacing)
             and joint.converged
             and joint.log_likelihood >= chosen.log_likelihood - 1e-9
         ):

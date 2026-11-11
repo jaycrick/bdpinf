@@ -301,6 +301,32 @@ def _knot_ranges(
     return ranges
 
 
+def _spacing_feasible(ranges: Sequence[tuple[float, float]], spacing: float) -> bool:
+    """Whether ascending knots in ``ranges`` can be at least ``spacing`` apart."""
+    position = -np.inf
+    for lo, hi in ranges:
+        position = max(lo, position + spacing)
+        if position > hi + 1e-9:
+            return False
+    return True
+
+
+def _spread_apart(
+    times: Sequence[float], ranges: Sequence[tuple[float, float]], spacing: float
+) -> tuple[float, ...]:
+    """Nudge sorted ``times`` to be ``spacing`` apart inside their ranges."""
+    lo = np.array([r[0] for r in ranges])
+    hi = np.array([r[1] for r in ranges])
+    out = np.clip(np.sort(np.asarray(times, dtype=np.float64)), lo, hi)
+    for j in range(1, len(out)):
+        out[j] = max(out[j], out[j - 1] + spacing)
+    for j in range(len(out) - 1, -1, -1):
+        out[j] = min(out[j], hi[j])
+        if j + 1 < len(out):
+            out[j] = min(out[j], out[j + 1] - spacing)
+    return tuple(float(t) for t in out)
+
+
 @dataclasses.dataclass(frozen=True)
 class FreeKnots:
     r"""Epoch boundaries that are fitted rather than fixed.
@@ -324,7 +350,13 @@ class FreeKnots:
         Default: $(0, T)$ for every knot.
     initial : sequence of float, optional
         Starting knot times, strictly increasing and inside their ranges.
-        Default: evenly spaced in a shared range, the midpoints of per-knot ranges.
+        Default: evenly spaced in a shared range, the midpoints of per-knot ranges
+        (nudged apart when that would break ``min_spacing``).
+    min_spacing : float
+        Minimum distance between any two sorted knots.
+        :func:`~bdpinf.inference.knots.fit_knots` never evaluates or returns a
+        placement closer than this (fixed knots included).
+        Default 0 allows any placement.
 
     Examples
     --------
@@ -341,6 +373,7 @@ class FreeKnots:
     end_time: float
     bounds: KnotBounds | None = None
     initial: Sequence[float] | None = None
+    min_spacing: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate the ranges and freeze them (and the initial times) as tuples."""
@@ -352,6 +385,16 @@ class FreeKnots:
             msg = "end_time must be positive"
             raise ValueError(msg)
         ranges = _knot_ranges(self.n_knots, end, self.bounds)
+        spacing = float(self.min_spacing)
+        if not np.isfinite(spacing) or spacing < 0:
+            msg = "min_spacing must be a non-negative finite number"
+            raise ValueError(msg)
+        if spacing > 0 and not _spacing_feasible(ranges, spacing):
+            msg = (
+                f"{self.n_knots} knots at least {spacing} apart do not fit "
+                f"in the knot ranges {ranges}"
+            )
+            raise ValueError(msg)
         if self.initial is None:
             lo, hi = ranges[0]
             if all(r == ranges[0] for r in ranges):
@@ -361,6 +404,10 @@ class FreeKnots:
                 )
             else:
                 initial = tuple(0.5 * (a + b) for a, b in ranges)
+            if spacing > 0 and any(
+                b - a < spacing for a, b in itertools.pairwise(initial)
+            ):
+                initial = _spread_apart(initial, ranges, spacing)
         else:
             initial = tuple(float(t) for t in self.initial)
             if len(initial) != self.n_knots:
@@ -371,6 +418,10 @@ class FreeKnots:
             ):
                 msg = "initial must be strictly increasing and inside the knot ranges"
                 raise ValueError(msg)
+            if any(b - a < spacing - 1e-9 for a, b in itertools.pairwise(initial)):
+                msg = f"initial knots must be at least min_spacing ({spacing}) apart"
+                raise ValueError(msg)
+        object.__setattr__(self, "min_spacing", spacing)
         object.__setattr__(self, "end_time", end)
         object.__setattr__(self, "bounds", ranges)
         object.__setattr__(self, "initial", initial)

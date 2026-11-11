@@ -9,6 +9,7 @@ from .bayesian import (
     BayesianPriorConfig,
     BayesianResult,
     fit_bayesian,
+    sample_prior,
 )
 from .constraints import CompiledConstraints, Constraints
 from .fitting import (
@@ -79,6 +80,7 @@ __all__ = [
     "log_likelihood_rates",
     "moment_initial_rates",
     "profile_likelihood_interval",
+    "sample_prior",
     "save_posterior_samples",
     "save_recovery_results",
 ]

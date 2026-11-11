@@ -9,8 +9,10 @@ from bdpinf.inference import (
     BayesianPriorConfig,
     BirthDeathModel,
     Constraints,
+    FreeKnots,
     fit,
     fit_bayesian,
+    sample_prior,
 )
 
 _MCMC = BayesianMCMCConfig(
@@ -55,6 +57,102 @@ class TestPriorConfig:
             BayesianPriorConfig(birth_loc=[-5.0]).resolve(model)
         with pytest.raises(ValueError, match="Unknown parameter"):
             BayesianPriorConfig(by_name={"nope": (0.0, 1.0)}).resolve(model)
+
+
+class TestExponentialPrior:
+    """Test the Exponential prior on natural-scale rates."""
+
+    def test_validation(self) -> None:
+        model = BirthDeathModel.piecewise_constant([1.0, 2.0])
+        with pytest.raises(ValueError, match="Unknown parameter"):
+            BayesianPriorConfig(exponential={"nope": 0.1}).resolve(model)
+        with pytest.raises(ValueError, match="positive"):
+            BayesianPriorConfig(exponential={"birth.v0": 0.0}).resolve(model)
+        knotted = BirthDeathModel.piecewise_constant(FreeKnots(1, 10.0))
+        with pytest.raises(ValueError, match="log-transform"):
+            BayesianPriorConfig(exponential={"tau0": 0.1}).resolve(knotted)
+        compiled = Constraints(fixed={"birth.v1": 0.1}).compile(model.params)
+        with pytest.raises(ValueError, match="fixed"):
+            BayesianPriorConfig(exponential={"birth.v1": 0.1}).resolve_exponential(
+                model, compiled
+            )
+
+    def test_slots_follow_equality_groups(self) -> None:
+        model = BirthDeathModel.piecewise_constant([1.0, 2.0])
+        compiled = Constraints(equal=[["birth.v0", "birth.v1"]]).compile(model.params)
+        config = BayesianPriorConfig(exponential={"birth.v1": 0.2})
+        slots, means = config.resolve_exponential(model, compiled)
+        assert slots.tolist() == [0]
+        assert means.tolist() == [0.2]
+        clash = BayesianPriorConfig(exponential={"birth.v0": 0.2, "birth.v1": 0.3})
+        with pytest.raises(ValueError, match="different"):
+            clash.resolve_exponential(model, compiled)
+
+    def test_sample_prior_mean_and_other_priors(self) -> None:
+        model = BirthDeathModel.piecewise_constant([1.0, 2.0])
+        draws = sample_prior(
+            model,
+            BayesianPriorConfig(exponential={"birth.v1": 0.01}, loc=-3.0, scale=0.5),
+            20000,
+            seed=0,
+        )
+        assert set(draws) == set(model.names)
+        assert draws["birth.v1"].mean() == pytest.approx(0.01, rel=0.05)
+        assert np.std(np.log(draws["birth.v0"])) == pytest.approx(0.5, rel=0.05)
+
+    def test_sample_prior_honours_constraints(self) -> None:
+        model = BirthDeathModel.piecewise_constant([1.0, 2.0])
+        draws = sample_prior(
+            model,
+            BayesianPriorConfig(exponential={"death.v1": 0.5}),
+            50,
+            constraints=Constraints(
+                fixed={"birth.v0": 0.1}, equal=[["death.v0", "death.v1"]]
+            ),
+            seed=1,
+        )
+        assert np.all(draws["birth.v0"] == 0.1)
+        np.testing.assert_array_equal(draws["death.v0"], draws["death.v1"])
+
+    def test_posterior_runs_and_follows_the_prior_without_data_pull(self) -> None:
+        data = AgeData.from_groups([_AGES], 300.0)
+        model = BirthDeathModel.piecewise_constant([150.0, 300.0])
+        config = BayesianPriorConfig(exponential={"birth.v1": 0.002})
+        result = fit_bayesian(
+            data,
+            model,
+            prior=config,
+            mcmc=BayesianMCMCConfig(
+                num_samples=300,
+                warmup_steps=200,
+                num_chains=1,
+                disable_progressbar=True,
+            ),
+            rng_seed=2,
+        )
+        assert np.all(np.isfinite(result.samples))
+        assert result.samples[:, 1].mean() < 0.05
+
+    def test_exponential_log_density_includes_jacobian(self) -> None:
+        # One free log-rate with an Exponential prior and no data: the draws
+        # of the rate should have mean close to the prior mean.
+        data = AgeData.from_groups([np.array([299.0])], 300.0)
+        model = BirthDeathModel.piecewise_constant([300.0])
+        result = fit_bayesian(
+            data,
+            model,
+            constraints=Constraints(fixed={"death.v0": 0.01}),
+            prior=BayesianPriorConfig(exponential={"birth.v0": 0.01}),
+            mcmc=BayesianMCMCConfig(
+                num_samples=400,
+                warmup_steps=200,
+                num_chains=1,
+                disable_progressbar=True,
+            ),
+            rng_seed=5,
+        )
+        assert np.all(result.samples[:, 0] > 0)
+        assert result.samples[:, 0].mean() < 0.1
 
 
 class TestFitBayesian:

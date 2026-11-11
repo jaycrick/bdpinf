@@ -50,6 +50,7 @@ __all__ = [
     "BayesianPriorConfig",
     "BayesianResult",
     "fit_bayesian",
+    "sample_prior",
 ]
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,8 @@ class BayesianPriorConfig:
     each may be a scalar (broadcast to the family's parameters) or a sequence
     with one value per parameter of that family.
     ``by_name`` overrides single parameters by their full name and wins over
-    everything else.
+    everything else except ``exponential``, which replaces the Normal prior of
+    its parameters altogether.
 
     Parameters
     ----------
@@ -85,6 +87,15 @@ class BayesianPriorConfig:
     knot_loc, knot_scale : float
         Normal prior on the logit of each free knot time within its range.
         The default (0, 1.7) is close to uniform over the range.
+    exponential : Mapping[str, float]
+        ``{"birth.v3": 0.01, ...}``: parameter name to the mean of an
+        Exponential prior on the natural-scale rate.
+        The density on the unconstrained log scale includes the Jacobian
+        (``log p(u) = -log m - exp(u) / m + u``).
+        It overrides every Normal setting for that name.
+        Only log-transform (rate) parameters are allowed, they must not be fixed,
+        and the name of a tied group member puts the prior on the group's single
+        free coordinate.
 
     Examples
     --------
@@ -107,6 +118,7 @@ class BayesianPriorConfig:
     by_name: Mapping[str, tuple[float, float]] = dataclasses.field(default_factory=dict)
     knot_loc: float = 0.0
     knot_scale: float = 1.7
+    exponential: Mapping[str, float] = dataclasses.field(default_factory=dict)
 
     def resolve_tensors(
         self, n_epochs: int
@@ -130,10 +142,17 @@ class BayesianPriorConfig:
         Raises
         ------
         ValueError
-            If a sequence override has the wrong length or ``by_name`` has an
-            unknown name.
+            If a sequence override has the wrong length, ``by_name`` has an
+            unknown name, or ``exponential`` names an unknown or non-log
+            parameter or has a non-positive mean.
+
+        Notes
+        -----
+        The returned Normal settings ignore ``exponential``; use
+        :meth:`resolve_exponential` for those parameters.
 
         """
+        self._check_exponential(model)
 
         def _family(
             override: float | Sequence[float] | None, fallback: float, n: int
@@ -170,6 +189,54 @@ class BayesianPriorConfig:
             locs[model.names.index(name)] = loc
             scales[model.names.index(name)] = scale
         return locs, scales
+
+    def _check_exponential(self, model: BirthDeathModel) -> None:
+        """Validate the names and means in ``exponential`` against ``model``."""
+        transforms = {p.name: p.transform for p in model.params}
+        for name, mean in self.exponential.items():
+            if name not in transforms:
+                msg = f"Unknown parameter '{name}' in exponential"
+                raise ValueError(msg)
+            if transforms[name] != "log":
+                msg = (
+                    f"Exponential prior needs a log-transform parameter, but "
+                    f"'{name}' uses '{transforms[name]}'"
+                )
+                raise ValueError(msg)
+            if not (np.isfinite(mean) and mean > 0):
+                msg = f"Exponential prior mean for '{name}' must be positive"
+                raise ValueError(msg)
+
+    def resolve_exponential(
+        self, model: BirthDeathModel, compiled: CompiledConstraints
+    ) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
+        """Return ``(slots, means)`` of the free coordinates with Exponential priors.
+
+        ``slots`` index the free (reduced) parameter vector, so a parameter in an
+        equality group maps to the group's single free coordinate.
+
+        Raises
+        ------
+        ValueError
+            For an invalid ``exponential`` entry, a fixed parameter, or two
+            tied parameters with different means.
+
+        """
+        self._check_exponential(model)
+        index = {name: i for i, name in enumerate(model.names)}
+        means: dict[int, float] = {}
+        for name, mean in self.exponential.items():
+            i = index[name]
+            if compiled.is_fixed[i]:
+                msg = f"Exponential prior on '{name}', which is fixed"
+                raise ValueError(msg)
+            slot = int(compiled.source[i])
+            if slot in means and not np.isclose(means[slot], mean):
+                msg = f"Tied parameters have different exponential means ('{name}')"
+                raise ValueError(msg)
+            means[slot] = float(mean)
+        slots = np.array(sorted(means), dtype=np.int64)
+        return slots, np.array([means[k] for k in slots], dtype=np.float64)
 
 
 @dataclass(frozen=True)
@@ -443,14 +510,28 @@ class _LikelihoodModel:
     prior_scales: NDArray[np.float64]  # [n_free]
     condition_on_survival: bool
     n_nodes: int
+    exp_slots: NDArray[np.int64] = dataclasses.field(
+        default_factory=lambda: np.empty(0, dtype=np.int64)
+    )
+    exp_means: NDArray[np.float64] = dataclasses.field(
+        default_factory=lambda: np.empty(0, dtype=np.float64)
+    )
 
     def __call__(self) -> None:
-        free = numpyro.sample(
-            "free_params",
-            dist.Normal(
-                jnp.asarray(self.prior_locs), jnp.asarray(self.prior_scales)
-            ).to_event(1),
+        normal = dist.Normal(
+            jnp.asarray(self.prior_locs), jnp.asarray(self.prior_scales)
         )
+        if len(self.exp_slots):
+            keep = np.ones(len(self.prior_locs), dtype=bool)
+            keep[self.exp_slots] = False
+            normal = normal.mask(jnp.asarray(keep))
+        free = numpyro.sample("free_params", normal.to_event(1))
+        if len(self.exp_slots):
+            u = jnp.take(free, jnp.asarray(self.exp_slots))
+            means = jnp.asarray(self.exp_means)
+            numpyro.factor(
+                "exponential_prior", jnp.sum(-jnp.log(means) - jnp.exp(u) / means + u)
+            )
         birth, death = self.model.rates(self.compiled.expand(free))
         log_lik = log_likelihood_rates(
             self.data.to_age_data(),
@@ -522,7 +603,8 @@ def fit_bayesian(
     constraints : Constraints, optional
         Fixed parameters and equality groups; only free parameters are sampled.
     prior : BayesianPriorConfig, optional
-        Normal priors on the unconstrained parameters.
+        Normal priors on the unconstrained parameters, with Exponential priors
+        on the natural-scale rate for the names in ``prior.exponential``.
     mcmc : BayesianMCMCConfig, optional
         Sampler settings.
     init : FitResult | array-like, optional
@@ -571,6 +653,7 @@ def fit_bayesian(
 
     compiled = (constraints or Constraints()).compile(model.params)
     locs, scales = prior.resolve(model)
+    exp_slots, exp_means = prior.resolve_exponential(model, compiled)
     likelihood_model = _LikelihoodModel(
         data=_ModelData.from_age_data(data),
         model=model,
@@ -579,6 +662,8 @@ def fit_bayesian(
         prior_scales=scales[compiled.free_indices],
         condition_on_survival=condition_on_survival,
         n_nodes=n_nodes,
+        exp_slots=exp_slots,
+        exp_means=exp_means,
     )
 
     init_free: NDArray[np.float64] | None
@@ -622,3 +707,57 @@ def fit_bayesian(
             "max_tree_depth": mcmc.max_tree_depth,
         },
     )
+
+
+def sample_prior(
+    model: BirthDeathModel,
+    prior: BayesianPriorConfig | None = None,
+    n: int = 1000,
+    *,
+    constraints: Constraints | None = None,
+    seed: int | None = None,
+) -> dict[str, NDArray[np.float64]]:
+    """Draw from the prior that :func:`fit_bayesian` would use.
+
+    Free coordinates are Normal on the unconstrained scale, except those named in
+    ``prior.exponential``, which are drawn as Exponential rates; equality groups
+    share one draw and fixed parameters repeat their fixed value.
+
+    Parameters
+    ----------
+    model : BirthDeathModel
+        The rate families (and free knots, if any).
+    prior : BayesianPriorConfig, optional
+        Prior settings (default: :class:`BayesianPriorConfig`).
+    n : int
+        Number of draws.
+    constraints : Constraints, optional
+        Fixed parameters and equality groups, as for :func:`fit_bayesian`.
+    seed : int, optional
+        Seed for the NumPy generator.
+
+    Returns
+    -------
+    dict[str, NDArray]
+        Natural-scale draws of shape ``[n]`` by full parameter name (knot times
+        sorted within each draw).
+
+    Raises
+    ------
+    ValueError
+        For an invalid prior or constraint.
+
+    """
+    prior = prior or BayesianPriorConfig()
+    compiled = (constraints or Constraints()).compile(model.params)
+    locs, scales = prior.resolve(model)
+    slots, means = prior.resolve_exponential(model, compiled)
+    rng = np.random.default_rng(seed)
+    free = rng.normal(
+        locs[compiled.free_indices], scales[compiled.free_indices], (n, compiled.n_free)
+    )
+    if len(slots):
+        free[:, slots] = np.log(rng.exponential(means, (n, len(slots))))
+    expand = jax.jit(jax.vmap(compiled.expand))
+    natural = model.canonical(expand(jnp.asarray(free)))
+    return {name: natural[:, i] for i, name in enumerate(model.names)}

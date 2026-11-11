@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] --- 2026-11-11
+
+- `inference.FreeKnots(min_spacing=...)`: minimum distance between any two sorted knots (fixed knots included); `fit_knots` never evaluates or returns a closer placement in its Brent, differential-evolution and grid-Newton searches, the joint Newton steps or the final polish, and raises `ValueError` when the knots cannot fit at that spacing.
+  The default `0.0` leaves the search unchanged.
+- `inference.BayesianPriorConfig(exponential=...)`: name to mean of an Exponential prior on a natural-scale rate (the log-scale density carries the Jacobian), overriding the Normal settings for that name; used by `fit_bayesian`.
+- `inference.sample_prior`: natural-scale draws from the prior `fit_bayesian` would use (Normal and Exponential priors, constraints applied).
+- `simulation.sample_ages_in_ranges`: vectorised draws of ages inside `[lower, upper]` ranges from the non-spine age density, by inverse CDF on a grid, with a uniform fallback for ranges of zero mass.
+
 ## [0.3.2] --- 2026-11-11
 
 - `simulation`: `bdsurv` pin moved to 0.4.0 (`c758873`, tag `v0.4.0`), which adds the conditioned contour simulators (`simulate_contour_given_population`, `simulate_contour_given_ages`) and the linear-rate contour process and splitting; the dependency floor is now `bdsurv>=0.4.0`.

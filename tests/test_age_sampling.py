@@ -7,7 +7,11 @@ from scipy import stats
 
 from bdpinf.models import math_general
 from bdpinf.models.rate_functions import PiecewiseConstantRate, PiecewiseLinearRate
-from bdpinf.simulation import SampledAges, simulate_ages_from_rates
+from bdpinf.simulation import (
+    SampledAges,
+    sample_ages_in_ranges,
+    simulate_ages_from_rates,
+)
 
 _TIMES = jnp.array([4.0])
 
@@ -74,3 +78,70 @@ class TestSimulateAgesFromRates:
         terms = math_general.terms_for(birth, death)
         pi = float(np.exp(-math_general.math_nested.log_nested_w_total(terms)))
         assert np.mean(sizes) == pytest.approx(1.0 / pi, rel=0.25)
+
+
+class TestSampleAgesInRanges:
+    """Test range-truncated draws from the non-spine age density."""
+
+    def test_shape_and_ranges(self) -> None:
+        birth, death = _constant(1.0, 0.4)
+        lower = np.array([0.0, 1.0, 3.5, 2.0])
+        upper = np.array([4.0, 2.0, 4.0, 2.0])
+        ages = sample_ages_in_ranges(
+            birth, death, lower, upper, np.random.default_rng(0), n_draws=50
+        )
+        assert ages.shape == (50, 4)
+        assert np.all(ages >= lower)
+        assert np.all(ages <= upper)
+        assert np.all(ages[:, 3] == 2.0)
+
+    def test_matches_truncated_density(self) -> None:
+        times = jnp.array([2.0, 4.0])
+        birth = PiecewiseLinearRate(jnp.array([0.1, 1.0]), jnp.array([0.4, 0.2]), times)
+        death = PiecewiseLinearRate(jnp.array([0.3, 0.3]), jnp.array([0.3, 0.3]), times)
+        lo, hi = 0.5, 3.0
+        n_draws = 4000
+        ages = sample_ages_in_ranges(
+            birth,
+            death,
+            np.array([lo]),
+            np.array([hi]),
+            np.random.default_rng(4),
+            n_draws=n_draws,
+        )[:, 0]
+        terms = math_general.terms_for(birth, death)
+        grid = np.linspace(lo, hi, 20001)
+        pdf = np.exp(
+            np.asarray(math_general.non_spine_log_density(terms, jnp.asarray(grid)))
+        )
+        cdf = np.concatenate(
+            [[0.0], np.cumsum(0.5 * (pdf[1:] + pdf[:-1]) * np.diff(grid))]
+        )
+        cdf /= cdf[-1]
+        result = stats.kstest(ages, lambda x: np.interp(x, grid, cdf))
+        assert result.pvalue > 1e-3
+
+    def test_zero_mass_falls_back_to_uniform(self) -> None:
+        # No births before time 2, so no individual is older than 2: ages in
+        # [3, 4] have zero mass.
+        times = jnp.array([2.0, 4.0])
+        birth = PiecewiseConstantRate(jnp.array([0.0, 1.0]), times)
+        death = PiecewiseConstantRate(jnp.array([0.2, 0.2]), times)
+        ages = sample_ages_in_ranges(
+            birth,
+            death,
+            np.array([3.0]),
+            np.array([4.0]),
+            np.random.default_rng(2),
+            n_draws=2000,
+        )[:, 0]
+        assert np.all((ages >= 3.0) & (ages <= 4.0))
+        assert stats.kstest(ages, "uniform", args=(3.0, 1.0)).pvalue > 1e-3
+
+    def test_rejects_bad_input(self) -> None:
+        birth, death = _constant(1.0, 0.4)
+        rng = np.random.default_rng(0)
+        with pytest.raises(ValueError, match="same length"):
+            sample_ages_in_ranges(birth, death, [0.0], [1.0, 2.0], rng, n_draws=2)
+        with pytest.raises(ValueError, match="exceed"):
+            sample_ages_in_ranges(birth, death, [2.0], [1.0], rng, n_draws=2)

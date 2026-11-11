@@ -8,7 +8,7 @@ import pytest
 from bdpinf.inference.bayesian import BayesianMCMCConfig, fit_bayesian
 from bdpinf.inference.constraints import Constraints
 from bdpinf.inference.fitting import fit
-from bdpinf.inference.knots import fit_knots
+from bdpinf.inference.knots import _candidates, fit_knots
 from bdpinf.inference.likelihood import AgeData, log_likelihood_rates
 from bdpinf.inference.rate_models import BirthDeathModel, FreeKnots
 from bdpinf.models.rate_functions import PiecewiseConstantRate
@@ -242,3 +242,93 @@ class TestJointFit:
         out = result.to_dict()
         assert out["knot_times"].shape == (2,)
         assert out["posterior_samples"]["death_rates"].shape[1] == model.n_death
+
+
+def _gaps(knots: np.ndarray) -> np.ndarray:
+    return np.diff(np.sort(knots))
+
+
+class TestMinSpacing:
+    """Test the minimum distance between knots."""
+
+    def test_default_is_zero_and_validated(self) -> None:
+        assert FreeKnots(2, _T).min_spacing == 0.0
+        with pytest.raises(ValueError, match="min_spacing"):
+            FreeKnots(2, _T, min_spacing=-1.0)
+        with pytest.raises(ValueError, match="do not fit"):
+            FreeKnots(3, _T, bounds=(10.0, 40.0), min_spacing=20.0)
+        with pytest.raises(ValueError, match="min_spacing"):
+            FreeKnots(2, _T, initial=[40.0, 45.0], min_spacing=20.0)
+
+    def test_default_initial_is_nudged_apart(self) -> None:
+        knots = FreeKnots(3, _T, bounds=(40.0, 60.0), min_spacing=10.0)
+        assert np.all(_gaps(np.array(knots.initial_times)) >= 10.0 - 1e-9)
+        per_knot = FreeKnots(
+            2, _T, bounds=[(40.0, 50.0), (50.0, 60.0)], min_spacing=12.0
+        )
+        assert np.all(_gaps(np.array(per_knot.initial_times)) >= 12.0 - 1e-9)
+
+    def test_candidates_are_valid_and_redrawn(self) -> None:
+        ranges = [(0.0, 100.0)] * 3
+        rows = _candidates(ranges, 16, 0, min_spacing=45.0)
+        assert len(rows) >= 1
+        assert np.all(np.diff(rows, axis=1) >= 45.0 - 1e-6)
+        assert rows.min() >= 0.0
+        assert rows.max() <= 100.0
+        with pytest.raises(ValueError, match="No placement"):
+            _candidates([(40.0, 60.0)], 16, 0, min_spacing=30.0, fixed=np.array([50.0]))
+
+    @pytest.mark.parametrize("n_knots", [2, 3])
+    def test_grid_newton_respects_spacing(self, data: AgeData, n_knots: int) -> None:
+        spacing = 25.0 if n_knots == 2 else 18.0
+        model = BirthDeathModel.piecewise_constant(
+            FreeKnots(n_knots, _T, bounds=(5.0, 95.0), min_spacing=spacing)
+        )
+        result = fit_knots(data, model, n_candidates=16, seed=0)
+        assert np.all(_gaps(result.knot_times) >= spacing - 1e-6)
+        for found in result.method_results.values():
+            assert np.all(_gaps(found.knot_times) >= spacing - 1e-6)
+
+    def test_binding_spacing(self, data: AgeData) -> None:
+        model = BirthDeathModel.piecewise_constant(
+            FreeKnots(2, _T, bounds=(5.0, 95.0), min_spacing=60.0)
+        )
+        result = fit_knots(data, model, n_candidates=16, seed=1)
+        assert np.all(_gaps(result.knot_times) >= 60.0 - 1e-6)
+
+    def test_thorough_methods_respect_spacing(self, data: AgeData) -> None:
+        model = BirthDeathModel.piecewise_constant(
+            FreeKnots(2, _T, bounds=(5.0, 95.0), min_spacing=30.0)
+        )
+        result = fit_knots(data, model, thorough=True, workers=1, n_candidates=16)
+        assert set(result.method_results) == {"brent", "de-profile", "grid-newton"}
+        for found in result.method_results.values():
+            assert np.all(_gaps(found.knot_times) >= 30.0 - 1e-6)
+        assert np.all(_gaps(result.knot_times) >= 30.0 - 1e-6)
+
+    def test_fixed_knot_spacing_is_enforced(self, data: AgeData) -> None:
+        model = BirthDeathModel.piecewise_constant(
+            FreeKnots(2, _T, bounds=[(10.0, 80.0), (80.0, 99.0)], min_spacing=15.0)
+        )
+        result = fit_knots(
+            data, model, constraints=Constraints(fixed={"tau1": 90.0}), seed=0
+        )
+        assert (
+            abs(result.knot_times[0] - 90.0) >= 15.0 - 1e-6
+            or abs(result.knot_times[1] - 90.0) >= 15.0 - 1e-6
+        )
+        assert np.all(_gaps(result.knot_times) >= 15.0 - 1e-6)
+        with pytest.raises(ValueError, match="closer"):
+            fit_knots(
+                data,
+                BirthDeathModel.piecewise_constant(FreeKnots(3, _T, min_spacing=15.0)),
+                constraints=Constraints(fixed={"tau0": 50.0, "tau1": 60.0}),
+            )
+
+    def test_zero_spacing_matches_default(self, data: AgeData) -> None:
+        plain = BirthDeathModel.piecewise_constant(FreeKnots(1, _T))
+        zero = BirthDeathModel.piecewise_constant(FreeKnots(1, _T, min_spacing=0.0))
+        first = fit_knots(data, plain, seed=0)
+        second = fit_knots(data, zero, seed=0)
+        assert first.log_likelihood == second.log_likelihood
+        np.testing.assert_array_equal(first.knot_times, second.knot_times)
