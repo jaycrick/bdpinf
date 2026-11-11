@@ -32,7 +32,7 @@ from .process import BirthDeathProcess
 
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 __author__ = "JC"
 __email__ = "jcacademicresearch@gmail.com"
 

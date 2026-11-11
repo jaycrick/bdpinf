@@ -55,6 +55,8 @@ Transform = Literal["log", "identity", "logit", "interval"]
 """How a natural-scale parameter maps to the unconstrained optimisation scale.
 
 ``"interval"`` maps to ``(Param.lower, Param.upper)`` through a scaled logistic.
+``"log"`` maps to ``(Param.lower, inf)`` as ``lower + exp(u)``; the default
+``lower = 0`` is the plain log transform.
 """
 
 _EDGE_FRACTION = 1e-9
@@ -69,12 +71,23 @@ class Param:
     """A named scalar parameter and its transform.
 
     ``lower`` and ``upper`` bound the parameter when ``transform="interval"``.
+    With ``transform="log"``, ``lower`` is a minimum value:
+    ``natural = lower + exp(u)``, so the natural value is always above it
+    (the unconstrained ``u`` is ``log(natural - lower)``).
     """
 
     name: str
     transform: Transform = "log"
     lower: float = 0.0
     upper: float = 1.0
+
+    def __post_init__(self) -> None:
+        """Check that a log-transform minimum is finite and non-negative."""
+        if self.transform == "log" and not (
+            np.isfinite(self.lower) and self.lower >= 0.0
+        ):
+            msg = f"minimum value of '{self.name}' must be finite and >= 0"
+            raise ValueError(msg)
 
 
 class RateModel(Protocol):
@@ -114,6 +127,24 @@ class RateModel(Protocol):
         ...
 
 
+_MIN_START_FACTOR = 1.0 + 1e-6
+
+
+def _check_min_value(min_value: float) -> float:
+    value = float(min_value)
+    if not (np.isfinite(value) and value >= 0.0):
+        msg = "min_value must be finite and >= 0"
+        raise ValueError(msg)
+    return value
+
+
+def _above_minimum(values: jax.Array, min_value: float) -> jax.Array:
+    """Lift ``values`` strictly above ``min_value`` (unchanged when it is 0)."""
+    if min_value <= 0.0:
+        return values
+    return jnp.maximum(values, min_value * _MIN_START_FACTOR)
+
+
 def _as_epoch_tuple(epoch_end_times: EpochTimes) -> tuple[float, ...]:
     times = tuple(float(t) for t in np.atleast_1d(np.asarray(epoch_end_times)))
     if not times or times[0] <= 0 or any(b <= a for a, b in itertools.pairwise(times)):
@@ -130,21 +161,30 @@ class PiecewiseConstant:
     ----------
     epoch_end_times : sequence of float
         Strictly increasing epoch end times; the last is the observation time.
+    min_value : float
+        Minimum rate: every parameter satisfies ``value >= min_value`` by
+        construction (``lower`` of its log transform).
+        Default 0 (any positive rate).
 
     """
 
     epoch_end_times: EpochTimes
+    min_value: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate and freeze the epoch end times."""
         object.__setattr__(
             self, "epoch_end_times", _as_epoch_tuple(self.epoch_end_times)
         )
+        object.__setattr__(self, "min_value", _check_min_value(self.min_value))
 
     @property
     def params(self) -> tuple[Param, ...]:
         """One log-scale parameter ``v{k}`` per epoch."""
-        return tuple(Param(f"v{k}") for k in range(len(self.epoch_end_times)))
+        return tuple(
+            Param(f"v{k}", lower=self.min_value)
+            for k in range(len(self.epoch_end_times))
+        )
 
     @property
     def n_epochs(self) -> int:
@@ -167,13 +207,19 @@ class PiecewiseConstant:
 
     def constant_values(self, value: float) -> jax.Array:
         """Return the same rate in every epoch."""
-        return jnp.full(len(self.epoch_end_times), value, dtype=jnp.float64)
+        return _above_minimum(
+            jnp.full(len(self.epoch_end_times), value, dtype=jnp.float64),
+            self.min_value,
+        )
 
     def values_from_rate(self, rate: RateFunction) -> jax.Array:
         """Evaluate ``rate`` at the epoch midpoints."""
         ends = jnp.asarray(self.epoch_end_times)
         starts = jnp.concatenate([jnp.zeros(1), ends[:-1]])
-        return jnp.asarray(rate(0.5 * (starts + ends)), dtype=jnp.float64)
+        return _above_minimum(
+            jnp.asarray(rate(0.5 * (starts + ends)), dtype=jnp.float64),
+            self.min_value,
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -191,17 +237,23 @@ class PiecewiseLinear:
         Strictly increasing epoch end times; the last is the observation time.
     continuous : bool
         Whether the rate is continuous across epoch boundaries.
+    min_value : float
+        Minimum rate: every parameter (and so the rate everywhere) satisfies
+        ``value >= min_value`` by construction.
+        Default 0.
 
     """
 
     epoch_end_times: EpochTimes
     continuous: bool = True
+    min_value: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate and freeze the epoch end times."""
         object.__setattr__(
             self, "epoch_end_times", _as_epoch_tuple(self.epoch_end_times)
         )
+        object.__setattr__(self, "min_value", _check_min_value(self.min_value))
 
     @property
     def n_epochs(self) -> int:
@@ -211,11 +263,12 @@ class PiecewiseLinear:
     @property
     def params(self) -> tuple[Param, ...]:
         """Log-scale knot values, or start and end values per epoch."""
+        low = self.min_value
         if self.continuous:
-            return tuple(Param(f"knot{k}") for k in range(self.n_epochs + 1))
-        return tuple(Param(f"start{k}") for k in range(self.n_epochs)) + tuple(
-            Param(f"end{k}") for k in range(self.n_epochs)
-        )
+            return tuple(Param(f"knot{k}", lower=low) for k in range(self.n_epochs + 1))
+        return tuple(
+            Param(f"start{k}", lower=low) for k in range(self.n_epochs)
+        ) + tuple(Param(f"end{k}", lower=low) for k in range(self.n_epochs))
 
     @property
     def end_time(self) -> float:
@@ -238,7 +291,7 @@ class PiecewiseLinear:
     def constant_values(self, value: float) -> jax.Array:
         """Return a flat rate."""
         n = self.n_epochs + 1 if self.continuous else 2 * self.n_epochs
-        return jnp.full(n, value, dtype=jnp.float64)
+        return _above_minimum(jnp.full(n, value, dtype=jnp.float64), self.min_value)
 
     def values_from_rate(self, rate: RateFunction) -> jax.Array:
         """Evaluate ``rate`` at the knots (averaging the limits either side)."""
@@ -249,10 +302,16 @@ class PiecewiseLinear:
             knots = jnp.concatenate([jnp.zeros(1), ends])
             left = rate(jnp.clip(knots - eps, 0.0, end))
             right = rate(jnp.clip(knots + eps, 0.0, end))
-            return jnp.asarray(0.5 * (left + right), dtype=jnp.float64)
+            return _above_minimum(
+                jnp.asarray(0.5 * (left + right), dtype=jnp.float64), self.min_value
+            )
         starts = jnp.concatenate([jnp.zeros(1), ends[:-1]])
-        return jnp.asarray(
-            jnp.concatenate([rate(starts + eps), rate(ends - eps)]), dtype=jnp.float64
+        return _above_minimum(
+            jnp.asarray(
+                jnp.concatenate([rate(starts + eps), rate(ends - eps)]),
+                dtype=jnp.float64,
+            ),
+            self.min_value,
         )
 
     def flat_groups(self, prefix: str = "") -> list[list[str]]:
@@ -489,14 +548,24 @@ class BirthDeathModel:
 
     @classmethod
     def piecewise_constant(
-        cls, epoch_end_times: EpochTimes | FreeKnots
+        cls,
+        epoch_end_times: EpochTimes | FreeKnots,
+        *,
+        min_birth: float = 0.0,
+        min_death: float = 0.0,
     ) -> "BirthDeathModel":
         """Piecewise-constant birth and death rates on shared epochs.
 
         Pass a :class:`FreeKnots` to fit the epoch boundaries as well.
+        ``min_birth`` and ``min_death`` are lower bounds on every birth and
+        death rate (see :class:`PiecewiseConstant`).
         """
         epochs, knots = _template(epoch_end_times)
-        return cls(PiecewiseConstant(epochs), PiecewiseConstant(epochs), knots)
+        return cls(
+            PiecewiseConstant(epochs, min_birth),
+            PiecewiseConstant(epochs, min_death),
+            knots,
+        )
 
     @classmethod
     def piecewise_linear(
@@ -504,15 +573,19 @@ class BirthDeathModel:
         epoch_end_times: EpochTimes | FreeKnots,
         *,
         continuous: bool = True,
+        min_birth: float = 0.0,
+        min_death: float = 0.0,
     ) -> "BirthDeathModel":
         """Piecewise-linear birth and death rates on shared epochs.
 
         Pass a :class:`FreeKnots` to fit the epoch boundaries as well.
+        ``min_birth`` and ``min_death`` are lower bounds on every birth and
+        death parameter, hence on the rates themselves.
         """
         epochs, knots = _template(epoch_end_times)
         return cls(
-            PiecewiseLinear(epochs, continuous),
-            PiecewiseLinear(epochs, continuous),
+            PiecewiseLinear(epochs, continuous, min_birth),
+            PiecewiseLinear(epochs, continuous, min_death),
             knots,
         )
 
@@ -636,8 +709,12 @@ class BirthDeathModel:
         """Return ``natural`` with birth and death exchanged, if the layouts match.
 
         Free knot times stay where they are.
+        Exchanged values below a family's minimum are lifted above it when
+        mapped to the unconstrained scale.
         """
-        if self.birth.params != self.death.params:
+        if [(p.name, p.transform) for p in self.birth.params] != [
+            (p.name, p.transform) for p in self.death.params
+        ]:
             return None
         n_b, n_d = self.n_birth, self.n_death
         return jnp.concatenate(

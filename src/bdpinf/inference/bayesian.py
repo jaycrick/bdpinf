@@ -65,7 +65,10 @@ logger = logging.getLogger(__name__)
 class BayesianPriorConfig:
     """Independent Normal priors on the unconstrained parameters.
 
-    For rate (log-scale) parameters the prior is on the log rate.
+    For rate (log-scale) parameters the prior is on the log rate; for a rate
+    family with a minimum value ``m > 0`` (``min_birth``, ``min_death``) it is on
+    ``log(rate - m)``, the unconstrained coordinate, so the rate is always above
+    ``m``.
     The scalar ``loc`` / ``scale`` fields are fallbacks for every parameter.
     Per-family overrides (``birth_loc``, ``death_scale``, ...) take precedence;
     each may be a scalar (broadcast to the family's parameters) or a sequence
@@ -93,7 +96,8 @@ class BayesianPriorConfig:
         The density on the unconstrained log scale includes the Jacobian
         (``log p(u) = -log m - exp(u) / m + u``).
         It overrides every Normal setting for that name.
-        Only log-transform (rate) parameters are allowed, they must not be fixed,
+        Only log-transform (rate) parameters without a minimum value are allowed
+        (``ValueError`` if the family has ``min_value > 0``), they must not be fixed,
         and the name of a tied group member puts the prior on the group's single
         free coordinate.
 
@@ -193,6 +197,7 @@ class BayesianPriorConfig:
     def _check_exponential(self, model: BirthDeathModel) -> None:
         """Validate the names and means in ``exponential`` against ``model``."""
         transforms = {p.name: p.transform for p in model.params}
+        lowers = {p.name: p.lower for p in model.params}
         for name, mean in self.exponential.items():
             if name not in transforms:
                 msg = f"Unknown parameter '{name}' in exponential"
@@ -201,6 +206,12 @@ class BayesianPriorConfig:
                 msg = (
                     f"Exponential prior needs a log-transform parameter, but "
                     f"'{name}' uses '{transforms[name]}'"
+                )
+                raise ValueError(msg)
+            if lowers[name] > 0:
+                msg = (
+                    f"Exponential prior on '{name}' is not supported with a "
+                    f"minimum value ({lowers[name]}); use a Normal prior"
                 )
                 raise ValueError(msg)
             if not (np.isfinite(mean) and mean > 0):

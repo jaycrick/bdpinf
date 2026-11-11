@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.1] --- 2026-11-11
+
+- `inference`: rate families take a minimum value (`PiecewiseConstant(min_value=...)`, `PiecewiseLinear(min_value=...)`, and `min_birth` / `min_death` on `BirthDeathModel.piecewise_constant` / `.piecewise_linear`).
+  A log-transform `Param` with `lower = m` maps `natural = m + exp(u)`, so every fitted rate (`fit`, `fit_knots`, `fit_bayesian`, `sample_prior`) is at least `m`; `lower = 0` is unchanged.
+  Fixed values below the minimum and equality groups mixing different minima raise `ValueError`, a rate within `exp(-12)` of its minimum counts as on the boundary, `profile_likelihood_interval` brackets down to the minimum, and `BayesianPriorConfig.exponential` rejects names with a positive minimum.
+
 ## [0.4.0] --- 2026-11-11
 
 - `inference.FreeKnots(min_spacing=...)`: minimum distance between any two sorted knots (fixed knots included); `fit_knots` never evaluates or returns a closer placement in its Brent, differential-evolution and grid-Newton searches, the joint Newton steps or the final polish, and raises `ValueError` when the knots cannot fit at that spacing.

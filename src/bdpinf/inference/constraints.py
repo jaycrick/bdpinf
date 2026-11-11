@@ -83,7 +83,10 @@ class Constraints:
             if transform == "interval":
                 lower_ok, upper_ok = param.lower <= value, value <= param.upper
             else:
-                lower_ok = value >= 0 if transform in ("log", "logit") else True
+                if transform == "log":
+                    lower_ok = value >= param.lower
+                else:
+                    lower_ok = value >= 0 if transform == "logit" else True
                 upper_ok = value <= 1 if transform == "logit" else True
             if not np.isfinite(value) or not lower_ok or not upper_ok:
                 msg = f"Fixed value for '{name}' is outside its domain: {value}"
@@ -115,6 +118,12 @@ class Constraints:
                 members.append(i)
             if len({params[i].transform for i in members}) > 1:
                 msg = f"Equality group {list(group)} mixes parameter transforms"
+                raise ValueError(msg)
+            if (
+                len({params[i].lower for i in members}) > 1
+                and params[members[0]].transform == "log"
+            ):
+                msg = f"Equality group {list(group)} mixes different minimum values"
                 raise ValueError(msg)
             head = min(members)
             for i in members:
@@ -156,7 +165,7 @@ class CompiledConstraints:
     is_fixed: np.ndarray
     fixed_natural: np.ndarray
     codes: np.ndarray
-    lower: np.ndarray  # interval bounds (unused for other transforms)
+    lower: np.ndarray  # interval bounds, or the minimum of a log parameter
     upper: np.ndarray
 
     @property
@@ -201,7 +210,7 @@ class CompiledConstraints:
         unit = jax.nn.sigmoid(u)
         natural = jnp.where(
             self.codes == _CODES["log"],
-            jnp.exp(u),
+            self.lower + jnp.exp(u),
             jnp.where(
                 self.codes == _CODES["logit"],
                 unit,
@@ -222,10 +231,15 @@ class CompiledConstraints:
         """
         values = jnp.asarray(natural, dtype=jnp.float64)[self.free_indices]
         codes = self.codes[self.free_indices]
-        safe = jnp.where(
-            codes == _CODES["identity"], values, jnp.clip(values, 1e-300, None)
-        )
         lower, upper = self.lower[self.free_indices], self.upper[self.free_indices]
+        is_log = codes == _CODES["log"]
+        # A log parameter is measured above its minimum; values at or below it
+        # are lifted to 1e-6 (relative) above, so the log stays finite.
+        shifted = values - jnp.where(is_log, lower, 0.0)
+        floor = jnp.where(is_log, 1e-6 * lower, 0.0) + 1e-300
+        safe = jnp.where(
+            codes == _CODES["identity"], values, jnp.clip(shifted, floor, None)
+        )
         frac = jnp.clip((values - lower) / (upper - lower), 1e-12, 1.0 - 1e-12)
         return jnp.where(
             codes == _CODES["log"],

@@ -54,7 +54,10 @@ _PENALTY = 1e20
 """Objective value returned where the likelihood is not finite."""
 
 _BOUNDARY_LOG_RATE = -12.0
-"""Log-scale parameter values below this count as having hit the zero boundary."""
+"""Log-scale parameter values below this count as having hit the boundary.
+
+For a rate with a minimum value this is the log of its excess over the minimum.
+"""
 
 _METHODS = ("trust-exact", "L-BFGS-B")
 _MIN_GROUP = 2
@@ -97,7 +100,8 @@ class FitResult:
         Smallest eigenvalue of the negative-log-likelihood Hessian there;
         positive at a strict interior maximum.
     at_interior_optimum : bool
-        Converged, positive-definite Hessian and no rate at the zero boundary.
+        Converged, positive-definite Hessian and no rate at its boundary (zero, or
+        the family's ``min_value``).
     covariance_free : NDArray | None
         Covariance of the free unconstrained parameters (inverse observed
         information).
@@ -966,7 +970,8 @@ def profile_likelihood_interval(
     Returns
     -------
     tuple[float, float]
-        Lower and upper limits; a limit is ``0.0`` or ``inf`` if not bracketed.
+        Lower and upper limits; a limit is the parameter's minimum (``0.0`` unless
+        the rate family has a ``min_value``) or ``inf`` if not bracketed.
 
     """
     if name not in result.model.names:
@@ -974,7 +979,9 @@ def profile_likelihood_interval(
         raise ValueError(msg)
     target = result.log_likelihood - 0.5 * float(scipy.stats.chi2.ppf(level, 1))
     centre = result.params[name]
-    is_log = result.model.params[result.model.names.index(name)].transform == "log"
+    param = result.model.params[result.model.names.index(name)]
+    is_log = param.transform == "log"
+    floor = param.lower if is_log else 0.0  # minimum value of a log parameter
     fixed_base = dict(result.constraints.fixed)
     # Profiling frees ``name`` from its equality group; the rest stay tied.
     equal = [
@@ -998,11 +1005,13 @@ def profile_likelihood_interval(
     def search(direction: int) -> float:
         steps = np.arange(1, 9) / 8.0 * span
         probe = (
-            centre * np.exp(direction * steps) if is_log else centre + direction * steps
+            floor + (centre - floor) * np.exp(direction * steps)
+            if is_log
+            else centre + direction * steps
         )
         previous = centre
         for value in probe:
-            if value < 0 and is_log:
+            if value < floor and is_log:
                 break
             if drop(float(value)) < 0:
                 a, b = sorted((previous, float(value)))
@@ -1010,6 +1019,6 @@ def profile_likelihood_interval(
                     scipy.optimize.brentq(drop, a, b, xtol=1e-6 * max(1.0, abs(centre)))
                 )
             previous = float(value)
-        return 0.0 if direction < 0 else float("inf")
+        return floor if direction < 0 else float("inf")
 
     return search(-1), search(+1)
