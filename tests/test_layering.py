@@ -60,6 +60,7 @@ _LAYERS: dict[str, int] = {
     "bdpinf.visualization.bayesian_plots": 8,
     "bdpinf.visualization.correlation_plots": 8,
     "bdpinf.visualization.date_distribution_plots": 8,
+    "bdpinf.visualization.figure_manifest": 8,
     "bdpinf.visualization.genealogy": 8,
     "bdpinf.visualization.plotting": 8,
     "bdpinf.visualization.splitting_plots": 8,

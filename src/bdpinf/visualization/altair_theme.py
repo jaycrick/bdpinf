@@ -23,6 +23,8 @@ from pathlib import Path
 
 import altair as alt
 
+from .figure_manifest import record_figure
+
 logger = logging.getLogger(__name__)
 
 _FIGURE_DIR_ENV_VAR = "BDPINF_FIGURE_DIR"
@@ -409,7 +411,8 @@ def save_chart(
     Returns
     -------
     Path
-        Path to the written file.
+        Path to the written file, also recorded in the directory's figure
+        manifest (see :mod:`bdpinf.visualization.figure_manifest`).
     """
     output_path = _resolve_output_dir(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -421,6 +424,7 @@ def save_chart(
 
     file_path = output_path / f"{filename}.{fmt}"
     sized.save(str(file_path), engine="vl-convert")
+    record_figure(file_path)
     return file_path
 
 

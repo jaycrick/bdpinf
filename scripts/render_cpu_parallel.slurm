@@ -65,3 +65,6 @@ for notebook in "${NOTEBOOKS[@]}"; do
   echo "=== Rendering ${notebook} ==="
   uv run quarto render "${notebook}" --cache-refresh
 done
+
+echo "=== Stale figure report (dry run) ==="
+scripts/prune_figures.sh

@@ -31,10 +31,14 @@ import numpy as np
 import pandas as pd
 from IPython.display import display
 
+from bdpinf import find_project_root
 from bdpinf.analysis import FitModelConfig, fit_single_model
 from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.visualization import save_chart
 from bdpinf.visualization.altair_theme import PTOLQUAL
 from bdpinf.visualization.genealogy import plot_genealogy_tree
+
+figures_dir = find_project_root() / "figures" / "validation" / "single_epoch"
 ```
 
 ## Simulate One Dataset
@@ -77,6 +81,7 @@ print(
 )
 
 genealogy_fig = plot_genealogy_tree(simulation_df)
+save_chart(genealogy_fig, "vse02_genealogy_tree", output_dir=figures_dir)
 genealogy_fig
 ```
 
@@ -155,6 +160,7 @@ if nll_history:
         )
     )
     display(fig_nll)
+    save_chart(fig_nll, "vse02_nll_convergence", output_dir=figures_dir)
 else:
     print("No NLL history available for this fit.")
 ```

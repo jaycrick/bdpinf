@@ -37,6 +37,12 @@ from .bayesian_plots import (
 )
 from .correlation_plots import correlation_heatmap_chart, posterior_rate_correlation
 from .date_distribution_plots import plot_date_range_kde_comparison
+from .figure_manifest import (
+    PruneReport,
+    current_source,
+    prune_figures,
+    record_figure,
+)
 from .plotting import (
     convergence_chart,
     rate_ci_panel,
@@ -55,11 +61,13 @@ __all__ = [
     "THEME_NAME",
     "PriorPosteriorPanel",
     "PriorPosteriorRatePanel",
+    "PruneReport",
     "RatePanel",
     "TracePanel",
     "age_density_frame",
     "convergence_chart",
     "correlation_heatmap_chart",
+    "current_source",
     "display_svg",
     "get_figure_dir",
     "plot_conditioned_trajectories",
@@ -73,8 +81,10 @@ __all__ = [
     "prior_posterior_rates_chart",
     "prior_rate_samples",
     "prior_rates_chart",
+    "prune_figures",
     "rate_ci_panel",
     "rate_frame",
+    "record_figure",
     "register_export_fonts",
     "save_chart",
     "save_chart_html",

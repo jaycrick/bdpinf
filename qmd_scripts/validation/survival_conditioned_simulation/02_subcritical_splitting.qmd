@@ -55,9 +55,15 @@ from bdsurv import (
     simulate_subcritical_survival_splitting,
 )
 
+from bdpinf import find_project_root
 from bdpinf.visualization import (
     plot_conditioned_trajectories,
     plot_empirical_population_mean,
+    save_chart,
+)
+
+figures_dir = (
+    find_project_root() / "figures" / "validation" / "survival_conditioned_simulation"
 )
 ```
 
@@ -105,6 +111,7 @@ fig_conditioned = plot_conditioned_trajectories(
     max_trajectories=10,
     title="Conditioned Population Trajectories (Splitting)",
 )
+save_chart(fig_conditioned, "vsc02_conditioned_trajectories", output_dir=figures_dir)
 fig_conditioned
 ```
 
@@ -116,6 +123,7 @@ fig_mean = plot_empirical_population_mean(
     mean_populations=splitting_result.level_mean_populations,
     title="Empirical Mean Population by Level (Splitting)",
 )
+save_chart(fig_mean, "vsc02_empirical_population_mean", output_dir=figures_dir)
 fig_mean
 ```
 

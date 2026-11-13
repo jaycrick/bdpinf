@@ -47,6 +47,24 @@ uv run quarto preview          # live preview
 uv run lintquarto -l ruff basedpyright -p qmd_scripts docs -e .venv _output   # after editing any .qmd
 ```
 
+## Figure manifests
+
+Every `save_chart` call records the file it wrote in `<output_dir>/.figure_manifest/<source-slug>.txt`.
+The first line is `# source: <path>` (the Quarto document being rendered, else the running script, else `interactive`), followed by one filename per line.
+The first write per (directory, source) in a process truncates the manifest and later writes append, so a manifest always describes its source's last execution; cached or frozen notebooks keep theirs.
+
+After a full re-render, find figures that no source writes any more:
+
+```bash
+scripts/prune_figures.sh                     # dry run: lists stale and unmanaged figures, orphan manifests
+scripts/prune_figures.sh --apply             # delete stale figures and orphan manifests
+scripts/prune_figures.sh --apply --include-unmanaged   # also delete figures in directories without a manifest
+```
+
+A manifest whose source file no longer exists is an orphan: it is dropped and its figures become stale.
+`scripts/render_cpu_parallel.slurm` ends with the dry-run report.
+The same tool is available as `bdpinf.visualization.prune_figures`.
+
 ## API reference (separate site)
 
 Generated from docstrings by great-docs; structure and ordering live in `great-docs.yml`.

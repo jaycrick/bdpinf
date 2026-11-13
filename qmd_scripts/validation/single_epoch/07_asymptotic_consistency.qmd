@@ -49,6 +49,7 @@ from bdpinf.analysis.spike_detection import (
 )
 from bdpinf.analysis.validation_helpers import safe_mean, safe_var
 from bdpinf.utils import format_table_dataframe, json_safe
+from bdpinf.visualization import save_chart
 from bdpinf.visualization.plotting import plot_parameter_consistency
 
 
@@ -121,6 +122,7 @@ reproduction) is cheap and still runs at render time.
 from bdpinf import find_project_root
 from bdpinf.inference import load_recovery_results
 
+figures_dir = find_project_root() / "figures" / "validation" / "single_epoch"
 recovery_samples_dir = find_project_root() / "recovery_samples"
 loaded = load_recovery_results(
     recovery_samples_dir / "single_epoch_asymptotic_consistency.npz"
@@ -295,7 +297,7 @@ plot_configs = [
 
 
 def plot_consistency(parameter: str) -> None:
-    """Build and display the consistency chart for one parameter."""
+    """Build, display and save the consistency chart for one parameter."""
     chart = plot_parameter_consistency(
         summary_df=summary_df,
         results_df=results_df,
@@ -307,10 +309,10 @@ def plot_consistency(parameter: str) -> None:
         title=f"{parameter.capitalize()}-rate consistency across observation time",
     )
     display(chart)
+    save_chart(chart, f"vse07_{parameter}_consistency", output_dir=figures_dir)
 ```
 
 ::: {.panel-tabset}
-
 ## Birth rate
 
 ```{python}
@@ -331,8 +333,50 @@ plot_consistency("death")
 # | label: consistency-growth
 plot_consistency("growth")
 ```
-
 :::
+
+### Supercritical Regime (Talk Figure)
+
+Birth and death rate consistency for the supercritical regime only,
+stacked with short panels and titles kept.
+
+```{python}
+# | label: consistency-supercritical-talk
+import altair as alt
+
+supercritical = "Supercritical"
+results_sc = results_df[results_df["regime"] == supercritical].reset_index(drop=True)
+summary_sc = summary_df[summary_df["regime"] == supercritical].reset_index(drop=True)
+plot_configs_sc = [cfg for cfg in plot_configs if cfg["name"] == supercritical]
+
+
+def talk_panel(parameter: str) -> alt.FacetChart:
+    """Build the supercritical consistency panel for one parameter."""
+    chart = plot_parameter_consistency(
+        summary_df=summary_sc,
+        results_df=results_sc,
+        regime_configs=plot_configs_sc,
+        bootstrap_samples=bootstrap_samples,
+        seed=seed,
+        parameter_name=parameter,
+        true_rate_key=f"{parameter}_rate",
+        title=f"{parameter.capitalize()} rate",
+    )
+    chart = chart.copy()
+    chart.spec = chart.spec.properties(height=80)
+    return chart
+
+
+talk_figure = alt.vconcat(talk_panel("birth"), talk_panel("death"))
+save_chart(
+    talk_figure,
+    "vse07_consistency_supercritical",
+    width=110,
+    output_dir=figures_dir,
+    keep_title=True,
+)
+display(talk_figure)
+```
 
 ```{python}
 # | label: compile-time-report

@@ -47,11 +47,15 @@ import pandas as pd
 import scipy.optimize
 from itables import show as show_table
 
+from bdpinf import find_project_root
 from bdpinf.inference import AgeData, BirthDeathModel, fit, moment_initial_rates
 from bdpinf.inference.likelihood import log_likelihood_rates
 from bdpinf.simulation import simulate_bdp_ages_from_distributions
 from bdpinf.utils import format_table_dataframe
+from bdpinf.visualization import save_chart
 from bdpinf.visualization.altair_theme import PTOLQUAL, display_svg
+
+figures_dir = find_project_root() / "figures" / "validation" / "single_epoch"
 ```
 
 ## Simulate two datasets
@@ -193,6 +197,7 @@ fig_history = (
     .facet(column=alt.Column("scenario:N", title=None), spacing=20)
     .resolve_scale(y="independent")
 )
+save_chart(fig_history, "vse03_nll_history", output_dir=figures_dir)
 display_svg(fig_history)
 ```
 

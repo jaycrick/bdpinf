@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.2] --- 2026-11-13
+
+- `visualization.figure_manifest`: `save_chart` records each figure it writes in `<output_dir>/.figure_manifest/<source>.txt`, naming the Quarto document or script that produced it; `prune_figures` (and `scripts/prune_figures.sh`) lists or deletes figures no live manifest mentions.
+
 ## [0.4.1] --- 2026-11-11
 
 - `inference`: rate families take a minimum value (`PiecewiseConstant(min_value=...)`, `PiecewiseLinear(min_value=...)`, and `min_birth` / `min_death` on `BirthDeathModel.piecewise_constant` / `.piecewise_linear`).
