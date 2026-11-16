@@ -43,6 +43,10 @@ There are no aliases for the old names.
 - Code that read `bdsurv` internals (`bdsurv._extinction.pr_extinction`, `bdsurv.linear_rates`, `bdsurv.gillespie`) should follow the `bdsurv` 0.5.0 migration notes:
   for example `-math.expm1(bdsurv.log_survival_probability(b, d, T))` replaces `pr_extinction(b, d, T)`.
 
+### Added
+
+- `models.rate_functions`: three new `RateFunction` families with exact integrals, `PiecewiseExponentialRate` (linear on the log scale), `PiecewiseQuadraticRate` (values at epoch start, midpoint and end, with `continuous`, `spline` and `from_linear` constructors) and `SinusoidalRate` (its breakpoints are the interior half-periods, so quadrature resolves each oscillation); all are exported from `bdpinf.models`.
+
 ## [0.4.2] --- 2026-11-13
 
 - `visualization.figure_manifest`: `save_chart` records each figure it writes in `<output_dir>/.figure_manifest/<source>.txt`, naming the Quarto document or script that produced it; `prune_figures` (and `scripts/prune_figures.sh`) lists or deletes figures no live manifest mentions.

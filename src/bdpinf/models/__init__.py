@@ -17,12 +17,22 @@ from .math_populations import (
     calculate_populations_log_lik,
     calculate_populations_log_pmf,
 )
-from .rate_functions import PiecewiseConstantRate, PiecewiseLinearRate, RateFunction
+from .rate_functions import (
+    PiecewiseConstantRate,
+    PiecewiseExponentialRate,
+    PiecewiseLinearRate,
+    PiecewiseQuadraticRate,
+    RateFunction,
+    SinusoidalRate,
+)
 
 __all__ = [
     "PiecewiseConstantRate",
+    "PiecewiseExponentialRate",
     "PiecewiseLinearRate",
+    "PiecewiseQuadraticRate",
     "RateFunction",
+    "SinusoidalRate",
     "calculate_populations_log_lik",
     "calculate_populations_log_pmf",
     "log_nested_w_general",
