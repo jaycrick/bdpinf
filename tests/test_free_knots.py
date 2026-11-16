@@ -175,6 +175,7 @@ class TestFitKnots:
 class TestKnotMethods:
     """Test the default and thorough searches of fit_knots."""
 
+    @pytest.mark.slow
     def test_thorough_runs_three_methods_and_keeps_the_best(
         self, data: AgeData
     ) -> None:
@@ -213,6 +214,7 @@ class TestKnotMethods:
 class TestJointFit:
     """Test fit() and fit_bayesian() with free knots."""
 
+    @pytest.mark.slow
     def test_joint_fit_reports_sorted_knots(self, data: AgeData) -> None:
         model = BirthDeathModel.piecewise_linear(FreeKnots(2, _T))
         result = fit(data, model, compute_covariance=False)
@@ -225,6 +227,7 @@ class TestJointFit:
         result = fit(data, BirthDeathModel.piecewise_constant([50.0, _T]))
         assert result.knot_times is None
 
+    @pytest.mark.slow
     def test_bayesian_knot_draws(self, data: AgeData) -> None:
         model = BirthDeathModel.piecewise_linear(FreeKnots(2, _T, bounds=(10.0, 90.0)))
         start = fit(data, model, compute_covariance=False)
@@ -278,6 +281,7 @@ class TestMinSpacing:
         with pytest.raises(ValueError, match="No placement"):
             _candidates([(40.0, 60.0)], 16, 0, min_spacing=30.0, fixed=np.array([50.0]))
 
+    @pytest.mark.slow
     @pytest.mark.parametrize("n_knots", [2, 3])
     def test_grid_newton_respects_spacing(self, data: AgeData, n_knots: int) -> None:
         spacing = 25.0 if n_knots == 2 else 18.0
@@ -296,6 +300,7 @@ class TestMinSpacing:
         result = fit_knots(data, model, n_candidates=16, seed=1)
         assert np.all(_gaps(result.knot_times) >= 60.0 - 1e-6)
 
+    @pytest.mark.slow
     def test_thorough_methods_respect_spacing(self, data: AgeData) -> None:
         model = BirthDeathModel.piecewise_constant(
             FreeKnots(2, _T, bounds=(5.0, 95.0), min_spacing=30.0)

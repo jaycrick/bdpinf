@@ -166,7 +166,7 @@ rsync -avzP --exclude="/.*" <hpc-host>:/path/to/remote/bdpinf/ /path/to/local/bd
 ```
 
 The trailing slash on the source copies its contents rather than the directory itself,
-and `--exclude="/.*"` skips top-level dotfiles and directories (`.git`, `.venv`, …)
+and `--exclude="/.*"` skips top-level dotfiles and directories (`.git`, `.venv`, ...)
 so each machine keeps its own environment and git state.
 This is an update-only pull (no `--delete`), so local-only files survive the sync.
 SLURM job logs land in repo-root `logs/` rather than inside `_output/`

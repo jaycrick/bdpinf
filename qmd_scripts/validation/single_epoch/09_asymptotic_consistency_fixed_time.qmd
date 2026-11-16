@@ -179,7 +179,6 @@ def plot_consistency(parameter: str) -> None:
 ```
 
 ::: {.panel-tabset}
-
 ## Birth rate
 
 ```{python}
@@ -200,7 +199,6 @@ plot_consistency("death")
 # | label: consistency-growth
 plot_consistency("growth")
 ```
-
 :::
 
 ```{python}

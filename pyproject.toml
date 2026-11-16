@@ -83,15 +83,28 @@ reportDuplicateImport = "none"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["B", "C4", "D", "E", "F", "I", "PIE", "PT", "RUF", "SIM", "UP", "W"]
+select = [
+  "B", "C4", "C90", "D", "E", "F", "I", "PIE", "PT", "RUF", "SIM", "UP", "W",
+  "ARG", "BLE", "ERA", "N", "NPY", "PERF", "PLR", "PTH", "RET", "SLF"
+]
 
 ignore = [
   "C408", # dict(key=value) is a fine way to build kwargs
+  "N803", # mathematical argument names (T, E, W) follow the paper
+  "N806", # mathematical variable names (T, E, W) follow the paper
+  "PLR2004", # numeric literals are normal in mathematical code and tests
   "PT018", # composite asserts are fine; splitting them hurts readability
   "RUF001", # math notation (λ, μ, ×, ·) is intentional in strings, docstrings, comments
   "RUF002",
   "RUF003"
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 10
+max-positional-args = 5
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
@@ -106,18 +119,24 @@ convention = "numpy"
 "tests/*" = [
   "D101", # test classes are self-documenting via their names
   "D102", # test methods are self-documenting via their names
-  "E501" # test strings and fixture data are allowed to be long
+  "E501", # test strings and fixture data are allowed to be long
+  "PLR0913", # test helpers and fixtures take many arguments
+  "PLR0917",
+  "SLF001" # tests exercise private helpers directly
 ]
 # lintquarto extracts qmd cells to temporary .py files in the same directory.
 # These rules are false positives or impractical to enforce in notebook code:
 "qmd_scripts/**" = [
   "B018", # bare last-line expressions are intentional display outputs
   "B905", # zip() strict= is impractical to require in analysis notebooks
+  "BLE001", # the compile-time-report cell tolerates an unreadable timing log
   "D100", # notebooks have no module-level docstring
   "D101", # notebook TypedDict/dataclasses don't need class docstrings
   "D103", # notebook helper functions don't need docstrings
   "E501", # analysis cells routinely have long lines
-  "I001" # import ordering across cells is flexible by design
+  "I001", # import ordering across cells is flexible by design
+  "PLR0917", # notebook helper functions take plain positional arguments
+  "PTH123" # a one-off debug notebook writes its profile report with open()
 ]
 "docs/**" = [
   "B018",
@@ -128,9 +147,49 @@ convention = "numpy"
   "E501",
   "I001"
 ]
+# TEMPORARY: removed by step B6
+"src/bdpinf/analysis/bootstrap_date_density.py" = ["PLR0915"]
+"src/bdpinf/analysis/subset_fitting.py" = ["PLR0915"]
+"src/bdpinf/inference/constraints.py" = ["C901", "PLR0912", "PLR0915"]
+"src/bdpinf/inference/fitting.py" = ["C901", "PLR0912", "PLR0915"]
+"src/bdpinf/inference/knots.py" = ["C901", "PLR0912", "PLR0915"]
+"src/bdpinf/inference/likelihood.py" = ["C901", "PLR0912", "PLR0915"]
+"src/bdpinf/inference/rate_models.py" = ["C901"]
+"src/bdpinf/utils.py" = ["C901", "PLR0911"]
+# TEMPORARY: removed by step B7
+# (TOML forbids repeating a key, so where a file also appears under another
+# step, its entry here uses the equivalent glob `src/**/<dir>/<file>`.)
+"src/**/analysis/bootstrap_date_density.py" = ["PLR0913", "PLR0917"]
+"src/bdpinf/analysis/latex_tables.py" = ["ARG001", "PERF401"]
+"src/bdpinf/analysis/multi_epoch_recovery.py" = ["PLR0917"]
+"src/**/analysis/subset_fitting.py" = ["BLE001", "PLR0917"]
+"src/bdpinf/analysis/validation_helpers.py" = ["BLE001"]
+"src/**/inference/fitting.py" = ["PLR0913", "PLR0917"]
+"src/bdpinf/models/math_general.py" = ["PLR0917"]
+"src/bdpinf/models/math_populations.py" = ["PLR0917"]
+"src/bdpinf/process.py" = ["RET504"]
+"src/**/utils.py" = ["BLE001", "PLR0124"]
+"src/bdpinf/visualization/age_fit_plot.py" = ["BLE001"]
+"src/bdpinf/visualization/altair_theme.py" = ["BLE001"]
+"src/bdpinf/visualization/date_distribution_plots.py" = ["PLR0913"]
+"src/bdpinf/visualization/plotting.py" = ["BLE001", "PLR0913", "PLR0917"]
+"tests/test_asymptotic_consistency.py" = ["ARG001", "ARG005"]
+"tests/test_bootstrap_date_density.py" = ["N802"]
+"tests/test_integration.py" = ["BLE001"]
+"tests/test_layering.py" = ["PERF401"]
+"tests/test_likelihood.py" = ["N802"]
+"tests/test_multi_epoch_recovery_helpers.py" = ["ARG001", "ARG005"]
+"tests/test_population_probability.py" = ["ERA001"]
+"tests/test_simulation.py" = ["ARG005"]
+"tests/test_single_epoch_recovery_helpers.py" = ["ARG001", "ARG005"]
+"tests/test_subset_fitting.py" = ["ERA001"]
+"tests/test_validation_helpers.py" = ["ARG001"]
+# TEMPORARY: removed by step B8
+"scripts/bench_fitting.py" = ["PLR0917", "SLF001"]
+"src/**/process.py" = ["SLF001"]
 
 [tool.pytest.ini_options]
-addopts = "-m \"not slow\" --cov --cov-report=term-missing --cov-fail-under=86"
+addopts = "-m \"not slow\" --strict-markers"
 markers = [
   "recovery: simulate-then-fit parameter recovery tests (implies slow)",
   "regression: golden-value tests guarding against numerical drift",

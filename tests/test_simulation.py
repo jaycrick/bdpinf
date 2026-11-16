@@ -90,6 +90,7 @@ class TestBdpAgeDistributionSampler:
 class TestBdpAgeDistributionSampling:
     """Test age sampling from BDP distribution formulas."""
 
+    @pytest.mark.slow
     def test_population_and_age_accounting(self) -> None:
         """Sampled ages should match one spine plus n-1 non-spine ages."""
         birth_rate = 0.25

@@ -37,7 +37,7 @@ Full command list, with the rationale for each, is in `CONTRIBUTING.md`.
 The essentials:
 
 - Run `uv run ruff format src tests` and `uv run ruff check --fix src tests` first, and let Ruff fix what it can; do not run standalone `isort` over `src`/`tests`.
-- `uv run pytest` (fast suite, coverage gate enforced), `uv run basedpyright --project pyproject.toml src/` (0 errors), `uv run pre-commit run --all-files` (everything CI runs besides pytest).
+- `uv run pytest` (fast suite, no coverage; CI adds `--cov --cov-fail-under=86`, see `CONTRIBUTING.md`), `uv run basedpyright --project pyproject.toml src/` (0 errors), `uv run pre-commit run --all-files` (everything CI runs besides pytest).
 - After creating or editing a `.qmd`: `uv run lintquarto -l ruff basedpyright -p qmd_scripts docs -e .venv _output`.
 - Always `uv run quarto ...` (plain `quarto` uses the system Python and fails); API reference is `uv run great-docs build`.
 
