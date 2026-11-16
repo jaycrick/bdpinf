@@ -24,12 +24,15 @@ def _simulate_two_epoch(
     birth_rates: list[float],
     death_rates: list[float],
     seed: int,
+    *,
+    ensure_non_extinct: bool = False,
 ) -> np.ndarray | None:
     """Simulate and return survivor ages, or None if too few."""
     df = simulate_birth_death(
         PiecewiseConstant(np.array(birth_rates), _TIMES),
         PiecewiseConstant(np.array(death_rates), _TIMES),
         random_seed=seed,
+        ensure_non_extinct=ensure_non_extinct,
     )
     surviving = df.surviving_records
     if surviving is None or len(surviving) < _MIN_SURVIVORS:
@@ -71,11 +74,12 @@ class TestRecoveryMultiEpoch:
         reason=(
             "Death rates are weakly identified from survivor-ages-only data "
             "(no extinction times / population time series observed); "
-            "confirmed via direct inspection that fitted death rates "
-            "collapse toward zero for several seeds (e.g. ~1e-6) instead of "
-            "the true epoch-2 death rate. Same statistical identifiability "
-            "limitation as the single-epoch death-rate recovery tests, not "
-            "an optimizer/convergence bug."
+            "over seeds 0-19 only 7 fits were attempted; the epoch-2 death "
+            "rate came out as 0 in 6 of 7 (truth 0.007) and the epoch-1 death "
+            "rate was 0.005 to 27 (truth 0.003), so 0 of the 4 required "
+            "epoch-1 recoveries within 30% occurred. Same statistical "
+            "identifiability limitation as the single-epoch death-rate "
+            "recovery tests, not an optimizer/convergence bug."
         ),
         strict=False,
     )
@@ -128,8 +132,10 @@ class TestRecoveryMultiEpoch:
             "Same death-rate identifiability limitation as "
             "test_recover_two_epoch_with_equal_birth_constraint: fitted "
             "death rates collapse toward zero for several seeds instead of "
-            "tracking the true per-epoch values. Pre-existing statistical "
-            "limitation, not an optimizer/convergence bug."
+            "tracking the true per-epoch values (epoch-1 rate closer to its own "
+            "truth in 1 of 6 valid replicates when run, 4 needed). "
+            "Pre-existing statistical limitation, not an optimizer/"
+            "convergence bug."
         ),
         strict=False,
     )
@@ -171,7 +177,11 @@ class TestRecoveryMultiEpoch:
 
     def test_two_epoch_fit_returns_two_rates(self) -> None:
         """Fitted model should expose two birth and two death rate values."""
-        ages = _simulate_two_epoch([0.01, 0.01], [0.003, 0.007], seed=42)
+        # Seed 42 goes extinct without ``ensure_non_extinct``, so this test
+        # would always skip.
+        ages = _simulate_two_epoch(
+            [0.01, 0.01], [0.003, 0.007], seed=42, ensure_non_extinct=True
+        )
         if ages is None:
             pytest.skip("insufficient survivors for seed 42")
         result = _fit_ages(ages)
@@ -186,8 +196,9 @@ class TestRecoveryMultiEpoch:
             "two-epoch recovery tests: with 4 free parameters there is even "
             "less information per parameter, so fitted death rates collapse "
             "toward zero for most seeds instead of recovering the true "
-            "values. Pre-existing statistical limitation, not an "
-            "optimizer/convergence bug."
+            "values (0 of 11 replicates recovered all four parameters "
+            "within 30%, 4 needed). Pre-existing statistical limitation, "
+            "not an optimizer/convergence bug."
         ),
         strict=False,
     )

@@ -57,35 +57,34 @@ def _fit_frame(df: pd.DataFrame, times: float, **kwargs: object) -> FitResult:
 class TestIntegration:
     """Integration tests for complete workflows."""
 
-    @pytest.mark.xfail(
-        reason="result is a BirthDeathProcess, not subscriptable like a dict —"
-        " pre-existing failure, to be sorted through later"
-    )
     def test_full_workflow_simulation_and_fitting(self) -> None:
         """Test complete workflow: simulate data, then fit parameters."""
         # Step 1: Create a process with known parameters for simulation
         true_birth_rate = 0.05
         true_death_rate = 0.01
         # Step 1: Simulate data using modular function
-        simulated_df = simulate_birth_death(
+        # Seed 42 goes extinct at once without ``ensure_non_extinct``, which
+        # would leave nothing to fit.
+        process = simulate_birth_death(
             true_birth_rate,
             true_death_rate,
             200.0,
             random_seed=42,
+            ensure_non_extinct=True,
         )
 
-        if len(simulated_df) > 0:
-            surviving_data = simulated_df[simulated_df["survived"]]
-            if len(surviving_data) > 0:
-                fit_df = pd.DataFrame({"age": surviving_data["age"].values})
-                result = _fit_frame(fit_df, 200.0)
-                if result.success:
-                    fitted_birth = result.birth_values
-                    fitted_death = result.death_values
-                    assert fitted_birth > 0
-                    assert fitted_death >= 0
-                    assert np.isfinite(_as_float(fitted_birth))
-                    assert np.isfinite(_as_float(fitted_death))
+        surviving_data = process.surviving_records
+        assert surviving_data is not None
+        assert len(surviving_data) > 0
+        fit_df = pd.DataFrame({"age": surviving_data["age"].to_numpy()})
+        result = _fit_frame(fit_df, 200.0)
+        if result.success:
+            fitted_birth = result.birth_values
+            fitted_death = result.death_values
+            assert fitted_birth > 0
+            assert fitted_death >= 0
+            assert np.isfinite(_as_float(fitted_birth))
+            assert np.isfinite(_as_float(fitted_death))
 
     @pytest.mark.slow
     def test_multi_epoch_convergence_rate(self) -> None:
@@ -103,12 +102,13 @@ class TestIntegration:
             death_rates = birth_rates * rng.uniform(0.0025, 0.005, size=3)
             base_seed = int(rng.integers(0, 2**31 - 1))
 
-            df = simulate_birth_death(
+            process = simulate_birth_death(
                 PiecewiseConstant(birth_rates, times),
                 PiecewiseConstant(death_rates, times),
                 random_seed=base_seed,
             )
-            surviving = df[df["survived"]]
+            surviving = process.surviving_records
+            assert surviving is not None
             ages = None
             if len(surviving) >= min_survivors:
                 ages = surviving["age"].to_numpy(dtype=np.float64)
@@ -450,10 +450,6 @@ class TestIntegration:
             return
         assert result.birth_values[0] == pytest.approx(result.birth_values[1], rel=1e-4)
 
-    @pytest.mark.xfail(
-        reason="result is a BirthDeathProcess, not subscriptable like a dict —"
-        " pre-existing failure, to be sorted through later"
-    )
     def test_state_consistency_throughout_workflow(self) -> None:
         """Test that object state remains consistent throughout operations."""
         creation_times = []
@@ -478,23 +474,25 @@ class TestIntegration:
             )
             assert len(ages) == 2
             np.testing.assert_array_equal(ages, [400.0, 300.0])
-        simulated_df = simulate_birth_death(
+        process = simulate_birth_death(
             birth_rate,
             death_rate,
             300.0,
             random_seed=42,
+            ensure_non_extinct=True,
         )
+        assert process.records is not None
         final_time = 300.0
-        creation_times = list(simulated_df["creation_time"].values)
+        creation_times = list(process.records["creation_time"].to_numpy())
         ages = np.array([final_time - ct for ct in creation_times], dtype=np.float64)
         assert final_time == 300.0
         assert len(ages) == len(creation_times)
-        if len(creation_times) > 0:
-            assert final_time is not None
-            assert all(ct <= final_time for ct in creation_times)
-            assert all(age >= 0 for age in ages)
-            assert all(ct <= final_time for ct in creation_times)
-            assert all(age >= 0 for age in ages)
+        assert len(creation_times) > 0
+        assert final_time is not None
+        assert all(ct <= final_time for ct in creation_times)
+        assert all(age >= 0 for age in ages)
+        assert all(ct <= final_time for ct in creation_times)
+        assert all(age >= 0 for age in ages)
 
     def test_splitting_result_feeds_birth_death_process(self) -> None:
         """SplittingSimulationResult.conditioned_trajectories can seed a fit."""

@@ -142,12 +142,13 @@ class TestRecoverySingleEpoch:
     @pytest.mark.xfail(
         reason=(
             "Death rate is weakly identified from survivor-ages-only data "
-            "(no extinction times / population time series observed). For "
-            "several seeds the likelihood genuinely prefers death_rate -> 0 "
-            "over the true value -- confirmed via direct NLL comparison "
-            "(NLL at the near-zero fit < NLL at the true parameters). This "
-            "is a statistical identifiability limitation of the model, not "
-            "an optimizer/convergence bug."
+            "(no extinction times / population time series observed). Seeds "
+            "0-19 give only 2 recoveries within 20% (14 fits, death estimates "
+            "from 0 to 0.0079 against a truth of 0.003, 4 needed). For "
+            "several seeds the likelihood prefers death_rate -> 0 to the true "
+            "value (log-likelihood at the fit exceeds that at the true "
+            "parameters, seeds 0, 1 and 10). This is a statistical "
+            "identifiability limitation, not an optimizer/convergence bug."
         ),
         strict=False,
     )
@@ -167,11 +168,12 @@ class TestRecoverySingleEpoch:
 
     @pytest.mark.xfail(
         reason=(
-            "Critical process (λ=μ=0.005) at T=800 has an extinction "
-            "probability of ~80%; the survivor count rarely reaches "
-            "_MIN_SURVIVORS (max observed across 20 seeds: 12), so there is "
-            "rarely enough data to even attempt a fit. Pre-existing "
-            "test-parameter issue, not a fitting bug."
+            "Critical process (λ=μ=0.005) at T=800 almost always goes "
+            "extinct or stays small: over seeds 0-19 the survivor count never "
+            "reaches _MIN_SURVIVORS=15 (maximum 8; maximum 14 with "
+            "ensure_non_extinct), so no fit is ever attempted and 0 of the 4 "
+            "required replicates can pass. Test-scenario problem, not a "
+            "fitting bug."
         ),
         strict=False,
     )
@@ -194,7 +196,11 @@ class TestRecoverySingleEpoch:
 
     def test_recover_rates_are_self_consistent(self) -> None:
         """Fitted rates should be positive, finite, and ordered consistently."""
-        df = simulate_birth_death(0.01, 0.003, 600.0, random_seed=42)
+        # Seed 42 goes extinct without ``ensure_non_extinct``, so this test
+        # would always skip.
+        df = simulate_birth_death(
+            0.01, 0.003, 600.0, random_seed=42, ensure_non_extinct=True
+        )
         surviving = df.surviving_records
         if surviving is None or len(surviving) < _MIN_SURVIVORS:
             pytest.skip("insufficient survivors for this seed")
@@ -239,10 +245,11 @@ class TestRecoverySingleEpoch:
 
     @pytest.mark.xfail(
         reason=(
-            "Critical process (λ=μ=0.04) at T=1500 has an extinction "
-            "probability of ~98%; across 20 seeds none produced any "
-            "survivors at all. Pre-existing test-parameter issue (T far too "
-            "long relative to the rate), not a fitting bug."
+            "Critical process (λ=μ=0.04) at T=1500 almost always goes "
+            "extinct: over seeds 0-19 only seed 1 has survivors (126), so "
+            "at most 1 of the 4 required replicates can pass (1 observed). "
+            "Test-scenario problem (T far too long relative to the rate), "
+            "not a fitting bug."
         ),
         strict=False,
     )

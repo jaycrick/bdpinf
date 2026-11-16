@@ -117,9 +117,14 @@ class TestEdgeCases:
         assert np.isfinite(ll)
 
     @pytest.mark.xfail(
-        reason="set_epoch_end_times raises ValueError when the new epoch end time"
-        " is before an existing creation_time, but this test expects the"
-        " individual to be filtered out; the intended behaviour is undecided"
+        strict=True,
+        reason="BirthDeathProcess.set_epoch_end_times (process.py) raises"
+        " ValueError ('creation_times must be less than or equal to latest"
+        " epoch_end_time', from _validate_creation_times, restoring the old"
+        " epochs) when the new final epoch end time is before an existing"
+        " creation time; this test expects the late individual to be filtered"
+        " out so that process.ages is empty. Whether to filter or to keep"
+        " raising (as add_individual and the constructor do) is undecided.",
     )
     def test_epoch_end_time_before_creation_time(self) -> None:
         """Test behavior when epoch end time is before creation_time."""
