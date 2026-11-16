@@ -179,6 +179,117 @@ class TestFitSubset:
         assert fit.n_individuals == len(subset.frame)
 
 
+_ONE_EPOCH = [(100, 2000, "all")]
+_TWO_EPOCHS = [(100, 1000, "early"), (1000, 2000, "late")]
+
+
+class TestFitSubsetPinned:
+    """Pin the full result of fit_subset (recorded before refactoring it)."""
+
+    def test_point_ages_one_epoch(self) -> None:
+        fit = fit_subset(
+            _make_subset(),
+            epochs=_ONE_EPOCH,
+            start_time=100,
+            age_column="year",
+            random_seed=42,
+        )
+        assert fit.success
+        assert fit.n_individuals == 40
+        assert fit.log_likelihood == pytest.approx(-316.36626960732303, rel=1e-8)
+        assert len(fit.nll_history) == 4
+        assert fit.times.tolist() == [1900.0]
+        assert fit.ages[:3].tolist() == [1731.0, 430.0, 657.0]
+        (entry,) = fit.epoch_results
+        assert entry["period"] == "all"
+        assert (entry["start"], entry["end"], entry["n_individuals"]) == (100, 2000, 40)
+        assert entry["success"] is True
+        assert entry["birth_rates"] == pytest.approx(0.0011223661667571732, rel=1e-6)
+        assert entry["death_rates"] == pytest.approx(0.00010331545718196114, rel=1e-6)
+        assert entry["half_life"] == pytest.approx(6709.036570773349, rel=1e-6)
+        assert entry["birth_rate_se"] == pytest.approx(0.00017746890940778922, rel=1e-6)
+        assert entry["death_rate_se"] == pytest.approx(0.00010015659588165567, rel=1e-6)
+        assert entry["birth_rate_ci"] == pytest.approx(
+            (0.0008232700135362587, 0.0015301247361971485), rel=1e-6
+        )
+        assert entry["death_rate_ci"] == pytest.approx(
+            (1.545215917675753e-05, 0.0006907826647795047), rel=1e-6
+        )
+        assert set(entry) == {
+            "period",
+            "start",
+            "end",
+            "n_individuals",
+            "birth_rates",
+            "death_rates",
+            "half_life",
+            "success",
+            "birth_rate_se",
+            "death_rate_se",
+            "birth_rate_ci",
+            "death_rate_ci",
+        }
+
+    def test_date_ranges_one_epoch(self) -> None:
+        fit = fit_subset(
+            _make_range_subset(),
+            epochs=_ONE_EPOCH,
+            start_time=100,
+            age_column="year",
+            random_seed=42,
+            early_column="early",
+            late_column="late",
+        )
+        assert fit.success
+        assert fit.log_likelihood == pytest.approx(-313.4333497362368, rel=1e-8)
+        assert fit.ages[:3].tolist() == [194.0, 738.0, 637.0]
+        (entry,) = fit.epoch_results
+        assert entry["birth_rates"] == pytest.approx(0.0012082488086932147, rel=1e-6)
+        assert entry["death_rates"] == pytest.approx(0.00012919882322126963, rel=1e-6)
+        assert entry["birth_rate_se"] == pytest.approx(0.00019112731967773567, rel=1e-6)
+        assert entry["death_rate_ci"] == pytest.approx(
+            (1.9836108403273975e-05, 0.0008415126385882117), rel=1e-6
+        )
+
+    def test_two_epochs_counts_and_rates(self) -> None:
+        fit = fit_subset(
+            _make_subset(),
+            epochs=_TWO_EPOCHS,
+            start_time=100,
+            age_column="year",
+            random_seed=42,
+        )
+        assert fit.success
+        assert fit.log_likelihood == pytest.approx(-310.73266360504937, rel=1e-6)
+        assert fit.times.tolist() == [900.0, 1900.0]
+        early, late = fit.epoch_results
+        assert (early["period"], early["start"], early["end"]) == ("early", 100, 1000)
+        assert (late["period"], late["start"], late["end"]) == ("late", 1000, 2000)
+        assert early["n_individuals"] == 17
+        assert late["n_individuals"] == 23
+        assert early["birth_rates"] == pytest.approx(0.0024677424242989616, rel=1e-5)
+        assert late["birth_rates"] == pytest.approx(0.000799916530453757, rel=1e-5)
+        assert early["birth_rate_se"] == pytest.approx(0.0005985196108015166, rel=1e-4)
+        assert late["birth_rate_se"] == pytest.approx(0.00016679412874945823, rel=1e-4)
+        assert early["half_life"] == pytest.approx(1330.3584717168214, rel=1e-4)
+
+    def test_fit_failure_keeps_times_and_ages(self) -> None:
+        fit = fit_subset(
+            _make_subset(),
+            epochs=_ONE_EPOCH,
+            start_time=100,
+            age_column="year",
+            random_seed=42,
+            optimizers=["lbfgs"],
+        )
+        assert not fit.success
+        assert fit.epoch_results == []
+        assert fit.nll_history == []
+        assert fit.log_likelihood == float("-inf")
+        assert fit.times.tolist() == [1900.0]
+        assert fit.ages[:3].tolist() == [1731.0, 430.0, 657.0]
+
+
 # ---------------------------------------------------------------------------
 # Helpers for Bayesian driver tests
 # ---------------------------------------------------------------------------

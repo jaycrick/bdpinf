@@ -615,3 +615,62 @@ class TestBootstrapRecovery:
             f"Bootstrap mean resampled years deviate too much from deterministic: "
             f"max |diff| = {max_abs_diff:.1f} years"
         )
+
+
+class TestBootstrapQuantileResamplePinned:
+    """Pin the output of the bootstrap pipeline (recorded before refactoring it)."""
+
+    def test_seeded_output_is_unchanged(self) -> None:
+        ids, years = bootstrap_quantile_resample_dates(
+            _EARLY,
+            _LATE,
+            _ITEM_IDS,
+            _MID,
+            n_bootstrap=7,
+            batch_size=3,
+            grid_chunk=7,
+            n_grid=60,
+            seed=_SEED,
+        )
+        assert ids.dtype == np.uint16
+        assert years.dtype == np.int16
+        assert ids.tolist() == [
+            [10001, 10003, 10003, 10004, 10004],
+            [10001, 10001, 10002, 10004, 10005],
+            [10003, 10004, 10004, 10004, 10005],
+            [10001, 10003, 10003, 10004, 10005],
+            [10001, 10002, 10003, 10004, 10005],
+            [10003, 10003, 10003, 10004, 10005],
+            [10001, 10002, 10003, 10003, 10005],
+        ]
+        assert years.tolist() == [
+            [268, 592, 704, 896, 1105],
+            [238, 328, 506, 969, 1231],
+            [650, 863, 994, 1100, 1229],
+            [274, 585, 712, 974, 1226],
+            [272, 488, 664, 974, 1226],
+            [579, 650, 720, 981, 1219],
+            [270, 483, 608, 716, 1200],
+        ]
+
+    def test_wide_ids_widen_the_dtype(self) -> None:
+        ids, years = bootstrap_quantile_resample_dates(
+            _EARLY, _LATE, _ITEM_IDS + 70000, _MID, n_bootstrap=3, n_grid=60, seed=1
+        )
+        assert ids.dtype == np.uint32
+        assert ids.tolist() == [
+            [80001, 80003, 80003, 80004, 80005],
+            [80001, 80002, 80002, 80005, 80005],
+            [80002, 80002, 80003, 80005, 80005],
+        ]
+        assert years.tolist() == [
+            [274, 585, 712, 974, 1226],
+            [271, 429, 581, 1089, 1311],
+            [428, 550, 672, 1094, 1306],
+        ]
+
+    def test_negative_item_id_raises(self) -> None:
+        with pytest.raises(ValueError, match=r"item_ids must be non-negative\."):
+            bootstrap_quantile_resample_dates(
+                _EARLY, _LATE, _ITEM_IDS - 20000, _MID, n_bootstrap=3
+            )

@@ -38,18 +38,18 @@ import multiprocessing
 import os
 import time
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import numpy as np
 import scipy.optimize
 import scipy.stats.qmc
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from bdpinf.inference.constraints import Constraints
 from bdpinf.inference.fitting import FitResult, fit
 from bdpinf.inference.likelihood import AgeData
-from bdpinf.inference.rate_models import BirthDeathModel
+from bdpinf.inference.rate_models import BirthDeathModel, FreeKnots
 
 __all__ = ["KnotFitResult", "MethodResult", "fit_knots"]
 
@@ -235,41 +235,107 @@ class _Search:
     fit_kwargs: dict[str, Any]
 
 
-def _run_methods(
-    names: Sequence[str], job: _Search
-) -> dict[str, tuple[MethodResult, NDArray[np.float64]]]:
-    """Run the named searches; return each one's result and rates-and-knots vector."""
-    knots = job.model.knots
-    if knots is None:  # unreachable: checked by fit_knots
-        raise RuntimeError
-    data, model, user = job.data, job.model, job.user
-    free_idx = job.free_idx
-    free_names = [knots.names[i] for i in free_idx]
-    ranges = [knots.ranges[i] for i in free_idx]
-    initial = np.array([knots.initial_times[i] for i in free_idx])
-    lo = np.array([r[0] for r in ranges])
-    hi = np.array([r[1] for r in ranges])
-    tol = 1e-3 * (hi - lo)
-    n_rates = model.n_birth + model.n_death
-    fixed_knots = {n: user.fixed[n] for n in knots.names if n in user.fixed}
-    spacing = knots.min_spacing
-    fixed_vals = np.array(sorted(fixed_knots.values()), dtype=np.float64)
+@dataclasses.dataclass
+class _BestFit:
+    """The best rate fit seen so far by any method, used to warm-start later fits."""
 
-    def valid(free: NDArray[np.float64]) -> bool:
-        if spacing <= 0:
+    ll: float = -np.inf
+    natural: NDArray[np.float64] | None = None
+
+
+@dataclasses.dataclass
+class _MethodTrack:
+    """The best placement and the fit count of the method currently running."""
+
+    ll: float = -np.inf
+    taus: NDArray[np.float64] | None = None
+    natural: NDArray[np.float64] | None = None
+    fits: int = 0
+
+
+class _KnotSearch:
+    """The three knot searches over one job, sharing a cache of rate fits.
+
+    The quantities derived from the job (free knot names and ranges, spacing,
+    fixed knots, tolerances) are set once.
+    ``tried`` (log-likelihood of every placement already evaluated) and
+    ``best`` (best rate fit, the warm start for later fits) persist across the
+    methods run in one call, on purpose: a later method reuses the fits and the
+    warm start of an earlier one.
+    Only ``track`` (the best placement of the method that is running, and its
+    fit count) is reset before each method.
+    """
+
+    def __init__(self, job: _Search) -> None:
+        knots = job.model.knots
+        if knots is None:  # unreachable: checked by fit_knots
+            raise RuntimeError
+        self.job = job
+        self.knots = knots
+        self.free_idx = job.free_idx
+        self.free_names = [knots.names[i] for i in job.free_idx]
+        self.ranges = [knots.ranges[i] for i in job.free_idx]
+        self.initial = np.array([knots.initial_times[i] for i in job.free_idx])
+        self.lo = np.array([r[0] for r in self.ranges])
+        self.hi = np.array([r[1] for r in self.ranges])
+        self.tol = 1e-3 * (self.hi - self.lo)
+        self.n_rates = job.model.n_birth + job.model.n_death
+        self.fixed_knots = {
+            n: job.user.fixed[n] for n in knots.names if n in job.user.fixed
+        }
+        self.spacing = knots.min_spacing
+        self.fixed_vals = np.array(sorted(self.fixed_knots.values()), dtype=np.float64)
+        self.tried: dict[tuple[float, ...], float] = {}
+        self.best = _BestFit()
+        self.track = _MethodTrack()
+
+    def run(
+        self, names: Sequence[str]
+    ) -> dict[str, tuple[MethodResult, NDArray[np.float64]]]:
+        """Run the named searches in order; return each one's result and vector."""
+        searches = {
+            "brent": self._brent,
+            "de-profile": self._de_profile,
+            "grid-newton": self._grid_newton,
+        }
+        found: dict[str, tuple[MethodResult, NDArray[np.float64]]] = {}
+        for name in names:
+            self.track = _MethodTrack()
+            began = time.perf_counter()
+            searches[name]()
+            track = self.track
+            if track.taus is None or track.natural is None or not np.isfinite(track.ll):
+                logger.debug("method %s found no finite placement", name)
+                continue
+            found[name] = (
+                MethodResult(
+                    knot_times=self.all_knots(track.taus),
+                    log_likelihood=float(track.ll),
+                    seconds=time.perf_counter() - began,
+                    n_fits=int(track.fits),
+                ),
+                track.natural,
+            )
+        return found
+
+    def valid(self, free: NDArray[np.float64]) -> bool:
+        """Whether the free knots and the fixed ones respect ``min_spacing``."""
+        if self.spacing <= 0:
             return True
-        return _spacing_ok(np.concatenate([np.asarray(free), fixed_vals]), spacing)
+        return _spacing_ok(
+            np.concatenate([np.asarray(free), self.fixed_vals]), self.spacing
+        )
 
-    def intervals(low: float, high: float) -> list[tuple[float, float]]:
+    def intervals(self, low: float, high: float) -> list[tuple[float, float]]:
         """``[low, high]`` minus the zones within ``spacing`` of a fixed knot."""
         parts = [(low, high)]
-        if spacing <= 0:
+        if self.spacing <= 0:
             return parts
-        for f in fixed_vals:
+        for f in self.fixed_vals:
             cut: list[tuple[float, float]] = []
             for a, b in parts:
-                left = min(b, f - spacing)
-                right = max(a, f + spacing)
+                left = min(b, f - self.spacing)
+                right = max(a, f + self.spacing)
                 if left > a:
                     cut.append((a, left))
                 if b > right:
@@ -278,11 +344,11 @@ def _run_methods(
         return parts
 
     def bounded(
-        fun: Any, low: float, high: float, xatol: float
+        self, fun: Callable[[float], float], low: float, high: float, xatol: float
     ) -> tuple[float, float] | None:
         """Best ``(x, -fun)`` of a bounded scalar search over the valid intervals."""
         best_step = None
-        for a, b in intervals(low, high):
+        for a, b in self.intervals(low, high):
             if not b > a:
                 continue
             step = scipy.optimize.minimize_scalar(
@@ -292,172 +358,215 @@ def _run_methods(
                 best_step = step
         return None if best_step is None else (float(best_step.x), -best_step.fun)
 
-    tried: dict[tuple[float, ...], float] = {}
-    best: dict[str, Any] = {"ll": -np.inf, "natural": None}
-    track: dict[str, Any] = {"ll": -np.inf, "taus": None, "natural": None, "fits": 0}
+    def all_knots(self, free: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Every knot time (free ones sorted, fixed ones as given), in model order."""
+        values = (
+            dict(zip(self.free_names, np.sort(free), strict=True)) | self.fixed_knots
+        )
+        return np.array([values[n] for n in self.knots.names])
 
-    def all_knots(free: NDArray[np.float64]) -> NDArray[np.float64]:
-        values = dict(zip(free_names, np.sort(free), strict=True)) | fixed_knots
-        return np.array([values[n] for n in knots.names])
-
-    def fit_at(free: NDArray[np.float64], **extra: Any) -> FitResult:
-        fixed = {**user.fixed, **dict(zip(free_names, np.sort(free), strict=True))}
+    def fit_at(self, free: NDArray[np.float64], **extra: Any) -> FitResult:
+        """Fit the rates with the free knots held at ``free`` (warm-started)."""
+        job = self.job
+        fixed = {
+            **job.user.fixed,
+            **dict(zip(self.free_names, np.sort(free), strict=True)),
+        }
         start = job.init
-        if best["natural"] is not None:
-            start = np.concatenate([best["natural"][:n_rates], all_knots(free)])
+        if self.best.natural is not None:
+            start = np.concatenate(
+                [self.best.natural[: self.n_rates], self.all_knots(free)]
+            )
         return fit(
-            data,
-            model,
-            constraints=Constraints(fixed=fixed, equal=user.equal),
+            job.data,
+            job.model,
+            constraints=Constraints(fixed=fixed, equal=job.user.equal),
             init=start,
             **{**job.fit_kwargs, **extra},
         )
 
-    def record(value: float, taus: NDArray[np.float64], natural: Any) -> None:
-        if value > track["ll"]:
-            track.update(ll=value, taus=taus, natural=np.asarray(natural))
+    def record(
+        self, value: float, taus: NDArray[np.float64], natural: ArrayLike
+    ) -> None:
+        """Keep the placement as the running method's best if it improves."""
+        if value > self.track.ll:
+            self.track.ll = value
+            self.track.taus = taus
+            self.track.natural = np.asarray(natural)
 
-    def profile(free: NDArray[np.float64]) -> float:
+    def profile(self, free: NDArray[np.float64]) -> float:
+        """Log-likelihood with the free knots at ``free`` (``-inf`` if infeasible)."""
         free = np.sort(np.asarray(free, dtype=np.float64))
         key = _key(free)
-        if key in tried:
-            return tried[key]
-        if not valid(free):
-            tried[key] = -np.inf
+        if key in self.tried:
+            return self.tried[key]
+        if not self.valid(free):
+            self.tried[key] = -np.inf
             return -np.inf
-        track["fits"] += 1
+        self.track.fits += 1
         try:
-            result = fit_at(free, compute_covariance=False)
+            result = self.fit_at(free, compute_covariance=False)
         except ValueError as exc:
             logger.debug("no fit at knots %s: %s", key, exc)
-            tried[key] = value = -np.inf
+            self.tried[key] = value = -np.inf
             return value
-        tried[key] = value = result.log_likelihood
-        if value > best["ll"]:
-            best["ll"], best["natural"] = value, result.natural
-        record(value, free, result.natural)
-        if len(tried) % _LOG_EVERY == 0:
+        self.tried[key] = value = result.log_likelihood
+        if value > self.best.ll:
+            self.best.ll, self.best.natural = value, result.natural
+        self.record(value, free, result.natural)
+        if len(self.tried) % _LOG_EVERY == 0:
             logger.info(
                 "fit_knots: %d rate fits, best log-likelihood %.4f",
-                len(tried),
-                best["ll"],
+                len(self.tried),
+                self.best.ll,
             )
         return value
 
-    def brent() -> None:
-        if len(ranges) == 1:
-
-            def single(t: float) -> float:
-                return -profile(np.array([t]))
-
-            bounded(single, lo[0], hi[0], float(tol[0]))
+    def _brent(self) -> None:
+        """Bounded Brent over one knot, or cyclic coordinate sweeps over several."""
+        if len(self.ranges) == 1:
+            self._brent_single()
             return
-        current = initial.copy()
-        if not valid(current):
-            current = _candidates(
-                ranges,
-                job.n_candidates,
-                job.seed,
-                min_spacing=spacing,
-                fixed=fixed_vals,
-            )[0]
-        profile(current)
+        current = self._brent_start()
+        self.profile(current)
         for _ in range(_MAX_BRENT_SWEEPS):
-            moved = 0.0
-            for j in range(len(ranges)):
-                low = max(lo[j], current[j - 1] + spacing) if j > 0 else lo[j]
-                high = (
-                    min(hi[j], current[j + 1] - spacing)
-                    if j + 1 < len(current)
-                    else hi[j]
-                )
-                if not high > low:
-                    continue
-
-                def along(t: float, j: int = j) -> float:
-                    trial = current.copy()
-                    trial[j] = t
-                    return -profile(trial)
-
-                step = bounded(along, low, high, float(tol[j]))
-                if step is not None and step[1] >= profile(current):
-                    moved = max(moved, abs(step[0] - current[j]))
-                    current[j] = step[0]
-            if moved <= float(np.max(tol)):
+            if self._sweep(current) <= float(np.max(self.tol)):
                 break
 
-    def de_profile() -> None:
-        population: Any = "sobol"
-        if spacing > 0:
-            population = _candidates(
-                ranges,
-                8 * len(ranges),
-                job.seed,
-                min_spacing=spacing,
-                fixed=fixed_vals,
-            )
-            if len(population) < _DE_MIN_POPULATION:
-                population = np.resize(population, (_DE_MIN_POPULATION, len(ranges)))
+    def _brent_single(self) -> None:
+        """Bounded scalar search over the only free knot."""
+
+        def single(t: float) -> float:
+            return -self.profile(np.array([t]))
+
+        self.bounded(single, self.lo[0], self.hi[0], float(self.tol[0]))
+
+    def _brent_start(self) -> NDArray[np.float64]:
+        """Return the initial knots, or a valid candidate if they break spacing."""
+        current = self.initial.copy()
+        if not self.valid(current):
+            current = _candidates(
+                self.ranges,
+                self.job.n_candidates,
+                self.job.seed,
+                min_spacing=self.spacing,
+                fixed=self.fixed_vals,
+            )[0]
+        return current
+
+    def _sweep(self, current: NDArray[np.float64]) -> float:
+        """One pass over the knots, updating ``current``; the largest move made."""
+        moved = 0.0
+        for j in range(len(self.ranges)):
+            moved = max(moved, self._coordinate_step(current, j))
+        return moved
+
+    def _coordinate_step(self, current: NDArray[np.float64], j: int) -> float:
+        """Move knot ``j`` of ``current`` to its best valid place; return the move."""
+        low = max(self.lo[j], current[j - 1] + self.spacing) if j > 0 else self.lo[j]
+        high = (
+            min(self.hi[j], current[j + 1] - self.spacing)
+            if j + 1 < len(current)
+            else self.hi[j]
+        )
+        if not high > low:
+            return 0.0
+
+        def along(t: float) -> float:
+            trial = current.copy()
+            trial[j] = t
+            return -self.profile(trial)
+
+        step = self.bounded(along, low, high, float(self.tol[j]))
+        if step is not None and step[1] >= self.profile(current):
+            moved = abs(step[0] - current[j])
+            current[j] = step[0]
+            return moved
+        return 0.0
+
+    def _de_population(self) -> Any:
+        """Return the initial population for differential evolution."""
+        if self.spacing <= 0:
+            return "sobol"
+        population = _candidates(
+            self.ranges,
+            8 * len(self.ranges),
+            self.job.seed,
+            min_spacing=self.spacing,
+            fixed=self.fixed_vals,
+        )
+        if len(population) < _DE_MIN_POPULATION:
+            population = np.resize(population, (_DE_MIN_POPULATION, len(self.ranges)))
+        return population
+
+    def _de_profile(self) -> None:
+        """Differential evolution over the profile likelihood."""
+        population = self._de_population()
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")  # Sobol wants a power-of-two population
+            # Sobol wants a power-of-two population.
+            warnings.filterwarnings(
+                "ignore",
+                message="The balance properties of Sobol",
+                category=UserWarning,
+            )
             scipy.optimize.differential_evolution(
-                lambda t: -profile(t),
-                ranges,
+                lambda t: -self.profile(t),
+                self.ranges,
                 popsize=8,
                 maxiter=15,
                 tol=1e-4,
-                seed=job.seed,
+                seed=self.job.seed,
                 polish=False,
                 init=population,
             )
 
-    def grid_newton() -> None:
+    def _grid_newton(self) -> None:
+        """Scan candidate placements, then joint Newton from the best few."""
         candidates = _candidates(
-            ranges, job.n_candidates, job.seed, min_spacing=spacing, fixed=fixed_vals
+            self.ranges,
+            self.job.n_candidates,
+            self.job.seed,
+            min_spacing=self.spacing,
+            fixed=self.fixed_vals,
         )
         for row in candidates:
-            profile(row)
-        order = np.argsort([-tried[_key(row)] for row in candidates])
+            self.profile(row)
+        order = np.argsort([-self.tried[_key(row)] for row in candidates])
         for row in candidates[order[:_N_NEWTON_STARTS]]:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                try:
-                    start = fit_at(row, compute_covariance=False)
-                    joint = fit(
-                        data,
-                        model,
-                        constraints=user,
-                        init=start.natural,
-                        compute_covariance=False,
-                        **job.fit_kwargs,
-                    )
-                except ValueError:
-                    continue
-            if np.isfinite(joint.log_likelihood) and _spacing_ok(
-                np.asarray(joint.natural)[n_rates:], spacing
-            ):
-                taus = np.asarray(joint.natural)[n_rates:][free_idx]
-                record(joint.log_likelihood, taus, joint.natural)
+            joint = self._joint_fit_from(row)
+            if joint is not None:
+                self._record_joint(joint)
 
-    searches = {"brent": brent, "de-profile": de_profile, "grid-newton": grid_newton}
-    found: dict[str, tuple[MethodResult, NDArray[np.float64]]] = {}
-    for name in names:
-        track.update(ll=-np.inf, taus=None, natural=None, fits=0)
-        began = time.perf_counter()
-        searches[name]()
-        if track["taus"] is None or not np.isfinite(track["ll"]):
-            logger.debug("method %s found no finite placement", name)
-            continue
-        found[name] = (
-            MethodResult(
-                knot_times=all_knots(track["taus"]),
-                log_likelihood=float(track["ll"]),
-                seconds=time.perf_counter() - began,
-                n_fits=int(track["fits"]),
-            ),
-            track["natural"],
-        )
-    return found
+    def _joint_fit_from(self, row: NDArray[np.float64]) -> FitResult | None:
+        """Joint fit of rates and knots started at knots ``row`` (None if it fails)."""
+        job = self.job
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                start = self.fit_at(row, compute_covariance=False)
+                return fit(
+                    job.data,
+                    job.model,
+                    constraints=job.user,
+                    init=start.natural,
+                    compute_covariance=False,
+                    **job.fit_kwargs,
+                )
+            except ValueError:
+                return None
+
+    def _record_joint(self, joint: FitResult) -> None:
+        """Record a joint fit if it is finite and keeps the knots apart."""
+        knot_part = np.asarray(joint.natural)[self.n_rates :]
+        if np.isfinite(joint.log_likelihood) and _spacing_ok(knot_part, self.spacing):
+            self.record(joint.log_likelihood, knot_part[self.free_idx], joint.natural)
+
+
+def _run_methods(
+    names: Sequence[str], job: _Search
+) -> dict[str, tuple[MethodResult, NDArray[np.float64]]]:
+    """Run the named searches; return each one's result and rates-and-knots vector."""
+    return _KnotSearch(job).run(names)
 
 
 def _run_one(
@@ -485,6 +594,61 @@ def _run_parallel(
         else:
             os.environ["XLA_FLAGS"] = old
     return {n: r for part in parts for n, r in part.items()}
+
+
+def _check_inputs(
+    model: BirthDeathModel, constraints: Constraints | None
+) -> tuple[FreeKnots, Constraints, list[int]]:
+    """Validate the model and constraints; return the knots, constraints, free knots."""
+    knots = model.knots
+    if knots is None:
+        msg = "fit_knots needs a model with free knots (see FreeKnots)"
+        raise ValueError(msg)
+    user = constraints or Constraints()
+    if set(knots.names) & {n for g in user.equal for n in g}:
+        msg = "Knot times cannot appear in constraints for fit_knots"
+        raise ValueError(msg)
+    free_idx = [i for i, n in enumerate(knots.names) if n not in user.fixed]
+    if not free_idx:
+        msg = "Knot times cannot all be fixed for fit_knots"
+        raise ValueError(msg)
+    fixed_knots = [user.fixed[n] for n in knots.names if n in user.fixed]
+    if not _spacing_ok(fixed_knots, knots.min_spacing):
+        msg = f"Fixed knots are closer than min_spacing ({knots.min_spacing})"
+        raise ValueError(msg)
+    return knots, user, free_idx
+
+
+def _polished(
+    data: AgeData,
+    model: BirthDeathModel,
+    user: Constraints,
+    chosen: FitResult,
+    fit_kwargs: dict[str, Any],
+) -> FitResult:
+    """Joint fit from ``chosen``, kept if it converges and is no worse."""
+    knots = model.knots
+    if knots is None:  # unreachable: checked by fit_knots
+        raise RuntimeError
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            joint = fit(
+                data,
+                model,
+                constraints=user,
+                init=chosen.natural,
+                **fit_kwargs,
+            )
+        except ValueError:
+            return chosen
+    if (
+        _spacing_ok(joint.knot_times, knots.min_spacing)
+        and joint.converged
+        and joint.log_likelihood >= chosen.log_likelihood - 1e-9
+    ):
+        return joint
+    return chosen
 
 
 def fit_knots(
@@ -552,22 +716,7 @@ def fit_knots(
         no placement fits at that spacing, or none gives a finite likelihood.
 
     """
-    knots = model.knots
-    if knots is None:
-        msg = "fit_knots needs a model with free knots (see FreeKnots)"
-        raise ValueError(msg)
-    user = constraints or Constraints()
-    if set(knots.names) & {n for g in user.equal for n in g}:
-        msg = "Knot times cannot appear in constraints for fit_knots"
-        raise ValueError(msg)
-    free_idx = [i for i, n in enumerate(knots.names) if n not in user.fixed]
-    if not free_idx:
-        msg = "Knot times cannot all be fixed for fit_knots"
-        raise ValueError(msg)
-    fixed_knots = [user.fixed[n] for n in knots.names if n in user.fixed]
-    if not _spacing_ok(fixed_knots, knots.min_spacing):
-        msg = f"Fixed knots are closer than min_spacing ({knots.min_spacing})"
-        raise ValueError(msg)
+    knots, user, free_idx = _check_inputs(model, constraints)
     fit_kwargs.pop("compute_covariance", None)
     init = fit_kwargs.pop("init", None)
     job = _Search(
@@ -605,25 +754,7 @@ def fit_knots(
         **fit_kwargs,
     )
     if polish:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            try:
-                joint = fit(
-                    data,
-                    model,
-                    constraints=user,
-                    init=chosen.natural,
-                    **fit_kwargs,
-                )
-            except ValueError:
-                joint = None
-        if (
-            joint is not None
-            and _spacing_ok(joint.knot_times, knots.min_spacing)
-            and joint.converged
-            and joint.log_likelihood >= chosen.log_likelihood - 1e-9
-        ):
-            chosen = joint
+        chosen = _polished(data, model, user, chosen, fit_kwargs)
 
     knot_times = chosen.knot_times
     if knot_times is None:  # unreachable: the model has free knots

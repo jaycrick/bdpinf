@@ -1,6 +1,11 @@
 """Test suite for BirthDeathProcess log-likelihood calculations."""
 
+import re
+import warnings
+from typing import Any
+
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
 from bdpinf.inference.likelihood import log_likelihood
@@ -16,6 +21,454 @@ def _as_float(value: object) -> float:
     if hasattr(value, "item"):
         return float(value.item())
     return float(value)
+
+
+_VALID_CALLS: dict[str, tuple[dict[str, Any], float]] = {
+    "explicit_spine": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "spine_ages": [10.0],
+        },
+        -20.3580373516016,
+    ),
+    "explicit_spine_interior": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "spine_ages": [9.0],
+        },
+        -21.358003642599236,
+    ),
+    "ordered": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "is_ordered": True,
+        },
+        -19.272185697492247,
+    ),
+    "unknown_spine": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+        },
+        -16.920659590678973,
+    ),
+    "age_at_T_auto_spine": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 10.0],
+            "times": 10.0,
+        },
+        -11.022881124012265,
+    ),
+    "single_age": (
+        {"birth_rates": 0.5, "death_rates": 0.3, "ages": [3.0], "times": 10.0},
+        -4.815155091167325,
+    ),
+    "single_age_scalar": (
+        {"birth_rates": 0.5, "death_rates": 0.3, "ages": 3.0, "times": 10.0},
+        -4.815155091167325,
+    ),
+    "ns_equal": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "ns": [5.0],
+        },
+        -16.920659590678973,
+    ),
+    "ns_greater": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "ns": [8.0],
+        },
+        -17.102835719770756,
+    ),
+    "ns_two_groups_greater": (
+        {
+            "birth_rates": [0.5, 0.4],
+            "death_rates": [0.3, 0.3],
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": [5.0, 10.0],
+            "ns": [4.0, 6.0],
+        },
+        -18.58361466533383,
+    ),
+    "log_scale": (
+        {
+            "birth_rates": -0.7,
+            "death_rates": -1.2,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "log_scale_params": True,
+        },
+        -16.874234351397412,
+    ),
+    "initial_population_3": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "initial_population": 3,
+        },
+        -16.920659590678973,
+    ),
+    "no_conditioning": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "condition_on_survival": False,
+        },
+        -17.752262241048197,
+    ),
+    "multi_epoch": (
+        {
+            "birth_rates": [0.5, 0.4],
+            "death_rates": [0.3, 0.35],
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": [4.0, 10.0],
+        },
+        -15.633415541864018,
+    ),
+    "multi_epoch_ordered": (
+        {
+            "birth_rates": [0.5, 0.4],
+            "death_rates": [0.3, 0.35],
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": [4.0, 10.0],
+            "is_ordered": True,
+        },
+        -17.601525475028314,
+    ),
+    "multi_spine_with_ns": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "spine_ages": [7.0, 10.0],
+            "ns": [7.0],
+        },
+        -23.089599754340234,
+    ),
+    "empty_spine_treated_as_none": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "spine_ages": [],
+        },
+        -16.920659590678973,
+    ),
+    "empty_ages": (
+        {"birth_rates": 0.5, "death_rates": 0.3, "ages": [], "times": 10.0},
+        -0.5715510001299191,
+    ),
+    "nonpositive_rate_inf": (
+        {
+            "birth_rates": 0.0,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+        },
+        float("-inf"),
+    ),
+    "negative_rate_inf": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": -0.1,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+        },
+        float("-inf"),
+    ),
+    "nonfinite_rate_inf": (
+        {
+            "birth_rates": float("inf"),
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+        },
+        float("-inf"),
+    ),
+    "log_scale_overflow_inf": (
+        {
+            "birth_rates": 1000.0,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "log_scale_params": True,
+        },
+        float("-inf"),
+    ),
+    "ordered_ns_greater": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "is_ordered": True,
+            "ns": [9.0],
+        },
+        -19.51508720294796,
+    ),
+    "spine_equal_T_with_ns_none": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [],
+            "times": 10.0,
+            "spine_ages": [10.0],
+        },
+        -5.0,
+    ),
+}
+
+_INVALID_CALLS: dict[str, tuple[dict[str, Any], str | None]] = {
+    # value is the exact ValueError message, or None where the call returns -inf
+    "shape_mismatch": (
+        {
+            "birth_rates": [0.5, 0.4],
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+        },
+        "birth_rates, death_rates, and times must have the same shape, got (2,), (1,), (1,).",
+    ),
+    "ordered_and_spine": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "spine_ages": [10.0],
+            "is_ordered": True,
+        },
+        "Cannot have both is_ordered=True and spine_ages provided.",
+    ),
+    "multi_spine_no_ns": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "spine_ages": [7.0, 10.0],
+        },
+        "When multiple spine ages are provided, population sizes (ns) must also be provided.",
+    ),
+    "spine_negative": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "spine_ages": [-1.0],
+        },
+        "Spine ages must be in the range [0, 10.0].",
+    ),
+    "spine_above_T": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "spine_ages": [11.0],
+        },
+        "Spine ages must be in the range [0, 10.0].",
+    ),
+    "times_nonpositive": (
+        {"birth_rates": 0.5, "death_rates": 0.3, "ages": [], "times": 0.0},
+        "Observation times must be positive.",
+    ),
+    "times_decreasing": (
+        {
+            "birth_rates": [0.5, 0.4],
+            "death_rates": [0.3, 0.3],
+            "ages": [1.0, 2.0],
+            "times": [10.0, 5.0],
+        },
+        "Observation times must be non-decreasing.",
+    ),
+    "age_negative": (
+        {"birth_rates": 0.5, "death_rates": 0.3, "ages": [-1.0, 2.0], "times": 10.0},
+        "Ages must be in the range [0, 10.0].",
+    ),
+    "age_above_T": (
+        {"birth_rates": 0.5, "death_rates": 0.3, "ages": [1.0, 12.0], "times": 10.0},
+        "Ages must be in the range [0, 10.0].",
+    ),
+    "ns_too_small": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "ns": [3.0],
+        },
+        "Sum of the populations must equal the number of ages provided.",
+    ),
+    "two_ages_at_T": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 10.0, 10.0],
+            "times": 10.0,
+        },
+        "More than one age equals the final observation time. Exactly one spine is assumed; provide explicit spine_ages.",
+    ),
+    "zero_rate_log_scale": (
+        {
+            "birth_rates": -1000.0,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "log_scale_params": True,
+        },
+        None,
+    ),
+    "dbl_shape_over_rate": (
+        {
+            "birth_rates": [-0.5, 0.4],
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+        },
+        "birth_rates, death_rates, and times must have the same shape, got (2,), (1,), (1,).",
+    ),
+    "dbl_rate_over_ordered_spine": (
+        {
+            "birth_rates": -0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "spine_ages": [10.0],
+            "is_ordered": True,
+        },
+        None,
+    ),
+    "dbl_ordered_spine_over_times": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [],
+            "times": 0.0,
+            "spine_ages": [0.0],
+            "is_ordered": True,
+        },
+        "Cannot have both is_ordered=True and spine_ages provided.",
+    ),
+    "dbl_multi_spine_ns_over_range": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "spine_ages": [7.0, 11.0],
+        },
+        "When multiple spine ages are provided, population sizes (ns) must also be provided.",
+    ),
+    "dbl_spine_range_over_times": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [],
+            "times": -1.0,
+            "spine_ages": [0.0],
+        },
+        "Spine ages must be in the range [0, -1.0].",
+    ),
+    "dbl_times_pos_over_decreasing": (
+        {
+            "birth_rates": [0.5, 0.4],
+            "death_rates": [0.3, 0.3],
+            "ages": [],
+            "times": [-1.0, -2.0],
+        },
+        "Observation times must be positive.",
+    ),
+    "dbl_decreasing_over_age_range": (
+        {
+            "birth_rates": [0.5, 0.4],
+            "death_rates": [0.3, 0.3],
+            "ages": [4.0],
+            "times": [5.0, 3.0],
+        },
+        "Observation times must be non-decreasing.",
+    ),
+    "dbl_age_range_over_ns": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 12.0],
+            "times": 10.0,
+            "ns": [1.0],
+        },
+        "Ages must be in the range [0, 10.0].",
+    ),
+    "dbl_ns_over_nonfinite_rate": (
+        {
+            "birth_rates": float("inf"),
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "ns": [3.0],
+        },
+        "Sum of the populations must equal the number of ages provided.",
+    ),
+    "dbl_nonfinite_over_two_terminal": (
+        {
+            "birth_rates": float("inf"),
+            "death_rates": 0.3,
+            "ages": [1.0, 10.0, 10.0],
+            "times": 10.0,
+        },
+        None,
+    ),
+    "dbl_rate_over_age_range": (
+        {"birth_rates": 0.0, "death_rates": 0.3, "ages": [1.0, 12.0], "times": 10.0},
+        None,
+    ),
+    "dbl_spine_range_over_ages_range": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [12.0],
+            "times": 10.0,
+            "spine_ages": [11.0],
+        },
+        "Spine ages must be in the range [0, 10.0].",
+    ),
+    "dbl_warn_then_two_terminal": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 10.0, 10.0],
+            "times": 10.0,
+            "ns": [6.0],
+        },
+        "More than one age equals the final observation time. Exactly one spine is assumed; provide explicit spine_ages.",
+    ),
+}
 
 
 class TestLogLikelihood:
@@ -595,3 +1048,48 @@ class TestLogLikelihood:
             _as_float(default_result),
             _as_float(all_non_spine_result),
         )
+
+
+class TestRecordedCalls:
+    """Pin ``log_likelihood`` on valid and invalid calls recorded before refactoring."""
+
+    @pytest.mark.filterwarnings("ignore::UserWarning")
+    @pytest.mark.parametrize("name", list(_VALID_CALLS))
+    def test_valid_calls_match_recording(self, name: str) -> None:
+        kwargs, expected = _VALID_CALLS[name]
+        result = _as_float(log_likelihood(**kwargs))
+        if np.isinf(expected):
+            assert result == expected
+        else:
+            assert_allclose(result, expected, rtol=1e-12)
+
+    @pytest.mark.filterwarnings("ignore::UserWarning")
+    @pytest.mark.parametrize("name", list(_INVALID_CALLS))
+    def test_invalid_calls_match_recording(self, name: str) -> None:
+        kwargs, message = _INVALID_CALLS[name]
+        if message is None:
+            assert _as_float(log_likelihood(**kwargs)) == -np.inf
+        else:
+            with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+                log_likelihood(**kwargs)
+
+    def test_partial_age_warning_text_category_and_location(self) -> None:
+        kwargs, _ = _VALID_CALLS["ns_greater"]
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            log_likelihood(**kwargs)
+        assert len(caught) == 1
+        assert caught[0].category is UserWarning
+        assert str(caught[0].message) == (
+            "Sum of the populations exceeds the number of ages provided; "
+            "not all ages have been provided (age information is partial)."
+        )
+        assert caught[0].filename == __file__
+
+    def test_partial_age_warning_precedes_later_error(self) -> None:
+        kwargs, message = _INVALID_CALLS["dbl_warn_then_two_terminal"]
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with pytest.raises(ValueError, match=f"^{re.escape(message or '')}$"):
+                log_likelihood(**kwargs)
+        assert len(caught) == 1

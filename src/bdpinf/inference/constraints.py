@@ -68,88 +68,142 @@ class Constraints:
             fixed values outside a parameter's domain.
 
         """
-        index = {p.name: i for i, p in enumerate(params)}
-        if len(index) != len(params):
-            msg = "Parameter names must be unique"
+        index = _index_by_name(params)
+        fixed_index = _resolve_fixed(self.fixed, params, index)
+        representative = _equality_representatives(
+            self.equal, params, index, fixed_index
+        )
+        return _assemble(params, fixed_index, representative)
+
+
+def _index_by_name(params: Sequence[Param]) -> dict[str, int]:
+    """Map each parameter name to its position; names must be unique."""
+    index = {p.name: i for i, p in enumerate(params)}
+    if len(index) != len(params):
+        msg = "Parameter names must be unique"
+        raise ValueError(msg)
+    return index
+
+
+def _in_domain(param: Param, value: float) -> bool:
+    """Whether ``value`` is finite and inside the domain of ``param``'s transform."""
+    transform = param.transform
+    if transform == "interval":
+        lower_ok, upper_ok = param.lower <= value, value <= param.upper
+    else:
+        if transform == "log":
+            lower_ok = value >= param.lower
+        else:
+            lower_ok = value >= 0 if transform == "logit" else True
+        upper_ok = value <= 1 if transform == "logit" else True
+    return bool(np.isfinite(value) and lower_ok and upper_ok)
+
+
+def _resolve_fixed(
+    fixed: Mapping[str, float], params: Sequence[Param], index: Mapping[str, int]
+) -> dict[int, float]:
+    """Validate the fixed values and key them by parameter position."""
+    fixed_index: dict[int, float] = {}
+    for name, value in fixed.items():
+        if name not in index:
+            msg = f"Unknown parameter '{name}' in fixed"
             raise ValueError(msg)
-        n = len(params)
-        fixed_index: dict[int, float] = {}
-        for name, value in self.fixed.items():
-            if name not in index:
-                msg = f"Unknown parameter '{name}' in fixed"
-                raise ValueError(msg)
-            transform = params[index[name]].transform
-            param = params[index[name]]
-            if transform == "interval":
-                lower_ok, upper_ok = param.lower <= value, value <= param.upper
-            else:
-                if transform == "log":
-                    lower_ok = value >= param.lower
-                else:
-                    lower_ok = value >= 0 if transform == "logit" else True
-                upper_ok = value <= 1 if transform == "logit" else True
-            if not np.isfinite(value) or not lower_ok or not upper_ok:
-                msg = f"Fixed value for '{name}' is outside its domain: {value}"
-                raise ValueError(msg)
-            fixed_index[index[name]] = float(value)
+        if not _in_domain(params[index[name]], value):
+            msg = f"Fixed value for '{name}' is outside its domain: {value}"
+            raise ValueError(msg)
+        fixed_index[index[name]] = float(value)
+    return fixed_index
 
-        representative = list(range(n))
-        seen = set(fixed_index)
-        for group in self.equal:
-            if len(group) < _MIN_GROUP_SIZE:
-                msg = "Equality groups must have at least 2 elements"
-                raise ValueError(msg)
-            members = []
-            for name in group:
-                if name not in index:
-                    msg = f"Unknown parameter '{name}' in equal"
-                    raise ValueError(msg)
-                i = index[name]
-                if i in fixed_index:
-                    msg = f"Parameter '{name}' appears in both fixed and equal"
-                    raise ValueError(msg)
-                if i in seen:
-                    msg = f"Parameter '{name}' appears in more than one group"
-                    raise ValueError(msg)
-                if params[i].transform == "interval":
-                    msg = f"Parameter '{name}' is a knot time and cannot be tied"
-                    raise ValueError(msg)
-                seen.add(i)
-                members.append(i)
-            if len({params[i].transform for i in members}) > 1:
-                msg = f"Equality group {list(group)} mixes parameter transforms"
-                raise ValueError(msg)
-            if (
-                len({params[i].lower for i in members}) > 1
-                and params[members[0]].transform == "log"
-            ):
-                msg = f"Equality group {list(group)} mixes different minimum values"
-                raise ValueError(msg)
-            head = min(members)
-            for i in members:
-                representative[i] = head
 
-        free = [i for i in range(n) if i not in fixed_index and representative[i] == i]
-        position = {i: k for k, i in enumerate(free)}
-        source = np.array(
-            [
-                position[representative[i]] if i not in fixed_index else 0
-                for i in range(n)
-            ],
-            dtype=np.int64,
-        )
-        return CompiledConstraints(
-            params=tuple(params),
-            free_indices=np.array(free, dtype=np.int64),
-            source=source,
-            is_fixed=np.array([i in fixed_index for i in range(n)]),
-            fixed_natural=np.array(
-                [fixed_index.get(i, 0.0) for i in range(n)], dtype=np.float64
-            ),
-            codes=np.array([_CODES[p.transform] for p in params], dtype=np.int64),
-            lower=np.array([p.lower for p in params], dtype=np.float64),
-            upper=np.array([p.upper for p in params], dtype=np.float64),
-        )
+def _group_members(
+    group: Sequence[str],
+    params: Sequence[Param],
+    index: Mapping[str, int],
+    fixed_index: Mapping[int, float],
+    seen: set[int],
+) -> list[int]:
+    """Positions of the parameters in one equality group (added to ``seen``)."""
+    if len(group) < _MIN_GROUP_SIZE:
+        msg = "Equality groups must have at least 2 elements"
+        raise ValueError(msg)
+    members = []
+    for name in group:
+        if name not in index:
+            msg = f"Unknown parameter '{name}' in equal"
+            raise ValueError(msg)
+        i = index[name]
+        if i in fixed_index:
+            msg = f"Parameter '{name}' appears in both fixed and equal"
+            raise ValueError(msg)
+        if i in seen:
+            msg = f"Parameter '{name}' appears in more than one group"
+            raise ValueError(msg)
+        if params[i].transform == "interval":
+            msg = f"Parameter '{name}' is a knot time and cannot be tied"
+            raise ValueError(msg)
+        seen.add(i)
+        members.append(i)
+    return members
+
+
+def _check_group_compatible(
+    group: Sequence[str], members: Sequence[int], params: Sequence[Param]
+) -> None:
+    """Members of one group must share a transform (and a log minimum)."""
+    if len({params[i].transform for i in members}) > 1:
+        msg = f"Equality group {list(group)} mixes parameter transforms"
+        raise ValueError(msg)
+    if (
+        len({params[i].lower for i in members}) > 1
+        and params[members[0]].transform == "log"
+    ):
+        msg = f"Equality group {list(group)} mixes different minimum values"
+        raise ValueError(msg)
+
+
+def _equality_representatives(
+    equal: Sequence[Sequence[str]],
+    params: Sequence[Param],
+    index: Mapping[str, int],
+    fixed_index: Mapping[int, float],
+) -> list[int]:
+    """Per parameter, the lowest position in its equality group (itself if none)."""
+    representative = list(range(len(params)))
+    seen = set(fixed_index)
+    for group in equal:
+        members = _group_members(group, params, index, fixed_index, seen)
+        _check_group_compatible(group, members, params)
+        head = min(members)
+        for i in members:
+            representative[i] = head
+    return representative
+
+
+def _assemble(
+    params: Sequence[Param],
+    fixed_index: Mapping[int, float],
+    representative: Sequence[int],
+) -> "CompiledConstraints":
+    """Build the index maps from the fixed values and group representatives."""
+    n = len(params)
+    free = [i for i in range(n) if i not in fixed_index and representative[i] == i]
+    position = {i: k for k, i in enumerate(free)}
+    source = np.array(
+        [position[representative[i]] if i not in fixed_index else 0 for i in range(n)],
+        dtype=np.int64,
+    )
+    return CompiledConstraints(
+        params=tuple(params),
+        free_indices=np.array(free, dtype=np.int64),
+        source=source,
+        is_fixed=np.array([i in fixed_index for i in range(n)]),
+        fixed_natural=np.array(
+            [fixed_index.get(i, 0.0) for i in range(n)], dtype=np.float64
+        ),
+        codes=np.array([_CODES[p.transform] for p in params], dtype=np.int64),
+        lower=np.array([p.lower for p in params], dtype=np.float64),
+        upper=np.array([p.upper for p in params], dtype=np.float64),
+    )
 
 
 @dataclasses.dataclass(frozen=True)

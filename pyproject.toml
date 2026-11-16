@@ -147,15 +147,6 @@ convention = "numpy"
   "E501",
   "I001"
 ]
-# TEMPORARY: removed by step B6
-"src/bdpinf/analysis/bootstrap_date_density.py" = ["PLR0915"]
-"src/bdpinf/analysis/subset_fitting.py" = ["PLR0915"]
-"src/bdpinf/inference/constraints.py" = ["C901", "PLR0912", "PLR0915"]
-"src/bdpinf/inference/fitting.py" = ["C901", "PLR0912", "PLR0915"]
-"src/bdpinf/inference/knots.py" = ["C901", "PLR0912", "PLR0915"]
-"src/bdpinf/inference/likelihood.py" = ["C901", "PLR0912", "PLR0915"]
-"src/bdpinf/inference/rate_models.py" = ["C901"]
-"src/bdpinf/utils.py" = ["C901", "PLR0911"]
 # TEMPORARY: removed by step B7
 # (TOML forbids repeating a key, so where a file also appears under another
 # step, its entry here uses the equivalent glob `src/**/<dir>/<file>`.)

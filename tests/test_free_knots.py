@@ -8,7 +8,7 @@ import pytest
 from bdpinf.inference.bayesian import BayesianMCMCConfig, fit_bayesian
 from bdpinf.inference.constraints import Constraints
 from bdpinf.inference.fitting import fit
-from bdpinf.inference.knots import _candidates, fit_knots
+from bdpinf.inference.knots import _candidates, _run_methods, _Search, fit_knots
 from bdpinf.inference.likelihood import AgeData, log_likelihood_rates
 from bdpinf.inference.rate_models import BirthDeathModel, FreeKnots
 from bdpinf.models.rate_functions import PiecewiseConstantRate
@@ -337,3 +337,78 @@ class TestMinSpacing:
         second = fit_knots(data, zero, seed=0)
         assert first.log_likelihood == second.log_likelihood
         np.testing.assert_array_equal(first.knot_times, second.knot_times)
+
+
+# Values recorded from the pre-refactor implementation of ``_run_methods``:
+# (knot_times, log_likelihood, n_fits) per method, for ``_simulate(10, 3)``,
+# ``n_candidates=8`` and ``seed=0``.  The "all" entries run the three methods in
+# one call, so later methods reuse earlier fits and warm starts.
+_PINNED: dict[str, dict[str, tuple[list[float], float, int]]] = {
+    "one|brent": {"brent": ([49.68474595362213], -2286.9352445255236, 16)},
+    "one|de-profile": {"de-profile": ([49.985008724337895], -2286.5643459072053, 62)},
+    "one|grid-newton": {"grid-newton": ([49.359355717985096], -2296.371629361889, 8)},
+    "one|all": {
+        "brent": ([49.68474595362213], -2286.9352445255236, 16),
+        "de-profile": ([49.985008724337895], -2286.5643458600493, 62),
+        "grid-newton": ([49.3593557179851], -2296.3717228883947, 8),
+    },
+    "two|brent": {
+        "brent": ([20.109787866068245, 49.57838475202295], -2280.832578092461, 67)
+    },
+    "two|de-profile": {
+        "de-profile": (
+            [19.951116533402843, 50.023326849841496],
+            -2278.173414235784,
+            237,
+        )
+    },
+    "two|grid-newton": {
+        "grid-newton": ([24.54478628, 49.54478628], -2284.5064624201955, 8)
+    },
+    "two|all": {
+        "brent": ([20.109787866068245, 49.57838475202295], -2280.832578092461, 67),
+        "de-profile": (
+            [19.951116533402843, 50.023326849841496],
+            -2278.1734142357845,
+            237,
+        ),
+        "grid-newton": ([49.64605434219583, 86.44230429003188], -2289.233440098662, 0),
+    },
+}
+_ALL = ("brent", "de-profile", "grid-newton")
+
+
+def _pinned_job(case: str) -> _Search:
+    if case == "one":
+        model = BirthDeathModel.piecewise_constant(FreeKnots(1, _T))
+    else:
+        model = BirthDeathModel.piecewise_constant(
+            FreeKnots(2, _T, bounds=(5.0, 95.0), min_spacing=25.0)
+        )
+    return _Search(
+        _simulate(10, 3),
+        model,
+        Constraints(),
+        list(range(model.n_knots)),
+        8,
+        0,
+        None,
+        {},
+    )
+
+
+class TestRunMethodsPinned:
+    """Pin the knot searches (recorded before they were refactored)."""
+
+    @pytest.mark.parametrize("case", ["one", "two"])
+    @pytest.mark.parametrize("which", ["brent", "de-profile", "grid-newton", "all"])
+    def test_method_results_are_unchanged(self, case: str, which: str) -> None:
+        names = _ALL if which == "all" else (which,)
+        found = _run_methods(names, _pinned_job(case))
+        expected = _PINNED[f"{case}|{which}"]
+        assert list(found) == list(expected)
+        for name, (result, _) in found.items():
+            times, value, n_fits = expected[name]
+            np.testing.assert_allclose(result.knot_times, times, rtol=1e-9)
+            assert result.log_likelihood == pytest.approx(value, rel=1e-9)
+            assert result.n_fits == n_fits

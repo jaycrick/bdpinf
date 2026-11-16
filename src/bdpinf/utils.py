@@ -90,45 +90,53 @@ def json_safe(value: object) -> object:
     return value
 
 
-def format_table_value(value: object) -> object:
-    """Format a scalar for display in interactive tables."""
-    if value is None:
-        return None
-
-    if isinstance(value, (str, bytes)):
-        return value
-
+def _is_nan_like(value: object) -> bool:
+    """Whether ``value != value`` holds (NaN, ``NaT``); False if it cannot be tested."""
     try:
-        if value is None or value != value:
-            return value
+        return bool(value != value)
     except Exception:
-        pass
+        return False
 
-    if isinstance(value, (bool, np.bool_)):
+
+def _format_integer(value: Integral) -> object:
+    """Integers below 1e4 stay integers; larger ones use scientific notation."""
+    integer_value = int(value)
+    if abs(integer_value) >= 1e4:
+        return f"{float(integer_value):.2e}"
+    return integer_value
+
+
+def _format_real(value: Real) -> object:
+    """Format a real number: non-finite unchanged, integral as ``int``, else text."""
+    numeric_value = float(value)
+    if not np.isfinite(numeric_value):
         return value
 
-    if isinstance(value, Integral):
-        integer_value = int(value)
-        if abs(integer_value) >= 1e4:
-            return f"{float(integer_value):.2e}"
-        return integer_value
-
-    if isinstance(value, Real):
-        numeric_value = float(value)
-        if not np.isfinite(numeric_value):
-            return value
-
-        if abs(numeric_value) >= 1e4:
-            return f"{numeric_value:.2e}"
-
-        if numeric_value.is_integer():
-            return int(numeric_value)
-
-        magnitude = abs(numeric_value)
-        if 1e-1 <= magnitude < 1e4:
-            return f"{numeric_value:.2f}"
+    if abs(numeric_value) >= 1e4:
         return f"{numeric_value:.2e}"
 
+    if numeric_value.is_integer():
+        return int(numeric_value)
+
+    magnitude = abs(numeric_value)
+    if 1e-1 <= magnitude < 1e4:
+        return f"{numeric_value:.2f}"
+    return f"{numeric_value:.2e}"
+
+
+def format_table_value(value: object) -> object:
+    """Format a scalar for display in interactive tables."""
+    if (
+        value is None
+        or isinstance(value, (str, bytes))
+        or _is_nan_like(value)
+        or isinstance(value, (bool, np.bool_))
+    ):
+        return value
+    if isinstance(value, Integral):
+        return _format_integer(value)
+    if isinstance(value, Real):
+        return _format_real(value)
     return value
 
 

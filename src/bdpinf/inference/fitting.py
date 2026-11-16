@@ -21,7 +21,7 @@ import logging
 import math
 import warnings
 from collections.abc import Callable, Iterator, Mapping
-from typing import Any
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -254,6 +254,25 @@ def _all_ages(data: AgeData) -> NDArray[np.float64]:
     return np.concatenate([rest, np.asarray(data.spine_ages, dtype=np.float64)])
 
 
+def _growth_rate_root(n_bar: float, lam: float, horizon: float) -> float | None:
+    """Non-zero root of the moment equation for the growth rate, if one is bracketed."""
+
+    def score(g: float) -> float:
+        return g * (n_bar - 1.0) - lam * math.expm1(g * horizon)
+
+    slope = n_bar - 1.0 - lam * horizon
+    if abs(slope) < 1e-12:
+        return 0.0
+    direction = 1.0 if slope > 0 else -1.0
+    edge = direction / horizon
+    while score(edge) > 0 and abs(edge) * horizon < 500:
+        edge *= 2.0
+    if score(edge) > 0:
+        return None
+    lower, upper = (1e-12, edge) if direction > 0 else (edge, -1e-12)
+    return scipy.optimize.brentq(score, lower, upper)
+
+
 def moment_initial_rates(data: AgeData) -> tuple[float, float] | None:
     r"""Constant-rate moment estimators of $(\lambda, \mu)$ from the data.
 
@@ -271,29 +290,11 @@ def moment_initial_rates(data: AgeData) -> tuple[float, float] | None:
     if mean_age <= 0 or n_bar <= 1.0 or data.initial_population != 1:
         return None
     lam = 1.0 / mean_age
-
-    def score(g: float) -> float:
-        return g * (n_bar - 1.0) - lam * math.expm1(g * horizon)
-
-    slope = n_bar - 1.0 - lam * horizon
     try:
-        if abs(slope) < 1e-12:
-            gamma = 0.0
-        elif slope > 0:
-            hi = 1.0 / horizon
-            while score(hi) > 0 and hi * horizon < 500:
-                hi *= 2.0
-            if score(hi) > 0:
-                return None
-            gamma = scipy.optimize.brentq(score, 1e-12, hi)
-        else:
-            lo = -1.0 / horizon
-            while score(lo) > 0 and -lo * horizon < 500:
-                lo *= 2.0
-            if score(lo) > 0:
-                return None
-            gamma = scipy.optimize.brentq(score, lo, -1e-12)
+        gamma = _growth_rate_root(n_bar, lam, horizon)
     except ValueError:
+        return None
+    if gamma is None:
         return None
     mu = lam - gamma
     if not (math.isfinite(lam) and math.isfinite(mu)) or lam <= 0:
@@ -673,6 +674,233 @@ def _objective(
     return objective
 
 
+def _check_method_and_window(
+    data: AgeData, model: BirthDeathModel, method: str
+) -> None:
+    """Raise ``ValueError`` for an unknown optimiser or a window mismatch."""
+    if method not in _METHODS:
+        msg = f"Unsupported method '{method}'. Choose from {list(_METHODS)}."
+        raise ValueError(msg)
+    if not np.isclose(model.end_time, data.end_time):
+        msg = (
+            f"Model window {model.end_time} does not match the data "
+            f"observation time {data.end_time}."
+        )
+        raise ValueError(msg)
+
+
+@dataclasses.dataclass(frozen=True)
+class _Problem:
+    """A fit prepared for the optimiser: the objective closed over the runtime data."""
+
+    compiled: CompiledConstraints
+    grad_tol: float
+    nll: Callable[[jax.Array], jax.Array]
+    value_and_grad: Callable[[jax.Array], tuple[jax.Array, jax.Array]]
+    hessian: Callable[[jax.Array], jax.Array]
+
+
+def _prepare_problem(
+    data: AgeData,
+    model: BirthDeathModel,
+    compiled: CompiledConstraints,
+    *,
+    condition_on_survival: bool,
+    n_nodes: int,
+    pad_to_bucket: bool,
+    hessian_mode: str,
+    tol: float,
+) -> _Problem:
+    """Fetch the jitted objective, build the runtime arrays and bind them."""
+    objective = _objective(
+        model,
+        compiled,
+        has_spine=data.spine_ages is not None,
+        use_unknown_spine=data.use_unknown_spine,
+        initial_population=data.initial_population,
+        end_time=data.end_time,
+        condition_on_survival=condition_on_survival,
+        n_nodes=n_nodes,
+        has_ranges=data.has_ranges,
+        hessian_mode=hessian_mode,
+    )
+    n_rest = (
+        len(data.non_spine_ages) if data.n_non_spine is None else int(data.n_non_spine)
+    )
+    padded = (
+        data
+        if pad_to_bucket is False or data.n_non_spine is not None
+        else data.padded(_bucket(n_rest))
+    )
+    runtime = (
+        jnp.asarray(padded.non_spine_ages),
+        jnp.zeros(0) if data.spine_ages is None else jnp.asarray(data.spine_ages),
+        jnp.asarray(data.ns),
+        jnp.asarray(compiled.fixed_natural),
+        jnp.asarray(n_rest),
+        jnp.zeros(0) if padded.upper_ages is None else jnp.asarray(padded.upper_ages),
+        jnp.zeros(0) if padded.weights is None else jnp.asarray(padded.weights),
+    )
+
+    def nll(free: jax.Array) -> jax.Array:
+        return objective.nll(free, *runtime)
+
+    def value_and_grad(free: jax.Array) -> tuple[jax.Array, jax.Array]:
+        return objective.value_and_grad(free, *runtime)
+
+    def hessian(free: jax.Array) -> jax.Array:
+        return objective.hessian(free, *runtime)
+
+    n_obs = max(1, data.n_observations)
+    return _Problem(
+        compiled=compiled,
+        grad_tol=tol * n_obs,
+        nll=nll,
+        value_and_grad=value_and_grad,
+        hessian=hessian,
+    )
+
+
+def _first_start(
+    problem: _Problem, init: InitSpec | None, data: AgeData, model: BirthDeathModel
+) -> tuple[NDArray[np.float64], jax.Array]:
+    """Return the first candidate start with a finite likelihood (reduced, natural)."""
+    for candidate in _resolve_init(init, data, model):
+        u0 = np.asarray(problem.compiled.reduce(candidate), dtype=np.float64)
+        if float(problem.nll(jnp.asarray(u0))) < _PENALTY:
+            return u0, candidate
+    msg = "No starting point has a finite likelihood; pass `init`."
+    raise ValueError(msg)
+
+
+def _starting_points(
+    problem: _Problem,
+    model: BirthDeathModel,
+    first: NDArray[np.float64],
+    natural0: jax.Array,
+    *,
+    n_starts: int,
+    perturb_std: float,
+    seed: int | None,
+) -> list[tuple[NDArray[np.float64], bool]]:
+    """Return the starts as ``(unconstrained start, was_swapped)``, in order."""
+    starts: list[tuple[NDArray[np.float64], bool]] = [(first, False)]
+    if n_starts > 1:
+        swapped = model.swapped(natural0)
+        if swapped is not None:
+            u_swap = np.asarray(problem.compiled.reduce(swapped), dtype=np.float64)
+            if float(problem.nll(jnp.asarray(u_swap))) < _PENALTY:
+                starts.append((u_swap, True))
+        rng = np.random.default_rng(seed)
+        while len(starts) < n_starts:
+            starts.append(
+                (first + rng.normal(0.0, perturb_std, size=first.shape), False)
+            )
+    return starts
+
+
+def _run_starts(
+    problem: _Problem,
+    starts: list[tuple[NDArray[np.float64], bool]],
+    *,
+    method: str,
+    max_iter: int,
+) -> tuple[list[_RunOutcome], list[StartSummary]]:
+    """Optimise from every start, returning the outcomes and one summary per start."""
+    outcomes: list[_RunOutcome] = []
+    summaries: list[StartSummary] = []
+    for u_start, was_swapped in starts:
+        out = _optimise_start(
+            u_start,
+            problem.value_and_grad,
+            problem.hessian,
+            method=method,
+            grad_tol=problem.grad_tol,
+            max_iter=max_iter,
+        )
+        outcomes.append(out)
+        summaries.append(
+            StartSummary(
+                log_likelihood=-out.nll if out.nll < _PENALTY else float("-inf"),
+                converged=out.grad_norm <= problem.grad_tol,
+                n_iter=out.n_iter,
+                swapped=was_swapped,
+            )
+        )
+    return outcomes, summaries
+
+
+class _Spread(NamedTuple):
+    """Smallest Hessian eigenvalue and the covariances at the optimum."""
+
+    min_eig: float | None
+    free: NDArray[np.float64] | None
+    natural: NDArray[np.float64] | None
+    unconstrained: NDArray[np.float64] | None
+
+
+def _min_eigenvalue(hess: NDArray[np.float64]) -> float | None:
+    """Smallest eigenvalue of the symmetric ``hess``, ``None`` if it is not finite."""
+    try:
+        return float(np.linalg.eigvalsh(hess).min())
+    except np.linalg.LinAlgError:  # non-finite Hessian at a failed fit
+        return None
+
+
+def _free_selector(compiled: CompiledConstraints, n_params: int) -> NDArray[np.float64]:
+    """Matrix picking each non-fixed parameter's free coordinate (full vector order)."""
+    select = np.zeros((n_params, compiled.n_free))
+    for i, k in enumerate(compiled.source):
+        if not compiled.is_fixed[i]:
+            select[i, k] = 1.0
+    return select
+
+
+def _covariances(
+    problem: _Problem,
+    x_best: NDArray[np.float64],
+    n_params: int,
+    *,
+    converged: bool,
+    compute: bool,
+) -> _Spread:
+    """Hessian at ``x_best``: smallest eigenvalue and covariance on three scales."""
+    compiled = problem.compiled
+    if compiled.n_free == 0:
+        return _Spread(None, None, None, None)
+    hess = np.asarray(problem.hessian(jnp.asarray(x_best)), dtype=np.float64)
+    hess = 0.5 * (hess + hess.T)
+    min_eig = _min_eigenvalue(hess)
+    if not compute or min_eig is None:
+        return _Spread(min_eig, None, None, None)
+    if not converged:
+        # Called straight from ``fit``, so level 3 is the caller of ``fit``.
+        warnings.warn(
+            "Estimating uncertainty from a fit that did not converge; the "
+            "Hessian is evaluated at a possibly non-stationary point, so "
+            "the resulting covariance/standard errors may not be valid.",
+            UserWarning,
+            stacklevel=3,
+        )
+    cov_free = np.asarray(covariance_from_hessian(jnp.asarray(hess)))
+    jac = np.asarray(jax.jacobian(compiled.expand)(jnp.asarray(x_best)))
+    select = _free_selector(compiled, n_params)
+    return _Spread(
+        min_eig, cov_free, jac @ cov_free @ jac.T, select @ cov_free @ select.T
+    )
+
+
+def _at_boundary(compiled: CompiledConstraints, x_best: NDArray[np.float64]) -> bool:
+    """Whether a free parameter sits at the edge of its transform's range."""
+    # Transform codes are the bare integers of ``_CODES`` in ``constraints.py``
+    # (private there, with no named constants): 1 is "log", 3 is "interval".
+    free_codes = compiled.codes[compiled.free_indices]
+    return bool(
+        np.any(x_best[free_codes == 1] < _BOUNDARY_LOG_RATE)
+        or np.any(np.abs(x_best[free_codes == 3]) > _BOUNDARY_LOG_RATE)
+    )
+
+
 def fit(
     data: AgeData,
     model: BirthDeathModel,
@@ -759,155 +987,57 @@ def fit(
         starting point has a finite likelihood.
 
     """
-    if method not in _METHODS:
-        msg = f"Unsupported method '{method}'. Choose from {list(_METHODS)}."
-        raise ValueError(msg)
-    if not np.isclose(model.end_time, data.end_time):
-        msg = (
-            f"Model window {model.end_time} does not match the data "
-            f"observation time {data.end_time}."
-        )
-        raise ValueError(msg)
+    _check_method_and_window(data, model, method)
     constraints = constraints or Constraints()
     if n_starts is None:
         n_starts = _THOROUGH_STARTS if thorough else 1
-    compiled = constraints.compile(model.params)
-    objective = _objective(
+    problem = _prepare_problem(
+        data,
         model,
-        compiled,
-        has_spine=data.spine_ages is not None,
-        use_unknown_spine=data.use_unknown_spine,
-        initial_population=data.initial_population,
-        end_time=data.end_time,
+        constraints.compile(model.params),
         condition_on_survival=condition_on_survival,
         n_nodes=n_nodes,
-        has_ranges=data.has_ranges,
+        pad_to_bucket=pad_to_bucket,
         hessian_mode=hessian_mode,
+        tol=tol,
     )
-    n_rest = (
-        len(data.non_spine_ages) if data.n_non_spine is None else int(data.n_non_spine)
-    )
-    padded = (
-        data
-        if pad_to_bucket is False or data.n_non_spine is not None
-        else data.padded(_bucket(n_rest))
-    )
-    runtime = (
-        jnp.asarray(padded.non_spine_ages),
-        jnp.zeros(0) if data.spine_ages is None else jnp.asarray(data.spine_ages),
-        jnp.asarray(data.ns),
-        jnp.asarray(compiled.fixed_natural),
-        jnp.asarray(n_rest),
-        jnp.zeros(0) if padded.upper_ages is None else jnp.asarray(padded.upper_ages),
-        jnp.zeros(0) if padded.weights is None else jnp.asarray(padded.weights),
-    )
-
-    def nll(free: jax.Array) -> jax.Array:
-        return objective.nll(free, *runtime)
-
-    def value_and_grad(free: jax.Array) -> tuple[jax.Array, jax.Array]:
-        return objective.value_and_grad(free, *runtime)
-
-    def hessian(free: jax.Array) -> jax.Array:
-        return objective.hessian(free, *runtime)
-
-    n_obs = max(1, data.n_observations)
-    grad_tol = tol * n_obs
+    compiled = problem.compiled
 
     summaries: list[StartSummary] = []
     if compiled.n_free == 0:
-        value = float(nll(jnp.zeros(0)))
+        value = float(problem.nll(jnp.zeros(0)))
         best = _RunOutcome(
             np.zeros(0), value, 0.0, 0, 1, "no free parameters", method, [value]
         )
         summaries.append(StartSummary(-value, True, 0))
     else:
-        first: NDArray[np.float64] | None = None
-        natural0 = model.constant_natural(1.0, 1.0)
-        for candidate in _resolve_init(init, data, model):
-            u0 = np.asarray(compiled.reduce(candidate), dtype=np.float64)
-            if float(nll(jnp.asarray(u0))) < _PENALTY:
-                first, natural0 = u0, candidate
-                break
-        if first is None:
-            msg = "No starting point has a finite likelihood; pass `init`."
-            raise ValueError(msg)
-
-        starts: list[tuple[NDArray[np.float64], bool]] = [(first, False)]
-        if n_starts > 1:
-            swapped = model.swapped(natural0)
-            if swapped is not None:
-                u_swap = np.asarray(compiled.reduce(swapped), dtype=np.float64)
-                if float(nll(jnp.asarray(u_swap))) < _PENALTY:
-                    starts.append((u_swap, True))
-            rng = np.random.default_rng(seed)
-            while len(starts) < n_starts:
-                starts.append(
-                    (first + rng.normal(0.0, perturb_std, size=first.shape), False)
-                )
-
-        outcomes: list[_RunOutcome] = []
-        for u_start, was_swapped in starts:
-            out = _optimise_start(
-                u_start,
-                value_and_grad,
-                hessian,
-                method=method,
-                grad_tol=grad_tol,
-                max_iter=max_iter,
-            )
-            outcomes.append(out)
-            summaries.append(
-                StartSummary(
-                    log_likelihood=-out.nll if out.nll < _PENALTY else float("-inf"),
-                    converged=out.grad_norm <= grad_tol,
-                    n_iter=out.n_iter,
-                    swapped=was_swapped,
-                )
-            )
+        first, natural0 = _first_start(problem, init, data, model)
+        starts = _starting_points(
+            problem,
+            model,
+            first,
+            natural0,
+            n_starts=n_starts,
+            perturb_std=perturb_std,
+            seed=seed,
+        )
+        outcomes, summaries = _run_starts(
+            problem, starts, method=method, max_iter=max_iter
+        )
         best = min(outcomes, key=lambda o: o.nll)
 
     x_best = best.x
-    converged = best.grad_norm <= grad_tol and best.nll < _PENALTY
+    converged = best.grad_norm <= problem.grad_tol and best.nll < _PENALTY
     natural = model.canonical(compiled.expand(jnp.asarray(x_best)))
     birth, death = model.rates(jnp.asarray(natural))
-
-    min_eig: float | None = None
-    cov_free = cov_nat = cov_unc = None
-    if compiled.n_free > 0:
-        hess = np.asarray(hessian(jnp.asarray(x_best)), dtype=np.float64)
-        hess = 0.5 * (hess + hess.T)
-        try:
-            min_eig = float(np.linalg.eigvalsh(hess).min())
-        except np.linalg.LinAlgError:  # non-finite Hessian at a failed fit
-            min_eig = None
-        if compute_covariance and min_eig is not None:
-            if not converged:
-                warnings.warn(
-                    "Estimating uncertainty from a fit that did not converge; the "
-                    "Hessian is evaluated at a possibly non-stationary point, so "
-                    "the resulting covariance/standard errors may not be valid.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            cov_free = np.asarray(covariance_from_hessian(jnp.asarray(hess)))
-            jac = np.asarray(jax.jacobian(compiled.expand)(jnp.asarray(x_best)))
-            cov_nat = jac @ cov_free @ jac.T
-            select = np.zeros((len(natural), compiled.n_free))
-            for i, k in enumerate(compiled.source):
-                if not compiled.is_fixed[i]:
-                    select[i, k] = 1.0
-            cov_unc = select @ cov_free @ select.T
-
-    free_codes = compiled.codes[compiled.free_indices]
-    boundary = bool(
-        np.any(x_best[free_codes == 1] < _BOUNDARY_LOG_RATE)
-        or np.any(np.abs(x_best[free_codes == 3]) > _BOUNDARY_LOG_RATE)
+    spread = _covariances(
+        problem, x_best, len(natural), converged=converged, compute=compute_covariance
     )
+    boundary = _at_boundary(compiled, x_best)
     interior = bool(
         converged
         and not boundary
-        and (min_eig > 0 if min_eig is not None else compiled.n_free == 0)
+        and (spread.min_eig > 0 if spread.min_eig is not None else compiled.n_free == 0)
     )
 
     return FitResult(
@@ -919,11 +1049,11 @@ def fit(
         log_likelihood=-best.nll if best.nll < _PENALTY else float("-inf"),
         converged=converged,
         score_norm=best.grad_norm,
-        min_hessian_eig=min_eig,
+        min_hessian_eig=spread.min_eig,
         at_interior_optimum=interior,
-        covariance_free=cov_free,
-        covariance=cov_nat,
-        covariance_unconstrained=cov_unc,
+        covariance_free=spread.free,
+        covariance=spread.natural,
+        covariance_unconstrained=spread.unconstrained,
         n_iter=best.n_iter,
         n_function_evals=best.n_evals,
         message=best.message,
