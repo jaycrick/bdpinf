@@ -112,13 +112,12 @@ reference:
       - inference.persistence
 
   - title: Simulation
-    desc: Gillespie simulation and multilevel splitting for rare-event estimation.
+    desc: Exact event and lifespan simulation, contour-process and multilevel-splitting simulation of survival-conditioned trees.
     contents:
-      - simulation.forward.simulate_birth_death_process
+      - simulation.forward.simulate_birth_death
       - simulation.forward.simulate_birth_death_lifespans
-      - simulation.forward.simulate_birth_death_linear
-      - simulation.conditioned.simulate_birth_death_process_from_contour_process
-      - simulation.conditioned.simulate_subcritical_survival_splitting
+      - simulation.conditioned.simulate_contour_given_survival
+      - simulation.conditioned.simulate_survival_splitting
       - name: simulation.conditioned.ConditionedTrajectory
 
   - title: Visualization

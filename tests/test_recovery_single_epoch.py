@@ -24,8 +24,8 @@ import pytest
 
 from bdpinf.inference import AgeData, BirthDeathModel, Constraints, FitResult, fit
 from bdpinf.simulation import (
+    simulate_birth_death,
     simulate_birth_death_lifespans,
-    simulate_birth_death_process,
 )
 
 _MIN_SURVIVORS = 15
@@ -66,10 +66,10 @@ def _simulate_and_fit(
     max_retries: int = 100,
 ) -> FitResult | None:
     """Simulate a single epoch and fit. Return the fit or None when too few survivors."""
-    df = simulate_birth_death_process(
-        birth_rates=birth_rate,
-        death_rates=death_rate,
-        times=T,
+    df = simulate_birth_death(
+        birth_rate,
+        death_rate,
+        T,
         random_seed=seed,
         ensure_non_extinct=ensure_non_extinct,
         max_retries=max_retries,
@@ -194,9 +194,7 @@ class TestRecoverySingleEpoch:
 
     def test_recover_rates_are_self_consistent(self) -> None:
         """Fitted rates should be positive, finite, and ordered consistently."""
-        df = simulate_birth_death_process(
-            birth_rates=0.01, death_rates=0.003, times=600.0, random_seed=42
-        )
+        df = simulate_birth_death(0.01, 0.003, 600.0, random_seed=42)
         surviving = df.surviving_records
         if surviving is None or len(surviving) < _MIN_SURVIVORS:
             pytest.skip("insufficient survivors for this seed")

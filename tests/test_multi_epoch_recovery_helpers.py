@@ -23,7 +23,7 @@ class TestRunTwoRateReplicate:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            mer, "simulate_birth_death_process", lambda **kwargs: object()
+            mer, "simulate_birth_death", lambda *args, **kwargs: object()
         )
         monkeypatch.setattr(
             mer, "extract_alive_ages", lambda *a, **k: np.array([1.0, 2.0])
@@ -46,7 +46,7 @@ class TestRunTwoRateReplicate:
         make_fit_result: Callable[..., FitResult],
     ) -> None:
         monkeypatch.setattr(
-            mer, "simulate_birth_death_process", lambda **kwargs: object()
+            mer, "simulate_birth_death", lambda *args, **kwargs: object()
         )
         monkeypatch.setattr(
             mer, "extract_alive_ages", lambda *a, **k: np.array([1.0, 10.0])
@@ -79,7 +79,7 @@ class TestRunTwoRateReplicate:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            mer, "simulate_birth_death_process", lambda **kwargs: object()
+            mer, "simulate_birth_death", lambda *args, **kwargs: object()
         )
         monkeypatch.setattr(
             mer, "extract_alive_ages", lambda *a, **k: np.array([1.0, 10.0])
@@ -174,7 +174,7 @@ class TestSimulateZeroBirthSecondEpoch:
             records = records_df
 
         monkeypatch.setattr(
-            mer, "simulate_birth_death_process", lambda **kwargs: _FakeFirstEpoch()
+            mer, "simulate_birth_death", lambda *args, **kwargs: _FakeFirstEpoch()
         )
 
         result = mer.simulate_zero_birth_second_epoch(

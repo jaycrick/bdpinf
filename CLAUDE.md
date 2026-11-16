@@ -84,7 +84,7 @@ class TestSubject:
 ## Architecture
 
 **bdpinf** is a library for linear birth-death (branching) processes: exact likelihoods, MLE and Bayesian inference, simulation and plotting.
-It has no domain-specific content; the New Testament manuscript application lives in the separate `nt-manuscripts` repo, and rare-event simulation methodology in `bdsurv` (a runtime dependency used by `simulation/conditioned.py`).
+It has no domain-specific content; the New Testament manuscript application lives in the separate `nt-manuscripts` repo, and rare-event simulation methodology in `bdsurv` (a runtime dependency, pinned to 0.5.0 by git revision, used by `simulation/forward.py` and `simulation/conditioned.py`).
 Public names, signatures and docstrings are in the generated API reference (`great-docs.yml` defines its structure), so this section only records the layering and the ideas that are not obvious from the code.
 
 ### Layers
@@ -98,7 +98,7 @@ Imports may only point at the same or a lower layer; `tests/test_layering.py` en
   | 2     | `models.math_extinction`, `models.math_populations`, `models.math_age_densities`, `models.math_general` | Pure functions built on layer 1                                                                           |
   | 3     | `inference`                                                                                             | `AgeData` and likelihood, rate-model families, constraints, Newton MLE fitting, NumPyro/NUTS, persistence |
   | 4-5   | `models.genealogy`, `process`                                                                           | `BirthDeathProcess`, the canonical object passed between modules                                          |
-  | 6     | `simulation`                                                                                            | Gillespie and lifespan-at-birth simulators, survival conditioning, `bdsurv` adapters                      |
+  | 6     | `simulation`                                                                                            | Exact-event and lifespan-at-birth simulators, survival conditioning, `bdsurv` adapters                    |
   | 7     | `analysis`                                                                                              | Notebook-facing helpers: subset fits, recovery studies, date-density pipelines, LaTeX tables              |
   | 8     | `visualization`                                                                                         | Altair charts (house theme in `altair_theme.py`, the single export path `save_chart`)                     |
 
@@ -113,8 +113,8 @@ Imports may only point at the same or a lower layer; `tests/test_layering.py` en
 - **Unknown spine.** When no spine is given, `log_likelihood()` marginalises over which individual is the spine (`resolve_spine_ages` is the shared resolution step).
   `condition_on_survival` (default `True`) conditions the population-count term on non-extinction.
 - **Fitting.** `fit(AgeData, BirthDeathModel)` maximises the exact likelihood with a trust-region Newton method (`scipy` `trust-exact`, jitted JAX gradient and Hessian), falling back to L-BFGS-B, and reports a `FitResult` (parameters by name, `at_interior_optimum`, covariance, profile-likelihood intervals via `profile_likelihood_interval`).
-  `BirthDeathModel` pairs two `RateModel` families (`PiecewiseConstant`, `PiecewiseLinear`; a new family only needs `params`, `build`, `constant_values`, `values_from_rate`); every parameter has a transform (log for rates) that maps it to the unconstrained scale.
-  `Constraints` (fixed values, equality groups, **by parameter name**) compile to index maps shared by the MLE and NUTS; a jump-form `PiecewiseLinear` with `flat_groups` constraints *is* the piecewise-constant model, so constant is nested in linear.
+  `BirthDeathModel` pairs two `RateModel` families (`PiecewiseConstantModel`, `PiecewiseLinearModel`; a new family only needs `params`, `build`, `constant_values`, `values_from_rate`); every parameter has a transform (log for rates) that maps it to the unconstrained scale.
+  `Constraints` (fixed values, equality groups, **by parameter name**) compile to index maps shared by the MLE and NUTS; a jump-form `PiecewiseLinearModel` with `flat_groups` constraints *is* the piecewise-constant model, so constant is nested in linear.
   `FreeKnots` (number, optionally ranges) turns the shared epoch boundaries into `tau<k>` parameters on an `interval` transform; `fit_knots` profiles them (the piecewise-constant likelihood jumps in a knot, so Newton alone is unreliable).
   Defaults are one search per model type: `fit` uses one start, `fit_knots` uses `"brent"` for one free knot and `"grid-newton"` for several; `thorough=True` uses 5 starts in `fit`, and in `fit_knots` runs brent, de-profile and grid-newton in parallel processes and keeps the best (`KnotFitResult.method`, `method_results`).
   The method comparison (sim1000, NTVMR benchmarks and their HPC scripts) is preserved at the `knot-benchmarks` tag.

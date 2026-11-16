@@ -5,6 +5,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+`bdsurv` is now 0.5.0, which unifies its public API, and `bdpinf`'s simulation names follow it.
+There are no aliases for the old names.
+
+- `simulation`: the `bdsurv` pin moves to 0.5.0 (`176e9a1`); the dependency floor is `bdsurv>=0.5.0`.
+- `simulation`: every simulator still returns `BirthDeathProcess`, through one shared converter from `bdsurv.SimulatedTree`.
+  When both rates are piecewise constant on the same epochs the process stores the per-epoch rates and epoch end times;
+  otherwise (linear rates, or constant rates on different epochs) it stores no per-epoch rates and its epochs are the sorted union of the two rates' epoch end times.
+- `inference`: the rate-model families are renamed, ending the clash with the `bdsurv` rate objects `PiecewiseConstant` and `PiecewiseLinear`.
+  The `BirthDeathModel.piecewise_constant(...)` and `.piecewise_linear(...)` constructors keep their names.
+- Seeded simulation output differs from earlier releases for every simulator, because `bdsurv` 0.5.0 spawns its child generators differently.
+  Invalid inputs (NaN or infinite rates and times, and so on) now raise `ValueError`.
+
+  | Old                                                                                                        | New                                                                                                                                           |
+  | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `simulation.simulate_birth_death_process(birth_rates, death_rates, times, ...)`                            | `simulation.simulate_birth_death(birth_rate, death_rate, terminal_time=None, random_seed=None, *, ensure_non_extinct=False, max_retries=100)` |
+  | `simulation.simulate_birth_death_linear(birth_rate, death_rate, ...)`                                      | `simulation.simulate_birth_death(birth_rate, death_rate, ...)` with rate objects                                                              |
+  | `simulation.simulate_birth_death_process_from_contour_process(birth_rate, death_rate, terminal_time, ...)` | `simulation.simulate_contour_given_survival(birth_rate, death_rate, terminal_time=None, random_seed=None)`                                    |
+  | `simulation.simulate_subcritical_survival_splitting(config)`                                               | `simulation.simulate_survival_splitting(config)`                                                                                              |
+  | `inference.PiecewiseConstant`                                                                              | `inference.PiecewiseConstantModel`                                                                                                            |
+  | `inference.PiecewiseLinear`                                                                                | `inference.PiecewiseLinearModel`                                                                                                              |
+
+`simulate_birth_death_lifespans` keeps its name and signature.
+
+#### Migrating
+
+- `simulate_birth_death_process(b, d, times, ...)` with arrays: write `simulate_birth_death(PiecewiseConstant(b, times), PiecewiseConstant(d, times), ...)`, importing `PiecewiseConstant` from `bdsurv` (or pass `bdpinf.models.rate_functions.PiecewiseConstantRate`).
+  With scalar rates write `simulate_birth_death(b, d, terminal_time, ...)`; the keywords `birth_rates`, `death_rates` and `times` are gone.
+- `simulate_birth_death_linear(birth, death, ...)`: write `simulate_birth_death(birth, death, ...)`; rates may be `bdsurv.PiecewiseLinear` or `bdpinf` rate functions.
+- `simulate_birth_death_process_from_contour_process(b, d, T, ...)`: write `simulate_contour_given_survival(b, d, T, ...)`; rate objects need no `terminal_time`.
+- `simulate_subcritical_survival_splitting(config)`: write `simulate_survival_splitting(config)`.
+  `bdsurv.SplittingConfig` is keyword-only, so `SplittingConfig(b, d, T, n)` must become `SplittingConfig(birth_rate=b, death_rate=d, terminal_time=T, n_particles=n)`.
+- `inference.PiecewiseConstant` and `inference.PiecewiseLinear` (the `RateModel` families): rename to `PiecewiseConstantModel` and `PiecewiseLinearModel`.
+  Code that means the `bdsurv` rate objects imports them from `bdsurv`.
+- Code that read `bdsurv` internals (`bdsurv._extinction.pr_extinction`, `bdsurv.linear_rates`, `bdsurv.gillespie`) should follow the `bdsurv` 0.5.0 migration notes:
+  for example `-math.expm1(bdsurv.log_survival_probability(b, d, T))` replaces `pr_extinction(b, d, T)`.
+
 ## [0.4.2] --- 2026-11-13
 
 - `visualization.figure_manifest`: `save_chart` records each figure it writes in `<output_dir>/.figure_manifest/<source>.txt`, naming the Quarto document or script that produced it; `prune_figures` (and `scripts/prune_figures.sh`) lists or deletes figures no live manifest mentions.

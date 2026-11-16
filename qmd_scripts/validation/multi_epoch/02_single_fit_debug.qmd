@@ -21,11 +21,12 @@ __compile_start = time.perf_counter()
 
 ```{python}
 import numpy as np
+from bdsurv import PiecewiseConstant
 
 from bdpinf.analysis import FitModelConfig, fit_single_model
 from bdpinf.inference import log_likelihood
 from bdpinf.inference.fitting import get_crude_parameter_estimates
-from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death
 ```
 
 ## Simulate One Two-Epoch Dataset
@@ -35,10 +36,9 @@ birth_rates = np.array([0.01, 0.001], dtype=float)
 death_rates = np.array([0.001, 0.001], dtype=float)
 times = np.array([750.0, 1500.0], dtype=float)
 
-sim = simulate_birth_death_process(
-    birth_rates=birth_rates,
-    death_rates=death_rates,
-    times=times,
+sim = simulate_birth_death(
+    PiecewiseConstant(birth_rates, times),
+    PiecewiseConstant(death_rates, times),
     random_seed=42,
 )
 alive = sim.surviving_records

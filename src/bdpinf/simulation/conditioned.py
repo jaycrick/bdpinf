@@ -1,14 +1,14 @@
 """Adapters wrapping the `bdsurv` survival-conditioned simulators.
 
-`simulate_birth_death_process_from_contour_process` (exact contour-process
-reconstruction) and `simulate_subcritical_survival_splitting` (adaptive-grid
-RESTART multilevel splitting) are implemented in the standalone `bdsurv`
-package, which does not depend on this package's inference stack.
-`bdsurv` returns its own lightweight `SimulatedTree` (a records DataFrame plus
-rates and terminal time) rather than `BirthDeathProcess`, since
-`BirthDeathProcess` pulls in `bdpinf.inference`.
-This module wraps `bdsurv`'s results into `BirthDeathProcess` so the rest of
-`bdpinf` sees the same canonical type as every other simulator here.
+`simulate_contour_given_survival` (exact contour-process reconstruction) and
+`simulate_survival_splitting` (adaptive-grid RESTART multilevel splitting)
+are implemented in the standalone `bdsurv` package, which does not depend on
+this package's inference stack.
+`bdsurv` returns its own lightweight `SimulatedTree` rather than
+`BirthDeathProcess`, since `BirthDeathProcess` pulls in `bdpinf.inference`.
+This module wraps `bdsurv`'s results into `BirthDeathProcess`, through the
+converter in :mod:`bdpinf.simulation.forward`, so the rest of `bdpinf` sees
+the same canonical type as every other simulator here.
 
 `SplittingConfig` and `select_level_times_for_band` carry no
 `BirthDeathProcess` dependency, so import them from `bdsurv` directly.
@@ -19,18 +19,18 @@ from __future__ import annotations
 import dataclasses
 
 import numpy as np
-from bdsurv import SplittingConfig
-from bdsurv import simulate_birth_death_process_from_contour_process as _contour
-from bdsurv import simulate_subcritical_survival_splitting as _splitting
-from bdsurv.splitting import SplittingSimulationResult
-from bdsurv.tree import SimulatedTree
+from bdsurv import RateInput, SplittingConfig, SplittingSimulationResult
+from bdsurv import simulate_contour_given_survival as _contour
+from bdsurv import simulate_survival_splitting as _splitting
 
 from bdpinf.process import BirthDeathProcess
 
+from .forward import tree_to_birth_death_process
+
 __all__ = [
     "ConditionedTrajectory",
-    "simulate_birth_death_process_from_contour_process",
-    "simulate_subcritical_survival_splitting",
+    "simulate_contour_given_survival",
+    "simulate_survival_splitting",
 ]
 
 
@@ -58,45 +58,43 @@ class ConditionedTrajectory:
     process: BirthDeathProcess
 
 
-def _tree_to_birth_death_process(tree: SimulatedTree) -> BirthDeathProcess:
-    return BirthDeathProcess.from_records(
-        records=tree.records,
-        epoch_end_times=tree.terminal_time,
-        birth_rates=tree.birth_rate,
-        death_rates=tree.death_rate,
-    )
-
-
-def simulate_birth_death_process_from_contour_process(
-    birth_rate: float,
-    death_rate: float,
-    terminal_time: float,
+def simulate_contour_given_survival(
+    birth_rate: RateInput,
+    death_rate: RateInput,
+    terminal_time: float | None = None,
     random_seed: int | None = None,
 ) -> BirthDeathProcess:
-    """Simulate a birth-death process using contour-process reconstruction.
+    """Simulate a birth-death process conditioned on survival to the end.
 
-    Thin wrapper around ``bdsurv.simulate_birth_death_process_from_contour_process``
-    that converts its ``SimulatedTree`` result into a canonical
-    ``BirthDeathProcess``.
+    Wraps ``bdsurv.simulate_contour_given_survival``, an exact contour-process
+    reconstruction;
+    see its docstring for the algorithm and the parameters.
+
+    Returns
+    -------
+    BirthDeathProcess
+        Process with exactly one surviving spine individual.
+
     """
-    tree = _contour(
-        birth_rate=birth_rate,
-        death_rate=death_rate,
-        terminal_time=terminal_time,
-        random_seed=random_seed,
+    return tree_to_birth_death_process(
+        _contour(birth_rate, death_rate, terminal_time, random_seed)
     )
-    return _tree_to_birth_death_process(tree)
 
 
-def simulate_subcritical_survival_splitting(
-    config: SplittingConfig,
-) -> SplittingSimulationResult:
-    """Run adaptive-grid multilevel (RESTART) splitting for subcritical survival.
+def simulate_survival_splitting(config: SplittingConfig) -> SplittingSimulationResult:
+    """Run adaptive-grid multilevel (RESTART) splitting for survival.
 
-    Thin wrapper around ``bdsurv.simulate_subcritical_survival_splitting`` that
-    converts each conditioned trajectory's ``SimulatedTree`` into a canonical
-    ``BirthDeathProcess``. See ``bdsurv.splitting`` for the full algorithm
-    description.
+    Wraps ``bdsurv.simulate_survival_splitting``;
+    see its docstring and ``bdsurv.SplittingConfig`` for the algorithm and the
+    (keyword-only) configuration.
+
+    Returns
+    -------
+    SplittingSimulationResult
+        The ``bdsurv`` result, with each conditioned trajectory's tree
+        converted to a ``BirthDeathProcess``
+        (see :class:`ConditionedTrajectory`).
+
     """
     result = _splitting(config)
     trajectories = [
@@ -104,7 +102,7 @@ def simulate_subcritical_survival_splitting(
             particle_id=trajectory.particle_id,
             times=trajectory.times,
             populations=trajectory.populations,
-            process=_tree_to_birth_death_process(trajectory.process),
+            process=tree_to_birth_death_process(trajectory.process),
         )
         for trajectory in result.conditioned_trajectories
     ]

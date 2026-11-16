@@ -10,9 +10,10 @@ Run with::
 
 import numpy as np
 import pytest
+from bdsurv import PiecewiseConstant
 
 from bdpinf.inference import AgeData, BirthDeathModel, Constraints, FitResult, fit
-from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death
 
 _MIN_SURVIVORS = 15
 _MAX_SEEDS = 20
@@ -25,10 +26,9 @@ def _simulate_two_epoch(
     seed: int,
 ) -> np.ndarray | None:
     """Simulate and return survivor ages, or None if too few."""
-    df = simulate_birth_death_process(
-        birth_rates=np.array(birth_rates),
-        death_rates=np.array(death_rates),
-        times=_TIMES,
+    df = simulate_birth_death(
+        PiecewiseConstant(np.array(birth_rates), _TIMES),
+        PiecewiseConstant(np.array(death_rates), _TIMES),
         random_seed=seed,
     )
     surviving = df.surviving_records

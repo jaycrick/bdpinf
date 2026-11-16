@@ -55,8 +55,8 @@ from bdpinf.models.math_nested import (
 from bdpinf.models.math_populations import calculate_populations_log_pmf
 from bdpinf.simulation import (
     simulate_bdp_ages_from_distributions,
+    simulate_birth_death,
     simulate_birth_death_lifespans,
-    simulate_birth_death_process,
 )
 from bdpinf.utils import derive_worker_seeds
 from bdpinf.visualization import save_chart
@@ -102,10 +102,10 @@ def sample_age_vector_from_distribution(
 def sample_age_vector_full_process(
     seed: int, br: float, dr: float, span: float
 ) -> np.ndarray:
-    simulated_df = simulate_birth_death_process(
-        birth_rates=float(br),
-        death_rates=float(dr),
-        times=float(span),
+    simulated_df = simulate_birth_death(
+        float(br),
+        float(dr),
+        float(span),
         random_seed=seed,
     )
     survivors = simulated_df.surviving_records

@@ -8,8 +8,8 @@ from bdpinf.inference.constraints import Constraints
 from bdpinf.inference.likelihood import AgeData, log_likelihood_rates
 from bdpinf.inference.rate_models import (
     BirthDeathModel,
-    PiecewiseConstant,
-    PiecewiseLinear,
+    PiecewiseConstantModel,
+    PiecewiseLinearModel,
 )
 from bdpinf.models.rate_functions import PiecewiseConstantRate, PiecewiseLinearRate
 
@@ -20,7 +20,7 @@ class TestPiecewiseConstant:
     """Test the piecewise-constant family."""
 
     def test_params_and_build(self) -> None:
-        family = PiecewiseConstant(_TIMES)
+        family = PiecewiseConstantModel(_TIMES)
         assert [p.name for p in family.params] == ["v0", "v1"]
         assert family.end_time == 2.5
         rate = family.build(jnp.array([0.4, 0.9]))
@@ -28,7 +28,7 @@ class TestPiecewiseConstant:
         np.testing.assert_allclose(rate(jnp.array([0.5, 2.0])), [0.4, 0.9])
 
     def test_constant_values_and_values_from_rate(self) -> None:
-        family = PiecewiseConstant(_TIMES)
+        family = PiecewiseConstantModel(_TIMES)
         np.testing.assert_allclose(family.constant_values(0.3), [0.3, 0.3])
         rate = family.build(jnp.array([0.4, 0.9]))
         np.testing.assert_allclose(family.values_from_rate(rate), [0.4, 0.9])
@@ -36,14 +36,14 @@ class TestPiecewiseConstant:
     @pytest.mark.parametrize("times", [[], [0.0, 1.0], [2.0, 1.0], [1.0, 1.0]])
     def test_rejects_bad_epochs(self, times: list[float]) -> None:
         with pytest.raises(ValueError, match="strictly increasing"):
-            PiecewiseConstant(times)
+            PiecewiseConstantModel(times)
 
 
 class TestPiecewiseLinear:
     """Test the continuous and jump-form piecewise-linear families."""
 
     def test_continuous_parameters(self) -> None:
-        family = PiecewiseLinear(_TIMES)
+        family = PiecewiseLinearModel(_TIMES)
         assert [p.name for p in family.params] == ["knot0", "knot1", "knot2"]
         rate = family.build(jnp.array([1.0, 2.0, 0.5]))
         assert isinstance(rate, PiecewiseLinearRate)
@@ -52,7 +52,7 @@ class TestPiecewiseLinear:
         )
 
     def test_jump_parameters(self) -> None:
-        family = PiecewiseLinear(_TIMES, continuous=False)
+        family = PiecewiseLinearModel(_TIMES, continuous=False)
         assert [p.name for p in family.params] == ["start0", "start1", "end0", "end1"]
         rate = family.build(jnp.array([1.0, 3.0, 2.0, 0.5]))
         np.testing.assert_allclose(rate(jnp.array([0.0, 1.0])), [1.0, 2.0], atol=1e-12)
@@ -63,22 +63,22 @@ class TestPiecewiseLinear:
             (True, [1.0, 2.0, 0.5]),
             (False, [1.0, 3.0, 2.0, 0.5]),
         ):
-            family = PiecewiseLinear(_TIMES, continuous=continuous)
+            family = PiecewiseLinearModel(_TIMES, continuous=continuous)
             rate = family.build(jnp.array(values))
             np.testing.assert_allclose(family.values_from_rate(rate), values, rtol=1e-6)
 
     def test_warm_start_from_piecewise_constant(self) -> None:
-        constant = PiecewiseConstant(_TIMES).build(jnp.array([1.0, 3.0]))
-        knots = PiecewiseLinear(_TIMES).values_from_rate(constant)
+        constant = PiecewiseConstantModel(_TIMES).build(jnp.array([1.0, 3.0]))
+        knots = PiecewiseLinearModel(_TIMES).values_from_rate(constant)
         np.testing.assert_allclose(knots, [1.0, 2.0, 3.0], rtol=1e-6)
 
     def test_flat_groups_only_for_jump_form(self) -> None:
-        assert PiecewiseLinear(_TIMES, continuous=False).flat_groups("birth.") == [
+        assert PiecewiseLinearModel(_TIMES, continuous=False).flat_groups("birth.") == [
             ["birth.start0", "birth.end0"],
             ["birth.start1", "birth.end1"],
         ]
         with pytest.raises(ValueError, match="continuous=False"):
-            PiecewiseLinear(_TIMES).flat_groups()
+            PiecewiseLinearModel(_TIMES).flat_groups()
 
     def test_flat_jump_model_is_piecewise_constant(self) -> None:
         """Tying start and end values makes a jump-form linear model constant."""
@@ -124,16 +124,20 @@ class TestBirthDeathModel:
         np.testing.assert_allclose(model.swapped(natural), [2.0, 2.0, 1.0, 1.0])
 
     def test_swapped_is_none_for_mismatched_layouts(self) -> None:
-        mixed = BirthDeathModel(PiecewiseConstant(_TIMES), PiecewiseLinear(_TIMES))
+        mixed = BirthDeathModel(
+            PiecewiseConstantModel(_TIMES), PiecewiseLinearModel(_TIMES)
+        )
         assert mixed.swapped(jnp.ones(5)) is None
 
     def test_natural_from_rates(self) -> None:
         model = BirthDeathModel.piecewise_linear(_TIMES)
-        birth = PiecewiseConstant(_TIMES).build(jnp.array([1.0, 3.0]))
-        death = PiecewiseConstant(_TIMES).build(jnp.array([0.5, 0.5]))
+        birth = PiecewiseConstantModel(_TIMES).build(jnp.array([1.0, 3.0]))
+        death = PiecewiseConstantModel(_TIMES).build(jnp.array([0.5, 0.5]))
         natural = model.natural_from_rates(birth, death)
         np.testing.assert_allclose(natural, [1.0, 2.0, 3.0, 0.5, 0.5, 0.5], rtol=1e-6)
 
     def test_rejects_mismatched_windows(self) -> None:
         with pytest.raises(ValueError, match="share the observation time"):
-            BirthDeathModel(PiecewiseConstant([1.0]), PiecewiseConstant([2.0]))
+            BirthDeathModel(
+                PiecewiseConstantModel([1.0]), PiecewiseConstantModel([2.0])
+            )

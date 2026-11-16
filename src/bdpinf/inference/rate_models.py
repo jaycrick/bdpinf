@@ -8,8 +8,8 @@ proportion staying in $(0, 1)$) is enforced by construction.
 
 Provided families:
 
-- :class:`PiecewiseConstant`: one rate per epoch;
-- :class:`PiecewiseLinear`: values at epoch boundaries (``continuous=True``,
+- :class:`PiecewiseConstantModel`: one rate per epoch;
+- :class:`PiecewiseLinearModel`: values at epoch boundaries (``continuous=True``,
   the default) or separate start and end values per epoch, which allows jumps.
   A jump-form linear model whose start and end values are tied
   (``flat_groups``) is the piecewise-constant model.
@@ -45,8 +45,8 @@ __all__ = [
     "BirthDeathModel",
     "FreeKnots",
     "Param",
-    "PiecewiseConstant",
-    "PiecewiseLinear",
+    "PiecewiseConstantModel",
+    "PiecewiseLinearModel",
     "RateModel",
     "Transform",
 ]
@@ -154,7 +154,7 @@ def _as_epoch_tuple(epoch_end_times: EpochTimes) -> tuple[float, ...]:
 
 
 @dataclasses.dataclass(frozen=True)
-class PiecewiseConstant:
+class PiecewiseConstantModel:
     """One non-negative rate per epoch.
 
     Parameters
@@ -223,7 +223,7 @@ class PiecewiseConstant:
 
 
 @dataclasses.dataclass(frozen=True)
-class PiecewiseLinear:
+class PiecewiseLinearModel:
     r"""Rate that is linear within each epoch.
 
     With ``continuous=True`` the parameters are the values at time 0 and at
@@ -558,12 +558,12 @@ class BirthDeathModel:
 
         Pass a :class:`FreeKnots` to fit the epoch boundaries as well.
         ``min_birth`` and ``min_death`` are lower bounds on every birth and
-        death rate (see :class:`PiecewiseConstant`).
+        death rate (see :class:`PiecewiseConstantModel`).
         """
         epochs, knots = _template(epoch_end_times)
         return cls(
-            PiecewiseConstant(epochs, min_birth),
-            PiecewiseConstant(epochs, min_death),
+            PiecewiseConstantModel(epochs, min_birth),
+            PiecewiseConstantModel(epochs, min_death),
             knots,
         )
 
@@ -584,8 +584,8 @@ class BirthDeathModel:
         """
         epochs, knots = _template(epoch_end_times)
         return cls(
-            PiecewiseLinear(epochs, continuous, min_birth),
-            PiecewiseLinear(epochs, continuous, min_death),
+            PiecewiseLinearModel(epochs, continuous, min_birth),
+            PiecewiseLinearModel(epochs, continuous, min_death),
             knots,
         )
 

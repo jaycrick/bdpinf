@@ -76,7 +76,7 @@ class TestScoreFunction:
     def test_mle_gradient_near_zero_at_truth(self) -> None:
         """At true parameters, NLL gradient should be near zero for large samples."""
         from bdpinf.inference import AgeData, BirthDeathModel, fit
-        from bdpinf.simulation import simulate_birth_death_process
+        from bdpinf.simulation import simulate_birth_death
 
         true_birth = 0.01
         true_death = 0.003
@@ -84,10 +84,10 @@ class TestScoreFunction:
 
         n_pass = 0
         for seed in range(10):
-            df = simulate_birth_death_process(
-                birth_rates=true_birth,
-                death_rates=true_death,
-                times=T,
+            df = simulate_birth_death(
+                true_birth,
+                true_death,
+                T,
                 random_seed=seed,
             )
             surviving = df[df["survived"]]

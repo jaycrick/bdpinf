@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from bdsurv import SplittingConfig
+from bdsurv import PiecewiseConstant, SplittingConfig
 
 from bdpinf.inference import (
     AgeData,
@@ -14,8 +14,8 @@ from bdpinf.inference import (
 )
 from bdpinf.inference.likelihood import log_likelihood
 from bdpinf.simulation import (
-    simulate_birth_death_process,
-    simulate_subcritical_survival_splitting,
+    simulate_birth_death,
+    simulate_survival_splitting,
 )
 from bdpinf.simulation.simulator import simulate_bdp_ages_from_distributions
 
@@ -67,10 +67,10 @@ class TestIntegration:
         true_birth_rate = 0.05
         true_death_rate = 0.01
         # Step 1: Simulate data using modular function
-        simulated_df = simulate_birth_death_process(
-            birth_rates=true_birth_rate,
-            death_rates=true_death_rate,
-            times=200.0,
+        simulated_df = simulate_birth_death(
+            true_birth_rate,
+            true_death_rate,
+            200.0,
             random_seed=42,
         )
 
@@ -103,10 +103,9 @@ class TestIntegration:
             death_rates = birth_rates * rng.uniform(0.0025, 0.005, size=3)
             base_seed = int(rng.integers(0, 2**31 - 1))
 
-            df = simulate_birth_death_process(
-                birth_rates=birth_rates,
-                death_rates=death_rates,
-                times=times,
+            df = simulate_birth_death(
+                PiecewiseConstant(birth_rates, times),
+                PiecewiseConstant(death_rates, times),
                 random_seed=base_seed,
             )
             surviving = df[df["survived"]]
@@ -479,10 +478,10 @@ class TestIntegration:
             )
             assert len(ages) == 2
             np.testing.assert_array_equal(ages, [400.0, 300.0])
-        simulated_df = simulate_birth_death_process(
+        simulated_df = simulate_birth_death(
             birth_rate,
             death_rate,
-            times=300.0,
+            300.0,
             random_seed=42,
         )
         final_time = 300.0
@@ -506,7 +505,7 @@ class TestIntegration:
             n_particles=30,
             random_seed=42,
         )
-        result = simulate_subcritical_survival_splitting(config)
+        result = simulate_survival_splitting(config)
         assert result.final_survivor_count > 0
         assert result.n_attempts >= 1
         # particle_genealogy should be a DataFrame with genealogy columns

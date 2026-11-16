@@ -12,8 +12,8 @@ from bdpinf.inference import (
     Constraints,
     FreeKnots,
     Param,
-    PiecewiseConstant,
-    PiecewiseLinear,
+    PiecewiseConstantModel,
+    PiecewiseLinearModel,
     fit,
     fit_bayesian,
     fit_knots,
@@ -57,8 +57,8 @@ class TestMinValueSpec:
     def test_defaults_are_zero(self) -> None:
         model = BirthDeathModel.piecewise_constant([50.0, _T])
         assert all(p.lower == 0.0 for p in model.params)
-        assert PiecewiseConstant([_T]).min_value == 0.0
-        assert PiecewiseLinear([_T]).min_value == 0.0
+        assert PiecewiseConstantModel([_T]).min_value == 0.0
+        assert PiecewiseLinearModel([_T]).min_value == 0.0
 
     def test_bounds_land_on_the_right_family(self) -> None:
         model = BirthDeathModel.piecewise_linear(
@@ -71,9 +71,9 @@ class TestMinValueSpec:
     @pytest.mark.parametrize("bad", [-0.1, float("nan"), float("inf")])
     def test_rejects_bad_minimum(self, bad: float) -> None:
         with pytest.raises(ValueError, match="min_value"):
-            PiecewiseConstant([_T], bad)
+            PiecewiseConstantModel([_T], bad)
         with pytest.raises(ValueError, match="min_value"):
-            PiecewiseLinear([_T], True, bad)
+            PiecewiseLinearModel([_T], True, bad)
         with pytest.raises(ValueError, match="minimum value"):
             Param("x", lower=bad)
 

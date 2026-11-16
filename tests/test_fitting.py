@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 import pytest
+from bdsurv import PiecewiseConstant
 
 from bdpinf.analysis.multi_epoch_recovery import simulate_zero_birth_second_epoch
 from bdpinf.inference import (
@@ -21,16 +22,15 @@ from bdpinf.inference import (
 )
 from bdpinf.inference.likelihood import log_likelihood_rates
 from bdpinf.models.rate_functions import PiecewiseLinearRate
-from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death
 
 
 def _simulate(
     birth: list[float], death: list[float], times: list[float], seed: int
 ) -> np.ndarray:
-    process = simulate_birth_death_process(
-        np.array(birth),
-        np.array(death),
-        np.array(times),
+    process = simulate_birth_death(
+        PiecewiseConstant(np.array(birth), np.array(times)),
+        PiecewiseConstant(np.array(death), np.array(times)),
         random_seed=seed,
         ensure_non_extinct=True,
     )
@@ -86,9 +86,9 @@ class TestFit:
     def test_matches_recorded_reference_fits(self) -> None:
         """Maximised log-likelihoods of the previous optimiser on seeded data."""
         cases = [
-            ([0.8], [0.3], [8.0], 2, -49.1239667068968),
-            ([1.0], [0.6], [9.0], 2, -27.316729678183943),
-            ([0.8, 0.6], [0.3, 0.4], [5.0, 10.0], 2, -49.083333473563435),
+            ([0.8], [0.3], [8.0], 2, -38.11206893044985),
+            ([1.0], [0.6], [9.0], 2, -23.017548163371135),
+            ([0.8, 0.6], [0.3, 0.4], [5.0, 10.0], 2, -49.882908238505465),
         ]
         for birth, death, times, seed, reference in cases:
             ages = _simulate(birth, death, times, seed)

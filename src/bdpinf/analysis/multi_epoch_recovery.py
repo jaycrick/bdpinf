@@ -19,6 +19,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from bdsurv import PiecewiseConstant
 from numpy.typing import NDArray
 
 from bdpinf.analysis.single_epoch import extract_alive_ages
@@ -29,7 +30,7 @@ from bdpinf.analysis.validation_helpers import (
     has_ages_in_each_epoch,
 )
 from bdpinf.inference import Constraints, FitResult
-from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death
 
 
 def _epoch_row(simulation_index: int, model: FitResult | None) -> dict[str, Any] | None:
@@ -62,10 +63,9 @@ def run_two_rate_replicate(
     ``03_bulk_inference.qmd``), so replicates without a usable age vector are
     dropped rather than persisted with placeholder values.
     """
-    simulated = simulate_birth_death_process(
-        birth_rates=birth_rates_true,
-        death_rates=death_rates_true,
-        times=times,
+    simulated = simulate_birth_death(
+        PiecewiseConstant(birth_rates_true, times),
+        PiecewiseConstant(death_rates_true, times),
         random_seed=sim_seed,
     )
     ages = extract_alive_ages(simulated, float(times[-1]))
@@ -104,10 +104,10 @@ def simulate_zero_birth_second_epoch(
     """Simulate epoch 1, then advance survivors with death-only draws in epoch 2."""
     split_time = float(times[0])
     final_time = float(times[-1])
-    first_epoch = simulate_birth_death_process(
-        birth_rates=np.array([birth_rate_epoch_1], dtype=float),
-        death_rates=np.array([death_rate], dtype=float),
-        times=np.array([split_time], dtype=float),
+    first_epoch = simulate_birth_death(
+        birth_rate_epoch_1,
+        death_rate,
+        split_time,
         random_seed=first_epoch_seed,
     )
 

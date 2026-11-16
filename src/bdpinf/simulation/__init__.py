@@ -21,14 +21,10 @@ from bdsurv import (
 from .age_sampling import SampledAges, sample_ages_in_ranges, simulate_ages_from_rates
 from .conditioned import (
     ConditionedTrajectory,
-    simulate_birth_death_process_from_contour_process,
-    simulate_subcritical_survival_splitting,
+    simulate_contour_given_survival,
+    simulate_survival_splitting,
 )
-from .forward import (
-    simulate_birth_death_lifespans,
-    simulate_birth_death_linear,
-    simulate_birth_death_process,
-)
+from .forward import simulate_birth_death, simulate_birth_death_lifespans
 from .simulator import (
     simulate_bdp_ages_from_distributions,
     simulate_bdp_ages_given_size,
@@ -48,10 +44,9 @@ __all__ = [
     "simulate_ages_from_rates",
     "simulate_bdp_ages_from_distributions",
     "simulate_bdp_ages_given_size",
+    "simulate_birth_death",
     "simulate_birth_death_lifespans",
     "simulate_birth_death_lifespans_arrays",
-    "simulate_birth_death_linear",
-    "simulate_birth_death_process",
-    "simulate_birth_death_process_from_contour_process",
-    "simulate_subcritical_survival_splitting",
+    "simulate_contour_given_survival",
+    "simulate_survival_splitting",
 ]

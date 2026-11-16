@@ -52,7 +52,7 @@ conditioned trajectory, so they work unchanged against `bdsurv`'s own
 ```{python}
 from bdsurv import (
     SplittingConfig,
-    simulate_subcritical_survival_splitting,
+    simulate_survival_splitting,
 )
 
 from bdpinf import find_project_root
@@ -89,7 +89,7 @@ splitting_config = SplittingConfig(
     random_seed=random_seed,
 )
 
-splitting_result = simulate_subcritical_survival_splitting(splitting_config)
+splitting_result = simulate_survival_splitting(splitting_config)
 
 print(f"Final survivor bank size: {splitting_result.final_survivor_count}")
 print(
@@ -142,7 +142,7 @@ config_pinned = SplittingConfig(
     replicates=splitting_result.replicates.tolist(),
     random_seed=random_seed + 1,
 )
-result_pinned = simulate_subcritical_survival_splitting(config_pinned)
+result_pinned = simulate_survival_splitting(config_pinned)
 print(
     f"Pinned-grid run: {result_pinned.final_survivor_count} survivors "
     f"after {result_pinned.n_attempts} attempt(s), "
