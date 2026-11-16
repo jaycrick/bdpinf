@@ -78,13 +78,13 @@ class TestIntegration:
         assert len(surviving_data) > 0
         fit_df = pd.DataFrame({"age": surviving_data["age"].to_numpy()})
         result = _fit_frame(fit_df, 200.0)
-        if result.success:
-            fitted_birth = result.birth_values
-            fitted_death = result.death_values
-            assert fitted_birth > 0
-            assert fitted_death >= 0
-            assert np.isfinite(_as_float(fitted_birth))
-            assert np.isfinite(_as_float(fitted_death))
+        assert result.success, result.message
+        fitted_birth = result.birth_values
+        fitted_death = result.death_values
+        assert fitted_birth > 0
+        assert fitted_death >= 0
+        assert np.isfinite(_as_float(fitted_birth))
+        assert np.isfinite(_as_float(fitted_death))
 
     @pytest.mark.slow
     def test_multi_epoch_convergence_rate(self) -> None:
@@ -238,44 +238,19 @@ class TestIntegration:
         max_age = float(ages.max())
         final_time = max_age + 50.0  # Smaller buffer
         initial_params_list = [(0.01, 0.005), (0.02, 0.001)]
-        results = []
-        for i, (init_birth, init_death) in enumerate(initial_params_list):
-            try:
-                fit_result = _fit_frame(
-                    df,
-                    final_time,
-                    init={"birth.v0": init_birth, "death.v0": init_death},
-                )
-                results.append(
-                    {
-                        "model_id": i,
-                        "success": fit_result.success,
-                        "log_likelihood": fit_result.log_likelihood,
-                    },
-                )
-            except Exception:
-                results.append(
-                    {"model_id": i, "success": False, "log_likelihood": np.nan},
-                )
-
-        # Verify we have results for all models
-        assert len(results) == 2
-
-        # At least check that the models attempted to fit
-        assert all("success" in result for result in results)
-
-        # If any models were successful, verify the log-likelihood values
-        successful_results = [r for r in results if r["success"]]
-        if successful_results:
-            # Check that we can find the best model by log-likelihood
-            best_result = max(successful_results, key=lambda x: x["log_likelihood"])
-            assert np.isfinite(_as_float(best_result["log_likelihood"]))
-        else:
-            # If no models succeeded, that's also a valid outcome for difficult data
-            print(
-                "Warning: No models succeeded in fitting. This may indicate difficult data.",
+        results = [
+            _fit_frame(
+                df,
+                final_time,
+                init={"birth.v0": init_birth, "death.v0": init_death},
             )
-            assert True  # Test passes even if no models fit
+            for init_birth, init_death in initial_params_list
+        ]
+
+        assert len(results) == 2
+        for fit_result in results:
+            assert fit_result.success, fit_result.message
+            assert np.isfinite(_as_float(fit_result.log_likelihood))
 
     def test_parameter_sensitivity_analysis(self) -> None:
         """Test how parameter changes affect results."""
@@ -408,8 +383,7 @@ class TestIntegration:
             br, dr, T, rng, ensure_non_extinct=True
         )
         ages = np.asarray(process.ages)
-        if ages.size == 0:
-            return
+        assert ages.size > 0
         ll = log_likelihood(
             birth_rates=br,
             death_rates=dr,
@@ -436,8 +410,8 @@ class TestIntegration:
         ages = rng.exponential(scale=300.0, size=30)
         ages = ages[ages < 1200.0]
         result = _fit(ages, 1200.0)
-        if not result.success or result.covariance is None:
-            return
+        assert result.success, result.message
+        assert result.covariance is not None
         eigenvalues = np.linalg.eigvalsh(np.atleast_2d(result.covariance))
         assert np.all(eigenvalues >= -1e-8)
 
@@ -446,53 +420,25 @@ class TestIntegration:
         times = np.array([750.0, 1500.0])
         constraints = Constraints(equal=[["birth.v0", "birth.v1"]])
         result = _fit(ages, times, constraints=constraints, compute_covariance=False)
-        if not result.success:
-            return
+        assert result.success, result.message
         assert result.birth_values[0] == pytest.approx(result.birth_values[1], rel=1e-4)
 
     def test_state_consistency_throughout_workflow(self) -> None:
-        """Test that object state remains consistent throughout operations."""
-        creation_times = []
-        final_time = 1000.0
-        birth_rate = 0.02
-        death_rate = 0.005
-        ages = np.array([final_time - ct for ct in creation_times], dtype=np.float64)
-        assert len(ages) == 0
-        creation_times.extend([100.0, 200.0])
-        final_time = 500.0
-        ages = np.array([final_time - ct for ct in creation_times], dtype=np.float64)
-        assert len(creation_times) == 2
-        assert len(ages) == 2
-        np.testing.assert_array_equal(ages, [400.0, 300.0])
-        result = _fit(ages, final_time)
-        if result.success:
-            assert result.success
-            assert len(creation_times) == 2
-            ages = np.array(
-                [final_time - ct for ct in creation_times],
-                dtype=np.float64,
-            )
-            assert len(ages) == 2
-            np.testing.assert_array_equal(ages, [400.0, 300.0])
+        """Test that fitting and simulation give consistent results."""
+        result = _fit(np.array([400.0, 300.0]), 500.0)
+        assert result.success, result.message
         process = simulate_birth_death(
-            birth_rate,
-            death_rate,
+            0.02,
+            0.005,
             300.0,
             random_seed=42,
             ensure_non_extinct=True,
         )
         assert process.records is not None
-        final_time = 300.0
-        creation_times = list(process.records["creation_time"].to_numpy())
-        ages = np.array([final_time - ct for ct in creation_times], dtype=np.float64)
-        assert final_time == 300.0
-        assert len(ages) == len(creation_times)
+        creation_times = process.records["creation_time"].to_numpy()
         assert len(creation_times) > 0
-        assert final_time is not None
-        assert all(ct <= final_time for ct in creation_times)
-        assert all(age >= 0 for age in ages)
-        assert all(ct <= final_time for ct in creation_times)
-        assert all(age >= 0 for age in ages)
+        assert all(ct <= 300.0 for ct in creation_times)
+        assert all(age >= 0 for age in np.asarray(process.ages))
 
     def test_splitting_result_feeds_birth_death_process(self) -> None:
         """SplittingSimulationResult.conditioned_trajectories can seed a fit."""

@@ -116,26 +116,21 @@ class TestEdgeCases:
         ll = log_likelihood(0.01, 0.005, ages, process.epoch_end_times[-1])
         assert np.isfinite(ll)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BirthDeathProcess.set_epoch_end_times (process.py) raises"
-        " ValueError ('creation_times must be less than or equal to latest"
-        " epoch_end_time', from _validate_creation_times, restoring the old"
-        " epochs) when the new final epoch end time is before an existing"
-        " creation time; this test expects the late individual to be filtered"
-        " out so that process.ages is empty. Whether to filter or to keep"
-        " raising (as add_individual and the constructor do) is undecided.",
-    )
-    def test_epoch_end_time_before_creation_time(self) -> None:
-        """Test behavior when epoch end time is before creation_time."""
+    def test_epoch_end_time_before_creation_time_raises(self) -> None:
+        """Shrinking the final epoch end below a creation time raises and restores state."""
         process = BirthDeathProcess(creation_times=[], epoch_end_times=1000.0)
         process.add_individual(1000.0)
-        process.set_epoch_end_times(500.0)  # Before creation time
+        epoch_end_times_before = np.asarray(process.epoch_end_times).copy()
+        ages_before = np.asarray(process.ages).copy()
 
-        # The individual should be filtered out (since creation time > final time)
-        # So there should be no records left
-        ages = process.ages
-        assert len(ages) == 0
+        with pytest.raises(
+            ValueError,
+            match="creation_times must be less than or equal to latest epoch_end_time",
+        ):
+            process.set_epoch_end_times(500.0)  # Before creation time
+
+        np.testing.assert_array_equal(process.epoch_end_times, epoch_end_times_before)
+        np.testing.assert_array_equal(process.ages, ages_before)
 
 
 class TestEnsure1dTensor:

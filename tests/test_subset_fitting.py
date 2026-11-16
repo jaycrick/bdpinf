@@ -94,9 +94,10 @@ class TestFitSubset:
             epochs=[(100, 2000, "100-2000 CE")],
             start_time=100,
             age_column="year",
-            optimizers=["lbfgs"],
+            method="L-BFGS-B",
             random_seed=42,
         )
+        assert fit.success
         assert isinstance(fit, SubsetFitResult)
         assert fit.key == "non_lectionary"
 
@@ -108,13 +109,11 @@ class TestFitSubset:
             epochs=epochs,
             start_time=100,
             age_column="year",
-            optimizers=["lbfgs"],
+            method="L-BFGS-B",
             random_seed=42,
         )
-        if fit.success:
-            assert len(fit.epoch_results) == len(epochs)
-        else:
-            assert fit.epoch_results == []
+        assert fit.success
+        assert len(fit.epoch_results) == len(epochs)
 
     def test_epoch_result_keys_present_on_success(self) -> None:
         subset = _make_subset()
@@ -123,21 +122,22 @@ class TestFitSubset:
             epochs=[(100, 2000, "100-2000 CE")],
             start_time=100,
             age_column="year",
-            optimizers=["lbfgs"],
+            method="L-BFGS-B",
             random_seed=42,
         )
-        if fit.success and fit.epoch_results:
-            ep = fit.epoch_results[0]
-            for key in (
-                "period",
-                "start",
-                "end",
-                "n_individuals",
-                "birth_rates",
-                "death_rates",
-                "half_life",
-            ):
-                assert key in ep, f"epoch_result missing key '{key}'"
+        assert fit.success
+        assert fit.epoch_results
+        ep = fit.epoch_results[0]
+        for key in (
+            "period",
+            "start",
+            "end",
+            "n_individuals",
+            "birth_rates",
+            "death_rates",
+            "half_life",
+        ):
+            assert key in ep, f"epoch_result missing key '{key}'"
 
     def test_empty_subset_returns_failure_without_raising(self) -> None:
         empty = DataSubset(
@@ -173,7 +173,7 @@ class TestFitSubset:
             epochs=[(100, 2000, "100-2000 CE")],
             start_time=100,
             age_column="year",
-            optimizers=["lbfgs"],
+            method="L-BFGS-B",
             random_seed=42,
         )
         assert fit.n_individuals == len(subset.frame)
@@ -280,7 +280,7 @@ class TestFitSubsetPinned:
             start_time=100,
             age_column="year",
             random_seed=42,
-            optimizers=["lbfgs"],
+            method="not-an-optimizer",  # fit raises ValueError: unsupported method
         )
         assert not fit.success
         assert fit.epoch_results == []
