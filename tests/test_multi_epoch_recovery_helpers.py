@@ -23,12 +23,12 @@ class TestRunTwoRateReplicate:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            mer, "simulate_birth_death_process", lambda **kwargs: object()
+            mer, "simulate_birth_death", lambda *_args, **_kwargs: object()
         )
         monkeypatch.setattr(
-            mer, "extract_alive_ages", lambda *a, **k: np.array([1.0, 2.0])
+            mer, "extract_alive_ages", lambda *_a, **_k: np.array([1.0, 2.0])
         )
-        monkeypatch.setattr(mer, "has_ages_in_each_epoch", lambda *a, **k: False)
+        monkeypatch.setattr(mer, "has_ages_in_each_epoch", lambda *_a, **_k: False)
 
         row = mer.run_two_rate_replicate(
             simulation_index=0,
@@ -46,16 +46,16 @@ class TestRunTwoRateReplicate:
         make_fit_result: Callable[..., FitResult],
     ) -> None:
         monkeypatch.setattr(
-            mer, "simulate_birth_death_process", lambda **kwargs: object()
+            mer, "simulate_birth_death", lambda *_args, **_kwargs: object()
         )
         monkeypatch.setattr(
-            mer, "extract_alive_ages", lambda *a, **k: np.array([1.0, 10.0])
+            mer, "extract_alive_ages", lambda *_a, **_k: np.array([1.0, 10.0])
         )
-        monkeypatch.setattr(mer, "has_ages_in_each_epoch", lambda *a, **k: True)
+        monkeypatch.setattr(mer, "has_ages_in_each_epoch", lambda *_a, **_k: True)
         monkeypatch.setattr(
             mer,
             "fit_single_model",
-            lambda *a, **k: make_fit_result(
+            lambda *_a, **_k: make_fit_result(
                 [0.51, 0.72], [0.11, 0.16], times=[7.5, 15.0]
             ),
         )
@@ -79,13 +79,13 @@ class TestRunTwoRateReplicate:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            mer, "simulate_birth_death_process", lambda **kwargs: object()
+            mer, "simulate_birth_death", lambda *_args, **_kwargs: object()
         )
         monkeypatch.setattr(
-            mer, "extract_alive_ages", lambda *a, **k: np.array([1.0, 10.0])
+            mer, "extract_alive_ages", lambda *_a, **_k: np.array([1.0, 10.0])
         )
-        monkeypatch.setattr(mer, "has_ages_in_each_epoch", lambda *a, **k: True)
-        monkeypatch.setattr(mer, "fit_single_model", lambda *a, **k: None)
+        monkeypatch.setattr(mer, "has_ages_in_each_epoch", lambda *_a, **_k: True)
+        monkeypatch.setattr(mer, "fit_single_model", lambda *_a, **_k: None)
 
         row = mer.run_two_rate_replicate(
             simulation_index=0,
@@ -108,9 +108,9 @@ class TestRunSingleRateReplicate:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            mer, "sample_single_epoch_ages", lambda *a, **k: np.array([1.0])
+            mer, "sample_single_epoch_ages", lambda *_a, **_k: np.array([1.0])
         )
-        monkeypatch.setattr(mer, "has_ages_in_each_epoch", lambda *a, **k: False)
+        monkeypatch.setattr(mer, "has_ages_in_each_epoch", lambda *_a, **_k: False)
 
         row = mer.run_single_rate_replicate(
             simulation_index=0,
@@ -129,13 +129,13 @@ class TestRunSingleRateReplicate:
         make_fit_result: Callable[..., FitResult],
     ) -> None:
         monkeypatch.setattr(
-            mer, "sample_single_epoch_ages", lambda *a, **k: np.array([1.0, 10.0])
+            mer, "sample_single_epoch_ages", lambda *_a, **_k: np.array([1.0, 10.0])
         )
-        monkeypatch.setattr(mer, "has_ages_in_each_epoch", lambda *a, **k: True)
+        monkeypatch.setattr(mer, "has_ages_in_each_epoch", lambda *_a, **_k: True)
         monkeypatch.setattr(
             mer,
             "fit_single_model",
-            lambda *a, **k: make_fit_result(
+            lambda *_a, **_k: make_fit_result(
                 [0.49, 0.48], [0.09, 0.11], times=[7.5, 15.0]
             ),
         )
@@ -174,7 +174,7 @@ class TestSimulateZeroBirthSecondEpoch:
             records = records_df
 
         monkeypatch.setattr(
-            mer, "simulate_birth_death_process", lambda **kwargs: _FakeFirstEpoch()
+            mer, "simulate_birth_death", lambda *_args, **_kwargs: _FakeFirstEpoch()
         )
 
         result = mer.simulate_zero_birth_second_epoch(
@@ -219,7 +219,7 @@ class TestFitZeroBirthReplicate:
     ) -> None:
         captured: dict[str, Any] = {}
 
-        def fake_fit(*args: Any, **kwargs: Any) -> FitResult:
+        def fake_fit(*_args: Any, **kwargs: Any) -> FitResult:
             captured.update(kwargs)
             return make_fit_result([0.98, 0.0], [0.11, 0.11], times=[7.5, 15.0])
 
@@ -233,7 +233,7 @@ class TestFitZeroBirthReplicate:
         assert result.birth_values[1] == 0.0
 
     def test_exception_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def fake_fit(*args: Any, **kwargs: Any) -> FitResult:
+        def fake_fit(*_args: Any, **_kwargs: Any) -> FitResult:
             raise RuntimeError("optimizer blew up")
 
         monkeypatch.setattr(vh, "fit", fake_fit)
@@ -271,12 +271,12 @@ class TestRunZeroBirthReplicate:
         monkeypatch.setattr(
             mer,
             "simulate_zero_birth_second_epoch",
-            lambda **kwargs: self._fake_simulated([1.0, 15.0]),
+            lambda **_kwargs: self._fake_simulated([1.0, 15.0]),
         )
         monkeypatch.setattr(
             mer,
             "fit_zero_birth_replicate",
-            lambda *a, **k: make_fit_result(
+            lambda *_a, **_k: make_fit_result(
                 [0.98, 0.0], [0.11, 0.11], times=[7.5, 15.0]
             ),
         )
@@ -303,9 +303,9 @@ class TestRunZeroBirthReplicate:
         monkeypatch.setattr(
             mer,
             "simulate_zero_birth_second_epoch",
-            lambda **kwargs: self._fake_simulated([1.0, 2.0]),
+            lambda **_kwargs: self._fake_simulated([1.0, 2.0]),
         )
-        monkeypatch.setattr(mer, "fit_zero_birth_replicate", lambda *a, **k: None)
+        monkeypatch.setattr(mer, "fit_zero_birth_replicate", lambda *_a, **_k: None)
 
         row = mer.run_zero_birth_replicate(
             simulation_index=0,
@@ -325,7 +325,7 @@ class TestRunZeroBirthReplicate:
         monkeypatch.setattr(
             mer,
             "simulate_zero_birth_second_epoch",
-            lambda **kwargs: self._fake_simulated([]),
+            lambda **_kwargs: self._fake_simulated([]),
         )
 
         row = mer.run_zero_birth_replicate(

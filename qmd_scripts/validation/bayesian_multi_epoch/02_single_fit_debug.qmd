@@ -23,6 +23,7 @@ __compile_start = time.perf_counter()
 from pathlib import Path
 
 import numpy as np
+from bdsurv import PiecewiseConstant
 
 from bdpinf.inference import (
     AgeData,
@@ -31,7 +32,7 @@ from bdpinf.inference import (
     BirthDeathModel,
     fit_bayesian,
 )
-from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death
 ```
 
 ## Simulate One Replicate
@@ -41,10 +42,9 @@ true_birth_rates = np.array([0.010, 0.001], dtype=float)
 true_death_rates = np.array([0.0015, 0.0010], dtype=float)
 times = np.array([750.0, 1500.0], dtype=float)
 
-sim = simulate_birth_death_process(
-    birth_rates=true_birth_rates,
-    death_rates=true_death_rates,
-    times=times,
+sim = simulate_birth_death(
+    PiecewiseConstant(true_birth_rates, times),
+    PiecewiseConstant(true_death_rates, times),
     random_seed=1000,
 )
 alive = sim.surviving_records

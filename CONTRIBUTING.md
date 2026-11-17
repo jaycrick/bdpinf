@@ -9,14 +9,16 @@ uv run pre-commit install      # run the checks below on every commit
 
 ## Checks
 
-CI runs exactly `uv run pre-commit run --all-files` and `uv run pytest`.
+CI runs `uv run pre-commit run --all-files` and the fast test suite with coverage (the second command below).
 Run the same before opening a PR.
 
 ```bash
 uv run pre-commit run --all-files   # ruff check/format, basedpyright, prose lint/format
 
-uv run pytest                       # fast suite; coverage gate in pyproject.toml
+uv run pytest                       # fast suite (`-m "not slow"`), no coverage
+uv run pytest --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=86   # as CI
 uv run pytest -m slow               # slow tests only
+uv run pytest -m "slow or not slow" # everything
 uv run pytest -m regression         # golden-value tests
 uv run pytest -m recovery           # simulate-then-fit recovery (implies slow)
 uv run pytest -k "name"             # one test by name
@@ -25,8 +27,8 @@ uv run pytest -k "name"             # one test by name
 The pieces, if you want them separately:
 
 ```bash
-uv run ruff format src tests
-uv run ruff check --fix src tests
+uv run ruff format src tests scripts
+uv run ruff check --fix src tests scripts
 uv run basedpyright --project pyproject.toml src/    # strict; 0 errors enforced
 uv run panache format .                              # Markdown/Quarto prose (panache.toml)
 uv run panache lint --fix .

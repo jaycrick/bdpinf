@@ -5,6 +5,80 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] --- 2026-11-17
+
+### Added
+
+- `models.rate_functions`: parametric rate functions `PowerRate` (with `weibull` and `rayleigh` constructors), `LogLogisticRate` and `LomaxRate`, a `PiecewiseExponentialRate.gompertz(a, b, end_time)` constructor, and `PiecewiseRate`, which glues any rate functions together epoch by epoch in local time.
+  Rates singular at 0 list geometric breakpoints so the Gauss-Legendre quadrature resolves them.
+- `qmd_scripts/validation/time_varying_rates/05_parametric_hazard_shapes.qmd`: vignette of spine and non-spine age densities for Weibull, Rayleigh, Gompertz, log-logistic, Lomax, quadratic and piecewise birth and death rates, with mass and `scipy` quadrature checks.
+- `models.rate_functions`: three new `RateFunction` families with exact integrals, `PiecewiseExponentialRate` (linear on the log scale), `PiecewiseQuadraticRate` (values at epoch start, midpoint and end, with `continuous`, `spline` and `from_linear` constructors) and `SinusoidalRate` (its breakpoints are the interior half-periods, so quadrature resolves each oscillation); all are exported from `bdpinf.models`.
+
+### Changed
+
+- `simulation.simulator`: the rejection sampler's density envelope is computed once per batch with one vectorised call instead of once per sample; seeded draws are unchanged.
+
+### Changed (breaking)
+
+`bdsurv` is now 0.5.0, which unifies its public API, and `bdpinf`'s simulation names follow it.
+There are no aliases for the old names.
+
+- `models.math_populations`, `inference`, `process`: `condition_on_survival=True` with `initial_population > 1` now raises `ValueError`, through one shared `check_conditioning(initial_population, condition_on_survival)`.
+  The conditioning is derived only for one initial individual, and this combination previously returned the `initial_population=1` count term silently, whatever the value.
+  `log_likelihood`, `log_likelihood_rates`, `fit`, `fit_bayesian`, `BirthDeathProcess.log_likelihood` and the `calculate_populations_log_lik*` functions are affected; pass `condition_on_survival=False` for a process started from more than one individual (values with conditioning off are unchanged).
+- `simulation`: the `bdsurv` pin moves to 0.5.0 (`176e9a1`); the dependency floor is `bdsurv>=0.5.0`.
+- `simulation`: every simulator still returns `BirthDeathProcess`, through one shared converter from `bdsurv.SimulatedTree`.
+  When both rates are piecewise constant on the same epochs the process stores the per-epoch rates and epoch end times;
+  otherwise (linear rates, or constant rates on different epochs) it stores no per-epoch rates and its epochs are the sorted union of the two rates' epoch end times.
+- `inference`: the rate-model families are renamed, ending the clash with the `bdsurv` rate objects `PiecewiseConstant` and `PiecewiseLinear`.
+  The `BirthDeathModel.piecewise_constant(...)` and `.piecewise_linear(...)` constructors keep their names.
+- `analysis.multi_epoch_recovery`: options are keyword-only.
+  `run_two_rate_replicate(..., *, fit_config)`,
+  `run_single_rate_replicate(..., time_span, *, fit_times, fit_config)` and
+  `run_zero_birth_replicate(..., death_rate, *, times, fit_config, param_constraints)`.
+- `visualization.plotting`: `compute_consistency_bands(summary_df, results_df, regime_configs, bootstrap_samples, seed, *, parameter_name, true_rate_key, x="T")` and
+  `plot_parameter_consistency(..., seed, *, parameter_name, true_rate_key, title, x="T", log_x=True)` take their column and label options by keyword;
+  `save_multi_epoch_birth_time_figure(case_name, result, epochs, birth_years, times, *, output_slug, ...)` takes `output_slug` by keyword.
+- `analysis.latex_tables`: `subset_fits_latex_by_epoch`, `subset_fits_latex_by_subset`, `bayesian_results_latex_by_epoch` and `bayesian_results_latex_by_subset` no longer accept `entity_noun`.
+  It never reached their captions;
+  the half-life table functions still use it.
+- `analysis.subset_fitting`, `analysis.validation_helpers`, `visualization`: the batch and best-effort helpers no longer turn programming errors into failed results or logged warnings.
+  `fit_subset`, `fit_subset_bayesian` and `fit_single_model` catch only the failures a fit is expected to end in (`ValueError`, `RuntimeError`, `FloatingPointError`, `LinAlgError`);
+  the overlay in `plot_creation_year_fit` and `save_multi_epoch_birth_time_figure` is skipped only for `ValueError` and `FloatingPointError`,
+  and font registration is skipped only for `OSError` and `ValueError`.
+  A `TypeError` (for example an unknown keyword passed on to `fit`) now propagates.
+- Seeded simulation output differs from earlier releases for every simulator, because `bdsurv` 0.5.0 spawns its child generators differently.
+  Invalid inputs (NaN or infinite rates and times, and so on) now raise `ValueError`.
+
+  | Old                                                                                                        | New                                                                                                                                           |
+  | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `simulation.simulate_birth_death_process(birth_rates, death_rates, times, ...)`                            | `simulation.simulate_birth_death(birth_rate, death_rate, terminal_time=None, random_seed=None, *, ensure_non_extinct=False, max_retries=100)` |
+  | `simulation.simulate_birth_death_linear(birth_rate, death_rate, ...)`                                      | `simulation.simulate_birth_death(birth_rate, death_rate, ...)` with rate objects                                                              |
+  | `simulation.simulate_birth_death_process_from_contour_process(birth_rate, death_rate, terminal_time, ...)` | `simulation.simulate_contour_given_survival(birth_rate, death_rate, terminal_time=None, random_seed=None)`                                    |
+  | `simulation.simulate_subcritical_survival_splitting(config)`                                               | `simulation.simulate_survival_splitting(config)`                                                                                              |
+  | `inference.PiecewiseConstant`                                                                              | `inference.PiecewiseConstantModel`                                                                                                            |
+  | `inference.PiecewiseLinear`                                                                                | `inference.PiecewiseLinearModel`                                                                                                              |
+
+`simulate_birth_death_lifespans` keeps its name and signature.
+
+#### Migrating
+
+- `simulate_birth_death_process(b, d, times, ...)` with arrays: write `simulate_birth_death(PiecewiseConstant(b, times), PiecewiseConstant(d, times), ...)`, importing `PiecewiseConstant` from `bdsurv` (or pass `bdpinf.models.rate_functions.PiecewiseConstantRate`).
+  With scalar rates write `simulate_birth_death(b, d, terminal_time, ...)`; the keywords `birth_rates`, `death_rates` and `times` are gone.
+- `simulate_birth_death_linear(birth, death, ...)`: write `simulate_birth_death(birth, death, ...)`; rates may be `bdsurv.PiecewiseLinear` or `bdpinf` rate functions.
+- `simulate_birth_death_process_from_contour_process(b, d, T, ...)`: write `simulate_contour_given_survival(b, d, T, ...)`; rate objects need no `terminal_time`.
+- `simulate_subcritical_survival_splitting(config)`: write `simulate_survival_splitting(config)`.
+  `bdsurv.SplittingConfig` is keyword-only, so `SplittingConfig(b, d, T, n)` must become `SplittingConfig(birth_rate=b, death_rate=d, terminal_time=T, n_particles=n)`.
+- `inference.PiecewiseConstant` and `inference.PiecewiseLinear` (the `RateModel` families): rename to `PiecewiseConstantModel` and `PiecewiseLinearModel`.
+  Code that means the `bdsurv` rate objects imports them from `bdsurv`.
+- Code that read `bdsurv` internals (`bdsurv._extinction.pr_extinction`, `bdsurv.linear_rates`, `bdsurv.gillespie`) should follow the `bdsurv` 0.5.0 migration notes:
+  for example `-math.expm1(bdsurv.log_survival_probability(b, d, T))` replaces `pr_extinction(b, d, T)`.
+
+### Fixed
+
+- `process`: `BirthDeathProcess.log_likelihood` now passes `initial_population` to the likelihood; with `condition_on_survival=False` and more than one founder it previously scored the process as if it had one.
+- `visualization.scenario_row`, `rate_frame`: points where a rate is infinite (singular hazards at calendar time 0) are left out of the rate panels instead of breaking the axis limits.
+
 ## [0.4.2] --- 2026-11-13
 
 - `visualization.figure_manifest`: `save_chart` records each figure it writes in `<output_dir>/.figure_manifest/<source>.txt`, naming the Quarto document or script that produced it; `prune_figures` (and `scripts/prune_figures.sh`) lists or deletes figures no live manifest mentions.

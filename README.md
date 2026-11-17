@@ -6,7 +6,7 @@
 
 Inference, simulation, and visualisation for linear birth-death (branching)
 processes: MLE fitting (JAX, JIT-compiled) and Bayesian inference
-(NumPyro/NUTS) for single- and multi-epoch birth/death rates, Gillespie and
+(NumPyro/NUTS) for single- and multi-epoch birth/death rates, exact-event and
 lifespan-at-birth simulators and multilevel splitting for rare-event
 simulation (implemented in [`bdsurv`](https://github.com/jaycrick/bdsurv) and
 wrapped here to return `BirthDeathProcess`), and a shared Altair chart
@@ -82,8 +82,9 @@ uv run quarto render
   splines) and constraints by parameter name,
   with a Quarto research-notebook site of validation studies against
   synthetic data with known ground-truth parameters
-- Gillespie, lifespan-at-birth and linear-rate simulators, plus survival-conditioned
-  simulation (contour process, multilevel splitting), delegated to `bdsurv`
+- Exact-event (`simulate_birth_death`, constant or linear rates) and lifespan-at-birth
+  simulators, plus survival-conditioned simulation (`simulate_contour_given_survival`,
+  `simulate_survival_splitting`), delegated to `bdsurv` 0.5
   and returned as `BirthDeathProcess`
 - A shared Altair chart theme and export chokepoint (`visualization.save_chart`)
 - Generic KDE-quantile date-range resampling (`analysis.date_density`) and its
@@ -166,7 +167,7 @@ rsync -avzP --exclude="/.*" <hpc-host>:/path/to/remote/bdpinf/ /path/to/local/bd
 ```
 
 The trailing slash on the source copies its contents rather than the directory itself,
-and `--exclude="/.*"` skips top-level dotfiles and directories (`.git`, `.venv`, …)
+and `--exclude="/.*"` skips top-level dotfiles and directories (`.git`, `.venv`, ...)
 so each machine keeps its own environment and git state.
 This is an update-only pull (no `--delete`), so local-only files survive the sync.
 SLURM job logs land in repo-root `logs/` rather than inside `_output/`

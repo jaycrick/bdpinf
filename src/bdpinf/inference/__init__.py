@@ -41,8 +41,8 @@ from .rate_models import (
     BirthDeathModel,
     FreeKnots,
     Param,
-    PiecewiseConstant,
-    PiecewiseLinear,
+    PiecewiseConstantModel,
+    PiecewiseLinearModel,
     RateModel,
 )
 from .uncertainty import (
@@ -63,8 +63,8 @@ __all__ = [
     "KnotFitResult",
     "MethodResult",
     "Param",
-    "PiecewiseConstant",
-    "PiecewiseLinear",
+    "PiecewiseConstantModel",
+    "PiecewiseLinearModel",
     "RateModel",
     "calculate_unknown_spine_mixture_age_density",
     "calculate_unknown_spine_mixture_birth_density",

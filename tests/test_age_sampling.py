@@ -67,6 +67,7 @@ class TestSimulateAgesFromRates:
         result = stats.kstest(ages, lambda x: np.interp(x, np.asarray(grid), cdf))
         assert result.pvalue > 0.001
 
+    @pytest.mark.slow
     def test_linear_rates_and_population_size(self) -> None:
         times = jnp.array([4.0])
         birth = PiecewiseLinearRate.continuous(jnp.array([0.4, 1.2]), times)

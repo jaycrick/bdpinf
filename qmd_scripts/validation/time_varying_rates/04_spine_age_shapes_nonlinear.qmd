@@ -1,0 +1,571 @@
+---
+title: "Time-Varying Rates: Spine-Age Density for Exponential, Quadratic and Sinusoidal Rates"
+subtitle: "Piecewise-Exponential, Quadratic, Quadratic-Spline and Sinusoidal Birth and Death Rates"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# ruff: noqa: E402
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+
+__compile_start = time.perf_counter()
+```
+
+## Overview
+
+The first notebook of this folder shows how the density of the *spine* age $A^*$
+responds to constant, linear and piecewise-linear rates.
+This one repeats the exercise for three smoother families of rate:
+piecewise-exponential rates (linear on the log scale),
+quadratic and quadratic-spline rates,
+and sinusoidal rates.
+Conditional on at least one individual being alive at $T$,
+the spine age has a density on $(0,T)$ and an atom at $a=T$.
+
+The notation is that of `01_spine_age_shapes.qmd`:
+$\gamma=\lambda-\mu$,
+$\Lambda(s,e]=\int_s^e\lambda$,
+$M(s,e]=\int_s^e\mu$,
+$\Gamma(s,e]=\Lambda(s,e]-M(s,e]$,
+$\mathcal W(b)=e^{\Gamma(0,b]}+\int_0^b\mu(t)\,e^{\Gamma(t,b]}\,dt$
+and $\pi(b)=1/\mathcal W(b)$.
+With $L_\mu(s,T)=\int_s^T\mu(t)\,e^{\Gamma(t,T]}\,dt$,
+the spine density is
+
+$$
+  \Pr(A^*\in da)=\lambda(T-a)\,e^{-\Lambda(T-a,T]}\,L_\mu(T-a,T)\,da,
+  \qquad
+  \Pr(A^*=T)=\mathcal W(T)\,e^{-\Lambda(0,T]}.
+$$
+
+Age and calendar time are mirrored, $a=T-\tau$,
+so a feature of a rate at calendar time $\tau$ shows up in the density at age $T-\tau$.
+Each panel below has the rates $\lambda(\tau)$ and $\mu(\tau)$ against calendar time on top
+and the spine density against age underneath.
+The atom at $a=T$ is drawn as a point on a stem;
+its height is a probability mass, not a density.
+
+## Setup
+
+```{python}
+# ruff: noqa: E402
+# bdpinf must be imported before jax so its JAX_PLATFORMS=cpu default
+# (see src/bdpinf/__init__.py) takes effect before jax reads the env var.
+from functools import partial
+
+import jax.numpy as jnp
+import numpy as np
+import pandas as pd
+from IPython.display import display
+from scipy.integrate import quad
+
+from bdpinf import find_project_root
+from bdpinf.models import (
+    PiecewiseExponentialRate,
+    PiecewiseQuadraticRate,
+    SinusoidalRate,
+)
+from bdpinf.models.math_age_densities import (
+    non_spine_age_cdf,
+    spine_age_cdf,
+    spine_age_log_atom,
+    spine_age_log_density,
+)
+from bdpinf.models.rate_functions import (
+    PiecewiseConstantRate,
+    PiecewiseLinearRate,
+    RateFunction,
+)
+from bdpinf.visualization import save_chart, scenario_row
+
+figures_dir = find_project_root() / "figures" / "validation" / "time_varying_rates"
+figures_dir.mkdir(parents=True, exist_ok=True)
+
+T = 3.0
+AGES = jnp.linspace(1e-3, T - 1e-3, 400)
+TIMES = jnp.array([T])
+```
+
+```{python}
+Scenario = tuple[RateFunction, RateFunction]
+
+# Every scenario drawn below is registered here for the numerical checks.
+registry: dict[str, Scenario] = {}
+
+
+def const(value: float) -> PiecewiseConstantRate:
+    """Constant rate ``value`` on ``[0, T]``."""
+    return PiecewiseConstantRate.constant(value, T)
+
+
+def line(start: float, end: float) -> PiecewiseLinearRate:
+    """Linear rate from ``start`` at 0 to ``end`` at T."""
+    return PiecewiseLinearRate.continuous(jnp.array([start, end]), TIMES)
+
+
+def exponential(*knots: float, epochs: jnp.ndarray = TIMES) -> PiecewiseExponentialRate:
+    """Continuous piecewise-exponential rate through ``knots``."""
+    return PiecewiseExponentialRate.continuous(jnp.array(knots), epochs)
+
+
+def sine(
+    mean: float, amplitude: float, period: float, phase: float = 0.0
+) -> SinusoidalRate:
+    """Sinusoidal rate on ``[0, T]``."""
+    return SinusoidalRate(mean, amplitude, period, phase, end_time=T)
+
+
+def spine_figure(scenarios: dict[str, Scenario], slug: str) -> pd.DataFrame:
+    """Register, draw and save a row of spine-density panels; return its summary."""
+    registry.update(scenarios)
+    fig = partial(scenario_row, primary="spine", show_secondary=False, ages=AGES)(
+        scenarios
+    )
+    display(fig)
+    save_chart(fig, slug, output_dir=figures_dir)
+    return shape_summary(scenarios)
+
+
+def shape_summary(scenarios: dict[str, Scenario]) -> pd.DataFrame:
+    """Mode and height of the spine density on the grid, and the atom mass."""
+    rows = []
+    for name, (lam, mu) in scenarios.items():
+        density = np.exp(np.asarray(spine_age_log_density(AGES, lam, mu)))
+        rows.append(
+            {
+                "scenario": name,
+                "mode age": float(AGES[np.argmax(density)]),
+                "peak density": float(density.max()),
+                "density at a=T": float(density[-1]),
+                "local maxima": int(
+                    np.sum(
+                        (density[1:-1] > density[:-2]) & (density[1:-1] > density[2:])
+                    )
+                ),
+                "atom mass": float(jnp.exp(spine_age_log_atom(lam, mu))),
+            }
+        )
+    return pd.DataFrame(rows).round(3)
+```
+
+In every table below,
+"mode age", "peak density", "density at a=T" and "local maxima" refer to the continuous part of the density on the plotting grid,
+and "atom mass" is $\Pr(A^*=T)$.
+
+## Piecewise-exponential birth rate
+
+A piecewise-exponential rate is linear on the log scale within each epoch:
+on an epoch of length $d$ with end values $v_0$ and $v_1$ it is $v_0(v_1/v_0)^{(t-t_0)/d}$.
+It is positive, and continuous when the end value of one epoch is the start value of the next.
+Here the death rate is constant, $\mu=0.7$,
+and only $\lambda$ changes.
+With one epoch, the exponential rate and the linear rate with the same end points
+differ only in the interpolation between the end points.
+
+```{python}
+MU_FIXED = 0.7
+EXP_ONE_EPOCH = {"rising": (0.3, 1.8), "falling": (1.8, 0.3)}
+
+exp_one = {}
+for shape, (start, end) in EXP_ONE_EPOCH.items():
+    exp_one[f"λ {shape}, exponential"] = (exponential(start, end), const(MU_FIXED))
+    exp_one[f"λ {shape}, linear"] = (line(start, end), const(MU_FIXED))
+
+summary_exp_one = spine_figure(exp_one, "vtv04_exponential_one_epoch")
+display(summary_exp_one)
+```
+
+In all four panels the density is zero at $a=0$ and has a single maximum.
+With a rising $\lambda$ the mode is at a young age (0.70 for the exponential rate, 0.77 for the linear rate) and the atom is large (0.426 and 0.356).
+With a falling $\lambda$ the mode is at an older age (2.14 and 1.65) and the atom is smaller (0.272 and 0.234).
+For the same end points the exponential rate lies below the straight line between them,
+and the tables show what that does:
+the mode moves by about 0.5 in age (falling case) and the atom by about 0.07 in mass (rising case).
+
+Two epochs, continuous at the knot $\tau=1.5$,
+give a hump (rise then fall) and a dip (fall then rise) in $\lambda$:
+
+```{python}
+EXP_TWO_EPOCHS = jnp.array([1.5, T])
+EXP_TWO_KNOTS = {"hump": (0.3, 1.8, 0.3), "dip": (1.8, 0.3, 1.8)}
+
+exp_two = {
+    f"λ {shape}, exponential": (
+        exponential(*knots, epochs=EXP_TWO_EPOCHS),
+        const(MU_FIXED),
+    )
+    for shape, knots in EXP_TWO_KNOTS.items()
+}
+
+summary_exp_two = spine_figure(exp_two, "vtv04_exponential_two_epochs")
+display(summary_exp_two)
+```
+
+The kink of $\lambda$ at $\tau=1.5$ is a kink of the density at $a=T-1.5=1.5$.
+For the hump the density has a cusp-shaped peak there (height 0.501 at age 1.50) and falls steeply at older ages.
+For the dip the density has a local minimum at the kink and two local maxima, a low one at a young age and the higher one near the oldest ages (mode 2.89, density 0.379 at $a=T$),
+so the continuous part of the density does not drop towards $a=T$.
+
+## Quadratic and quadratic-spline birth rate
+
+A quadratic rate is specified by its values at the start, midpoint and end of each epoch.
+With one epoch this gives a concave hump or a convex dip,
+and the constructor checks that the rate stays non-negative on $[0,T]$.
+With several epochs, `PiecewiseQuadraticRate.spline` builds the $C^1$ quadratic spline through chosen knot values:
+the rate and its slope are continuous at the knots,
+and only the slope at time $0$ is free.
+As a comparison, the continuous piecewise-linear rate through the same knot values is drawn next to each spline.
+The death rate is again constant, $\mu=0.7$.
+
+```{python}
+QUAD_ONE_EPOCH = {
+    "hump": (0.3, 1.7, 0.3),
+    "dip": (1.5, 0.3, 1.5),
+    "skewed hump": (0.3, 1.5, 0.6),
+}
+
+quad_one = {}
+for shape, (start, mid, end) in QUAD_ONE_EPOCH.items():
+    quadratic = PiecewiseQuadraticRate(
+        jnp.array([start]), jnp.array([mid]), jnp.array([end]), TIMES
+    )
+    assert float(jnp.min(quadratic(AGES))) >= 0.0, shape
+    quad_one[f"λ quadratic {shape}"] = (quadratic, const(MU_FIXED))
+
+summary_quad_one = spine_figure(quad_one, "vtv04_quadratic_one_epoch")
+display(summary_quad_one)
+```
+
+The concave hump gives one mode, at age 1.08 (peak density 0.416), and the smallest atom of the three (0.262).
+That mode is younger than the mirror image of the peak of $\lambda$, which is at $a=1.5$.
+The skewed hump, whose $\lambda$ peaks slightly after the middle of $[0,T]$ and ends higher than it starts, has a similar single mode (age 1.07, peak 0.386).
+The convex dip has two local maxima, the higher at age 2.95, and the largest atom (0.383):
+the high birth rate near $\tau=0$ is mirrored at ages near $T$.
+
+```{python}
+SPLINE_EPOCHS = jnp.array([1.5, T])
+SPLINE_SHAPES = {
+    # name: (knot values at 0, 1.5 and T, slope at time 0)
+    "hump": ((0.5, 1.5, 0.5), 0.0),
+    "dip": ((1.2, 0.4, 1.2), -0.8),
+}
+
+RATE_GRID = jnp.linspace(0.0, T, 601)
+spline_scenarios = {}
+spline_extremes = []
+for shape, (knots, slope0) in SPLINE_SHAPES.items():
+    spline = PiecewiseQuadraticRate.spline(jnp.array(knots), slope0, SPLINE_EPOCHS)
+    knotted_line = PiecewiseLinearRate.continuous(jnp.array(knots), SPLINE_EPOCHS)
+    assert float(jnp.min(spline(AGES))) >= 0.0, shape
+    spline_scenarios[f"λ spline {shape}"] = (spline, const(MU_FIXED))
+    spline_extremes.append(
+        {
+            "shape": shape,
+            "knot values": knots,
+            "spline min": float(jnp.min(spline(RATE_GRID))),
+            "spline max": float(jnp.max(spline(RATE_GRID))),
+            "time of extreme": float(
+                RATE_GRID[
+                    jnp.argmax(spline(RATE_GRID))
+                    if shape == "hump"
+                    else jnp.argmin(spline(RATE_GRID))
+                ]
+            ),
+        }
+    )
+    spline_scenarios[f"λ linear {shape}"] = (knotted_line, const(MU_FIXED))
+
+summary_spline = spine_figure(spline_scenarios, "vtv04_quadratic_spline_two_epochs")
+display(summary_spline)
+display(pd.DataFrame(spline_extremes).round(3))
+```
+
+The spline is smooth at $\tau=1.5$, so its density has no kink at $a=1.5$,
+while the piecewise-linear rate through the same knots gives a kink there.
+The table of extremes shows that the spline does not stay between its knot values:
+in the hump it rises above the middle knot (maximum 1.83 against 1.5) and in the dip it falls below it (minimum 0.37 against 0.4).
+The densities differ accordingly.
+For the hump the spline gives a mode at age 0.87 and peak 0.422, against 1.38 and 0.395 for the linear rate.
+For the dip both densities have two local maxima, with the later one higher (mode 2.77, peak 0.319 for the spline; 2.53 and 0.291 for the linear rate), and the atom is 0.382 against 0.344.
+
+## Sinusoidal rates
+
+A sinusoidal rate is $m+A\sin(2\pi\tau/P+\varphi)$
+with mean $m\ge|A|$, amplitude $A$, period $P$ and phase $\varphi$.
+Its mean over a whole number of periods is $m$,
+so changing $P$ at fixed $m$ and $A$ changes how the births (or deaths) are spread over calendar time
+and not their average level.
+With $T=3$, a period of $P=3$ is one oscillation on $[0,T]$ and $P=0.5$ is six.
+
+### Sinusoidal birth rate, constant death rate
+
+```{python}
+SINE_BIRTH = {  # name: (mean, amplitude, period)
+    "P=3": (1.0, 0.8, 3.0),
+    "P=1": (1.0, 0.8, 1.0),
+    "P=0.5": (1.0, 0.8, 0.5),
+    "P=1, small amplitude": (1.0, 0.3, 1.0),
+}
+
+sine_birth = {
+    f"λ sine, {name}": (sine(*params), const(MU_FIXED))
+    for name, params in SINE_BIRTH.items()
+}
+
+summary_sine_birth = spine_figure(sine_birth, "vtv04_sinusoidal_birth")
+display(summary_sine_birth)
+```
+
+The density oscillates with the birth rate, at the mirrored ages.
+Its number of local maxima is 2, 4 and 7 for $P=3$, $1$ and $0.5$,
+which is one more than the number of oscillations of $\lambda$ on $[0,T]$ (1, 3 and 6);
+the extra one is a small bump at young ages.
+The peak density barely changes with the period (0.520, 0.514, 0.543),
+and the atom grows a little as the period shortens (0.243, 0.272, 0.282).
+Reducing the amplitude from 0.8 to 0.3 at $P=1$ lowers the peak to 0.368 and flattens the oscillations.
+
+### Constant birth rate, sinusoidal death rate
+
+```{python}
+LAMBDA_FIXED = 1.0
+SINE_DEATH = {  # name: (mean, amplitude, period)
+    "P=3": (0.8, 0.6, 3.0),
+    "P=1": (0.8, 0.6, 1.0),
+    "P=0.5": (0.8, 0.6, 0.5),
+}
+
+sine_death = {
+    f"μ sine, {name}": (const(LAMBDA_FIXED), sine(*params))
+    for name, params in SINE_DEATH.items()
+}
+
+summary_sine_death = spine_figure(sine_death, "vtv04_sinusoidal_death")
+display(summary_sine_death)
+```
+
+The oscillations are much weaker than for a sinusoidal birth rate:
+the density is a broad hump with ripples whose number grows as the period shrinks
+(2, 2 and 4 local maxima for $P=3$, $1$ and $0.5$).
+In the density formula only $\lambda$ enters as a pointwise factor, which is consistent with this.
+The slowest oscillation ($P=3$) has the oldest mode (age 2.21) and the largest atom (0.327),
+while $P=1$ and $0.5$ put the mode at about age 1.
+
+### Sinusoidal birth and death rates with different periods
+
+```{python}
+SINE_BOTH = {  # name: (birth (mean, amplitude, period, phase), death (...))
+    "P=1 and 1.5": ((1.0, 0.7, 1.0, 0.0), (0.8, 0.5, 1.5, 0.0)),
+    "P=0.5 and 1.25": ((1.0, 0.7, 0.5, 0.0), (0.8, 0.5, 1.25, 0.0)),
+    "P=3 and 0.6, μ phase π": ((1.0, 0.7, 3.0, 0.0), (0.8, 0.5, 0.6, float(np.pi))),
+}
+
+sine_both = {
+    f"λ, μ sine, {name}": (sine(*birth), sine(*death))
+    for name, (birth, death) in SINE_BOTH.items()
+}
+
+summary_sine_both = spine_figure(sine_both, "vtv04_sinusoidal_both")
+display(summary_sine_both)
+```
+
+With birth period 1 and death period 1.5 the density oscillates at the birth period (local maxima near ages 0.8, 1.7 and 2.7 in the figure),
+with the highest peak in the notebook (0.576 at age 1.68).
+With birth period 0.5 and death period 1.25 the density has six local maxima, the first four of similar height
+and the last two lower, towards $a=T$.
+With a slow birth rate ($P=3$) and a fast death rate ($P=0.6$, phase $\pi$),
+the density follows the slow birth rate, with a broad flat top between ages of about 1.5 and 2,
+a small bump at young ages, and the smallest atom of the notebook (0.204).
+
+## Numerical checks
+
+Three checks support the figures above, over every scenario drawn in this notebook.
+Each check has an `assert`, so rendering fails if one fails.
+
+1. Total mass: the spine CDF at $T$ (including the atom) and the non-spine CDF at $T$ both equal 1.
+2. An independent oracle for a few scenarios: the spine density equals
+   $\lambda(T-a)\,e^{-\Lambda(T-a,T]}\,L_\mu(T-a,T)$,
+   with $L_\mu$ computed by adaptive quadrature (`scipy.integrate.quad`)
+   from the rates' own `integral` for $\Lambda$ and $\Gamma$,
+   a different code path from the Gauss--Legendre segments used by the library.
+3. Consistency with the existing families:
+   an exponential rate with equal end values is a constant rate,
+   and a quadratic rate with zero curvature is a linear rate.
+
+```{python}
+end = jnp.array([T])
+MASS_ATOL = 1e-8
+mass_table = pd.DataFrame(
+    {
+        "scenario": list(registry),
+        "spine mass": [float(spine_age_cdf(end, *v)[0]) for v in registry.values()],
+        "non-spine mass": [
+            float(non_spine_age_cdf(end, *v)[0]) for v in registry.values()
+        ],
+    }
+)
+mass_table["max |error|"] = np.maximum(
+    np.abs(mass_table["spine mass"] - 1.0), np.abs(mass_table["non-spine mass"] - 1.0)
+)
+display(mass_table)
+assert (mass_table["max |error|"] < MASS_ATOL).all()
+largest_mass_error = mass_table["max |error|"].max()
+print(f"{len(mass_table)} scenarios, largest mass error {largest_mass_error:.2e}")
+```
+
+```{python}
+ORACLE_AGES = (0.4, 1.3, 2.5)
+ORACLE_RTOL = 1e-8
+ORACLE_SCENARIOS = [
+    "λ rising, exponential",
+    "λ hump, exponential",
+    "λ quadratic hump",
+    "λ spline hump",
+    "λ spline dip",
+    "λ sine, P=0.5",
+    "μ sine, P=1",
+    "λ, μ sine, P=0.5 and 1.25",
+]
+
+
+def oracle_spine_density(lam: RateFunction, mu: RateFunction, age: float) -> float:
+    """lambda(T-a) exp(-Lambda(T-a,T)) L_mu(T-a,T), with L_mu by adaptive quadrature."""
+    s = T - age
+
+    def integrand(t: float) -> float:
+        gamma_t = float(
+            lam.integral(jnp.array(t), jnp.array(T))
+            - mu.integral(jnp.array(t), jnp.array(T))
+        )
+        return float(mu(jnp.array(t))) * np.exp(gamma_t)
+
+    kinks = {
+        float(b)
+        for rate in (lam, mu)
+        for b in np.asarray(rate.breakpoints)
+        if s < b < T
+    }
+    l_mu, _ = quad(
+        integrand,
+        s,
+        T,
+        points=sorted(kinks) or None,
+        epsabs=0.0,
+        epsrel=1e-13,
+        limit=400,
+    )
+    big_lambda = float(lam.integral(jnp.array(s), jnp.array(T)))
+    return float(lam(jnp.array(s))) * np.exp(-big_lambda) * l_mu
+
+
+oracle_rows = []
+for name in ORACLE_SCENARIOS:
+    lam, mu = registry[name]
+    library = np.exp(np.asarray(spine_age_log_density(jnp.array(ORACLE_AGES), lam, mu)))
+    for age, value in zip(ORACLE_AGES, library, strict=True):
+        expected = oracle_spine_density(lam, mu, age)
+        oracle_rows.append(
+            {
+                "scenario": name,
+                "age": age,
+                "bdpinf": float(value),
+                "quadrature oracle": expected,
+                "relative error": abs(float(value) - expected) / abs(expected),
+            }
+        )
+oracle_table = pd.DataFrame(oracle_rows)
+display(oracle_table)
+assert (oracle_table["relative error"] < ORACLE_RTOL).all()
+print(f"largest oracle relative error {oracle_table['relative error'].max():.2e}")
+```
+
+```{python}
+CONSISTENCY_ATOL = 1e-10
+CONSTANT_VALUE = 1.3
+TWO_EPOCHS = jnp.array([1.5, T])
+LINEAR_ENDS = {  # name: (start values, end values, epoch end times)
+    "one epoch": (jnp.array([0.3]), jnp.array([1.8]), TIMES),
+    "two epochs, with a jump": (
+        jnp.array([0.4, 1.2]),
+        jnp.array([1.6, 0.5]),
+        TWO_EPOCHS,
+    ),
+}
+
+mu_ref = const(MU_FIXED)
+pairs: dict[str, tuple[Scenario, Scenario]] = {
+    "exponential, equal end values, vs constant": (
+        (
+            PiecewiseExponentialRate.continuous(
+                jnp.array([CONSTANT_VALUE, CONSTANT_VALUE]), TIMES
+            ),
+            mu_ref,
+        ),
+        (const(CONSTANT_VALUE), mu_ref),
+    ),
+    "exponential death rate, equal end values, vs constant": (
+        (
+            const(CONSTANT_VALUE),
+            PiecewiseExponentialRate.from_constant(jnp.array([0.7]), TIMES),
+        ),
+        (const(CONSTANT_VALUE), mu_ref),
+    ),
+}
+for name, (v0, v1, times) in LINEAR_ENDS.items():
+    pairs[f"quadratic from_linear vs linear, {name}"] = (
+        (PiecewiseQuadraticRate.from_linear(v0, v1, times), mu_ref),
+        (PiecewiseLinearRate(v0, v1, times), mu_ref),
+    )
+
+consistency_rows = []
+for name, (new, old) in pairs.items():
+    dens_new = np.exp(np.asarray(spine_age_log_density(AGES, *new)))
+    dens_old = np.exp(np.asarray(spine_age_log_density(AGES, *old)))
+    atom_new = float(jnp.exp(spine_age_log_atom(*new)))
+    atom_old = float(jnp.exp(spine_age_log_atom(*old)))
+    consistency_rows.append(
+        {
+            "comparison": name,
+            "max density difference": float(np.max(np.abs(dens_new - dens_old))),
+            "atom difference": abs(atom_new - atom_old),
+        }
+    )
+consistency_table = pd.DataFrame(consistency_rows)
+display(consistency_table)
+assert (consistency_table["max density difference"] < CONSISTENCY_ATOL).all()
+assert (consistency_table["atom difference"] < CONSISTENCY_ATOL).all()
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+import time
+from pathlib import Path
+
+doc_name = "validation_time_varying_rates_spine_age_shapes_nonlinear.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

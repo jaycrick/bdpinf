@@ -17,7 +17,7 @@ from bdpinf.models.math_populations import population_geometric_parameter
 from bdpinf.simulation import (
     simulate_bdp_ages_from_distributions,
     simulate_bdp_ages_given_size,
-    simulate_birth_death_process,
+    simulate_birth_death,
 )
 
 
@@ -65,10 +65,10 @@ def sample_age_vector(
             np.float64
         )
 
-    simulated = simulate_birth_death_process(
-        birth_rates=birth_rate,
-        death_rates=death_rate,
-        times=observation_time,
+    simulated = simulate_birth_death(
+        birth_rate,
+        death_rate,
+        observation_time,
         random_seed=int(rep_seed),
         ensure_non_extinct=True,
     )

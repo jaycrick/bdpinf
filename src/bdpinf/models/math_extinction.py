@@ -7,7 +7,7 @@ $\mathcal W(T) = e^{\Gamma(0,T]}(1 + I(T))$ and $\pi(T) = 1/\mathcal W(T)$.
 $I(T) = P_0(T)/(1 - P_0(T))$ is the odds of extinction by $T$,
 so $\Pr(Z_T = 0) = I(T) / (1 + I(T))$.
 Extinction is almost sure as $T \to \infty$ iff $I(\infty)$ diverges
-(Kendall's criterion).
+(Kendall's criterion, Kendall (1948); see ``bibliography.bib``).
 
 The epoch-wise closed forms live in :mod:`bdpinf.models.math_nested`
 (:func:`~bdpinf.models.math_nested.log_extinction_and_survival_pr` gives
@@ -32,6 +32,9 @@ def calculate_extinction_pr(
     return_log_prob: bool = False,
 ) -> jax.Array:
     r"""Extinction probability $P_0(T) = \Pr(Z_T = 0) = I/(1+I)$, or its log.
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
 
     Evaluated as $\ln I - \operatorname{softplus}(\ln I)$, which stays
     accurate when $I$ is tiny.

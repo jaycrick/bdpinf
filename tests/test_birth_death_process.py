@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from numpy.testing import assert_array_equal
 
+from bdpinf.inference.likelihood import log_likelihood
 from bdpinf.process import BirthDeathProcess
 from bdpinf.visualization.genealogy import plot_genealogy_tree
 
@@ -514,6 +515,33 @@ class TestBirthDeathProcessFactories:
         assert process.birth_rates is not None
         assert process.death_rates is not None
         assert process.birth_rates[0].item() == pytest.approx(0.05)
+
+    def test_log_likelihood_forwards_initial_population(self) -> None:
+        kwargs = {
+            "spine_ages": [500.0],
+            "non_spine_ages": [200.0, 400.0],
+            "epoch_end_times": 1000.0,
+            "birth_rates": 0.05,
+            "death_rates": 0.02,
+        }
+        process = BirthDeathProcess.from_age_samples(initial_population=3, **kwargs)
+        single = BirthDeathProcess.from_age_samples(initial_population=1, **kwargs)
+        value = process.log_likelihood(condition_on_survival=False)
+        expected = log_likelihood(
+            birth_rates=[0.05],
+            death_rates=[0.02],
+            ages=[200.0, 400.0],
+            times=[1000.0],
+            spine_ages=[500.0],
+            initial_population=3,
+            condition_on_survival=False,
+        )
+        np.testing.assert_allclose(value, expected)
+        assert not np.isclose(
+            float(value), float(single.log_likelihood(condition_on_survival=False))
+        )
+        with pytest.raises(ValueError, match="initial_population"):
+            process.log_likelihood(condition_on_survival=True)
 
     def test_from_records_creates_correct_epoch_structure(self) -> None:
         """from_records filters to survivors and stores records."""

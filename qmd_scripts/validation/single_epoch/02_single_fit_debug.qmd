@@ -33,7 +33,7 @@ from IPython.display import display
 
 from bdpinf import find_project_root
 from bdpinf.analysis import FitModelConfig, fit_single_model
-from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death
 from bdpinf.visualization import save_chart
 from bdpinf.visualization.altair_theme import PTOLQUAL
 from bdpinf.visualization.genealogy import plot_genealogy_tree
@@ -49,10 +49,10 @@ death_rate = 4.0
 time_span = 1.0
 seed = 42
 
-simulation_df = simulate_birth_death_process(
-    birth_rates=birth_rate,
-    death_rates=death_rate,
-    times=time_span,
+simulation_df = simulate_birth_death(
+    birth_rate,
+    death_rate,
+    time_span,
     random_seed=seed,
     ensure_non_extinct=True,
 )
@@ -126,7 +126,8 @@ buf = io.StringIO()
 ps = pstats.Stats(profiler, stream=buf).sort_stats("cumulative")
 ps.print_stats(30)
 report = buf.getvalue()
-open("prof-single-fit.txt", "w").write(report)
+with open("prof-single-fit.txt", "w") as _fh:
+    _fh.write(report)
 print(report)
 ```
 

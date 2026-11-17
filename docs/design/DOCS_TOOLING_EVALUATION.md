@@ -22,7 +22,7 @@ actually running each tool against this repository, not just reading their docs.
   | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | **rumdl**                    | Rust Markdown linter/formatter (rvben/rumdl), ~97% markdownlint-compatible.                                                                                                                                                          | **Rejected.** Its default scan picked up `.qmd` files alongside `.md`, and its auto-fixer **corrupted LaTeX math**: lines like `\ell_t(\theta_0)` inside `$$...$$` blocks got rewritten into `## \ell_t(\theta_0)` ATX headings. It does not understand Pandoc/Quarto math or executable-chunk syntax. See below. |
   | **panache** (jolars/panache) | LSP + formatter + linter purpose-built for Pandoc/Quarto/RMarkdown markdown (fenced divs, citations, grid tables, math). PyPI package `panache-cli`.                                                                                 | **Adopted**, for both `.md` and `.qmd`, scoped to lint + format with a documented config (see below). Found and worked around one real formatter bug; the linter is clean.                                                                                                                                        |
-  | **great-docs**               | Posit's newer documentation-site generator, billed as quartodoc's successor. Auto-discovers a Python package's API, adds a landing page, CLI reference, quality tools (`lint`/`proofread`/`check-links`), and `llms.txt` generation. | **Adopted, hybrid.** Full parity for the API reference; replaces quartodoc. Cannot absorb the executable notebook site (no cache/biblatex support). CLI reference works via a small Typer→Click shim — see below.                                                                                                 |
+  | **great-docs**               | Posit's newer documentation-site generator, billed as quartodoc's successor. Auto-discovers a Python package's API, adds a landing page, CLI reference, quality tools (`lint`/`proofread`/`check-links`), and `llms.txt` generation. | **Adopted, hybrid.** Full parity for the API reference; replaces quartodoc. Cannot absorb the executable notebook site (no cache or bibliography support). CLI reference works via a small Typer→Click shim — see below.                                                                                          |
 
 ## rumdl: why it was rejected
 
@@ -153,7 +153,8 @@ and reviewed file-by-file before being wired into pre-commit/CI.
   Analysis, Bayesian Analysis, three Validation tracks, and Docs.
 - 30 **executable** notebooks under `qmd_scripts/core_analysis/**` and `qmd_scripts/validation/**`
   that run real inference code, not static prose.
-- Global cell caching (`execute.cache: true`), biblatex citations (`cite-method: biblatex`), and
+- Global cell caching (`execute.cache: true`), a project-wide bibliography with citeproc citations
+  (`bibliography: bibliography.bib`, `cite-method: citeproc`), and
   a custom HTML theme (flatly + MathJax + code-fold).
 
 great-docs generates its **own self-contained Quarto project** from a `great-docs.yml` config and
@@ -176,6 +177,7 @@ The spike
   One harmless warning per build: dynamic introspection fails for symbols
   not re-exported at the package's top level (e.g. `inference.fitting.fit_birth_death_processes`),
   and falls back to static analysis successfully.
+
 - **CLI reference: broken out of the box, fixed with a one-line shim.** Enabling
   `cli: {module: bdpinf.cli, name: app}` crashes the build with
   `AttributeError: 'Typer' object has no attribute 'allow_extra_args'` --- great-docs's CLI doc
@@ -189,6 +191,7 @@ The spike
   Rebuilt clean,
   generating a full nested reference (`reference/cli/`, including the `ntvmr` subcommand group and
   all five of its leaf commands) --- confirmed by inspecting the generated HTML/markdown output.
+
 - **`pypi: false` crashes the build --- a real upstream bug, not a config mistake.** Documented as a
   normal option (suppress the auto-generated "View on PyPI" margin link), but combined with this
   project's `CITATION.cff` it raises `UnboundLocalError: cannot access local variable   'package_name'`.
@@ -199,13 +202,21 @@ The spike
   block ran --- so any project with both `pypi: false` and a citation file hits this.
   Left `pypi` at
   its default; not worth a local source patch for one cosmetic link.
+
 - **Executable notebook site: not viable.** Confirmed by reading the full `great-docs.yml` schema
-  (`great-docs config` dumps every documented key) --- there is no `execute.cache`, `bibliography`,
-  or `cite-method` equivalent anywhere in it, and great-docs's own docs state plainly that its
+  (`great-docs config` dumps every documented key) --- there is no `execute.cache` or `bibliography`
+  equivalent anywhere in it, and great-docs's own docs state plainly that its
   generated `_quarto.yml` is fully owned by the tool and manual edits are overwritten on every
   build.
-  There is no path to carrying the 30 executable notebooks' caching and biblatex citations
+  There is no path to carrying the 30 executable notebooks' caching and bibliography
   into a great-docs-owned project.
+
+  *Update:* the research site originally used biblatex (`cite-method: biblatex`),
+  and an earlier version of this evaluation counted that as a further obstacle.
+  It now uses citeproc (commit `84dfdb5`), so the biblatex point no longer applies.
+  The two-site decision rests on the other two reasons alone:
+  great-docs has no `execute.cache` equivalent, and no `bibliography` equivalent,
+  and it overwrites manual edits to the `_quarto.yml` it generates.
 
 ## Decision
 

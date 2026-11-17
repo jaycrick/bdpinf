@@ -355,7 +355,7 @@ Three independent checks support the figures above.
 ```{python}
 end = jnp.array([T])
 all_scenarios: dict[str, Scenario] = {
-    **{k: v for k, v in shapes.items()},
+    **shapes,
     "kinked": (lam_k, mu_k),
     "jump in λ": (jumping((0.6, 1.8), (0.9, 1.4)), const(0.8)),
     "hump in λ": (

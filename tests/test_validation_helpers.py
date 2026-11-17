@@ -118,7 +118,7 @@ class TestValidationHelpers:
     ) -> None:
         captured: dict[str, object] = {}
 
-        def fake_fit(*args, **kwargs):
+        def fake_fit(*_args, **kwargs):
             captured.update(kwargs)
             return make_fit_result([0.5], [0.1])
 
@@ -138,7 +138,7 @@ class TestValidationHelpers:
     ) -> None:
         captured: dict[str, object] = {}
 
-        def fake_fit(*args, **kwargs):
+        def fake_fit(*_args, **kwargs):
             captured.update(kwargs)
             return make_fit_result([0.5], [0.1])
 
@@ -166,7 +166,7 @@ class TestValidationHelpers:
     def test_fit_single_model_logs_and_returns_none_on_exception(
         self, monkeypatch, caplog
     ) -> None:
-        def boom(*args, **kwargs):
+        def boom(*_args, **_kwargs):
             raise RuntimeError("optimizer blew up")
 
         monkeypatch.setattr(validation_helpers_module, "fit", boom)
@@ -178,6 +178,33 @@ class TestValidationHelpers:
 
         assert result is None
         assert "optimizer blew up" in caplog.text
+
+    def test_fit_single_model_handles_expected_fit_errors(
+        self, monkeypatch, caplog
+    ) -> None:
+        def invalid(*_args, **_kwargs):
+            raise ValueError("no finite start")
+
+        monkeypatch.setattr(validation_helpers_module, "fit", invalid)
+
+        with caplog.at_level("WARNING"):
+            result = fit_single_model(
+                np.array([1.0], dtype=np.float64), FitModelConfig(times=10.0)
+            )
+
+        assert result is None
+        assert "no finite start" in caplog.text
+
+    def test_fit_single_model_propagates_type_error(self, monkeypatch) -> None:
+        def programming_error(*_args, **_kwargs):
+            raise TypeError("unexpected keyword argument")
+
+        monkeypatch.setattr(validation_helpers_module, "fit", programming_error)
+
+        with pytest.raises(TypeError, match="unexpected keyword"):
+            fit_single_model(
+                np.array([1.0], dtype=np.float64), FitModelConfig(times=10.0)
+            )
 
     def test_iqr_plotting_subset_removes_row_outliers(self) -> None:
         plotting_data, mask = iqr_plotting_subset(

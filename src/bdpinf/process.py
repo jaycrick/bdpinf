@@ -18,6 +18,7 @@ from numpy.typing import NDArray
 
 from bdpinf.inference.likelihood import log_likelihood as _log_likelihood
 from bdpinf.models.genealogy import genealogy_dfs_order as _genealogy_dfs_order
+from bdpinf.models.math_populations import check_conditioning
 from bdpinf.models.validation import (
     ValidationConfig,
     normalize_and_validate_inputs,
@@ -202,7 +203,7 @@ class BirthDeathProcess:
             raise ValueError(msg)
 
         observed = records[records["survived"]].copy()
-        process = cls(
+        return cls(
             creation_times=observed["creation_time"].astype(float).tolist(),
             epoch_end_times=epoch_end_times,
             start_time=start_time,
@@ -211,7 +212,6 @@ class BirthDeathProcess:
             death_rates=death_rates,
             records=records.copy(),
         )
-        return process
 
     @classmethod
     def from_age_samples(
@@ -231,7 +231,7 @@ class BirthDeathProcess:
         creation_times = [
             max_time - float(age) for age in [*spine_ages, *non_spine_ages]
         ]
-        process = cls(
+        return cls(
             creation_times=creation_times,
             epoch_end_times=epoch_end_times,
             start_time=start_time,
@@ -241,7 +241,6 @@ class BirthDeathProcess:
             spine_ages=spine_ages,
             non_spine_ages=non_spine_ages,
         )
-        return process
 
     @property
     def epoch_end_times(self) -> jax.Array:
@@ -690,8 +689,9 @@ class BirthDeathProcess:
         """Test equality against another BirthDeathProcess instance."""
         if not isinstance(other, BirthDeathProcess):
             return False
-        if self._records is not None and other._records is not None:
-            return self._records.equals(other._records)
+        mine, theirs = self._records, other._records  # noqa: SLF001  # same-class comparison
+        if mine is not None and theirs is not None:
+            return mine.equals(theirs)
 
         def _arrays_equal(a: jax.Array | None, b: jax.Array | None) -> bool:
             if a is None and b is None:
@@ -702,9 +702,9 @@ class BirthDeathProcess:
 
         return (
             self.creation_times == other.creation_times
-            and _arrays_equal(self._epoch_end_times, other._epoch_end_times)
-            and _arrays_equal(self._birth_rates, other._birth_rates)
-            and _arrays_equal(self._death_rates, other._death_rates)
+            and _arrays_equal(self.epoch_end_times, other.epoch_end_times)
+            and _arrays_equal(self.birth_rates, other.birth_rates)
+            and _arrays_equal(self.death_rates, other.death_rates)
         )
 
     def __eq__(self, other: object) -> bool:
@@ -792,9 +792,13 @@ class BirthDeathProcess:
         Raises
         ------
         ValueError
-            If birth/death rates are not set on the instance.
+            If birth/death rates are not set on the instance,
+            or if ``condition_on_survival`` is True and
+            ``initial_population > 1``
+            (pass ``condition_on_survival=False``).
 
         """
+        check_conditioning(self.initial_population, condition_on_survival)
         if self._birth_rates is None or self._death_rates is None:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)
@@ -806,6 +810,7 @@ class BirthDeathProcess:
             ages=ages,
             times=self.adjusted_epoch_end_times,
             spine_ages=spine_ages,
+            initial_population=self.initial_population,
             condition_on_survival=condition_on_survival,
         )
 

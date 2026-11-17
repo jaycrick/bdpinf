@@ -65,8 +65,8 @@ import numpy as np
 import pandas as pd
 from bdsurv import (
     SplittingConfig,
-    simulate_birth_death_process_from_contour_process,
-    simulate_subcritical_survival_splitting,
+    simulate_contour_given_survival,
+    simulate_survival_splitting,
 )
 from bdsurv.tree import SimulatedTree
 from IPython.display import display
@@ -165,7 +165,7 @@ for dr in DEATH_RATES:
     # --- Contour (serial) ---
     t0 = time.perf_counter()
     for i in range(N_SPEED_CONTOUR):
-        _ = simulate_birth_death_process_from_contour_process(
+        _ = simulate_contour_given_survival(
             birth_rate=BIRTH_RATE,
             death_rate=dr,
             terminal_time=TERMINAL_TIME,
@@ -183,7 +183,7 @@ for dr in DEATH_RATES:
         n_conditioned_trajectories=None,
     )
     t0 = time.perf_counter()
-    sp_result = simulate_subcritical_survival_splitting(speed_config)
+    sp_result = simulate_survival_splitting(speed_config)
     splitting_time = time.perf_counter() - t0
 
     splitting_trees = len(sp_result.conditioned_trajectories)
@@ -232,7 +232,7 @@ parallel calls) and splitting (one run with pinned grid).
 def _run_contour_regime(
     seed: int, birth_rate: float, death_rate: float, t: float
 ) -> tuple[float | None, np.ndarray]:
-    tree = simulate_birth_death_process_from_contour_process(
+    tree = simulate_contour_given_survival(
         birth_rate=birth_rate,
         death_rate=death_rate,
         terminal_time=t,
@@ -269,7 +269,7 @@ for regime_idx, dr in enumerate(DEATH_RATES):
         random_seed=SEED + 1_000 + regime_idx * 10_000,
         n_conditioned_trajectories=None,
     )
-    sp_result = simulate_subcritical_survival_splitting(correctness_config)
+    sp_result = simulate_survival_splitting(correctness_config)
 
     sp_spine_list: list[float] = []
     sp_ns_list: list[np.ndarray] = []

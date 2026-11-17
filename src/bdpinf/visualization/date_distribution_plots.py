@@ -25,7 +25,7 @@ _DIMMED_OPACITY = 0.15
 LegendInteraction = Literal["none", "filter", "highlight"]
 
 
-def plot_date_range_kde_comparison(
+def plot_date_range_kde_comparison(  # noqa: PLR0913  # public entry point: documented keyword options
     midpoint_years: ArrayLike,
     year_grid: ArrayLike,
     density: ArrayLike,

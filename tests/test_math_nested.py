@@ -324,11 +324,9 @@ class TestLogKappa:
         getcontext().prec = 50
         g, d = Decimal(growth), Decimal(duration)
         exact = d if g == 0 else (1 - (-g * d).exp()) / g
-        got = float(
-            jnp.exp(mn._log_kappa_minus(jnp.array(growth), jnp.array(duration)))
-        )  # pyright: ignore[reportPrivateUsage]
+        got = float(jnp.exp(mn.log_kappa_minus(jnp.array(growth), jnp.array(duration))))
         assert got == pytest.approx(float(exact), rel=1e-9)
 
     def test_zero_duration_is_log_zero(self) -> None:
-        out = float(mn._log_kappa_minus(jnp.array(0.5), jnp.array(0.0)))  # pyright: ignore[reportPrivateUsage]
+        out = float(mn.log_kappa_minus(jnp.array(0.5), jnp.array(0.0)))
         assert out == mn.LOG_ZERO

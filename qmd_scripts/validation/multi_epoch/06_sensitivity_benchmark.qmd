@@ -22,10 +22,11 @@ __compile_start = time.perf_counter()
 ```{python}
 import numpy as np
 import pandas as pd
+from bdsurv import PiecewiseConstant
 from joblib import Parallel, delayed
 
 from bdpinf.analysis import FitModelConfig, fit_single_model
-from bdpinf.simulation import simulate_birth_death_process
+from bdpinf.simulation import simulate_birth_death
 from bdpinf.utils import derive_worker_seeds
 ```
 
@@ -51,10 +52,9 @@ for cfg_idx, cfg in enumerate(configs):
     # worker seed, unlike sequential-integer seeding.
     cfg_sim_seeds = derive_worker_seeds(sim_seed_base + cfg_idx, num_sims)
     sims = Parallel(n_jobs=-1)(
-        delayed(simulate_birth_death_process)(
-            birth_rates=cfg["birth_rates"],
-            death_rates=cfg["death_rates"],
-            times=times,
+        delayed(simulate_birth_death)(
+            PiecewiseConstant(cfg["birth_rates"], times),
+            PiecewiseConstant(cfg["death_rates"], times),
             random_seed=cfg_sim_seeds[i],
         )
         for i in range(num_sims)

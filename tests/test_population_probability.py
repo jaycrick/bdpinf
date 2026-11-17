@@ -418,7 +418,7 @@ class TestPopulationProbability:
         ("birth_rate", "death_rate", "time", "n"),
         [
             (0.1, 0.05, 100.0, 5),
-            # (0.5, 0.3, 200.0, 10),  # This leads to one_minus_pi = 1, excluded
+            # The case (0.5, 0.3, 200.0, 10) is excluded: it gives one_minus_pi = 1.
             (1.0, 0.8, 50.0, 3),
             (0.01, 0.008, 1000.0, 15),
             (2.0, 1.5, 30.0, 7),

@@ -7,22 +7,20 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from bdsurv import (
+    PiecewiseConstant,
     compute_level_replicates,
+    log_survival_probability,
     select_level_times_for_band,
+    simulate_birth_death,
     simulate_birth_death_lifespans,
-    simulate_birth_death_process,
 )
-from bdsurv._extinction import pr_extinction
+from bdsurv._hazard import next_event_offset  # internal to bdsurv
 from bdsurv.lifespans import (
-    _sample_piecewise_exponential_death_time,  # pyright: ignore[reportPrivateUsage]
+    sample_piecewise_exponential_death_time,  # internal to bdsurv
 )
-from bdsurv.linear_rates import (
-    _as_linear,  # pyright: ignore[reportPrivateUsage]
-    _next_event_offset,  # pyright: ignore[reportPrivateUsage]
-    _segments,  # pyright: ignore[reportPrivateUsage]
-)
-from bdsurv.splitting import (
-    _log_survival_probability,  # pyright: ignore[reportPrivateUsage]
+from bdsurv.rates import (
+    as_rate,  # internal to bdsurv
+    merged_segments,  # internal to bdsurv
 )
 
 from bdpinf.models.math_extinction import calculate_extinction_pr
@@ -37,6 +35,11 @@ def _bdpinf_log_survival(birth_rate: float, death_rate: float, time: float) -> f
     return -float(
         jax.nn.softplus(nested_terms(birth_rate, death_rate, time).log_i_total)
     )
+
+
+def _bdsurv_extinction(birth_rate: float, death_rate: float, time: float) -> float:
+    """Return bdsurv's extinction probability by time ``time``."""
+    return -math.expm1(log_survival_probability(birth_rate, death_rate, time))
 
 
 SURVIVAL_CASES = [
@@ -57,8 +60,9 @@ class TestExtinctionCrossCheck:
     """Pin bdsurv's closed-form extinction probability against bdpinf's JAX one.
 
     bdsurv reimplements the single-epoch special case of
-    bdpinf.models.math_extinction.calculate_extinction_pr as a pure-numpy
-    closed form (see bdsurv._extinction.pr_extinction), so the simulation
+    bdpinf.models.math_extinction.calculate_extinction_pr; its public
+    `log_survival_probability` gives the extinction probability as
+    `-expm1(log_survival_probability(...))`, so the simulation
     package can avoid a JAX dependency. This test is the guard against the
     two implementations drifting apart.
     """
@@ -80,7 +84,7 @@ class TestExtinctionCrossCheck:
         self, birth_rate: float, death_rate: float, terminal_time: float
     ) -> None:
         expected = float(calculate_extinction_pr(birth_rate, death_rate, terminal_time))
-        actual = pr_extinction(birth_rate, death_rate, terminal_time)
+        actual = _bdsurv_extinction(birth_rate, death_rate, terminal_time)
         assert actual == pytest.approx(expected, abs=1e-8, rel=1e-6)
 
     def test_matches_across_random_grid(self) -> None:
@@ -91,7 +95,7 @@ class TestExtinctionCrossCheck:
 
         for b, d, t in zip(birth_rates, death_rates, terminal_times, strict=True):
             expected = float(calculate_extinction_pr(float(b), float(d), float(t)))
-            actual = pr_extinction(float(b), float(d), float(t))
+            actual = _bdsurv_extinction(float(b), float(d), float(t))
             assert actual == pytest.approx(expected, abs=1e-6, rel=1e-5)
 
 
@@ -103,15 +107,11 @@ class TestLogSurvivalCrossCheck:
         self, birth_rate: float, death_rate: float, time: float
     ) -> None:
         expected = _bdpinf_log_survival(birth_rate, death_rate, time)
-        actual = _log_survival_probability(
-            birth_rate=birth_rate, death_rate=death_rate, time=time
-        )
+        actual = log_survival_probability(birth_rate, death_rate, time)
         assert actual == pytest.approx(expected, abs=1e-9, rel=1e-8)
 
     def test_non_positive_time_is_certain_survival(self) -> None:
-        assert (
-            _log_survival_probability(birth_rate=1.0, death_rate=2.0, time=0.0) == 0.0
-        )
+        assert log_survival_probability(1.0, 2.0, 0.0, terminal_time=1.0) == 0.0
 
 
 class TestLevelReplicatesDefinition:
@@ -176,7 +176,7 @@ class TestPiecewiseExponentialDeathTime:
         keys = jax.random.split(jax.random.key(7), n)
         draws = np.asarray(
             jax.vmap(
-                lambda k: _sample_piecewise_exponential_death_time(
+                lambda k: sample_piecewise_exponential_death_time(
                     birth_time, hazards, ends, ends[-1], k
                 )
             )(keys)
@@ -204,7 +204,7 @@ class TestLinearEventOffset:
 
     def test_segments_are_union_of_breakpoints_with_matching_integrals(self) -> None:
         birth, death = self._rates()
-        segments = _segments(_as_linear(birth), _as_linear(death))
+        segments = merged_segments(as_rate(birth), as_rate(death))
         edges = sorted(
             {
                 0.0,
@@ -226,12 +226,12 @@ class TestLinearEventOffset:
     @pytest.mark.parametrize("n_alive", [1, 3, 10])
     def test_offset_solves_the_cumulative_hazard(self, n_alive: int) -> None:
         birth, death = self._rates()
-        segments = _segments(_as_linear(birth), _as_linear(death))
+        segments = merged_segments(as_rate(birth), as_rate(death))
         for start, end, b0, b1, d0, d1 in segments:
             a = n_alive * (b0 + d0)
             b = n_alive * (b1 + d1)
             target = 0.05
-            offset = _next_event_offset(a, b, target)
+            offset = next_event_offset(a, b, target)
             assert 0.0 < offset < end - start
             hazard = n_alive * sum(
                 float(r.integral(jnp.float64(start), jnp.float64(start + offset)))
@@ -270,10 +270,12 @@ class TestSimulatedExtinctionFrequency:
         ]
         self._assert_extinct_fraction(extinct)
 
-    def test_gillespie_simulator(self) -> None:
+    def test_event_simulator(self) -> None:
         extinct = [
-            not simulate_birth_death_process(
-                self.BIRTH, self.DEATH, self.TIMES, random_seed=seed
+            not simulate_birth_death(
+                PiecewiseConstant(self.BIRTH, self.TIMES),
+                PiecewiseConstant(self.DEATH, self.TIMES),
+                random_seed=seed,
             )
             .records["survived"]
             .any()

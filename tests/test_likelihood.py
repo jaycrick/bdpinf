@@ -519,7 +519,7 @@ class TestLikelihood:
                 num_individuals=5,
             )
 
-    def test_birth_density_rejects_birth_times_beyond_T(self) -> None:
+    def test_birth_density_rejects_birth_times_beyond_t(self) -> None:
         """Test that birth density rejects birth times > T."""
         T = 2.0
         with pytest.raises(ValueError, match="Birth times must be in the range"):

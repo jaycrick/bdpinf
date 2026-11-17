@@ -8,8 +8,8 @@ proportion staying in $(0, 1)$) is enforced by construction.
 
 Provided families:
 
-- :class:`PiecewiseConstant`: one rate per epoch;
-- :class:`PiecewiseLinear`: values at epoch boundaries (``continuous=True``,
+- :class:`PiecewiseConstantModel`: one rate per epoch;
+- :class:`PiecewiseLinearModel`: values at epoch boundaries (``continuous=True``,
   the default) or separate start and end values per epoch, which allows jumps.
   A jump-form linear model whose start and end values are tied
   (``flat_groups``) is the piecewise-constant model.
@@ -45,8 +45,8 @@ __all__ = [
     "BirthDeathModel",
     "FreeKnots",
     "Param",
-    "PiecewiseConstant",
-    "PiecewiseLinear",
+    "PiecewiseConstantModel",
+    "PiecewiseLinearModel",
     "RateModel",
     "Transform",
 ]
@@ -154,7 +154,7 @@ def _as_epoch_tuple(epoch_end_times: EpochTimes) -> tuple[float, ...]:
 
 
 @dataclasses.dataclass(frozen=True)
-class PiecewiseConstant:
+class PiecewiseConstantModel:
     """One non-negative rate per epoch.
 
     Parameters
@@ -223,7 +223,7 @@ class PiecewiseConstant:
 
 
 @dataclasses.dataclass(frozen=True)
-class PiecewiseLinear:
+class PiecewiseLinearModel:
     r"""Rate that is linear within each epoch.
 
     With ``continuous=True`` the parameters are the values at time 0 and at
@@ -386,6 +386,61 @@ def _spread_apart(
     return tuple(float(t) for t in out)
 
 
+def _checked_spacing(
+    n_knots: int, ranges: Sequence[tuple[float, float]], min_spacing: float
+) -> float:
+    """Validate ``min_spacing`` and that the knots fit in ``ranges`` at that spacing."""
+    spacing = float(min_spacing)
+    if not np.isfinite(spacing) or spacing < 0:
+        msg = "min_spacing must be a non-negative finite number"
+        raise ValueError(msg)
+    if spacing > 0 and not _spacing_feasible(ranges, spacing):
+        msg = (
+            f"{n_knots} knots at least {spacing} apart do not fit "
+            f"in the knot ranges {ranges}"
+        )
+        raise ValueError(msg)
+    return spacing
+
+
+def _default_initial(
+    n_knots: int, ranges: Sequence[tuple[float, float]], spacing: float
+) -> tuple[float, ...]:
+    """Evenly spaced (shared range) or midpoint (per-knot) starts, nudged apart."""
+    lo, hi = ranges[0]
+    if all(r == ranges[0] for r in ranges):
+        initial = tuple(
+            lo + (hi - lo) * (k + 1) / (n_knots + 1) for k in range(n_knots)
+        )
+    else:
+        initial = tuple(0.5 * (a + b) for a, b in ranges)
+    if spacing > 0 and any(b - a < spacing for a, b in itertools.pairwise(initial)):
+        initial = _spread_apart(initial, ranges, spacing)
+    return initial
+
+
+def _checked_initial(
+    initial: Sequence[float],
+    n_knots: int,
+    ranges: Sequence[tuple[float, float]],
+    spacing: float,
+) -> tuple[float, ...]:
+    """Validate user-given starting times: count, order, ranges and spacing."""
+    times = tuple(float(t) for t in initial)
+    if len(times) != n_knots:
+        msg = f"initial has {len(times)} times, expected {n_knots}"
+        raise ValueError(msg)
+    if any(b <= a for a, b in itertools.pairwise(times)) or any(
+        not lo < t < hi for t, (lo, hi) in zip(times, ranges, strict=True)
+    ):
+        msg = "initial must be strictly increasing and inside the knot ranges"
+        raise ValueError(msg)
+    if any(b - a < spacing - 1e-9 for a, b in itertools.pairwise(times)):
+        msg = f"initial knots must be at least min_spacing ({spacing}) apart"
+        raise ValueError(msg)
+    return times
+
+
 @dataclasses.dataclass(frozen=True)
 class FreeKnots:
     r"""Epoch boundaries that are fitted rather than fixed.
@@ -444,42 +499,11 @@ class FreeKnots:
             msg = "end_time must be positive"
             raise ValueError(msg)
         ranges = _knot_ranges(self.n_knots, end, self.bounds)
-        spacing = float(self.min_spacing)
-        if not np.isfinite(spacing) or spacing < 0:
-            msg = "min_spacing must be a non-negative finite number"
-            raise ValueError(msg)
-        if spacing > 0 and not _spacing_feasible(ranges, spacing):
-            msg = (
-                f"{self.n_knots} knots at least {spacing} apart do not fit "
-                f"in the knot ranges {ranges}"
-            )
-            raise ValueError(msg)
+        spacing = _checked_spacing(self.n_knots, ranges, self.min_spacing)
         if self.initial is None:
-            lo, hi = ranges[0]
-            if all(r == ranges[0] for r in ranges):
-                initial = tuple(
-                    lo + (hi - lo) * (k + 1) / (self.n_knots + 1)
-                    for k in range(self.n_knots)
-                )
-            else:
-                initial = tuple(0.5 * (a + b) for a, b in ranges)
-            if spacing > 0 and any(
-                b - a < spacing for a, b in itertools.pairwise(initial)
-            ):
-                initial = _spread_apart(initial, ranges, spacing)
+            initial = _default_initial(self.n_knots, ranges, spacing)
         else:
-            initial = tuple(float(t) for t in self.initial)
-            if len(initial) != self.n_knots:
-                msg = f"initial has {len(initial)} times, expected {self.n_knots}"
-                raise ValueError(msg)
-            if any(b <= a for a, b in itertools.pairwise(initial)) or any(
-                not lo < t < hi for t, (lo, hi) in zip(initial, ranges, strict=True)
-            ):
-                msg = "initial must be strictly increasing and inside the knot ranges"
-                raise ValueError(msg)
-            if any(b - a < spacing - 1e-9 for a, b in itertools.pairwise(initial)):
-                msg = f"initial knots must be at least min_spacing ({spacing}) apart"
-                raise ValueError(msg)
+            initial = _checked_initial(self.initial, self.n_knots, ranges, spacing)
         object.__setattr__(self, "min_spacing", spacing)
         object.__setattr__(self, "end_time", end)
         object.__setattr__(self, "bounds", ranges)
@@ -558,12 +582,12 @@ class BirthDeathModel:
 
         Pass a :class:`FreeKnots` to fit the epoch boundaries as well.
         ``min_birth`` and ``min_death`` are lower bounds on every birth and
-        death rate (see :class:`PiecewiseConstant`).
+        death rate (see :class:`PiecewiseConstantModel`).
         """
         epochs, knots = _template(epoch_end_times)
         return cls(
-            PiecewiseConstant(epochs, min_birth),
-            PiecewiseConstant(epochs, min_death),
+            PiecewiseConstantModel(epochs, min_birth),
+            PiecewiseConstantModel(epochs, min_death),
             knots,
         )
 
@@ -584,8 +608,8 @@ class BirthDeathModel:
         """
         epochs, knots = _template(epoch_end_times)
         return cls(
-            PiecewiseLinear(epochs, continuous, min_birth),
-            PiecewiseLinear(epochs, continuous, min_death),
+            PiecewiseLinearModel(epochs, continuous, min_birth),
+            PiecewiseLinearModel(epochs, continuous, min_death),
             knots,
         )
 

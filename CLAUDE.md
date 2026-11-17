@@ -37,7 +37,7 @@ Full command list, with the rationale for each, is in `CONTRIBUTING.md`.
 The essentials:
 
 - Run `uv run ruff format src tests` and `uv run ruff check --fix src tests` first, and let Ruff fix what it can; do not run standalone `isort` over `src`/`tests`.
-- `uv run pytest` (fast suite, coverage gate enforced), `uv run basedpyright --project pyproject.toml src/` (0 errors), `uv run pre-commit run --all-files` (everything CI runs besides pytest).
+- `uv run pytest` (fast suite, no coverage; CI adds `--cov --cov-fail-under=86`, see `CONTRIBUTING.md`), `uv run basedpyright --project pyproject.toml src/` (0 errors), `uv run pre-commit run --all-files` (everything CI runs besides pytest).
 - After creating or editing a `.qmd`: `uv run lintquarto -l ruff basedpyright -p qmd_scripts docs -e .venv _output`.
 - Always `uv run quarto ...` (plain `quarto` uses the system Python and fails); API reference is `uv run great-docs build`.
 
@@ -84,7 +84,7 @@ class TestSubject:
 ## Architecture
 
 **bdpinf** is a library for linear birth-death (branching) processes: exact likelihoods, MLE and Bayesian inference, simulation and plotting.
-It has no domain-specific content; the New Testament manuscript application lives in the separate `nt-manuscripts` repo, and rare-event simulation methodology in `bdsurv` (a runtime dependency used by `simulation/conditioned.py`).
+It has no domain-specific content; the New Testament manuscript application lives in the separate `nt-manuscripts` repo, and rare-event simulation methodology in `bdsurv` (a runtime dependency, pinned to 0.5.0 by git revision, used by `simulation/forward.py` and `simulation/conditioned.py`).
 Public names, signatures and docstrings are in the generated API reference (`great-docs.yml` defines its structure), so this section only records the layering and the ideas that are not obvious from the code.
 
 ### Layers
@@ -98,7 +98,7 @@ Imports may only point at the same or a lower layer; `tests/test_layering.py` en
   | 2     | `models.math_extinction`, `models.math_populations`, `models.math_age_densities`, `models.math_general` | Pure functions built on layer 1                                                                           |
   | 3     | `inference`                                                                                             | `AgeData` and likelihood, rate-model families, constraints, Newton MLE fitting, NumPyro/NUTS, persistence |
   | 4-5   | `models.genealogy`, `process`                                                                           | `BirthDeathProcess`, the canonical object passed between modules                                          |
-  | 6     | `simulation`                                                                                            | Gillespie and lifespan-at-birth simulators, survival conditioning, `bdsurv` adapters                      |
+  | 6     | `simulation`                                                                                            | Exact-event and lifespan-at-birth simulators, survival conditioning, `bdsurv` adapters                    |
   | 7     | `analysis`                                                                                              | Notebook-facing helpers: subset fits, recovery studies, date-density pipelines, LaTeX tables              |
   | 8     | `visualization`                                                                                         | Altair charts (house theme in `altair_theme.py`, the single export path `save_chart`)                     |
 
@@ -107,14 +107,14 @@ Imports may only point at the same or a lower layer; `tests/test_layering.py` en
 - **Nested integral $\mathcal W$.** $\mathcal W(b)=1/\pi(b)$ obeys $\mathcal W'=\gamma\mathcal W+\mu$, so for piecewise-constant rates it has an exact epoch-wise recursion (the "restart principle").
   Age and population likelihoods follow from it in $O(K+n\log K)$, in log space, with no sum over genealogy orderings and no division by $\lambda-\mu$ (the critical case is exact).
   `math_nested` is the piecewise-constant array API (`nested_terms(birth, death, times)` then `non_spine_log_density` / `spine_log_density`).
-  `math_general` is the general-rate counterpart for any `RateFunction` (piecewise-constant or linear, with room for splines or sinusoids): `general_terms(birth, death)` does the segment quadrature once (Gauss-Legendre between breakpoints, accumulated with `cumlogsumexp`), after which each age needs two short partial-segment quadratures; `terms_for(birth, death)` picks the exact `math_nested` backend for piecewise-constant rates on shared epochs and quadrature otherwise, and its density functions accept either kind of terms.
+  `math_general` is the general-rate counterpart for any `RateFunction` (piecewise constant, linear, exponential or quadratic, or sinusoidal; `breakpoints` are the interior times at which quadrature is split): `general_terms(birth, death)` does the segment quadrature once (Gauss-Legendre between breakpoints, accumulated with `cumlogsumexp`), after which each age needs two short partial-segment quadratures; `terms_for(birth, death)` picks the exact `math_nested` backend for piecewise-constant rates on shared epochs and quadrature otherwise, and its density functions accept either kind of terms.
   `math_age_densities` keeps the public `*_general` names and the CDFs on top of it.
 - **Validation.** `nested_terms` and the density functions validate concrete inputs and skip validation under `jit`/`grad` tracing; `AgeData.from_groups` does the host-side work (spine resolution, counts, range checks) once, and the fitter and Bayesian model call the shared `_log_likelihood_core` on its output.
 - **Unknown spine.** When no spine is given, `log_likelihood()` marginalises over which individual is the spine (`resolve_spine_ages` is the shared resolution step).
   `condition_on_survival` (default `True`) conditions the population-count term on non-extinction.
 - **Fitting.** `fit(AgeData, BirthDeathModel)` maximises the exact likelihood with a trust-region Newton method (`scipy` `trust-exact`, jitted JAX gradient and Hessian), falling back to L-BFGS-B, and reports a `FitResult` (parameters by name, `at_interior_optimum`, covariance, profile-likelihood intervals via `profile_likelihood_interval`).
-  `BirthDeathModel` pairs two `RateModel` families (`PiecewiseConstant`, `PiecewiseLinear`; a new family only needs `params`, `build`, `constant_values`, `values_from_rate`); every parameter has a transform (log for rates) that maps it to the unconstrained scale.
-  `Constraints` (fixed values, equality groups, **by parameter name**) compile to index maps shared by the MLE and NUTS; a jump-form `PiecewiseLinear` with `flat_groups` constraints *is* the piecewise-constant model, so constant is nested in linear.
+  `BirthDeathModel` pairs two `RateModel` families (`PiecewiseConstantModel`, `PiecewiseLinearModel`; a new family only needs `params`, `build`, `constant_values`, `values_from_rate`); every parameter has a transform (log for rates) that maps it to the unconstrained scale.
+  `Constraints` (fixed values, equality groups, **by parameter name**) compile to index maps shared by the MLE and NUTS; a jump-form `PiecewiseLinearModel` with `flat_groups` constraints *is* the piecewise-constant model, so constant is nested in linear.
   `FreeKnots` (number, optionally ranges) turns the shared epoch boundaries into `tau<k>` parameters on an `interval` transform; `fit_knots` profiles them (the piecewise-constant likelihood jumps in a knot, so Newton alone is unreliable).
   Defaults are one search per model type: `fit` uses one start, `fit_knots` uses `"brent"` for one free knot and `"grid-newton"` for several; `thorough=True` uses 5 starts in `fit`, and in `fit_knots` runs brent, de-profile and grid-newton in parallel processes and keeps the best (`KnotFitResult.method`, `method_results`).
   The method comparison (sim1000, NTVMR benchmarks and their HPC scripts) is preserved at the `knot-benchmarks` tag.

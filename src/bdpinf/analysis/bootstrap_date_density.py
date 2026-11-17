@@ -59,6 +59,7 @@ Storage format
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -115,47 +116,29 @@ def _build_weight_matrix(
 
 def _resample_batch(
     k: NDArray[np.float64],
-    A: NDArray[np.float64],
-    D0_sq: NDArray[np.float64],
-    D1_sq: NDArray[np.float64],
-    D2_sq: NDArray[np.float64],
-    x_grid: NDArray[np.float64],
-    year_grid: NDArray[np.float64],
-    quantiles: NDArray[np.float64],
-    mid_age: NDArray[np.float64],
-    within_var: NDArray[np.float64],
-    c: NDArray[np.float64],
+    setup: _KdeSetup,
+    *,
     min_year: float,
     max_year: float,
     grid_chunk: int,
 ) -> NDArray[np.float64]:
     """Apply the vectorized KDE-quantile pipeline to a batch of multiplicity arrays.
 
-    All precomputed quantities (``A``, ``D*_sq``, ``x_grid``, etc.) are
+    The precomputed quantities (``A``, ``D*_sq``, ``x_grid``, etc.) are
     produced once per subgroup by :func:`bootstrap_quantile_resample_dates`
-    and reused across batches.
+    as a :class:`_KdeSetup` and reused across batches.
 
     Parameters
     ----------
     k : NDArray[np.float64], shape ``[B, M]``
         Per-item multiplicities for ``B`` bootstraps.
-    A : NDArray[np.float64], shape ``[M, Y]``
-        Weight matrix; see :func:`_build_weight_matrix`.
-    D0_sq, D1_sq, D2_sq : NDArray[np.float64], shape ``[n_grid, Y]``
-        Squared age-space distances for the main and two reflection kernel
-        terms; all precomputed from the fixed grid and year-age mapping.
-    x_grid : NDArray[np.float64], shape ``[n_grid]``
-        Age grid ``[0, max_age]`` (uniform).
-    year_grid : NDArray[np.float64], shape ``[n_grid]``
-        Corresponding year grid ``[y_min, current_year]`` (uniform).
-    quantiles : NDArray[np.float64], shape ``[M]``
-        Hazen plotting positions ``(k - 0.5) / M`` for ``k = 1..M``.
-    mid_age : NDArray[np.float64], shape ``[M]``
-        ``current_year - mid_value`` for each item.
-    within_var : NDArray[np.float64], shape ``[M]``
-        ``(n_m^2 - 1) / 12`` — within-item age variance.
-    c : NDArray[np.float64], shape ``[M]``
-        ``1 / n_m`` for each item.
+    setup : _KdeSetup
+        Per-item and grid quantities shared by every bootstrap: the weight
+        matrix ``A`` (``[M, Y]``), the squared age-space distances ``D0_sq``,
+        ``D1_sq`` and ``D2_sq`` for the main and two reflection kernel terms
+        (``[n_grid, Y]``), the age and year grids, the Hazen plotting
+        positions ``quantiles``, ``mid_age``, ``within_var`` and ``c``
+        (``[M]``); see the field comments on :class:`_KdeSetup`.
     min_year, max_year : float
         Clamp limits for the resampled years.
     grid_chunk : int
@@ -167,6 +150,9 @@ def _resample_batch(
     NDArray[np.float64], shape ``[B, M]``
         Resampled years (sorted ascending, unrounded float64).
     """
+    A, D0_sq, D1_sq, D2_sq = setup.A, setup.D0_sq, setup.D1_sq, setup.D2_sq
+    x_grid, year_grid, quantiles = setup.x_grid, setup.year_grid, setup.quantiles
+    mid_age, within_var, c = setup.mid_age, setup.within_var, setup.c
     B, _M = k.shape
     n_grid = len(x_grid)
 
@@ -262,6 +248,104 @@ def _resample_batch(
     return np.clip(resampled, min_year, max_year)  # [B, M]
 
 
+@dataclass(frozen=True)
+class _KdeSetup:
+    """Per-item and grid quantities that do not change between bootstraps."""
+
+    A: NDArray[np.float64]  # [M, Y] weight matrix
+    D0_sq: NDArray[np.float64]  # [n_grid, Y] squared distances, main kernel
+    D1_sq: NDArray[np.float64]  # reflection at age = 0
+    D2_sq: NDArray[np.float64]  # reflection at age = max_age
+    x_grid: NDArray[np.float64]  # [n_grid] age space
+    year_grid: NDArray[np.float64]  # [n_grid] year space
+    quantiles: NDArray[np.float64]  # [M] Hazen plotting positions
+    mid_age: NDArray[np.float64]  # [M] age of each range midpoint
+    within_var: NDArray[np.float64]  # [M] intra-range age variance
+    c: NDArray[np.float64]  # [M] 1 / range length
+
+
+def _validated_inputs(
+    early: NDArray[np.int_] | list[int],
+    late: NDArray[np.int_] | list[int],
+    item_ids: NDArray[np.int_] | list[int],
+    mid_value: NDArray[np.floating[Any]] | list[float],
+) -> tuple[
+    NDArray[np.int64], NDArray[np.int64], NDArray[np.int64], NDArray[np.float64]
+]:
+    """Convert the inputs to arrays (``late`` clamped to ``early``) and validate."""
+    early_arr = np.asarray(early, dtype=np.int64)
+    late_arr = np.asarray(late, dtype=np.int64)
+    # Clamp late ≥ early
+    late_arr = np.maximum(late_arr, early_arr)
+    item_ids_arr = np.asarray(item_ids, dtype=np.int64)
+    if item_ids_arr.size and item_ids_arr.min() < 0:
+        msg = "item_ids must be non-negative."
+        raise ValueError(msg)
+    mid_value_arr = np.asarray(mid_value, dtype=np.float64)
+
+    M = len(early_arr)
+    if M == 0:
+        msg = "Cannot bootstrap an empty dataset."
+        raise ValueError(msg)
+    if not (len(late_arr) == len(item_ids_arr) == len(mid_value_arr) == M):
+        msg = "early, late, item_ids, mid_value must all have the same length."
+        raise ValueError(msg)
+    return early_arr, late_arr, item_ids_arr, mid_value_arr
+
+
+def _kde_setup(
+    early_arr: NDArray[np.int64],
+    late_arr: NDArray[np.int64],
+    current_year: int,
+    n_grid: int,
+) -> _KdeSetup:
+    """Precompute the per-item quantities and the age/year grids."""
+    M = len(early_arr)
+    y_min = int(early_arr.min())
+    y_max = int(late_arr.max())
+
+    # Per-item precomputed quantities (invariant to bootstraps)
+    n_m = (late_arr - early_arr + 1).astype(np.float64)  # [M]
+    c = 1.0 / n_m  # [M]  = 1/n_m
+    mid_value_mid = (early_arr + late_arr) / 2.0  # [M]
+    mid_age = float(current_year) - mid_value_mid  # [M]  age of midpoint
+    within_var = (n_m**2 - 1.0) / 12.0  # [M]  intra-range age variance
+
+    # Weight matrix: A[M, Y], A[m, y] = c_m if year (y_min+y) ∈ [e_m, l_m]
+    A = _build_weight_matrix(early_arr, late_arr, y_min, y_max)  # [M, Y]
+
+    # Fixed age/year grids (use global min/max so all bootstraps share
+    # the same grid; bootstraps missing the earliest item use a
+    # slightly wider grid, harmless since density → 0 there).
+    max_age = float(current_year - y_min)
+    x_grid = np.linspace(0.0, max_age, n_grid)  # [n_grid] age space
+    year_grid = (float(current_year) - x_grid[::-1]).copy()  # [n_grid] year space
+
+    # Squared age-space distances for three reflection kernel terms
+    Y = y_max - y_min + 1
+    y_ages = float(current_year) - (y_min + np.arange(Y, dtype=np.float64))
+    xg = x_grid[:, None]  # [n_grid, 1]
+    ag = y_ages[None, :]  # [1, Y]
+    D0_sq = (xg - ag) ** 2  # main kernel
+    D1_sq = (xg + ag) ** 2  # reflection at age = 0
+    D2_sq = (xg - 2.0 * max_age + ag) ** 2  # reflection at age = max_age
+
+    # Hazen plotting positions (same for every bootstrap since M is fixed)
+    quantiles = (np.arange(1, M + 1, dtype=np.float64) - 0.5) / float(M)
+    return _KdeSetup(
+        A=A,
+        D0_sq=D0_sq,
+        D1_sq=D1_sq,
+        D2_sq=D2_sq,
+        x_grid=x_grid,
+        year_grid=year_grid,
+        quantiles=quantiles,
+        mid_age=mid_age,
+        within_var=within_var,
+        c=c,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -346,26 +430,10 @@ def bootstrap_quantile_resample_dates(
         If the input arrays are empty, have mismatched lengths, or
         ``item_ids`` contains a negative value.
     """
-    early_arr = np.asarray(early, dtype=np.int64)
-    late_arr = np.asarray(late, dtype=np.int64)
-    # Clamp late ≥ early
-    late_arr = np.maximum(late_arr, early_arr)
-    item_ids_arr = np.asarray(item_ids, dtype=np.int64)
-    if item_ids_arr.size and item_ids_arr.min() < 0:
-        msg = "item_ids must be non-negative."
-        raise ValueError(msg)
-    mid_value_arr = np.asarray(mid_value, dtype=np.float64)
-
+    early_arr, late_arr, item_ids_arr, mid_value_arr = _validated_inputs(
+        early, late, item_ids, mid_value
+    )
     M = len(early_arr)
-    if M == 0:
-        msg = "Cannot bootstrap an empty dataset."
-        raise ValueError(msg)
-    if not (len(late_arr) == len(item_ids_arr) == len(mid_value_arr) == M):
-        msg = "early, late, item_ids, mid_value must all have the same length."
-        raise ValueError(msg)
-
-    y_min = int(early_arr.min())
-    y_max = int(late_arr.max())
 
     # Output id dtype: widened from the actual id range, never narrower than
     # uint16, so ids past 65535 are not silently wrapped.
@@ -373,37 +441,7 @@ def bootstrap_quantile_resample_dates(
         np.min_scalar_type(int(item_ids_arr.max())), np.uint16
     )
 
-    # ------------------------------------------------------------------
-    # Per-item precomputed quantities (invariant to bootstraps)
-    # ------------------------------------------------------------------
-    n_m = (late_arr - early_arr + 1).astype(np.float64)  # [M]
-    c = 1.0 / n_m  # [M]  = 1/n_m
-    mid_value_mid = (early_arr + late_arr) / 2.0  # [M]
-    mid_age = float(current_year) - mid_value_mid  # [M]  age of midpoint
-    within_var = (n_m**2 - 1.0) / 12.0  # [M]  intra-range age variance
-
-    # Weight matrix: A[M, Y], A[m, y] = c_m if year (y_min+y) ∈ [e_m, l_m]
-    A = _build_weight_matrix(early_arr, late_arr, y_min, y_max)  # [M, Y]
-
-    # Fixed age/year grids (use global min/max so all bootstraps share
-    # the same grid; bootstraps missing the earliest item use a
-    # slightly wider grid, harmless since density → 0 there).
-    max_age = float(current_year - y_min)
-    x_grid = np.linspace(0.0, max_age, n_grid)  # [n_grid] age space
-    year_grid = (float(current_year) - x_grid[::-1]).copy()  # [n_grid] year space
-
-    # Squared age-space distances for three reflection kernel terms
-    Y = y_max - y_min + 1
-    y_ages = float(current_year) - (y_min + np.arange(Y, dtype=np.float64))
-    xg = x_grid[:, None]  # [n_grid, 1]
-    ag = y_ages[None, :]  # [1, Y]
-    D0_sq = (xg - ag) ** 2  # main kernel
-    D1_sq = (xg + ag) ** 2  # reflection at age = 0
-    D2_sq = (xg - 2.0 * max_age + ag) ** 2  # reflection at age = max_age
-
-    # Hazen plotting positions (same for every bootstrap since M is fixed)
-    quantiles = (np.arange(1, M + 1, dtype=np.float64) - 0.5) / float(M)
-
+    setup = _kde_setup(early_arr, late_arr, current_year, n_grid)
     min_year_f = float(early_arr.min())
     max_year_f = float(late_arr.max())
 
@@ -430,19 +468,10 @@ def bootstrap_quantile_resample_dates(
         # Vectorised KDE + quantile pipeline
         resampled_f = _resample_batch(
             k,
-            A,
-            D0_sq,
-            D1_sq,
-            D2_sq,
-            x_grid,
-            year_grid,
-            quantiles,
-            mid_age,
-            within_var,
-            c,
-            min_year_f,
-            max_year_f,
-            grid_chunk,
+            setup,
+            min_year=min_year_f,
+            max_year=max_year_f,
+            grid_chunk=grid_chunk,
         )  # [B, M] float64, already sorted ascending
 
         # Sort bootstrapped items by mid_value; resampled_f is already

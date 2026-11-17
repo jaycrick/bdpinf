@@ -19,6 +19,16 @@ from bdpinf.inference import (
 
 logger = logging.getLogger(__name__)
 
+# Failures a replicate fit is allowed to end in: validation errors, non-finite
+# arithmetic, singular matrices, and runtime errors from the optimiser or JAX.
+# Anything else (TypeError, AttributeError, ...) is a programming error and propagates.
+_EXPECTED_FIT_ERRORS = (
+    ValueError,
+    RuntimeError,
+    FloatingPointError,
+    np.linalg.LinAlgError,
+)
+
 
 @dataclass(frozen=True)
 class FitModelConfig:
@@ -109,7 +119,7 @@ def fit_single_model(
             condition_on_survival=config.condition_on_survival,
             compute_covariance=compute_covariance,
         )
-    except Exception as exc:
+    except _EXPECTED_FIT_ERRORS as exc:
         logger.warning("fit raised %s: %s", type(exc).__name__, exc)
         return None
 

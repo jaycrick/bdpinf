@@ -51,7 +51,8 @@ from typing import NamedTuple, Protocol
 import jax
 import jax.numpy as jnp
 
-from bdpinf.models.validation import normalize_and_validate_inputs
+from bdpinf.models.rate_functions import epoch_index
+from bdpinf.models.validation import is_concrete, normalize_and_validate_inputs
 
 __all__ = [
     "LOG_ZERO",
@@ -140,7 +141,7 @@ _COLUMNS = (
 )
 
 
-class _Row(NamedTuple):
+class EpochRow(NamedTuple):
     """Per-age view of the epoch table (arrays shaped like the ages)."""
 
     birth: jax.Array
@@ -163,8 +164,8 @@ class _Row(NamedTuple):
 # ---------------------------------------------------------------------------
 
 
-def _log_or_floor(x: jax.Array) -> jax.Array:
-    """``log x`` with ``LOG_ZERO`` at ``x <= 0`` (gradient-safe)."""
+def log_or_floor(x: jax.Array) -> jax.Array:
+    """``log x`` with the finite floor ``LOG_ZERO`` at ``x <= 0`` (gradient-safe)."""
     positive = x > 0
     return jnp.where(positive, jnp.log(jnp.where(positive, x, 1.0)), LOG_ZERO)
 
@@ -180,8 +181,11 @@ def restore_neg_inf(x: jax.Array) -> jax.Array:
     return jnp.where(x < 0.5 * LOG_ZERO, -jnp.inf, x)
 
 
-def _log_kappa_minus(growth: jax.Array, duration: jax.Array) -> jax.Array:
+def log_kappa_minus(growth: jax.Array, duration: jax.Array) -> jax.Array:
     r"""Return $\ln\kappa^-(g, d)$ with $\kappa^- = (1-e^{-gd})/g$.
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
 
     Writing $\kappa^- = d\,(1-e^{-x})/x$ with $x = gd$:
     for $|x|$ below ``_SERIES_THRESHOLD`` (including exactly critical
@@ -201,10 +205,6 @@ def _log_kappa_minus(growth: jax.Array, duration: jax.Array) -> jax.Array:
     return jnp.where(positive, log_d + jnp.log(phi) + boost, LOG_ZERO)
 
 
-def _epoch_index(times: jax.Array, x: jax.Array) -> jax.Array:
-    return jnp.clip(jnp.searchsorted(times, x, side="left"), 0, times.shape[0] - 1)
-
-
 def _shift_right(x: jax.Array, fill: float) -> jax.Array:
     return jnp.concatenate([jnp.full((1,), fill, dtype=x.dtype), x[:-1]])
 
@@ -218,23 +218,15 @@ def _shift_left(x: jax.Array, fill: float) -> jax.Array:
 # ---------------------------------------------------------------------------
 
 
-def _is_concrete(*arrays: object) -> bool:
-    """Return whether host-side validation of ``arrays`` is possible.
-
-    False if any input is a tracer (``grad``/``vmap``) or if we are inside a
-    ``jit``/``while_loop`` trace, where even closed-over constants turn into
-    tracers as soon as they meet a ``jnp`` op.
-    """
-    traced = isinstance(jnp.zeros(()), jax.core.Tracer)
-    return not traced and not any(isinstance(a, jax.core.Tracer) for a in arrays)
-
-
 def nested_terms(
     birth_rates: jax.Array | float,
     death_rates: jax.Array | float,
     times: jax.Array | float,
 ) -> NestedTerms:
     r"""Precompute the epoch-wise quantities behind $\mathcal W$.
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
 
     Concrete inputs are validated and coerced to 1-D float64 arrays;
     traced inputs (inside ``jax.jit``/``grad``) are assumed already valid.
@@ -253,7 +245,7 @@ def nested_terms(
         are not strictly increasing and positive.
 
     """
-    if _is_concrete(birth_rates, death_rates, times):
+    if is_concrete(birth_rates, death_rates, times):
         birth_rates, death_rates, times = normalize_and_validate_inputs(
             birth_rates, death_rates, times
         )
@@ -264,9 +256,9 @@ def nested_terms(
     gamma_end = jnp.cumsum(x)
     gamma_before = gamma_end - x
     gamma_total = gamma_end[-1]
-    log_kappa = _log_kappa_minus(growth, durations)
-    log_mu = _log_or_floor(death_rates)
-    log_lam = _log_or_floor(birth_rates)
+    log_kappa = log_kappa_minus(growth, durations)
+    log_mu = log_or_floor(death_rates)
+    log_lam = log_or_floor(birth_rates)
 
     i_terms = log_mu - gamma_before + log_kappa
     l_terms = log_lam - gamma_before + log_kappa
@@ -327,14 +319,14 @@ def nested_terms(
     )
 
 
-def _row(terms: NestedTerms, s: jax.Array) -> _Row:
+def epoch_row(terms: NestedTerms, s: jax.Array) -> EpochRow:
     """Epoch quantities for each time ``s`` (no gather at all for one epoch)."""
     if terms.table.shape[0] == 1:
         row = terms.table[0]
-        return _Row(*(row[i] for i in range(len(_COLUMNS))))
-    k = _epoch_index(terms.times, s)
+        return EpochRow(*(row[i] for i in range(len(_COLUMNS))))
+    k = epoch_index(terms.times, s)
     rows = jnp.take(terms.table, k, axis=0)
-    return _Row(*(rows[..., i] for i in range(len(_COLUMNS))))
+    return EpochRow(*(rows[..., i] for i in range(len(_COLUMNS))))
 
 
 # ---------------------------------------------------------------------------
@@ -342,27 +334,45 @@ def _row(terms: NestedTerms, s: jax.Array) -> _Row:
 # ---------------------------------------------------------------------------
 
 
-def _log_w_from_row(row: _Row, u: jax.Array, *, single_epoch: bool) -> jax.Array:
-    """``log W`` at ``start + u`` inside the epoch described by ``row``."""
-    partial = row.log_death - row.gamma_before + _log_kappa_minus(row.growth, u)
+def _log_w_from_row(row: EpochRow, u: jax.Array, *, single_epoch: bool) -> jax.Array:
+    """``log W`` at ``start + u`` inside the epoch described by ``row``.
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
+
+    """
+    partial = row.log_death - row.gamma_before + log_kappa_minus(row.growth, u)
     log_i_b = partial if single_epoch else jnp.logaddexp(row.log_i_before, partial)
     return row.gamma_before + row.growth * u + jnp.logaddexp(0.0, log_i_b)
 
 
 def log_nested_w(terms: NestedTerms, b: jax.Array) -> jax.Array:
-    r"""Return $\ln\mathcal W(b)$ at times ``b`` (clipped to ``[0, T]``)."""
+    r"""Return $\ln\mathcal W(b)$ at times ``b`` (clipped to ``[0, T]``).
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
+
+    """
     b = jnp.clip(jnp.asarray(b, dtype=jnp.float64), 0.0, terms.times[-1])
-    row = _row(terms, b)
+    row = epoch_row(terms, b)
     return _log_w_from_row(row, b - row.start, single_epoch=terms.table.shape[0] == 1)
 
 
 def log_nested_w_total(terms: Totals) -> jax.Array:
-    r"""Return $\ln\mathcal W(T)$, i.e. $-\ln\pi(T)$."""
+    r"""Return $\ln\mathcal W(T)$, i.e. $-\ln\pi(T)$.
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
+
+    """
     return terms.gamma_total + jnp.logaddexp(0.0, terms.log_i_total)
 
 
 def log_extinction_odds(terms: Totals) -> jax.Array:
     r"""Return $\ln I(T)$ with $I(T) = \int_0^T \mu e^{-\Gamma(0,t]}dt$.
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
 
     $I(T) = P_0(T)/(1 - P_0(T))$ is the odds of extinction by $T$,
     so $\ln I = \operatorname{logit} P_0$.
@@ -373,6 +383,9 @@ def log_extinction_odds(terms: Totals) -> jax.Array:
 
 def log_extinction_and_survival_pr(terms: Totals) -> tuple[jax.Array, jax.Array]:
     r"""Return $(\ln P_0(T), \ln(1 - P_0(T)))$ from the extinction odds.
+
+    Formula: see the section "Population term"
+    of ``docs/likelihoods.qmd``.
 
     Evaluated as $\ln I - \operatorname{softplus}(\ln I)$ and
     $-\operatorname{softplus}(\ln I)$, which stay accurate when $I$ is tiny
@@ -386,6 +399,9 @@ def log_extinction_and_survival_pr(terms: Totals) -> tuple[jax.Array, jax.Array]
 def log_nested_w_minus_one(terms: Totals) -> jax.Array:
     r"""Return $\ln(\mathcal W(T) - 1) = \Gamma(0,T] + \ln L(T)$.
 
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
+
     ``LOG_ZERO`` when there are no births.
     """
     return terms.gamma_total + terms.log_l_total
@@ -397,67 +413,78 @@ def log_nested_w_minus_one(terms: Totals) -> jax.Array:
 
 
 def spine_log_atom(terms: Totals) -> jax.Array:
-    r"""Log of $\Pr(A^* = T) = \mathcal W(T)\,e^{-\Lambda(0,T]}$."""
+    r"""Log of $\Pr(A^* = T) = \mathcal W(T)\,e^{-\Lambda(0,T]}$.
+
+    Formula: see the section "General rates and the nested integral $\mathcal W$"
+    of ``docs/likelihoods.qmd``.
+
+    """
     return log_nested_w_total(terms) - terms.lam_total
 
 
-def _densities(
-    terms: NestedTerms,
-    ages: jax.Array,
-    *,
-    want_non_spine: bool,
-    want_spine: bool,
-    atom_at_boundary: bool,
-) -> tuple[jax.Array | None, jax.Array | None]:
-    """Shared single pass behind the public density functions."""
-    if _is_concrete(ages, terms.times):
+class _Pass(NamedTuple):
+    """Per-age quantities shared by the non-spine and spine densities."""
+
+    ages: jax.Array
+    end: jax.Array
+    row: EpochRow
+    single: bool
+    u: jax.Array  # time since the start of the epoch containing T - age
+    rem: jax.Array  # time from T - age to the end of that epoch
+
+
+def _prepare(terms: NestedTerms, ages: jax.Array) -> _Pass:
+    """Validate concrete ``ages`` and gather the epoch row of each ``T - age``."""
+    if is_concrete(ages, terms.times):
         normalize_and_validate_inputs(times=terms.times, ages=ages)  # checks only
     ages = jnp.asarray(ages, dtype=jnp.float64)
     end = terms.times[-1]
     s = jnp.clip(end - ages, 0.0, end)
-    row = _row(terms, s)
-    single = terms.table.shape[0] == 1
-    u = s - row.start
-    rem = row.time - s
+    row = epoch_row(terms, s)
+    return _Pass(ages, end, row, terms.table.shape[0] == 1, s - row.start, row.time - s)
 
-    non_spine = None
-    if want_non_spine:
-        log_norm = log_nested_w_minus_one(terms)
-        value = (
-            row.log_birth
-            + _log_w_from_row(row, u, single_epoch=single)
-            - (row.death * rem + row.mu_after)
-            - log_norm
-        )
-        non_spine = jnp.where(log_norm < 0.5 * LOG_ZERO, -jnp.inf, value)
 
-    spine = None
-    if want_spine:
-        partial = (
-            row.log_death
-            + (terms.gamma_total - row.gamma_end)
-            + row.growth * rem
-            + _log_kappa_minus(row.growth, rem)
-        )
-        log_l_mu = restore_neg_inf(
-            partial if single else jnp.logaddexp(partial, row.log_spine_after)
-        )
-        continuous = row.log_birth - (row.birth * rem + row.lam_after) + log_l_mu
-        spine = (
-            jnp.where(ages >= end, spine_log_atom(terms), continuous)
-            if atom_at_boundary
-            else continuous
-        )
-    return non_spine, spine
+# Formula: see the section "General rates and the nested integral $\mathcal W$"
+# of ``docs/likelihoods.qmd``.
+def _non_spine(terms: NestedTerms, p: _Pass) -> jax.Array:
+    row = p.row
+    log_norm = log_nested_w_minus_one(terms)
+    value = (
+        row.log_birth
+        + _log_w_from_row(row, p.u, single_epoch=p.single)
+        - (row.death * p.rem + row.mu_after)
+        - log_norm
+    )
+    return jnp.where(log_norm < 0.5 * LOG_ZERO, -jnp.inf, value)
+
+
+# Formula: see the section "General rates and the nested integral $\mathcal W$"
+# of ``docs/likelihoods.qmd``.
+def _spine(terms: NestedTerms, p: _Pass, *, atom_at_boundary: bool) -> jax.Array:
+    row, rem = p.row, p.rem
+    partial = (
+        row.log_death
+        + (terms.gamma_total - row.gamma_end)
+        + row.growth * rem
+        + log_kappa_minus(row.growth, rem)
+    )
+    log_l_mu = restore_neg_inf(
+        partial if p.single else jnp.logaddexp(partial, row.log_spine_after)
+    )
+    continuous = row.log_birth - (row.birth * rem + row.lam_after) + log_l_mu
+    if atom_at_boundary:
+        return jnp.where(p.ages >= p.end, spine_log_atom(terms), continuous)
+    return continuous
 
 
 def non_spine_log_density(terms: NestedTerms, ages: jax.Array) -> jax.Array:
-    r"""Log density of the non-spine age $A$ at ``ages`` (no atom)."""
-    out, _ = _densities(
-        terms, ages, want_non_spine=True, want_spine=False, atom_at_boundary=False
-    )
-    assert out is not None
-    return out
+    r"""Log density of the non-spine age $A$ at ``ages`` (no atom).
+
+    Formula: see the section "General rates and the nested integral $\mathcal W$"
+    of ``docs/likelihoods.qmd``.
+
+    """
+    return _non_spine(terms, _prepare(terms, ages))
 
 
 def spine_log_density(
@@ -465,31 +492,23 @@ def spine_log_density(
 ) -> jax.Array:
     r"""Log density of $A^*$.
 
+    Formula: see the section "General rates and the nested integral $\mathcal W$"
+    of ``docs/likelihoods.qmd``.
+
     With ``atom_at_boundary`` (default) ages ``>= T`` return the log atom
     $\Pr(A^*=T)$; otherwise only the continuous density is evaluated.
     """
-    _, out = _densities(
-        terms,
-        ages,
-        want_non_spine=False,
-        want_spine=True,
-        atom_at_boundary=atom_at_boundary,
-    )
-    assert out is not None
-    return out
+    return _spine(terms, _prepare(terms, ages), atom_at_boundary=atom_at_boundary)
 
 
 def age_log_densities(
     terms: NestedTerms, ages: jax.Array, *, atom_at_boundary: bool = True
 ) -> tuple[jax.Array, jax.Array]:
-    """Return ``(non_spine, spine)`` log densities sharing one pass."""
-    non_spine, spine = _densities(
-        terms,
-        ages,
-        want_non_spine=True,
-        want_spine=True,
-        atom_at_boundary=atom_at_boundary,
-    )
-    assert non_spine is not None
-    assert spine is not None
-    return non_spine, spine
+    r"""Return ``(non_spine, spine)`` log densities sharing one pass.
+
+    Formula: see the section "General rates and the nested integral $\mathcal W$"
+    of ``docs/likelihoods.qmd``.
+
+    """
+    p = _prepare(terms, ages)
+    return _non_spine(terms, p), _spine(terms, p, atom_at_boundary=atom_at_boundary)

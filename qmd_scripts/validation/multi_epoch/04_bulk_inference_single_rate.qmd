@@ -176,7 +176,7 @@ scatter_data = {
 
 if plotting_row_count > 0 and len(scatter_data) == len(parameter_specs):
     _col_names = ["lambda_1", "mu_1", "lambda_2", "mu_2"]
-    scatter_df = pd.DataFrame(dict(zip(_col_names, [v for v in scatter_data.values()])))
+    scatter_df = pd.DataFrame(dict(zip(_col_names, scatter_data.values())))
     fig_pairs = (
         alt.Chart(scatter_df)
         .mark_point(size=4, opacity=0.1)
@@ -215,10 +215,7 @@ compile_log = project_dir / "_output" / "compile_times.json"
 compile_log.parent.mkdir(parents=True, exist_ok=True)
 
 duration_seconds = time.perf_counter() - __compile_start
-if compile_log.exists():
-    log_data = json.loads(compile_log.read_text())
-else:
-    log_data = {}
+log_data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
 
 log_data[doc_name] = {
     "duration_seconds": duration_seconds,

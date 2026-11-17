@@ -8,6 +8,7 @@ import pytest
 
 from bdpinf.analysis.bootstrap_date_density import (
     _build_weight_matrix,  # pyright: ignore[reportPrivateUsage]
+    _KdeSetup,  # pyright: ignore[reportPrivateUsage]
     _resample_batch,  # pyright: ignore[reportPrivateUsage]
     bootstrap_epoch_counts,
     bootstrap_quantile_resample_dates,
@@ -71,6 +72,29 @@ def _make_precomputed(
     }
 
 
+def _resample_with(k: np.ndarray, pre: dict) -> np.ndarray:
+    """Call _resample_batch with the precomputed quantities in ``pre``."""
+    setup = _KdeSetup(
+        A=pre["A"],
+        D0_sq=pre["D0_sq"],
+        D1_sq=pre["D1_sq"],
+        D2_sq=pre["D2_sq"],
+        x_grid=pre["x_grid"],
+        year_grid=pre["year_grid"],
+        quantiles=pre["quantiles"],
+        mid_age=pre["mid_age"],
+        within_var=pre["within_var"],
+        c=pre["c"],
+    )
+    return _resample_batch(
+        k,
+        setup,
+        min_year=pre["min_year"],
+        max_year=pre["max_year"],
+        grid_chunk=30,
+    )
+
+
 class TestBuildWeightMatrix:
     """Test _build_weight_matrix."""
 
@@ -99,7 +123,7 @@ class TestBuildWeightMatrix:
         assert A.shape == (1, 1)
         np.testing.assert_allclose(A[0, 0], 1.0)
 
-    def test_k_at_A_gives_per_year_weights(self) -> None:
+    def test_k_at_a_gives_per_year_weights(self) -> None:
         # k = [1, 1, 1, 1, 1] → W = k @ A / M should equal c_m for each year in range
         A = _build_weight_matrix(
             _EARLY, _LATE_CLAMPED, int(_EARLY.min()), int(_LATE_CLAMPED.max())
@@ -120,22 +144,7 @@ class TestResampleBatch:
         pre = _make_precomputed(_EARLY, _LATE_CLAMPED)
         k = np.ones((1, _M), dtype=np.float64)  # [1, M] identity multiplicity
 
-        resampled = _resample_batch(
-            k,
-            pre["A"],
-            pre["D0_sq"],
-            pre["D1_sq"],
-            pre["D2_sq"],
-            pre["x_grid"],
-            pre["year_grid"],
-            pre["quantiles"],
-            pre["mid_age"],
-            pre["within_var"],
-            pre["c"],
-            pre["min_year"],
-            pre["max_year"],
-            grid_chunk=30,
-        )  # [1, M]
+        resampled = _resample_with(k, pre)  # [1, M]
 
         ref = quantile_resample_dates(
             _EARLY, _LATE_CLAMPED, current_year=_CURRENT_YEAR, n_samples=_M
@@ -157,22 +166,7 @@ class TestResampleBatch:
 
         pre = _make_precomputed(early, late)
         k = np.ones((1, n), dtype=np.float64)
-        resampled = _resample_batch(
-            k,
-            pre["A"],
-            pre["D0_sq"],
-            pre["D1_sq"],
-            pre["D2_sq"],
-            pre["x_grid"],
-            pre["year_grid"],
-            pre["quantiles"],
-            pre["mid_age"],
-            pre["within_var"],
-            pre["c"],
-            pre["min_year"],
-            pre["max_year"],
-            grid_chunk=30,
-        )
+        resampled = _resample_with(k, pre)
 
         computed = np.round(resampled[0]).astype(np.int64)
         np.testing.assert_array_equal(computed, ref)
@@ -183,44 +177,14 @@ class TestResampleBatch:
         # Give different multiplicities to the 3 rows
         k[1, 0] += 2.0
         k[2, 2] += 1.0
-        resampled = _resample_batch(
-            k,
-            pre["A"],
-            pre["D0_sq"],
-            pre["D1_sq"],
-            pre["D2_sq"],
-            pre["x_grid"],
-            pre["year_grid"],
-            pre["quantiles"],
-            pre["mid_age"],
-            pre["within_var"],
-            pre["c"],
-            pre["min_year"],
-            pre["max_year"],
-            grid_chunk=30,
-        )
+        resampled = _resample_with(k, pre)
         assert np.all(resampled >= pre["min_year"])
         assert np.all(resampled <= pre["max_year"])
 
     def test_output_is_sorted_ascending(self) -> None:
         pre = _make_precomputed(_EARLY, _LATE_CLAMPED)
         k = np.ones((5, _M), dtype=np.float64)
-        resampled = _resample_batch(
-            k,
-            pre["A"],
-            pre["D0_sq"],
-            pre["D1_sq"],
-            pre["D2_sq"],
-            pre["x_grid"],
-            pre["year_grid"],
-            pre["quantiles"],
-            pre["mid_age"],
-            pre["within_var"],
-            pre["c"],
-            pre["min_year"],
-            pre["max_year"],
-            grid_chunk=30,
-        )
+        resampled = _resample_with(k, pre)
         # Each row (bootstrap) must be sorted ascending
         for b in range(5):
             assert np.all(np.diff(resampled[b]) >= 0), f"Row {b} is not sorted"
@@ -615,3 +579,62 @@ class TestBootstrapRecovery:
             f"Bootstrap mean resampled years deviate too much from deterministic: "
             f"max |diff| = {max_abs_diff:.1f} years"
         )
+
+
+class TestBootstrapQuantileResamplePinned:
+    """Pin the output of the bootstrap pipeline (recorded before refactoring it)."""
+
+    def test_seeded_output_is_unchanged(self) -> None:
+        ids, years = bootstrap_quantile_resample_dates(
+            _EARLY,
+            _LATE,
+            _ITEM_IDS,
+            _MID,
+            n_bootstrap=7,
+            batch_size=3,
+            grid_chunk=7,
+            n_grid=60,
+            seed=_SEED,
+        )
+        assert ids.dtype == np.uint16
+        assert years.dtype == np.int16
+        assert ids.tolist() == [
+            [10001, 10003, 10003, 10004, 10004],
+            [10001, 10001, 10002, 10004, 10005],
+            [10003, 10004, 10004, 10004, 10005],
+            [10001, 10003, 10003, 10004, 10005],
+            [10001, 10002, 10003, 10004, 10005],
+            [10003, 10003, 10003, 10004, 10005],
+            [10001, 10002, 10003, 10003, 10005],
+        ]
+        assert years.tolist() == [
+            [268, 592, 704, 896, 1105],
+            [238, 328, 506, 969, 1231],
+            [650, 863, 994, 1100, 1229],
+            [274, 585, 712, 974, 1226],
+            [272, 488, 664, 974, 1226],
+            [579, 650, 720, 981, 1219],
+            [270, 483, 608, 716, 1200],
+        ]
+
+    def test_wide_ids_widen_the_dtype(self) -> None:
+        ids, years = bootstrap_quantile_resample_dates(
+            _EARLY, _LATE, _ITEM_IDS + 70000, _MID, n_bootstrap=3, n_grid=60, seed=1
+        )
+        assert ids.dtype == np.uint32
+        assert ids.tolist() == [
+            [80001, 80003, 80003, 80004, 80005],
+            [80001, 80002, 80002, 80005, 80005],
+            [80002, 80002, 80003, 80005, 80005],
+        ]
+        assert years.tolist() == [
+            [274, 585, 712, 974, 1226],
+            [271, 429, 581, 1089, 1311],
+            [428, 550, 672, 1094, 1306],
+        ]
+
+    def test_negative_item_id_raises(self) -> None:
+        with pytest.raises(ValueError, match=r"item_ids must be non-negative\."):
+            bootstrap_quantile_resample_dates(
+                _EARLY, _LATE, _ITEM_IDS - 20000, _MID, n_bootstrap=3
+            )

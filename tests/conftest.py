@@ -12,6 +12,7 @@ from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
+import pandas as pd
 import pytest
 
 from bdpinf.inference import BirthDeathModel, Constraints, FitResult
@@ -141,3 +142,21 @@ def assert_optimization_successful(fit_results: dict[str, Any]) -> None:
     assert fit_results["death_rate"] is not None, "Death rate is None"
     assert fit_results["log_likelihood"] is not None, "Log likelihood is None"
     assert fit_results["log_likelihood"] is not None, "Log likelihood is None"
+
+
+@pytest.fixture
+def simple_records() -> pd.DataFrame:
+    """Return a two-generation genealogy (root and one child, both survived).
+
+    Observation time is 500.0; a fresh frame is built per test, so tests may mutate it.
+    """
+    return pd.DataFrame(
+        {
+            "individual_id": [1, 2],
+            "parent_id": [None, 1],
+            "creation_time": [0.0, 100.0],
+            "death_time": [500.0, 500.0],
+            "survived": [True, True],
+            "is_spine": [False, False],
+        }
+    )

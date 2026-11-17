@@ -35,6 +35,7 @@ import altair as alt
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
+from bdsurv import PiecewiseConstant
 from IPython.display import display
 from joblib import Parallel, delayed
 from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
@@ -55,8 +56,8 @@ from bdpinf.models.math_nested import (
 )
 from bdpinf.models.math_populations import calculate_populations_log_pmf
 from bdpinf.simulation import (
+    simulate_birth_death,
     simulate_birth_death_lifespans,
-    simulate_birth_death_process,
 )
 from bdpinf.utils import derive_worker_seeds
 from bdpinf.visualization import save_chart
@@ -94,10 +95,9 @@ def sample_age_vector_process(
     span: np.ndarray | float,
     seed: int,
 ) -> np.ndarray:
-    simulated_df = simulate_birth_death_process(
-        birth_rates=br,
-        death_rates=dr,
-        times=span,
+    simulated_df = simulate_birth_death(
+        PiecewiseConstant(np.atleast_1d(br), np.atleast_1d(span)),
+        PiecewiseConstant(np.atleast_1d(dr), np.atleast_1d(span)),
         random_seed=seed,
     )
     survivors = simulated_df.surviving_records
@@ -222,7 +222,7 @@ for method_name, ages_list, population_sizes in [
     rows.append(
         {
             "method": method_name,
-            "n_sims": int(len(ages_list)),
+            "n_sims": len(ages_list),
             "mean_population": float(np.mean(population_sizes)),
             "extinct_fraction": float((population_sizes == 0).mean()),
             "mean_age": float(

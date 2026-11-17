@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import bdpinf.inference
+import bdpinf.process
 from bdpinf.analysis.subset_fitting import (
     BayesianSubsetConfig,
     DataSubset,
@@ -94,9 +96,10 @@ class TestFitSubset:
             epochs=[(100, 2000, "100-2000 CE")],
             start_time=100,
             age_column="year",
-            optimizers=["lbfgs"],
+            method="L-BFGS-B",
             random_seed=42,
         )
+        assert fit.success
         assert isinstance(fit, SubsetFitResult)
         assert fit.key == "non_lectionary"
 
@@ -108,13 +111,11 @@ class TestFitSubset:
             epochs=epochs,
             start_time=100,
             age_column="year",
-            optimizers=["lbfgs"],
+            method="L-BFGS-B",
             random_seed=42,
         )
-        if fit.success:
-            assert len(fit.epoch_results) == len(epochs)
-        else:
-            assert fit.epoch_results == []
+        assert fit.success
+        assert len(fit.epoch_results) == len(epochs)
 
     def test_epoch_result_keys_present_on_success(self) -> None:
         subset = _make_subset()
@@ -123,21 +124,22 @@ class TestFitSubset:
             epochs=[(100, 2000, "100-2000 CE")],
             start_time=100,
             age_column="year",
-            optimizers=["lbfgs"],
+            method="L-BFGS-B",
             random_seed=42,
         )
-        if fit.success and fit.epoch_results:
-            ep = fit.epoch_results[0]
-            for key in (
-                "period",
-                "start",
-                "end",
-                "n_individuals",
-                "birth_rates",
-                "death_rates",
-                "half_life",
-            ):
-                assert key in ep, f"epoch_result missing key '{key}'"
+        assert fit.success
+        assert fit.epoch_results
+        ep = fit.epoch_results[0]
+        for key in (
+            "period",
+            "start",
+            "end",
+            "n_individuals",
+            "birth_rates",
+            "death_rates",
+            "half_life",
+        ):
+            assert key in ep, f"epoch_result missing key '{key}'"
 
     def test_empty_subset_returns_failure_without_raising(self) -> None:
         empty = DataSubset(
@@ -173,10 +175,181 @@ class TestFitSubset:
             epochs=[(100, 2000, "100-2000 CE")],
             start_time=100,
             age_column="year",
-            optimizers=["lbfgs"],
+            method="L-BFGS-B",
             random_seed=42,
         )
         assert fit.n_individuals == len(subset.frame)
+
+
+_ONE_EPOCH = [(100, 2000, "all")]
+_TWO_EPOCHS = [(100, 1000, "early"), (1000, 2000, "late")]
+
+
+class TestFitSubsetPinned:
+    """Pin the full result of fit_subset (recorded before refactoring it)."""
+
+    def test_point_ages_one_epoch(self) -> None:
+        fit = fit_subset(
+            _make_subset(),
+            epochs=_ONE_EPOCH,
+            start_time=100,
+            age_column="year",
+            random_seed=42,
+        )
+        assert fit.success
+        assert fit.n_individuals == 40
+        assert fit.log_likelihood == pytest.approx(-316.36626960732303, rel=1e-8)
+        assert len(fit.nll_history) == 4
+        assert fit.times.tolist() == [1900.0]
+        assert fit.ages[:3].tolist() == [1731.0, 430.0, 657.0]
+        (entry,) = fit.epoch_results
+        assert entry["period"] == "all"
+        assert (entry["start"], entry["end"], entry["n_individuals"]) == (100, 2000, 40)
+        assert entry["success"] is True
+        assert entry["birth_rates"] == pytest.approx(0.0011223661667571732, rel=1e-6)
+        assert entry["death_rates"] == pytest.approx(0.00010331545718196114, rel=1e-6)
+        assert entry["half_life"] == pytest.approx(6709.036570773349, rel=1e-6)
+        assert entry["birth_rate_se"] == pytest.approx(0.00017746890940778922, rel=1e-6)
+        assert entry["death_rate_se"] == pytest.approx(0.00010015659588165567, rel=1e-6)
+        assert entry["birth_rate_ci"] == pytest.approx(
+            (0.0008232700135362587, 0.0015301247361971485), rel=1e-6
+        )
+        assert entry["death_rate_ci"] == pytest.approx(
+            (1.545215917675753e-05, 0.0006907826647795047), rel=1e-6
+        )
+        assert set(entry) == {
+            "period",
+            "start",
+            "end",
+            "n_individuals",
+            "birth_rates",
+            "death_rates",
+            "half_life",
+            "success",
+            "birth_rate_se",
+            "death_rate_se",
+            "birth_rate_ci",
+            "death_rate_ci",
+        }
+
+    def test_date_ranges_one_epoch(self) -> None:
+        fit = fit_subset(
+            _make_range_subset(),
+            epochs=_ONE_EPOCH,
+            start_time=100,
+            age_column="year",
+            random_seed=42,
+            early_column="early",
+            late_column="late",
+        )
+        assert fit.success
+        assert fit.log_likelihood == pytest.approx(-313.4333497362368, rel=1e-8)
+        assert fit.ages[:3].tolist() == [194.0, 738.0, 637.0]
+        (entry,) = fit.epoch_results
+        assert entry["birth_rates"] == pytest.approx(0.0012082488086932147, rel=1e-6)
+        assert entry["death_rates"] == pytest.approx(0.00012919882322126963, rel=1e-6)
+        assert entry["birth_rate_se"] == pytest.approx(0.00019112731967773567, rel=1e-6)
+        assert entry["death_rate_ci"] == pytest.approx(
+            (1.9836108403273975e-05, 0.0008415126385882117), rel=1e-6
+        )
+
+    def test_two_epochs_counts_and_rates(self) -> None:
+        fit = fit_subset(
+            _make_subset(),
+            epochs=_TWO_EPOCHS,
+            start_time=100,
+            age_column="year",
+            random_seed=42,
+        )
+        assert fit.success
+        assert fit.log_likelihood == pytest.approx(-310.73266360504937, rel=1e-6)
+        assert fit.times.tolist() == [900.0, 1900.0]
+        early, late = fit.epoch_results
+        assert (early["period"], early["start"], early["end"]) == ("early", 100, 1000)
+        assert (late["period"], late["start"], late["end"]) == ("late", 1000, 2000)
+        assert early["n_individuals"] == 17
+        assert late["n_individuals"] == 23
+        assert early["birth_rates"] == pytest.approx(0.0024677424242989616, rel=1e-5)
+        assert late["birth_rates"] == pytest.approx(0.000799916530453757, rel=1e-5)
+        assert early["birth_rate_se"] == pytest.approx(0.0005985196108015166, rel=1e-4)
+        assert late["birth_rate_se"] == pytest.approx(0.00016679412874945823, rel=1e-4)
+        assert early["half_life"] == pytest.approx(1330.3584717168214, rel=1e-4)
+
+    def test_fit_failure_keeps_times_and_ages(self) -> None:
+        fit = fit_subset(
+            _make_subset(),
+            epochs=_ONE_EPOCH,
+            start_time=100,
+            age_column="year",
+            random_seed=42,
+            method="not-an-optimizer",  # fit raises ValueError: unsupported method
+        )
+        assert not fit.success
+        assert fit.epoch_results == []
+        assert fit.nll_history == []
+        assert fit.log_likelihood == float("-inf")
+        assert fit.times.tolist() == [1900.0]
+        assert fit.ages[:3].tolist() == [1731.0, 430.0, 657.0]
+
+
+_FIT_SUBSET_KWARGS = {
+    "epochs": _ONE_EPOCH,
+    "start_time": 100,
+    "age_column": "year",
+    "random_seed": 42,
+}
+
+
+class TestFitSubsetErrorHandling:
+    """Test which exceptions fit_subset turns into a failed result."""
+
+    def test_invalid_ages_give_a_failed_result(self) -> None:
+        frame = pd.DataFrame({"year": ["early", "late", "middle"]})
+        subset = DataSubset(key="bad", label="Bad", frame=frame)
+
+        fit = fit_subset(subset, **_FIT_SUBSET_KWARGS)
+
+        assert not fit.success
+        assert fit.epoch_results == []
+
+    def test_unexpected_fit_keyword_propagates(self) -> None:
+        with pytest.raises(TypeError, match="unexpected keyword"):
+            fit_subset(_make_subset(), not_a_fit_option=1, **_FIT_SUBSET_KWARGS)
+
+    def test_type_error_in_process_construction_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(bdpinf.process, "BirthDeathProcess", broken)
+
+        with pytest.raises(TypeError, match="programming error"):
+            fit_subset(_make_subset(), **_FIT_SUBSET_KWARGS)
+
+    def test_optimiser_failure_gives_a_failed_result(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def stalled(*_args: object, **_kwargs: object) -> None:
+            raise FloatingPointError("non-finite objective")
+
+        monkeypatch.setattr(bdpinf.inference, "fit", stalled)
+
+        fit = fit_subset(_make_subset(), **_FIT_SUBSET_KWARGS)
+
+        assert not fit.success
+        assert fit.times.tolist() == [1900.0]
+
+    def test_type_error_in_fit_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(bdpinf.inference, "fit", broken)
+
+        with pytest.raises(TypeError, match="programming error"):
+            fit_subset(_make_subset(), **_FIT_SUBSET_KWARGS)
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +468,7 @@ class TestFitSubsetBayesian:
             model_seed=42,
         )
         bs = result["posterior_samples"]["birth_rates"]
-        # shape: [n_samples, n_epochs]
+        # Samples have one row per draw and one column per epoch.
         assert bs.ndim == 2
         assert bs.shape[1] == len(cfg.epochs)
         assert bs.shape[0] == mcmc_cfg.num_samples
@@ -322,6 +495,67 @@ class TestFitSubsetBayesian:
             model_seed=42,
         )
         assert result["success"] is False
+
+
+class _StopAfterReferenceFitError(Exception):
+    """Raised by a stub to end fit_subset_bayesian once the MLE step is done."""
+
+
+class TestFitSubsetBayesianErrorHandling:
+    """Test which exceptions fit_subset_bayesian absorbs (no sampling is run)."""
+
+    def _run(self, subset: DataSubset) -> dict:
+        return fit_subset_bayesian(
+            _make_minimal_config(subset),
+            mcmc_config=_minimal_mcmc_config(),
+            model_seed=42,
+        )
+
+    def test_invalid_ages_skip_the_subset(self) -> None:
+        frame = pd.DataFrame({"year": ["early", "late", "middle"]})
+
+        result = self._run(DataSubset(key="bad", label="Bad", frame=frame))
+
+        assert result["success"] is False
+        assert result["key"] == "bad"
+
+    def test_type_error_in_process_construction_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(bdpinf.process, "BirthDeathProcess", broken)
+
+        with pytest.raises(TypeError, match="programming error"):
+            self._run(_make_subset())
+
+    def test_failed_reference_fit_does_not_stop_sampling(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def invalid(*_args: object, **_kwargs: object) -> None:
+            raise ValueError("no finite start")
+
+        def sampler(*_args: object, **kwargs: object) -> None:
+            assert kwargs["init"] is None
+            raise _StopAfterReferenceFitError
+
+        monkeypatch.setattr(bdpinf.inference, "fit", invalid)
+        monkeypatch.setattr(bdpinf.inference, "fit_bayesian", sampler)
+
+        with pytest.raises(_StopAfterReferenceFitError):
+            self._run(_make_subset())
+
+    def test_type_error_in_reference_fit_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(bdpinf.inference, "fit", broken)
+
+        with pytest.raises(TypeError, match="programming error"):
+            self._run(_make_subset())
 
 
 class TestFitSubsetsBayesian:

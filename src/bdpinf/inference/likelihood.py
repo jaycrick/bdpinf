@@ -23,7 +23,10 @@ from bdpinf.models.math_general import (
     terms_for,
 )
 from bdpinf.models.math_nested import nested_terms
-from bdpinf.models.math_populations import calculate_populations_log_lik_from_terms
+from bdpinf.models.math_populations import (
+    calculate_populations_log_lik_from_terms,
+    check_conditioning,
+)
 from bdpinf.models.rate_functions import RateFunction
 from bdpinf.models.validation import normalize_and_validate_inputs
 from bdpinf.utils import ensure_1d_tensor, ensure_1d_tensors
@@ -442,11 +445,20 @@ def log_likelihood_rates(
 ) -> jax.Array:
     """Log-likelihood of ``data`` under arbitrary birth and death rate functions.
 
+    Formulas: see the sections "Population term" and
+    "Unknown Spine (Default Inference Path)" of ``docs/likelihoods.qmd``.
+
     Piecewise-constant rates on shared epochs use the exact epoch-wise backend,
     anything else uses Gauss-Legendre quadrature
     (see :func:`bdpinf.models.math_general.terms_for`).
     Safe under ``jit`` and ``grad``; returns ``-inf`` for invalid parameters.
+
+    Raises
+    ------
+    ValueError
+        If ``condition_on_survival`` is True and ``data.initial_population > 1``.
     """
+    check_conditioning(data.initial_population, condition_on_survival)
     terms = terms_for(birth, death, n_nodes=n_nodes)
     if data.upper_ages is not None and data.weights is not None:
         return _range_log_likelihood(
@@ -484,6 +496,9 @@ def log_likelihood(
     log_scale_params: bool = False,
 ) -> jnp.ndarray:
     """Compute the log-likelihood of observed individual ages in a birth--death process.
+
+    Formulas: see the sections "Population term" and
+    "Unknown Spine (Default Inference Path)" of ``docs/likelihoods.qmd``.
 
     This function evaluates the joint log-likelihood
     for a dataset of observed individual ages
@@ -545,12 +560,15 @@ def log_likelihood(
     ns : jax.Array | None, optional
         Counts per population/class that sum to the total number of ages. If None,
         a single population with one count per provided age is assumed.
-    initial_population: int
+    initial_population : int
         Initial population size.
     condition_on_survival : bool, optional
         If True (default), condition the population-count term on the process
         not having gone extinct by ``T`` (the observed individuals imply survival).
-        Only affects the count term, and only for ``initial_population == 1``.
+        Only affects the count term.
+        Only defined for ``initial_population == 1``:
+        with more than one initial individual it raises,
+        so pass ``condition_on_survival=False``.
     is_ordered : bool, optional
         If True, the first element of ages is treated as a spine and the rest as
         ordinary observations. Cannot be used together with spine_ages. When False
@@ -568,14 +586,16 @@ def log_likelihood(
     Raises
     ------
     ValueError
-        If both is_ordered=True and spine_ages is provided, or if the sum of ns does
-        not equal the number of provided ages.
+        If both is_ordered=True and spine_ages is provided, if the sum of ns does
+        not equal the number of provided ages,
+        or if ``condition_on_survival`` is True and ``initial_population > 1``.
 
     See Also
     --------
         calculate_populations_log_lik
 
     """
+    check_conditioning(initial_population, condition_on_survival)
     _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
 
     birth_rates, death_rates, ages, times = ensure_1d_tensors(
@@ -584,13 +604,7 @@ def log_likelihood(
         ages,
         times,
     )
-
-    if not (birth_rates.shape == death_rates.shape == times.shape):
-        msg = (
-            "birth_rates, death_rates, and times must have the same shape, "
-            f"got {birth_rates.shape}, {death_rates.shape}, {times.shape}."
-        )
-        raise ValueError(msg)
+    _check_rate_time_shapes(birth_rates, death_rates, times)
 
     if log_scale_params:
         birth_rates = jnp.exp(birth_rates)
@@ -598,55 +612,11 @@ def log_likelihood(
     elif bool(jnp.any(birth_rates <= 0)) or bool(jnp.any(death_rates <= 0)):
         return _ninf
 
-    if spine_ages is not None:
-        spine_ages = ensure_1d_tensor(spine_ages)
-        if len(spine_ages) == 0:
-            spine_ages = None
-        else:
-            if is_ordered:
-                msg = "Cannot have both is_ordered=True and spine_ages provided."
-                raise ValueError(msg)
-            if ns is None:
-                if len(spine_ages) > 1:
-                    msg = (
-                        "When multiple spine ages are provided, "
-                        "population sizes (ns) must also be provided."
-                    )
-                    raise ValueError(msg)
-                ns = jnp.array([len(ages) + len(spine_ages)], dtype=jnp.float64)
-            if bool(jnp.any(spine_ages < 0)) or bool(jnp.any(spine_ages > times[-1])):
-                msg = f"Spine ages must be in the range [0, {times[-1]}]."
-                raise ValueError(msg)
-
-    if float(times[0]) <= 0:
-        msg = "Observation times must be positive."
-        raise ValueError(msg)
-
-    if bool(jnp.any(jnp.diff(times) < 0)):
-        msg = "Observation times must be non-decreasing."
-        raise ValueError(msg)
-
-    if bool(jnp.any(ages < 0)) or bool(jnp.any(ages > times[-1])):
-        msg = f"Ages must be in the range [0, {float(times[-1])}]."
-        raise ValueError(msg)
-
-    num_ages = len(ages) + (len(spine_ages) if spine_ages is not None else 0)
-    if ns is not None:
-        ns_arr = ensure_1d_tensor(ns)
-        total_pop_size = int(float(ns_arr.sum()))
-        if total_pop_size < num_ages:
-            msg = "Sum of the populations must equal the number of ages provided."
-            raise ValueError(msg)
-        if total_pop_size > num_ages:
-            warnings.warn(
-                "Sum of the populations exceeds the number of ages provided; "
-                "not all ages have been provided (age information is partial).",
-                UserWarning,
-                stacklevel=2,
-            )
-    else:
-        ns_arr = jnp.array([num_ages], dtype=jnp.float64)
-        total_pop_size = num_ages
+    spine_ages, ns = _resolve_explicit_spine(
+        spine_ages, ns, ages, times, is_ordered=is_ordered
+    )
+    _check_times_and_ages(ages, times)
+    ns_arr = _resolve_population_counts(ns, ages, spine_ages)
 
     if not (
         bool(jnp.all(jnp.isfinite(birth_rates)))
@@ -654,17 +624,9 @@ def log_likelihood(
     ):
         return _ninf
 
-    if spine_ages is None and not is_ordered and len(ages) > 0:
-        resolved = resolve_spine_ages(ages, float(times[-1]))
-        if resolved.spine_ages is not None:
-            spine_ages = jnp.asarray(resolved.spine_ages)
-            ages = jnp.asarray(resolved.non_spine_ages)
-
-    use_unknown_spine_marginal = (not is_ordered) and (spine_ages is None)
-
-    if is_ordered:
-        spine_ages = ages[:1]
-        ages = ages[1:]
+    ages, spine_ages, use_unknown_spine_marginal = _resolve_unknown_spine(
+        ages, spine_ages, times, is_ordered=is_ordered
+    )
 
     birth_rates, death_rates, times = normalize_and_validate_inputs(
         birth_rates, death_rates, times
@@ -680,6 +642,109 @@ def log_likelihood(
     )
 
 
+def _check_rate_time_shapes(
+    birth_rates: jax.Array, death_rates: jax.Array, times: jax.Array
+) -> None:
+    """Raise ``ValueError`` unless the rates and times share one shape."""
+    if not (birth_rates.shape == death_rates.shape == times.shape):
+        msg = (
+            "birth_rates, death_rates, and times must have the same shape, "
+            f"got {birth_rates.shape}, {death_rates.shape}, {times.shape}."
+        )
+        raise ValueError(msg)
+
+
+def _resolve_explicit_spine(
+    spine_ages: object | None,
+    ns: object | None,
+    ages: jax.Array,
+    times: jax.Array,
+    *,
+    is_ordered: bool,
+) -> tuple[jax.Array | None, object | None]:
+    """Validate explicit ``spine_ages`` (empty means none); default ``ns`` for one."""
+    if spine_ages is None:
+        return None, ns
+    spine_arr = ensure_1d_tensor(spine_ages)
+    if len(spine_arr) == 0:
+        return None, ns
+    if is_ordered:
+        msg = "Cannot have both is_ordered=True and spine_ages provided."
+        raise ValueError(msg)
+    if ns is None:
+        if len(spine_arr) > 1:
+            msg = (
+                "When multiple spine ages are provided, "
+                "population sizes (ns) must also be provided."
+            )
+            raise ValueError(msg)
+        ns = jnp.array([len(ages) + len(spine_arr)], dtype=jnp.float64)
+    if bool(jnp.any(spine_arr < 0)) or bool(jnp.any(spine_arr > times[-1])):
+        msg = f"Spine ages must be in the range [0, {times[-1]}]."
+        raise ValueError(msg)
+    return spine_arr, ns
+
+
+def _check_times_and_ages(ages: jax.Array, times: jax.Array) -> None:
+    """Raise ``ValueError`` for bad observation times or ages outside ``[0, T]``."""
+    if float(times[0]) <= 0:
+        msg = "Observation times must be positive."
+        raise ValueError(msg)
+
+    if bool(jnp.any(jnp.diff(times) < 0)):
+        msg = "Observation times must be non-decreasing."
+        raise ValueError(msg)
+
+    if bool(jnp.any(ages < 0)) or bool(jnp.any(ages > times[-1])):
+        msg = f"Ages must be in the range [0, {float(times[-1])}]."
+        raise ValueError(msg)
+
+
+def _resolve_population_counts(
+    ns: object | None, ages: jax.Array, spine_ages: jax.Array | None
+) -> jax.Array:
+    """Return the population counts, defaulting to one per age; warn if partial."""
+    num_ages = len(ages) + (len(spine_ages) if spine_ages is not None else 0)
+    if ns is None:
+        return jnp.array([num_ages], dtype=jnp.float64)
+    ns_arr = ensure_1d_tensor(ns)
+    total_pop_size = int(float(ns_arr.sum()))
+    if total_pop_size < num_ages:
+        msg = "Sum of the populations must equal the number of ages provided."
+        raise ValueError(msg)
+    if total_pop_size > num_ages:
+        # Called straight from ``log_likelihood``, so level 3 is its caller.
+        warnings.warn(
+            "Sum of the populations exceeds the number of ages provided; "
+            "not all ages have been provided (age information is partial).",
+            UserWarning,
+            stacklevel=3,
+        )
+    return ns_arr
+
+
+def _resolve_unknown_spine(
+    ages: jax.Array,
+    spine_ages: jax.Array | None,
+    times: jax.Array,
+    *,
+    is_ordered: bool,
+) -> tuple[jax.Array, jax.Array | None, bool]:
+    """Pick the spine (ordered, at ``T``, or a lone age) and whether to marginalise."""
+    if spine_ages is None and not is_ordered and len(ages) > 0:
+        resolved = resolve_spine_ages(ages, float(times[-1]))
+        if resolved.spine_ages is not None:
+            spine_ages = jnp.asarray(resolved.spine_ages)
+            ages = jnp.asarray(resolved.non_spine_ages)
+
+    use_unknown_spine_marginal = (not is_ordered) and (spine_ages is None)
+
+    if is_ordered:
+        spine_ages = ages[:1]
+        ages = ages[1:]
+    return ages, spine_ages, use_unknown_spine_marginal
+
+
 def _range_log_likelihood(
     terms: AgeTerms,
     lo: jnp.ndarray,
@@ -692,11 +757,15 @@ def _range_log_likelihood(
 ) -> jnp.ndarray:
     """Log-likelihood of ages known only to lie in ``[lo, hi]`` (unknown spine).
 
+    Formula: see the section "Unknown Spine (Default Inference Path)"
+    of ``docs/likelihoods.qmd``.
+
     ``weights`` count the observations sharing each range (0 for padding).
     The unknown-spine mixture is a sum of products, so integrating it over a box
     of ranges replaces every density by the matching range mass: the likelihood
     is exact.
     """
+    check_conditioning(initial_population, condition_on_survival)
     log_p = calculate_populations_log_lik_from_terms(
         terms,
         ns,
@@ -730,6 +799,9 @@ def _log_likelihood_core(
 ) -> jnp.ndarray:
     """Shared log-likelihood core for ``log_likelihood`` and the fitters.
 
+    Formulas: see the sections "Population term" and
+    "Unknown Spine (Default Inference Path)" of ``docs/likelihoods.qmd``.
+
     All host-side validation and spine resolution must be completed by the
     caller (see :class:`AgeData`); this function contains no host-side hazards
     (``bool(traced)``, ``np.isclose(traced)``, dynamic mask slicing), so it is
@@ -754,6 +826,7 @@ def _log_likelihood_core(
         Initial population size (static, Python int).
     condition_on_survival : bool
         Condition on non-extinction for positive counts (static, Python bool).
+        Raises ``ValueError`` with ``initial_population > 1``.
     use_unknown_spine_marginal : bool
         If True, ``non_spine_ages`` contains all ages and the spine position
         is marginalized via logsumexp.  Static Python bool resolved at trace
@@ -768,6 +841,7 @@ def _log_likelihood_core(
         Scalar float64 log-likelihood, or ``-inf`` for invalid parameters.
 
     """
+    check_conditioning(initial_population, condition_on_survival)
     _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
 
     log_P_n_T = calculate_populations_log_lik_from_terms(

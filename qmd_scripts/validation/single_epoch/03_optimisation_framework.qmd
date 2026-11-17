@@ -136,10 +136,17 @@ def run_root_finder(data: AgeData) -> dict[str, object]:
     score(jnp.asarray(x0))
     hessian(jnp.asarray(x0))
     start = time.perf_counter()
+
+    def score_np(u: np.ndarray) -> np.ndarray:
+        return np.asarray(score(jnp.asarray(u)))
+
+    def hessian_np(u: np.ndarray) -> np.ndarray:
+        return np.asarray(hessian(jnp.asarray(u)))
+
     root = scipy.optimize.root(
-        lambda u: np.asarray(score(jnp.asarray(u))),
+        score_np,
         x0,
-        jac=lambda u: np.asarray(hessian(jnp.asarray(u))),
+        jac=hessian_np,
         method="hybr",
     )
     elapsed = time.perf_counter() - start

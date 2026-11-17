@@ -57,10 +57,13 @@ $$
 For a vector of times $\mathbf{t} = (t_1, \dots, t_n)$,
 the likelihood is
 $$
-  \ln L(\mathbf{t}) = \sum_{i = 1}^n (N_i - D_i).
+  \ln L(\mathbf{t}) = \sum_{i = 1}^n (\ln N_i - \ln D),
 $$
 
+where $N_i$ is $N$ evaluated at $t = t_i$ ($D$ does not depend on $t$).
+
 Expanding this, we get the same formula as in\ [@kuck_age_2018, (3.6)].
+<!-- TODO(author): check the (3.6) locator against Kuck et al. (2018). -->
 $$
   f(t)
   = \frac{
@@ -138,7 +141,8 @@ Two identities follow.
 First, $1+I(T)=1/\Pr(Z_T\ge1)$.
 Second, $\mathcal W(T)=e^{\Gamma(0,T]}(1+I(T))=\mathbb E[Z_T]/\Pr(Z_T\ge1)=\mathbb E[Z_T\mid Z_T\ge1]$, since $\mathbb E[Z_T]=e^{\Gamma(0,T]}$.
 Writing $I(T)=\int_0^T\mu(t)/\mathbb E[Z_t]\,dt$ shows it as the death hazard measured per unit of expected population.
-Extinction is almost sure as $T\to\infty$ if and only if $I(\infty)$ diverges (Kendall's criterion).
+Extinction is almost sure as $T\to\infty$ if and only if $I(\infty)$ diverges
+(Kendall's criterion\ [@kendall_generalized_1948]).
 
 The code (`bdpinf.models.math_nested`) evaluates these cumulative sums in log space
 (`cumlogsumexp` of positive terms, no subtraction) once per likelihood call,
@@ -147,6 +151,8 @@ $L_\mu(s,T)$ uses the mirror-image suffix sum.
 
 ### Population term
 
+The code attributes its formula for the population probability to [@tavare_2018];
+the paper's notation for it is as follows.
 The population-count term is $\ln\Pr(Z_T=z)=\ln(1-P_0(T))+\ln\pi+(z-1)\ln(1-\pi)$ with
 $P_0(T)=I/(1+I)$;
 given survival, $\ln\Pr(Z_T=z\mid Z_T\ge1)=-z\ln\mathcal W(T)+(z-1)\ln(\mathcal W(T)-1)$.

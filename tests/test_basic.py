@@ -8,4 +8,4 @@ class TestBasic:
         """Test that the package can be imported."""
         import bdpinf
 
-        assert bdpinf.__version__ == "0.4.2"
+        assert bdpinf.__version__ == "0.5.0"

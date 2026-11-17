@@ -24,8 +24,19 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from bdpinf.inference.bayesian import BayesianMCMCConfig, BayesianPriorConfig
+    from bdpinf.inference.fitting import FitResult
 
 logger = logging.getLogger(__name__)
+
+# Failures a subset fit is allowed to end in: validation errors, non-finite
+# arithmetic, singular matrices, and runtime errors from the optimiser or JAX.
+# Anything else (TypeError, AttributeError, ...) is a programming error and propagates.
+_EXPECTED_FIT_ERRORS = (
+    ValueError,
+    RuntimeError,
+    FloatingPointError,
+    np.linalg.LinAlgError,
+)
 
 
 @dataclass
@@ -107,6 +118,7 @@ def _subset_age_data(
     times: NDArray[np.float64],
     epochs: Sequence[tuple[int, int, str]],
     start_time: int | float,
+    *,
     range_cols: tuple[str, str] | None,
 ) -> Any:
     """Point-age or date-range ``AgeData`` for one subset."""
@@ -120,6 +132,88 @@ def _subset_age_data(
         start_year=float(start_time),
         observation_year=float(epochs[-1][1]),
     )
+
+
+def _epoch_counts(
+    frame: pd.DataFrame, age_column: str, epochs: Sequence[tuple[int, int, str]]
+) -> list[int]:
+    """Count individuals per epoch.
+
+    The last epoch uses an inclusive upper bound so individuals dated exactly at
+    the final year are not silently excluded.
+    """
+    return [
+        int(
+            (
+                (frame[age_column] >= e_start)
+                & (
+                    frame[age_column] <= e_end
+                    if i == len(epochs) - 1
+                    else frame[age_column] < e_end
+                )
+            ).sum()
+        )
+        for i, (e_start, e_end, _) in enumerate(epochs)
+    ]
+
+
+def _rate_uncertainty(
+    result: FitResult, n_epochs: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None:
+    """Per-epoch birth and death standard errors and intervals, if available."""
+    standard_errors = result.standard_errors
+    intervals = result.confidence_intervals()
+    if standard_errors is None or intervals is None:
+        return None
+    names = result.model.names
+    rate_ses = np.array([standard_errors[n] for n in names], dtype=np.float64)
+    rate_cis = np.array([intervals[n] for n in names], dtype=np.float64)
+    return (
+        rate_ses[:n_epochs],
+        rate_ses[n_epochs:],
+        rate_cis[:n_epochs],
+        rate_cis[n_epochs:],
+    )
+
+
+def _epoch_results(
+    result: FitResult,
+    epochs: Sequence[tuple[int, int, str]],
+    epoch_n: Sequence[int],
+) -> list[dict[str, Any]]:
+    """Per-epoch result dicts: rates, half-life and (if available) uncertainty."""
+    birth_rates_arr = np.atleast_1d(result.birth_values)
+    death_rates_arr = np.atleast_1d(result.death_values)
+    # Per-epoch uncertainty (delta method on log-parameters)
+    uncertainty = _rate_uncertainty(result, len(epochs))
+
+    epoch_results: list[dict[str, Any]] = []
+    for i, (e_start, e_end, period_name) in enumerate(epochs):
+        br = float(
+            birth_rates_arr[i] if birth_rates_arr.size > 1 else birth_rates_arr[0]
+        )
+        dr = float(
+            death_rates_arr[i] if death_rates_arr.size > 1 else death_rates_arr[0]
+        )
+        half_life = float(np.log(2) / dr) if dr > 0.0 else float("inf")
+        entry: dict[str, Any] = {
+            "period": period_name,
+            "start": e_start,
+            "end": e_end,
+            "n_individuals": epoch_n[i],
+            "birth_rates": br,
+            "death_rates": dr,
+            "half_life": half_life,
+            "success": True,
+        }
+        if uncertainty is not None:
+            birth_ses, death_ses, birth_cis, death_cis = uncertainty
+            entry["birth_rate_se"] = float(birth_ses[i])
+            entry["death_rate_se"] = float(death_ses[i])
+            entry["birth_rate_ci"] = (float(birth_cis[i, 0]), float(birth_cis[i, 1]))
+            entry["death_rate_ci"] = (float(death_cis[i, 0]), float(death_cis[i, 1]))
+        epoch_results.append(entry)
+    return epoch_results
 
 
 def fit_subset(
@@ -167,8 +261,9 @@ def fit_subset(
     -------
     SubsetFitResult
         On convergence failure, ``success=False`` and ``epoch_results`` is
-        empty.  The result never raises — all exceptions are caught and
-        logged as warnings.
+        empty.  Validation failures and optimiser errors (``ValueError``,
+        ``RuntimeError``, ``FloatingPointError``, ``LinAlgError``) are caught and
+        logged as warnings; programming errors such as ``TypeError`` propagate.
     """
     from bdpinf.inference import BirthDeathModel, fit
     from bdpinf.process import BirthDeathProcess
@@ -217,7 +312,7 @@ def fit_subset(
             epoch_end_times=[int(e[1]) for e in epochs],
             start_time=float(start_time),
         )
-    except Exception as exc:
+    except ValueError as exc:
         return _fail(f"BirthDeathProcess construction failed: {exc}")
 
     ages_tensor = bdp.ages
@@ -226,31 +321,19 @@ def fit_subset(
     )
     ages_np: NDArray[np.float64] = np.asarray(ages_tensor, dtype=np.float64)
 
-    # Per-epoch individual counts.  The last epoch uses an inclusive upper bound
-    # so individuals dated exactly at the final year are not silently excluded.
-    epoch_n: list[int] = [
-        int(
-            (
-                (frame[age_column] >= e_start)
-                & (
-                    frame[age_column] <= e_end
-                    if i == len(epochs) - 1
-                    else frame[age_column] < e_end
-                )
-            ).sum()
-        )
-        for i, (e_start, e_end, _) in enumerate(epochs)
-    ]
+    epoch_n = _epoch_counts(frame, age_column, epochs)
 
     # Run the fit
     try:
         result = fit(
-            _subset_age_data(frame, ages_np, times, epochs, start_time, range_cols),
+            _subset_age_data(
+                frame, ages_np, times, epochs, start_time, range_cols=range_cols
+            ),
             BirthDeathModel.piecewise_constant(times),
             seed=random_seed,
             **fit_kwargs,
         )
-    except Exception as exc:
+    except _EXPECTED_FIT_ERRORS as exc:
         return _fail(f"fit raised: {exc}", times=times, ages=ages_np)
 
     nll_history: list[float] = [float(v) for v in result.nll_history]
@@ -268,57 +351,7 @@ def fit_subset(
             log_likelihood=log_lik,
         )
 
-    # Parse per-epoch rates
-    birth_rates_arr = np.atleast_1d(result.birth_values)
-    death_rates_arr = np.atleast_1d(result.death_values)
-
-    # Per-epoch uncertainty (delta method on log-parameters)
-    birth_ses: np.ndarray | None = None
-    death_ses: np.ndarray | None = None
-    birth_cis: np.ndarray | None = None
-    death_cis: np.ndarray | None = None
-    standard_errors = result.standard_errors
-    intervals = result.confidence_intervals()
-    if standard_errors is not None and intervals is not None:
-        names = result.model.names
-        rate_ses = np.array([standard_errors[n] for n in names], dtype=np.float64)
-        rate_cis = np.array([intervals[n] for n in names], dtype=np.float64)
-        birth_ses = rate_ses[:n_epochs]
-        death_ses = rate_ses[n_epochs:]
-        birth_cis = rate_cis[:n_epochs]
-        death_cis = rate_cis[n_epochs:]
-
-    # Build per-epoch result dicts
-    epoch_results: list[dict[str, Any]] = []
-    for i, (e_start, e_end, period_name) in enumerate(epochs):
-        br = float(
-            birth_rates_arr[i] if birth_rates_arr.size > 1 else birth_rates_arr[0]
-        )
-        dr = float(
-            death_rates_arr[i] if death_rates_arr.size > 1 else death_rates_arr[0]
-        )
-        half_life = float(np.log(2) / dr) if dr > 0.0 else float("inf")
-        entry: dict[str, Any] = {
-            "period": period_name,
-            "start": e_start,
-            "end": e_end,
-            "n_individuals": epoch_n[i],
-            "birth_rates": br,
-            "death_rates": dr,
-            "half_life": half_life,
-            "success": True,
-        }
-        if (
-            birth_ses is not None
-            and death_ses is not None
-            and birth_cis is not None
-            and death_cis is not None
-        ):
-            entry["birth_rate_se"] = float(birth_ses[i])
-            entry["death_rate_se"] = float(death_ses[i])
-            entry["birth_rate_ci"] = (float(birth_cis[i, 0]), float(birth_cis[i, 1]))
-            entry["death_rate_ci"] = (float(death_cis[i, 0]), float(death_cis[i, 1]))
-        epoch_results.append(entry)
+    epoch_results = _epoch_results(result, epochs, epoch_n)
 
     return SubsetFitResult(
         key=subset.key,
@@ -420,7 +453,6 @@ def fit_subset_bayesian(
     """
     from bdpinf.inference import (
         BirthDeathModel,
-        FitResult,
         fit,
         fit_bayesian,
     )
@@ -460,7 +492,7 @@ def fit_subset_bayesian(
             epoch_end_times=[int(e[1]) for e in epochs],
             start_time=float(start_time),
         )
-    except Exception as exc:
+    except ValueError as exc:
         logger.warning(
             "Bayesian fit skipped for %s: BDP construction failed: %s", subset.key, exc
         )
@@ -482,7 +514,7 @@ def fit_subset_bayesian(
         times_np,
         epochs,
         start_time,
-        _range_columns(config.early_column, config.late_column),
+        range_cols=_range_columns(config.early_column, config.late_column),
     )
     model = BirthDeathModel.piecewise_constant(times_np)
 
@@ -497,7 +529,7 @@ def fit_subset_bayesian(
             seed=model_seed,
             compute_covariance=False,
         )
-    except Exception as exc:
+    except _EXPECTED_FIT_ERRORS as exc:
         logger.warning("MLE reference fit failed for %s: %s", subset.key, exc)
 
     # NumPyro NUTS fit

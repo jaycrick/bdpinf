@@ -227,7 +227,12 @@ def _generate_multi_epoch_two_rate(
     )
     rows = Parallel(n_jobs=-1)(
         delayed(run_two_rate_replicate)(
-            i, sim_seeds[i], birth_rates_true, death_rates_true, times, fit_config
+            i,
+            sim_seeds[i],
+            birth_rates_true,
+            death_rates_true,
+            times,
+            fit_config=fit_config,
         )
         for i in range(num_sims)
     )
@@ -262,7 +267,13 @@ def _generate_multi_epoch_single_rate(
     )
     rows = Parallel(n_jobs=-1)(
         delayed(run_single_rate_replicate)(
-            i, sim_seeds[i], birth_rate, death_rate, time_span, fit_times, fit_config
+            i,
+            sim_seeds[i],
+            birth_rate,
+            death_rate,
+            time_span,
+            fit_times=fit_times,
+            fit_config=fit_config,
         )
         for i in range(num_sims)
     )
@@ -311,9 +322,9 @@ def _generate_multi_epoch_zero_birth(
             death_time_seeds[i],
             birth_rate_epoch_1_true,
             death_rate_true,
-            times,
-            fit_config,
-            param_constraints,
+            times=times,
+            fit_config=fit_config,
+            param_constraints=param_constraints,
         )
         for i in range(num_sims)
     )

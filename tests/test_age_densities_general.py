@@ -1,9 +1,12 @@
 """Test general-rate age densities against closed forms, the piecewise-constant path and Wolfram."""
 
+from collections.abc import Callable
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from scipy.integrate import quad
 
 from bdpinf.models.math_age_densities import (
     log_nested_w_general,
@@ -19,7 +22,14 @@ from bdpinf.models.math_nested import (
     non_spine_log_density,
     spine_log_density,
 )
-from bdpinf.models.rate_functions import PiecewiseConstantRate, PiecewiseLinearRate
+from bdpinf.models.rate_functions import (
+    PiecewiseConstantRate,
+    PiecewiseExponentialRate,
+    PiecewiseLinearRate,
+    PiecewiseQuadraticRate,
+    RateFunction,
+    SinusoidalRate,
+)
 
 _T = 2.5
 _AGES = jnp.linspace(0.05, _T - 0.05, 41)
@@ -239,3 +249,129 @@ class TestNormalisationAndShape:
 
         grad = jax.grad(loglik)(jnp.array([1.0, 1.5]))
         assert np.all(np.isfinite(np.asarray(grad)))
+
+
+_TWO_EPOCHS = jnp.array([1.1, _T])
+_CONST_DEATH = PiecewiseConstantRate.constant(0.8, _T)
+
+# (birth, death) pairs for the new rate families; the last has more than six
+# periods of the faster rate inside [0, T].
+_NEW_SCENARIOS: dict[str, tuple[RateFunction, RateFunction]] = {
+    "exponential-birth-one-epoch": (
+        PiecewiseExponentialRate.continuous(jnp.array([0.6, 1.9]), jnp.array([_T])),
+        _CONST_DEATH,
+    ),
+    "exponential-birth-two-epochs": (
+        PiecewiseExponentialRate.continuous(jnp.array([0.6, 1.9, 0.9]), _TWO_EPOCHS),
+        _CONST_DEATH,
+    ),
+    "quadratic-birth-one-epoch": (
+        PiecewiseQuadraticRate(
+            jnp.array([0.5]), jnp.array([1.9]), jnp.array([0.7]), jnp.array([_T])
+        ),
+        _CONST_DEATH,
+    ),
+    "quadratic-spline-birth-two-epochs": (
+        PiecewiseQuadraticRate.spline(jnp.array([0.7, 1.7, 1.0]), 0.8, _TWO_EPOCHS),
+        _CONST_DEATH,
+    ),
+    "sinusoidal-birth": (SinusoidalRate(1.3, 0.9, 1.4, 0.4, end_time=_T), _CONST_DEATH),
+    "sinusoidal-death": (
+        PiecewiseConstantRate.constant(1.1, _T),
+        SinusoidalRate(0.9, 0.7, 1.2, 1.0, end_time=_T),
+    ),
+    "sinusoidal-both-different-periods": (
+        SinusoidalRate(1.4, 1.0, 0.9, end_time=_T),
+        SinusoidalRate(1.0, 0.6, 1.7, 2.0, end_time=_T),
+    ),
+    "sinusoidal-both-seven-periods": (
+        SinusoidalRate(1.3, 0.8, 0.35, 0.5, end_time=_T),
+        SinusoidalRate(1.0, 0.5, 1.7, 1.0, end_time=_T),
+    ),
+}
+_NEW_IDS = list(_NEW_SCENARIOS)
+_NEW_PAIRS = list(_NEW_SCENARIOS.values())
+_ORACLE_AGES = np.array([0.15, 0.7, 1.45, 2.3])
+
+
+def _quad(
+    f: Callable[[float], float], lo: float, hi: float, points: list[float]
+) -> float:
+    value, _ = quad(
+        f,
+        lo,
+        hi,
+        points=[p for p in points if lo < p < hi] or None,
+        epsabs=1e-14,
+        epsrel=1e-13,
+        limit=2000,
+    )
+    return value
+
+
+def _oracle(birth: RateFunction, death: RateFunction) -> tuple[object, float]:
+    """Return ``(density, atom)`` from the spine-age formulas by independent ``quad``."""
+    end = float(birth.end_time)
+    points = sorted(
+        float(b) for b in np.concatenate([birth.breakpoints, death.breakpoints])
+    )
+
+    @jax.jit
+    def integrand(t: jax.Array) -> jax.Array:
+        gamma = birth.integral(t, end) - death.integral(t, end)
+        return death(t) * jnp.exp(gamma)
+
+    @jax.jit
+    def prefactor(s: jax.Array) -> jax.Array:
+        return birth(s) * jnp.exp(-birth.integral(s, end))
+
+    def l_mu(s: float) -> float:
+        return _quad(lambda t: float(integrand(jnp.float64(t))), s, end, points)
+
+    def density(age: float) -> float:
+        s = end - age
+        return float(prefactor(jnp.float64(s))) * l_mu(s)
+
+    zero = jnp.float64(0.0)
+    gamma_total = float(birth.integral(zero, end) - death.integral(zero, end))
+    w_total = np.exp(gamma_total) + l_mu(0.0)
+    atom = w_total * np.exp(-float(birth.integral(zero, end)))
+    return density, atom
+
+
+class TestNewRateFamilies:
+    @pytest.mark.parametrize(("birth", "death"), _NEW_PAIRS, ids=_NEW_IDS)
+    def test_total_mass_is_one(self, birth: RateFunction, death: RateFunction) -> None:
+        end = jnp.array([_T])
+        assert float(spine_age_cdf(end, birth, death)[0]) == pytest.approx(
+            1.0, abs=1e-8
+        )
+        assert float(non_spine_age_cdf(end, birth, death)[0]) == pytest.approx(
+            1.0, abs=1e-8
+        )
+
+    @pytest.mark.parametrize(("birth", "death"), _NEW_PAIRS, ids=_NEW_IDS)
+    def test_spine_density_and_atom_match_quadrature_oracle(
+        self, birth: RateFunction, death: RateFunction
+    ) -> None:
+        density, atom = _oracle(birth, death)
+        got = np.exp(
+            np.asarray(spine_age_log_density(jnp.asarray(_ORACLE_AGES), birth, death))
+        )
+        expected = np.array([density(float(a)) for a in _ORACLE_AGES])
+        np.testing.assert_allclose(got, expected, rtol=1e-8)
+        assert float(jnp.exp(spine_age_log_atom(birth, death))) == pytest.approx(
+            atom, rel=1e-8
+        )
+
+    @pytest.mark.parametrize(("birth", "death"), _NEW_PAIRS, ids=_NEW_IDS)
+    def test_default_nodes_agree_with_64_nodes(
+        self, birth: RateFunction, death: RateFunction
+    ) -> None:
+        for log_density in (spine_age_log_density, non_spine_age_log_density):
+            default = np.exp(np.asarray(log_density(_AGES, birth, death)))
+            fine = np.exp(np.asarray(log_density(_AGES, birth, death, n_nodes=64)))
+            np.testing.assert_allclose(default, fine, rtol=1e-9)
+        atom = float(jnp.exp(spine_age_log_atom(birth, death)))
+        atom_fine = float(jnp.exp(spine_age_log_atom(birth, death, n_nodes=64)))
+        assert atom == pytest.approx(atom_fine, rel=1e-9)

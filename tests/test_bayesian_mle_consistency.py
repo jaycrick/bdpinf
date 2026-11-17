@@ -19,6 +19,7 @@ from bdpinf.inference import (
     fit,
     fit_bayesian,
 )
+from bdpinf.inference.fitting import _BOUNDARY_LOG_RATE
 
 # ---------------------------------------------------------------------------
 # Shared synthetic datasets
@@ -56,7 +57,13 @@ _RTOL = 0.20
 
 
 def _compare(ages: np.ndarray, times: np.ndarray, epoch_end_times: list[float]) -> None:
-    """Assert posterior means are within _RTOL of the MLE for every parameter."""
+    """Check birth means against the MLE and the MLE against death intervals.
+
+    The posterior of a weakly identified death rate is skewed, so its mean need
+    not be near the MLE (and an MLE on the boundary can never match a positive
+    mean).  Birth rates are compared by posterior mean within _RTOL; death rates
+    require the MLE to lie in the posterior 90% credible interval.
+    """
     data = AgeData.from_groups([ages], float(times[-1]))
     model = BirthDeathModel.piecewise_constant(epoch_end_times)
     mle = fit(data, model, seed=0, compute_covariance=False)
@@ -64,17 +71,35 @@ def _compare(ages: np.ndarray, times: np.ndarray, epoch_end_times: list[float]) 
     bay = fit_bayesian(
         data, model, prior=_WEAK_PRIOR, mcmc=_MCMC_CFG, init=mle, rng_seed=42
     )
+    intervals = bay.credible_intervals(prob=0.9)
     for name in model.names:
-        rel = abs(bay.params[name] - mle.params[name]) / max(mle.params[name], 1e-12)
-        assert rel < _RTOL, (
-            f"{name}: posterior mean {bay.params[name]:.5f} vs MLE "
-            f"{mle.params[name]:.5f} (rel diff {rel:.3f} > {_RTOL})"
-        )
+        if name.startswith("birth"):
+            rel = abs(bay.params[name] - mle.params[name]) / max(
+                mle.params[name], 1e-12
+            )
+            assert rel < _RTOL, (
+                f"{name}: posterior mean {bay.params[name]:.5f} vs MLE "
+                f"{mle.params[name]:.5f} (rel diff {rel:.3f} > {_RTOL})"
+            )
+        else:
+            lo, hi = intervals[name]
+            assert mle.params[name] <= hi, (
+                f"{name}: MLE {mle.params[name]:.3e} above posterior 90% "
+                f"interval upper end {hi:.3e}"
+            )
+            # A boundary MLE (the fitter's own criterion) is checked against the
+            # upper end only: a positive rate under a log-scale prior cannot put
+            # posterior mass at zero, so the interval's lower end stays above it.
+            if np.log(mle.params[name]) >= _BOUNDARY_LOG_RATE:
+                assert mle.params[name] >= lo, (
+                    f"{name}: MLE {mle.params[name]:.3e} below posterior 90% "
+                    f"interval lower end {lo:.3e}"
+                )
 
 
 @pytest.mark.slow
 class TestBayesianMleConsistency:
-    """Posterior mean under weak priors should agree with MLE to within _RTOL."""
+    """Posterior under weak priors should be consistent with the MLE."""
 
     def test_single_epoch_posterior_near_mle(self) -> None:
         """Single-epoch Bayesian fit agrees with MLE birth and death rates."""

@@ -24,8 +24,8 @@ import pytest
 
 from bdpinf.inference import AgeData, BirthDeathModel, Constraints, FitResult, fit
 from bdpinf.simulation import (
+    simulate_birth_death,
     simulate_birth_death_lifespans,
-    simulate_birth_death_process,
 )
 
 _MIN_SURVIVORS = 15
@@ -66,10 +66,10 @@ def _simulate_and_fit(
     max_retries: int = 100,
 ) -> FitResult | None:
     """Simulate a single epoch and fit. Return the fit or None when too few survivors."""
-    df = simulate_birth_death_process(
-        birth_rates=birth_rate,
-        death_rates=death_rate,
-        times=T,
+    df = simulate_birth_death(
+        birth_rate,
+        death_rate,
+        T,
         random_seed=seed,
         ensure_non_extinct=ensure_non_extinct,
         max_retries=max_retries,
@@ -125,6 +125,10 @@ def _recovery_pass_rate(
 class TestRecoverySingleEpoch:
     """Parameter recovery tests for single-epoch birth-death models."""
 
+    # No death-rate recovery test: survivor ages alone identify the death rate
+    # too weakly at these sample sizes (the likelihood itself prefers other
+    # values), so such a test cannot be meaningful.
+
     def test_recover_supercritical_birth_rate(self) -> None:
         true_birth = 0.01
         successes = _recovery_pass_rate(
@@ -139,42 +143,14 @@ class TestRecoverySingleEpoch:
             f"Only {successes}/{_MAX_SEEDS} replicates recovered birth rate within 20%"
         )
 
-    @pytest.mark.xfail(
-        reason=(
-            "Death rate is weakly identified from survivor-ages-only data "
-            "(no extinction times / population time series observed). For "
-            "several seeds the likelihood genuinely prefers death_rate -> 0 "
-            "over the true value -- confirmed via direct NLL comparison "
-            "(NLL at the near-zero fit < NLL at the true parameters). This "
-            "is a statistical identifiability limitation of the model, not "
-            "an optimizer/convergence bug."
-        ),
-        strict=False,
-    )
-    def test_recover_supercritical_death_rate(self) -> None:
-        true_death = 0.003
-        successes = _recovery_pass_rate(
-            birth_rate=0.01,
-            death_rate=true_death,
-            T=600.0,
-            param="death",
-            true_value=true_death,
-            rel_tol=0.20,
-        )
-        assert successes >= 4, (
-            f"Only {successes}/{_MAX_SEEDS} replicates recovered death rate within 20%"
-        )
-
-    @pytest.mark.xfail(
-        reason=(
-            "Critical process (λ=μ=0.005) at T=800 has an extinction "
-            "probability of ~80%; the survivor count rarely reaches "
-            "_MIN_SURVIVORS (max observed across 20 seeds: 12), so there is "
-            "rarely enough data to even attempt a fit. Pre-existing "
-            "test-parameter issue, not a fitting bug."
-        ),
-        strict=False,
-    )
+    # Scenario: critical process (lambda = mu = 0.005) simulated with
+    # ``ensure_non_extinct=True`` over T = 10000, so lambda * T = 50 and a
+    # surviving process has about 1 + lambda * T = 51 survivors on average
+    # (median about 40), well above ``_MIN_SURVIVORS``.
+    # The original horizon (T = 800, lambda * T = 4) almost never gave enough
+    # survivors for a fit to be attempted.
+    # ``max_retries`` is raised because a critical process survives to T with
+    # probability about 1 / (1 + lambda * T), about 2 %.
     def test_recover_with_birth_death_equality_constraint(self) -> None:
         """Equality constraint λ=μ should tighten recovery of the shared rate."""
         true_rate = 0.005
@@ -182,11 +158,13 @@ class TestRecoverySingleEpoch:
         successes = _recovery_pass_rate(
             birth_rate=true_rate,
             death_rate=true_rate,
-            T=800.0,
+            T=10000.0,
             param="birth",
             true_value=true_rate,
             rel_tol=0.25,
             constraints=constraints,
+            ensure_non_extinct=True,
+            max_retries=5000,
         )
         assert successes >= 4, (
             f"Only {successes}/{_MAX_SEEDS} replicates recovered constrained rate within 25%"
@@ -194,8 +172,10 @@ class TestRecoverySingleEpoch:
 
     def test_recover_rates_are_self_consistent(self) -> None:
         """Fitted rates should be positive, finite, and ordered consistently."""
-        df = simulate_birth_death_process(
-            birth_rates=0.01, death_rates=0.003, times=600.0, random_seed=42
+        # Seed 42 goes extinct without ``ensure_non_extinct``, so this test
+        # would always skip.
+        df = simulate_birth_death(
+            0.01, 0.003, 600.0, random_seed=42, ensure_non_extinct=True
         )
         surviving = df.surviving_records
         if surviving is None or len(surviving) < _MIN_SURVIVORS:
@@ -239,15 +219,12 @@ class TestRecoverySingleEpoch:
             "birth rate within 20%"
         )
 
-    @pytest.mark.xfail(
-        reason=(
-            "Critical process (λ=μ=0.04) at T=1500 has an extinction "
-            "probability of ~98%; across 20 seeds none produced any "
-            "survivors at all. Pre-existing test-parameter issue (T far too "
-            "long relative to the rate), not a fitting bug."
-        ),
-        strict=False,
-    )
+    # Scenario: critical process (lambda = mu = 0.04) at T = 1500 with
+    # ``ensure_non_extinct=True``, so lambda * T = 60 and a surviving process
+    # has about 61 survivors on average.
+    # Without ``ensure_non_extinct`` only 1 of 20 seeds survived.
+    # ``max_retries`` is raised because a critical process survives to T with
+    # probability about 1 / (1 + lambda * T), under 2 %.
     def test_recover_critical_rates(self) -> None:
         """Critical process (λ ≈ μ): shared rate should be recoverable within 25%."""
         true_rate = 0.04
@@ -260,6 +237,8 @@ class TestRecoverySingleEpoch:
             true_value=true_rate,
             rel_tol=0.25,
             constraints=constraints,
+            ensure_non_extinct=True,
+            max_retries=5000,
         )
         assert successes >= 4, (
             f"Only {successes}/{_MAX_SEEDS} replicates recovered critical rate within 25%"

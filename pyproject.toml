@@ -1,12 +1,12 @@
 [project]
 name = "bdpinf"
-version = "0.4.2"
+version = "0.5.0"
 description = "Inference, simulation, and visualisation for linear birth-death (branching) processes."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
   "altair>=6.0.0",
-  "bdsurv>=0.4.0",
+  "bdsurv>=0.5.0",
   "beartype>=0.19.0",
   "itables>=2.7.0",
   "jax>=0.4.38",
@@ -25,7 +25,7 @@ dependencies = [
 # changes; its tags are for internal tracking only).  For local co-development,
 # temporarily point this at `{ path = "../bdsurv", editable = true }`.
 [tool.uv.sources]
-bdsurv = { git = "ssh://git@github.com/jaycrick/bdsurv.git", rev = "c758873" }
+bdsurv = { git = "ssh://git@github.com/jaycrick/bdsurv.git", rev = "b660a53" }
 
 [dependency-groups]
 gpu = [
@@ -79,19 +79,38 @@ reportReturnType = "none"
 # ruff F811 catches genuine duplicate imports in src/, so suppressing here is safe.
 reportDuplicateImport = "none"
 
+# Notebook cells end with a bare expression so Quarto displays the value; scope the
+# relaxation to qmd_scripts so src/ keeps the strict setting.
+[[tool.basedpyright.executionEnvironments]]
+root = "qmd_scripts"
+reportUnusedExpression = "none"
+
 [tool.ruff]
 line-length = 88
 
 [tool.ruff.lint]
-select = ["B", "C4", "D", "E", "F", "I", "PIE", "PT", "RUF", "SIM", "UP", "W"]
+select = [
+  "B", "C4", "C90", "D", "E", "F", "I", "PIE", "PT", "RUF", "SIM", "UP", "W",
+  "ARG", "BLE", "ERA", "N", "NPY", "PERF", "PLR", "PTH", "RET", "SLF"
+]
 
 ignore = [
   "C408", # dict(key=value) is a fine way to build kwargs
+  "N803", # mathematical argument names (T, E, W) follow the paper
+  "N806", # mathematical variable names (T, E, W) follow the paper
+  "PLR2004", # numeric literals are normal in mathematical code and tests
   "PT018", # composite asserts are fine; splitting them hurts readability
   "RUF001", # math notation (λ, μ, ×, ·) is intentional in strings, docstrings, comments
   "RUF002",
   "RUF003"
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 10
+max-positional-args = 5
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
@@ -106,18 +125,24 @@ convention = "numpy"
 "tests/*" = [
   "D101", # test classes are self-documenting via their names
   "D102", # test methods are self-documenting via their names
-  "E501" # test strings and fixture data are allowed to be long
+  "E501", # test strings and fixture data are allowed to be long
+  "PLR0913", # test helpers and fixtures take many arguments
+  "PLR0917",
+  "SLF001" # tests exercise private helpers directly
 ]
 # lintquarto extracts qmd cells to temporary .py files in the same directory.
 # These rules are false positives or impractical to enforce in notebook code:
 "qmd_scripts/**" = [
   "B018", # bare last-line expressions are intentional display outputs
   "B905", # zip() strict= is impractical to require in analysis notebooks
+  "BLE001", # the compile-time-report cell tolerates an unreadable timing log
   "D100", # notebooks have no module-level docstring
   "D101", # notebook TypedDict/dataclasses don't need class docstrings
   "D103", # notebook helper functions don't need docstrings
   "E501", # analysis cells routinely have long lines
-  "I001" # import ordering across cells is flexible by design
+  "I001", # import ordering across cells is flexible by design
+  "PLR0917", # notebook helper functions take plain positional arguments
+  "PTH123" # a one-off debug notebook writes its profile report with open()
 ]
 "docs/**" = [
   "B018",
@@ -130,7 +155,7 @@ convention = "numpy"
 ]
 
 [tool.pytest.ini_options]
-addopts = "-m \"not slow\" --cov --cov-report=term-missing --cov-fail-under=86"
+addopts = "-m \"not slow\" --strict-markers"
 markers = [
   "recovery: simulate-then-fit parameter recovery tests (implies slow)",
   "regression: golden-value tests guarding against numerical drift",

@@ -6,6 +6,7 @@ from pathlib import Path
 import altair as alt
 import pandas as pd
 import pytest
+import vl_convert
 
 from bdpinf.visualization import altair_theme
 from bdpinf.visualization.altair_theme import (
@@ -250,3 +251,44 @@ class TestFigureDirResolution:
 
         set_figure_dir(None)
         assert altair_theme._resolve_output_dir(None) == env_dir
+
+
+class TestRegisterExportFonts:
+    """Test best-effort font registration."""
+
+    @pytest.fixture
+    def font_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        monkeypatch.setattr(altair_theme, "_FONT_DIR_CANDIDATES", (tmp_path,))
+        monkeypatch.setattr(altair_theme, "_fonts_registered", False)
+        return tmp_path
+
+    @pytest.mark.parametrize("error", [OSError("unreadable"), ValueError("bad font")])
+    def test_expected_registration_failure_is_skipped(
+        self,
+        font_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        error: Exception,
+    ) -> None:
+        def failing(_path: str) -> None:
+            raise error
+
+        monkeypatch.setattr(vl_convert, "register_font_directory", failing)
+
+        with caplog.at_level("DEBUG"):
+            altair_theme.register_export_fonts()
+
+        assert altair_theme._fonts_registered is True
+        assert str(font_dir) in caplog.text
+
+    @pytest.mark.usefixtures("font_dir")
+    def test_type_error_propagates(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def broken(_path: str) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(vl_convert, "register_font_directory", broken)
+
+        with pytest.raises(TypeError, match="programming error"):
+            altair_theme.register_export_fonts()
+
+        assert altair_theme._fonts_registered is False

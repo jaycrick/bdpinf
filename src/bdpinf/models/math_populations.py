@@ -1,7 +1,7 @@
 r"""Population log-likelihood calculations for birth-death processes.
 
-Tavaré (2018) formula for P(Z_T = n | Z_0 = n0), written in the paper's
-notation [paper: Eq. ?]: from one ancestor,
+Tavaré (2018) formula for P(Z_T = n | Z_0 = n0) (see ``bibliography.bib``),
+written in the paper's notation [paper: Eq. ?]: from one ancestor,
 $\Pr(Z_T = 0) = P_0(T) = I/(1+I)$ and, given survival,
 $Z_T$ is geometric with success probability $\pi(T) = 1/\mathcal W(T)$,
 i.e. $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
@@ -46,6 +46,43 @@ from bdpinf.models.validation import normalize_and_validate_inputs
 from bdpinf.utils import ensure_1d_tensor
 
 # ---------------------------------------------------------------------------
+# Argument check shared by every public entry point
+# ---------------------------------------------------------------------------
+
+
+def check_conditioning(initial_population: int, condition_on_survival: bool) -> None:
+    r"""Raise ``ValueError`` for survival conditioning with several founders.
+
+    The conditioned count term $\Pr(Z_T = z \mid Z_T \ge 1)$ is derived only for a
+    process started from one individual.
+    Both arguments are static Python values (never traced), so this runs on the
+    host and is safe to call from code that is later wrapped in ``jit`` or ``grad``.
+
+    Parameters
+    ----------
+    initial_population : int
+        Number of individuals at time 0.
+    condition_on_survival : bool
+        Whether the count term is conditioned on non-extinction.
+
+    Raises
+    ------
+    ValueError
+        If ``condition_on_survival`` is True and ``initial_population > 1``.
+        Other values of ``initial_population`` are not checked here.
+
+    """
+    if condition_on_survival and initial_population > 1:
+        msg = (
+            "condition_on_survival=True is only defined for initial_population == 1 "
+            f"(got initial_population={initial_population}); "
+            "pass condition_on_survival=False for a process started from "
+            "more than one individual"
+        )
+        raise ValueError(msg)
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 #
 # _compute_populations_log_lik_multi_start is only ever called with already-
@@ -63,7 +100,12 @@ def _safe_mul(count: jax.Array, log_value: jax.Array) -> jax.Array:
 def _population_logs(
     terms: Totals,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
-    r"""Return $(\ln P_0, \ln(1-P_0), \ln(1-\pi), \ln\pi)$ at ``T``."""
+    r"""Return $(\ln P_0, \ln(1-P_0), \ln(1-\pi), \ln\pi)$ at ``T``.
+
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
+
+    """
     log_extinction_pr, log_survival_pr = log_extinction_and_survival_pr(terms)
     log_w_total = log_nested_w_total(terms)
     log_one_minus_pi = restore_neg_inf(log_nested_w_minus_one(terms) - log_w_total)
@@ -75,11 +117,16 @@ def _compute_populations_log_lik_multi_start(
     ns: Float[Array, " n"],
     nonzero_mask: Bool[Array, " n"],
     n0: int,
+    *,
     log_extinction_pr: Float[Array, ""],
     log_one_minus_pi: Float[Array, ""],
     log_one_minus: Float[Array, ""],
 ) -> Float[Array, " n"]:
     r"""Log probabilities for populations when initial_population > 1.
+
+    The sum over ``j`` is stated neither in ``docs/likelihoods.qmd``
+    nor in the module docstring;
+    TODO(author): state it.
 
     Replaces the ragged ``torch.arange(j_min, j_max+1)`` per-element loop with
     a fixed-width ``n0``-length sum masked by validity conditions, vectorized
@@ -156,6 +203,9 @@ def calculate_populations_log_pmf_from_terms(
 ) -> Float[Array, " n"]:
     r"""Per-element log P(Z_T = ns[i]) from precomputed terms.
 
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
+
     ``terms`` is either kind of epoch terms
     (:class:`~bdpinf.models.math_nested.NestedTerms` or
     :class:`~bdpinf.models.math_general.GeneralTerms`), so the rates may be any
@@ -221,6 +271,9 @@ def calculate_populations_log_pmf(
 ) -> Float[Array, " n"]:
     r"""Per-element log P(Z_T = ns[i]) for piecewise-constant rates.
 
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
+
     Same math as ``calculate_populations_log_lik`` but returns the shape-(m,)
     per-element log-probability array rather than their sum.  JIT- and vmap-safe
     with ``_skip_normalization=True``.
@@ -265,6 +318,9 @@ def population_geometric_parameter(
 ) -> Float[Array, ""]:
     r"""Geometric parameter $\pi(T) = 1/\mathcal W(T)$ of $Z_T$.
 
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
+
     Given survival, $Z_T$ is geometric on $\{1, 2, \dots\}$.
 
     Parameters
@@ -294,6 +350,9 @@ def calculate_populations_log_lik_from_terms(
 ) -> Float[Array, ""]:
     r"""Log P(Z_T = n) summed over provided counts, from precomputed terms.
 
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
+
     Same as :func:`calculate_populations_log_lik` but for any
     :class:`~bdpinf.models.rate_functions.RateFunction` pair, through terms
     from :func:`bdpinf.models.math_general.terms_for`.
@@ -308,15 +367,22 @@ def calculate_populations_log_lik_from_terms(
     initial_population : int
         Z_0. Default 1.
     condition_on_survival : bool
-        If True and initial_population == 1, condition on non-extinction for
-        positive counts: $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
+        If True, condition on non-extinction for positive counts:
+        $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
+        Only defined for ``initial_population == 1``.
 
     Returns
     -------
     jax.Array
         Scalar float64.
 
+    Raises
+    ------
+    ValueError
+        If ``condition_on_survival`` is True and ``initial_population > 1``.
+
     """
+    check_conditioning(initial_population, condition_on_survival)
     _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
     _zero = jnp.float64(0.0)
 
@@ -328,8 +394,8 @@ def calculate_populations_log_lik_from_terms(
         )
         return jnp.where(jnp.all(jnp.isfinite(log_pr)), log_pr.sum(), _ninf)
 
-    # condition_on_survival=True path (initial_population==1 only):
-    # condition on non-extinction.
+    # condition_on_survival=True path: condition on non-extinction
+    # (initial_population == 1, enforced by check_conditioning above).
     log_extinction_pr, _, log_one_minus_pi, log_pi = _population_logs(terms)
     zero_mask = ns == 0
     log_term3 = jnp.where(ns == 1, _zero, _safe_mul(ns - 1.0, log_one_minus_pi))
@@ -353,6 +419,9 @@ def calculate_populations_log_lik(
 ) -> Float[Array, ""]:
     r"""Log P(Z_T = n) summed over provided counts.
 
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
+
     Tavaré (2018) formula. Supports single- and multi-epoch models.
 
     Parameters
@@ -364,15 +433,22 @@ def calculate_populations_log_lik(
     initial_population : int
         Z_0. Default 1.
     condition_on_survival : bool
-        If True and initial_population == 1, condition on non-extinction for
-        positive counts: $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
+        If True, condition on non-extinction for positive counts:
+        $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
+        Only defined for ``initial_population == 1``.
 
     Returns
     -------
     jax.Array
         Scalar float64.
 
+    Raises
+    ------
+    ValueError
+        If ``condition_on_survival`` is True and ``initial_population > 1``.
+
     """
+    check_conditioning(initial_population, condition_on_survival)
     if not _skip_normalization:
         birth_rates, death_rates, times = normalize_and_validate_inputs(
             birth_rates, death_rates, times
