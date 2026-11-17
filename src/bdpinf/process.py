@@ -810,6 +810,7 @@ class BirthDeathProcess:
             ages=ages,
             times=self.adjusted_epoch_end_times,
             spine_ages=spine_ages,
+            initial_population=self.initial_population,
             condition_on_survival=condition_on_survival,
         )
 

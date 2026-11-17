@@ -13,6 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `process`: `BirthDeathProcess.log_likelihood` now passes `initial_population` to the likelihood; with `condition_on_survival=False` and more than one founder it previously scored the process as if it had one.
 - `visualization.scenario_row`, `rate_frame`: points where a rate is infinite (singular hazards at calendar time 0) are left out of the rate panels instead of breaking the axis limits.
 
 ### Changed (breaking)
