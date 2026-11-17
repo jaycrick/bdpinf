@@ -5,20 +5,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] --- 2026-11-17
+
 ### Added
 
 - `models.rate_functions`: parametric rate functions `PowerRate` (with `weibull` and `rayleigh` constructors), `LogLogisticRate` and `LomaxRate`, a `PiecewiseExponentialRate.gompertz(a, b, end_time)` constructor, and `PiecewiseRate`, which glues any rate functions together epoch by epoch in local time.
   Rates singular at 0 list geometric breakpoints so the Gauss-Legendre quadrature resolves them.
 - `qmd_scripts/validation/time_varying_rates/05_parametric_hazard_shapes.qmd`: vignette of spine and non-spine age densities for Weibull, Rayleigh, Gompertz, log-logistic, Lomax, quadratic and piecewise birth and death rates, with mass and `scipy` quadrature checks.
+- `models.rate_functions`: three new `RateFunction` families with exact integrals, `PiecewiseExponentialRate` (linear on the log scale), `PiecewiseQuadraticRate` (values at epoch start, midpoint and end, with `continuous`, `spline` and `from_linear` constructors) and `SinusoidalRate` (its breakpoints are the interior half-periods, so quadrature resolves each oscillation); all are exported from `bdpinf.models`.
 
 ### Changed
 
 - `simulation.simulator`: the rejection sampler's density envelope is computed once per batch with one vectorised call instead of once per sample; seeded draws are unchanged.
-
-### Fixed
-
-- `process`: `BirthDeathProcess.log_likelihood` now passes `initial_population` to the likelihood; with `condition_on_survival=False` and more than one founder it previously scored the process as if it had one.
-- `visualization.scenario_row`, `rate_frame`: points where a rate is infinite (singular hazards at calendar time 0) are left out of the rate panels instead of breaking the axis limits.
 
 ### Changed (breaking)
 
@@ -76,9 +74,10 @@ There are no aliases for the old names.
 - Code that read `bdsurv` internals (`bdsurv._extinction.pr_extinction`, `bdsurv.linear_rates`, `bdsurv.gillespie`) should follow the `bdsurv` 0.5.0 migration notes:
   for example `-math.expm1(bdsurv.log_survival_probability(b, d, T))` replaces `pr_extinction(b, d, T)`.
 
-### Added
+### Fixed
 
-- `models.rate_functions`: three new `RateFunction` families with exact integrals, `PiecewiseExponentialRate` (linear on the log scale), `PiecewiseQuadraticRate` (values at epoch start, midpoint and end, with `continuous`, `spline` and `from_linear` constructors) and `SinusoidalRate` (its breakpoints are the interior half-periods, so quadrature resolves each oscillation); all are exported from `bdpinf.models`.
+- `process`: `BirthDeathProcess.log_likelihood` now passes `initial_population` to the likelihood; with `condition_on_survival=False` and more than one founder it previously scored the process as if it had one.
+- `visualization.scenario_row`, `rate_frame`: points where a rate is infinite (singular hazards at calendar time 0) are left out of the rate panels instead of breaking the axis limits.
 
 ## [0.4.2] --- 2026-11-13
 
