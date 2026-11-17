@@ -4,12 +4,31 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from bdpinf.utils import (
     ensure_1d_tensors,
     validate_matching_lengths,
     validate_matching_shapes,
 )
+
+
+def is_concrete_value(x: object) -> bool:
+    """Return whether ``x`` is a host numeric value (array, scalar, sequence)."""
+    return isinstance(
+        x, np.ndarray | np.generic | jax.Array | float | int | list | tuple
+    ) and not isinstance(x, jax.core.Tracer)
+
+
+def is_concrete(*values: object) -> bool:
+    """Return whether host-side validation of ``values`` is possible.
+
+    False if any value is a tracer (``grad``/``vmap``) or not a host numeric
+    value, or if we are inside a ``jit``/``while_loop`` trace, where even
+    closed-over constants turn into tracers as soon as they meet a ``jnp`` op.
+    """
+    traced = isinstance(jnp.zeros(()), jax.core.Tracer)
+    return not traced and all(is_concrete_value(v) for v in values)
 
 
 def _validate_times_positive(times: jax.Array) -> None:

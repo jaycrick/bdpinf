@@ -48,6 +48,9 @@ from bdpinf.simulation import simulate_ages_from_rates
 
 jax.config.update("jax_enable_x64", True)
 
+# The optimiser benchmark times the jitted objective that ``fit`` itself builds.
+_prepare_problem = fitting_module._prepare_problem  # noqa: SLF001  # benchmarks fitting internals
+
 SECTIONS = ("derivatives", "explicit", "quadrature", "optimisers")
 
 
@@ -219,7 +222,7 @@ def bench_derivatives(repeats: int) -> list[dict[str, Any]]:
 
 
 def _explicit_value_and_grad(
-    lam: float, mu: float, horizon: float, spine: float, ages: np.ndarray, n: int
+    lam: float, mu: float, *, horizon: float, spine: float, ages: np.ndarray, n: int
 ) -> tuple[float, np.ndarray]:
     """Closed-form log-likelihood and (lam, mu) score for constant rates.
 
@@ -302,11 +305,11 @@ def bench_explicit(repeats: int, quick: bool) -> list[dict[str, Any]]:
         compile_s, auto_ms = _compile_and_run(auto, theta, repeats=repeats)
         value, grad = auto(theta)
         explicit_value, explicit_grad = _explicit_value_and_grad(
-            1.05, 0.55, t_here, spine, ages, n
+            1.05, 0.55, horizon=t_here, spine=spine, ages=ages, n=n
         )
         explicit_ms = _median_ms(
             lambda a=ages, s=spine, n=n, h=t_here: _explicit_value_and_grad(
-                1.05, 0.55, h, s, a, n
+                1.05, 0.55, horizon=h, spine=s, ages=a, n=n
             ),
             repeats,
         )
@@ -360,7 +363,9 @@ def bench_explicit_fit(repeats: int) -> list[dict[str, Any]]:
         ) -> tuple[float, np.ndarray]:
             lam, mu = np.exp(u)
             try:
-                value, grad = _explicit_value_and_grad(lam, mu, horizon, spine, ages, n)
+                value, grad = _explicit_value_and_grad(
+                    lam, mu, horizon=horizon, spine=spine, ages=ages, n=n
+                )
             except FloatingPointError:
                 return 1e20, np.zeros(2)
             if not np.isfinite(value):
@@ -431,26 +436,24 @@ def bench_quadrature(repeats: int) -> list[dict[str, Any]]:
     return rows
 
 
-def _root_find(
-    objective: Any, x0: np.ndarray, tol: float, args: tuple[Any, ...]
-) -> dict[str, Any]:
+def _root_find(problem: Any, x0: np.ndarray, tol: float) -> dict[str, Any]:
     """Newton/hybrid root of the score using the exact Hessian as Jacobian."""
     evals = 0
 
     def score(x: np.ndarray) -> np.ndarray:
         nonlocal evals
         evals += 1
-        return np.asarray(objective.value_and_grad(jnp.asarray(x), *args)[1])
+        return np.asarray(problem.value_and_grad(jnp.asarray(x))[1])
 
     def jac(x: np.ndarray) -> np.ndarray:
-        return np.asarray(objective.hessian(jnp.asarray(x), *args))
+        return np.asarray(problem.hessian(jnp.asarray(x)))
 
     start = time.perf_counter()
     result = scipy.optimize.root(score, x0, jac=jac, method="hybr", tol=tol)
     elapsed = time.perf_counter() - start
     x = np.asarray(result.x)
-    value = float(objective.value_and_grad(jnp.asarray(x), *args)[0])
-    hess = np.asarray(objective.hessian(jnp.asarray(x), *args))
+    value = float(problem.value_and_grad(jnp.asarray(x))[0])
+    hess = np.asarray(problem.hessian(jnp.asarray(x)))
     return {
         "ll": -value,
         "grad_norm": float(np.linalg.norm(score(x))),
@@ -517,33 +520,20 @@ def bench_optimisers(seeds: int) -> list[dict[str, Any]]:
                     }
                 )
             compiled = (constraints or Constraints()).compile(model.params)
-            objective = fitting_module._objective(
+            problem = _prepare_problem(
+                data,
                 model,
                 compiled,
-                has_spine=data.spine_ages is not None,
-                use_unknown_spine=data.use_unknown_spine,
-                initial_population=data.initial_population,
-                end_time=data.end_time,
                 condition_on_survival=True,
                 n_nodes=32,
-            )
-            padded = data.padded(fitting_module._bucket(data.n_observations))
-            args = (
-                jnp.asarray(padded.non_spine_ages),
-                jnp.zeros(0)
-                if data.spine_ages is None
-                else jnp.asarray(data.spine_ages),
-                jnp.asarray(data.ns),
-                jnp.asarray(compiled.fixed_natural),
-                jnp.asarray(
-                    data.n_observations
-                    - (0 if data.spine_ages is None else len(data.spine_ages))
-                ),
+                pad_to_bucket=True,
+                hessian_mode="fwd-fwd",
+                tol=1e-6,
             )
             moments = fitting_module.moment_initial_rates(data) or (0.8, 0.4)
             x0 = np.asarray(compiled.reduce(model.constant_natural(*moments)))
             reference = stats["newton"][-1]["ll"]
-            root = _root_find(objective, x0, 1e-10, args)
+            root = _root_find(problem, x0, 1e-10)
             root["success"] = bool(
                 root["grad_norm"] < 1e-4 * max(1, data.n_observations)
                 and root["is_max"]

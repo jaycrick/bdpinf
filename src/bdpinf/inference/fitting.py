@@ -30,7 +30,12 @@ import scipy.optimize
 import scipy.stats
 from numpy.typing import ArrayLike, NDArray
 
-from bdpinf.inference.constraints import CompiledConstraints, Constraints
+from bdpinf.inference.constraints import (
+    INTERVAL_CODE,
+    LOG_CODE,
+    CompiledConstraints,
+    Constraints,
+)
 from bdpinf.inference.likelihood import AgeData, log_likelihood_rates
 from bdpinf.inference.rate_models import BirthDeathModel
 from bdpinf.inference.uncertainty import covariance_from_hessian
@@ -902,12 +907,10 @@ def _covariances(
 
 def _at_boundary(compiled: CompiledConstraints, x_best: NDArray[np.float64]) -> bool:
     """Whether a free parameter sits at the edge of its transform's range."""
-    # Transform codes are the bare integers of ``_CODES`` in ``constraints.py``
-    # (private there, with no named constants): 1 is "log", 3 is "interval".
     free_codes = compiled.codes[compiled.free_indices]
     return bool(
-        np.any(x_best[free_codes == 1] < _BOUNDARY_LOG_RATE)
-        or np.any(np.abs(x_best[free_codes == 3]) > _BOUNDARY_LOG_RATE)
+        np.any(x_best[free_codes == LOG_CODE] < _BOUNDARY_LOG_RATE)
+        or np.any(np.abs(x_best[free_codes == INTERVAL_CODE]) > _BOUNDARY_LOG_RATE)
     )
 
 

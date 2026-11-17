@@ -33,6 +33,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from bdpinf.models.validation import is_concrete, is_concrete_value
+
 __all__ = [
     "LogLogisticRate",
     "LomaxRate",
@@ -80,10 +82,6 @@ class RateFunction(Protocol):
 # ---------------------------------------------------------------------------
 
 
-def _is_concrete_array(x: object) -> bool:
-    return isinstance(x, np.ndarray | jax.Array) and not isinstance(x, jax.core.Tracer)
-
-
 def _as_f64(x: object) -> object:
     """Coerce lists, scalars and arrays to float64; leave tracers/sentinels alone."""
     if isinstance(x, jax.core.Tracer):
@@ -97,7 +95,8 @@ def _epoch_starts(times: jax.Array) -> jax.Array:
     return jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), times[:-1]])
 
 
-def _epoch_index(times: jax.Array, t: jax.Array) -> jax.Array:
+def epoch_index(times: jax.Array, t: jax.Array) -> jax.Array:
+    """Index of the epoch ``(tau_{k-1}, tau_k]`` containing each ``t`` (clipped)."""
     return jnp.clip(jnp.searchsorted(times, t, side="left"), 0, times.shape[0] - 1)
 
 
@@ -106,7 +105,7 @@ def _linear_value(
 ) -> jax.Array:
     starts = _epoch_starts(times)
     slope = (v1 - v0) / (times - starts)
-    k = _epoch_index(times, t)
+    k = epoch_index(times, t)
     return v0[k] + slope[k] * (t - starts[k])
 
 
@@ -121,9 +120,19 @@ def _linear_cumulative(
         [jnp.zeros(1, dtype=jnp.float64), jnp.cumsum(0.5 * (v0 + v1) * dur)[:-1]]
     )
     t = jnp.clip(t, 0.0, times[-1])
-    k = _epoch_index(times, t)
+    k = epoch_index(times, t)
     d = t - starts[k]
     return cum_before[k] + v0[k] * d + 0.5 * slope[k] * d * d
+
+
+def _checked_epoch_times(times: object) -> np.ndarray:
+    """Return ``times`` as a host array after checking it is a valid epoch grid."""
+    t = np.asarray(times)
+    if t.ndim != 1 or t.size == 0:
+        raise ValueError("epoch_end_times must be a non-empty 1-D array")
+    if t[0] <= 0 or np.any(np.diff(t) <= 0):
+        raise ValueError("epoch_end_times must be positive and strictly increasing")
+    return t
 
 
 def _validate_epochs(times: object, *values: object, positive: bool = False) -> None:
@@ -131,14 +140,9 @@ def _validate_epochs(times: object, *values: object, positive: bool = False) -> 
 
     With ``positive=True`` the values must be strictly positive, not just non-negative.
     """
-    arrays = (times, *values)
-    if not all(_is_concrete_array(x) for x in arrays):
+    if not is_concrete(times, *values):
         return
-    t = np.asarray(times)
-    if t.ndim != 1 or t.size == 0:
-        raise ValueError("epoch_end_times must be a non-empty 1-D array")
-    if t[0] <= 0 or np.any(np.diff(t) <= 0):
-        raise ValueError("epoch_end_times must be positive and strictly increasing")
+    t = _checked_epoch_times(times)
     for v in values:
         arr = np.asarray(v)
         if arr.shape != t.shape:
@@ -195,7 +199,7 @@ class PiecewiseConstantRate:
 
     def __call__(self, t: jax.Array) -> jax.Array:
         """Evaluate the rate at ``t``."""
-        return self.values[_epoch_index(self.epoch_end_times, jnp.asarray(t))]
+        return self.values[epoch_index(self.epoch_end_times, jnp.asarray(t))]
 
     def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
         r"""Exact $\int_s^e w$."""
@@ -403,7 +407,7 @@ class PiecewiseExponentialRate:
         starts = _epoch_starts(times)
         growth = _log_growth(self.start_values, self.end_values, times - starts)
         t = jnp.asarray(t)
-        k = _epoch_index(times, t)
+        k = epoch_index(times, t)
         return self.start_values[k] * jnp.exp(growth[k] * (t - starts[k]))
 
     def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
@@ -424,7 +428,7 @@ class PiecewiseExponentialRate:
             [jnp.zeros(1, dtype=jnp.float64), jnp.cumsum(full)[:-1]]
         )
         t = jnp.clip(t, 0.0, times[-1])
-        k = _epoch_index(times, t)
+        k = epoch_index(times, t)
         u = t - starts[k]
         return cum_before[k] + self.start_values[k] * u * _expm1_over(growth[k] * u)
 
@@ -443,13 +447,9 @@ def _quadratic_coefficients(
 
 def _validate_quadratic(times: object, start: object, mid: object, end: object) -> None:
     """Finite, and non-negative everywhere on every epoch (vertex included)."""
-    if not all(_is_concrete_array(x) for x in (times, start, mid, end)):
+    if not is_concrete(times, start, mid, end):
         return
-    t = np.asarray(times)
-    if t.ndim != 1 or t.size == 0:
-        raise ValueError("epoch_end_times must be a non-empty 1-D array")
-    if t[0] <= 0 or np.any(np.diff(t) <= 0):
-        raise ValueError("epoch_end_times must be positive and strictly increasing")
+    t = _checked_epoch_times(times)
     v0, vm, v1 = (np.asarray(x, dtype=float) for x in (start, mid, end))
     for v in (v0, vm, v1):
         if v.shape != t.shape:
@@ -611,7 +611,7 @@ class PiecewiseQuadraticRate:
         times = self.epoch_end_times
         starts = _epoch_starts(times)
         t = jnp.asarray(t)
-        k = _epoch_index(times, t)
+        k = epoch_index(times, t)
         a0, a1, a2 = _quadratic_coefficients(
             self.start_values[k], self.mid_values[k], self.end_values[k]
         )
@@ -631,7 +631,7 @@ class PiecewiseQuadraticRate:
             [jnp.zeros(1, dtype=jnp.float64), jnp.cumsum(full)[:-1]]
         )
         t = jnp.clip(t, 0.0, times[-1])
-        k = _epoch_index(times, t)
+        k = epoch_index(times, t)
         a0, a1, a2 = _quadratic_coefficients(
             self.start_values[k], self.mid_values[k], self.end_values[k]
         )
@@ -696,13 +696,11 @@ class SinusoidalRate:
         for name in ("mean", "amplitude", "phase"):
             object.__setattr__(self, name, _as_f64(getattr(self, name)))
         object.__setattr__(self, "period", float(self.period))
-        object.__setattr__(self, "end_time", np.float64(self.end_time))
         if not (np.isfinite(self.period) and self.period > 0):
             raise ValueError("period must be finite and positive")
-        if not (np.isfinite(self.end_time) and self.end_time > 0):
-            raise ValueError("end_time must be finite and positive")
+        object.__setattr__(self, "end_time", _check_end_time(self.end_time))
         data = (self.mean, self.amplitude, self.phase)
-        if not all(_is_concrete_array(x) for x in data):
+        if not is_concrete(*data):
             return
         mean, amplitude, phase = (np.asarray(x) for x in data)
         if not all(np.all(np.isfinite(x)) for x in (mean, amplitude, phase)):
@@ -745,12 +743,6 @@ class SinusoidalRate:
 _N_GEOMETRIC = 30
 
 
-def _is_concrete_scalar(x: object) -> bool:
-    return isinstance(x, np.ndarray | np.generic | jax.Array | float | int) and not (
-        isinstance(x, jax.core.Tracer)
-    )
-
-
 def _geometric_breakpoints(end_time: float) -> jax.Array:
     r"""Ascending $T 2^{-j}$ for $j = 30, \dots, 1$.
 
@@ -771,14 +763,14 @@ def _check_end_time(end_time: object) -> np.float64:
 def _check_finite(**named: object) -> None:
     """Concrete values only: every entry finite."""
     for name, v in named.items():
-        if _is_concrete_scalar(v) and not np.all(np.isfinite(np.asarray(v))):
+        if is_concrete_value(v) and not np.all(np.isfinite(np.asarray(v))):
             raise ValueError(f"{name} must be finite")
 
 
 def _check_positive(**named: object) -> None:
     """Concrete values only: every entry finite and strictly positive."""
     for name, v in named.items():
-        if _is_concrete_scalar(v):
+        if is_concrete_value(v):
             arr = np.asarray(v)
             if not np.all(np.isfinite(arr)) or np.any(arr <= 0):
                 raise ValueError(f"{name} must be positive and finite")
@@ -789,7 +781,7 @@ def _singular_at_zero(shape: object) -> bool:
 
     Unknown (traced) values are treated as singular, which is always safe.
     """
-    if not _is_concrete_scalar(shape):
+    if not is_concrete_value(shape):
         return True
     return bool(np.any(np.asarray(shape) < 1.0))
 
@@ -841,7 +833,7 @@ class PowerRate:
         object.__setattr__(self, "end_time", _check_end_time(self.end_time))
         _check_positive(c=self.c)
         _check_finite(p=self.p)
-        if _is_concrete_scalar(self.p) and np.any(np.asarray(self.p) <= -1.0):
+        if is_concrete_value(self.p) and np.any(np.asarray(self.p) <= -1.0):
             raise ValueError("p must be greater than -1")
 
     @classmethod
@@ -861,7 +853,7 @@ class PowerRate:
     @property
     def breakpoints(self) -> jax.Array:
         """Geometric times $T 2^{-j}$ when singular at 0 ($p < 0$), else empty."""
-        if _is_concrete_scalar(self.p) and not np.any(np.asarray(self.p) < 0.0):
+        if is_concrete_value(self.p) and not np.any(np.asarray(self.p) < 0.0):
             return jnp.zeros(0, dtype=jnp.float64)
         return _geometric_breakpoints(self.end_time)
 
@@ -1043,7 +1035,7 @@ class PiecewiseRate:
             object.__setattr__(self, "pieces", pieces)
         object.__setattr__(self, "epoch_end_times", _as_f64(self.epoch_end_times))
         times = self.epoch_end_times
-        if not isinstance(pieces, tuple) or not _is_concrete_array(times):  # pyright: ignore[reportUnnecessaryIsInstance]
+        if not isinstance(pieces, tuple) or not is_concrete(times):  # pyright: ignore[reportUnnecessaryIsInstance]
             return
         _validate_epochs(times)
         if len(pieces) != np.asarray(times).shape[0]:
@@ -1053,7 +1045,7 @@ class PiecewiseRate:
         lengths = np.diff(np.asarray(times), prepend=0.0)
         for k, (piece, length) in enumerate(zip(pieces, lengths, strict=True)):
             end = getattr(piece, "end_time", None)
-            if _is_concrete_scalar(end) and not np.isclose(
+            if is_concrete_value(end) and not np.isclose(
                 float(np.asarray(end)), length, rtol=1e-9, atol=0.0
             ):
                 raise ValueError(
@@ -1082,7 +1074,7 @@ class PiecewiseRate:
         """Epoch index, local time, and epoch lengths."""
         times = self.epoch_end_times
         starts = _epoch_starts(times)
-        k = _epoch_index(times, t)
+        k = epoch_index(times, t)
         return k, t - starts[k], times - starts
 
     def __call__(self, t: jax.Array) -> jax.Array:

@@ -19,12 +19,12 @@ as a knot moves through a range.
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from bdpinf.models import math_nested
 from bdpinf.models.math_general import (
     AgeTerms,
     GeneralTerms,
+    gauss_legendre,
     log_non_spine_cdf_kernel,
     log_spine_cdf_kernel,
     non_spine_log_density,
@@ -34,12 +34,12 @@ from bdpinf.models.math_general import (
 from bdpinf.models.math_nested import (
     LOG_ZERO,
     NestedTerms,
-    _epoch_index,  # pyright: ignore[reportPrivateUsage]
-    _log_kappa_minus,  # pyright: ignore[reportPrivateUsage]
-    _log_or_floor,  # pyright: ignore[reportPrivateUsage]
-    _row,  # pyright: ignore[reportPrivateUsage]
+    epoch_row,
+    log_kappa_minus,
     log_nested_w_minus_one,
+    log_or_floor,
 )
+from bdpinf.models.rate_functions import epoch_index
 
 __all__ = [
     "cdf_log_masses",
@@ -49,15 +49,21 @@ __all__ = [
 ]
 
 _RANGE_NODES = 16
+"""Gauss-Legendre nodes per piece for range masses.
+
+Fewer than ``DEFAULT_NODES`` (32): each range is already cut at every rate
+breakpoint, so a panel covers a single smooth piece of a (usually short) range.
+The commit that introduced it (39a81c5) records no other rationale.
+"""
 
 
 def _log_l_before(terms: NestedTerms) -> jax.Array:
     r"""$\ln L(\tau_{k-1})$ per epoch (``LOG_ZERO`` for the first epoch)."""
     durations = terms.times - terms.starts
     l_terms = (
-        _log_or_floor(terms.birth_rates)
+        log_or_floor(terms.birth_rates)
         - terms.gamma_before
-        + _log_kappa_minus(terms.growth, durations)
+        + log_kappa_minus(terms.growth, durations)
     )
     cumulative = jax.lax.cumlogsumexp(l_terms)
     return jnp.concatenate([jnp.full((1,), LOG_ZERO), cumulative[:-1]])
@@ -65,12 +71,12 @@ def _log_l_before(terms: NestedTerms) -> jax.Array:
 
 def _log_g(terms: NestedTerms, log_l_before: jax.Array, s: jax.Array) -> jax.Array:
     r"""$\ln G(s)$ with $G = (\mathcal W - 1)e^{-M(s,T]}$."""
-    row = _row(terms, s)
+    row = epoch_row(terms, s)
     u = s - row.start
     rem = row.time - s
-    k = _epoch_index(terms.times, s)
+    k = epoch_index(terms.times, s)
     partial = (
-        _log_or_floor(row.birth) - row.gamma_before + _log_kappa_minus(row.growth, u)
+        log_or_floor(row.birth) - row.gamma_before + log_kappa_minus(row.growth, u)
     )
     log_l = jnp.logaddexp(jnp.take(log_l_before, k), partial)
     gamma_s = row.gamma_before + row.growth * u
@@ -79,14 +85,14 @@ def _log_g(terms: NestedTerms, log_l_before: jax.Array, s: jax.Array) -> jax.Arr
 
 def _log_h(terms: NestedTerms, s: jax.Array) -> jax.Array:
     r"""$\ln H(s)$, the CDF of the spine's birth time (atom at ``s = 0``)."""
-    row = _row(terms, s)
+    row = epoch_row(terms, s)
     u = s - row.start
     rem = row.time - s
     partial = (
         row.log_death
         + (terms.gamma_total - row.gamma_end)
         + row.growth * rem
-        + _log_kappa_minus(row.growth, rem)
+        + log_kappa_minus(row.growth, rem)
     )
     log_l_mu = jnp.logaddexp(partial, row.log_spine_after)
     gamma_to_end = terms.gamma_total - (row.gamma_before + row.growth * u)
@@ -140,21 +146,18 @@ def quadrature_log_masses(
     terms: AgeTerms, lo: jax.Array, hi: jax.Array, n_nodes: int = _RANGE_NODES
 ) -> tuple[jax.Array, jax.Array]:
     """Log masses of ``[lo, hi]`` by Gauss-Legendre quadrature (any rates)."""
-    nodes_np, weights_np = np.polynomial.legendre.leggauss(n_nodes)
-    nodes, weights = jnp.asarray(nodes_np), jnp.asarray(weights_np)
     end = _end_time(terms)
     cuts = jnp.clip(
         end - _interior_breakpoints(terms)[None, :], lo[:, None], hi[:, None]
     )
     points = jnp.sort(jnp.concatenate([lo[:, None], cuts, hi[:, None]], axis=1), axis=1)
     left, right = points[:, :-1], points[:, 1:]
-    half = 0.5 * (right - left)
-    x = left[..., None] + half[..., None] * (nodes + 1.0)
+    x, weights = gauss_legendre(left, right, n_nodes)
     flat = x.reshape(-1)
 
     def integrate(log_density: jax.Array) -> jax.Array:
         dens = jnp.exp(log_density.reshape(x.shape))
-        return jnp.sum(jnp.sum(weights * dens, axis=-1) * half, axis=-1)
+        return jnp.sum(jnp.sum(weights * dens, axis=-1), axis=-1)
 
     non_spine = integrate(non_spine_log_density(terms, flat))
     continuous = integrate(spine_log_density(terms, flat, atom_at_boundary=False))

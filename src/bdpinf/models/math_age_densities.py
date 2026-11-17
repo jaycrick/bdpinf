@@ -39,9 +39,9 @@ from typing import Literal
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from bdpinf.models import math_general
+from bdpinf.models.math_general import DEFAULT_NODES, gauss_legendre
 from bdpinf.models.rate_functions import RateFunction
 
 __all__ = [
@@ -54,8 +54,6 @@ __all__ = [
     "spine_age_log_atom",
     "spine_age_log_density",
 ]
-
-_DEFAULT_NODES = 32
 
 Method = Literal["auto", "quadrature"]
 """``"auto"`` uses the exact epoch-wise backend for piecewise-constant rates
@@ -81,12 +79,8 @@ def _segments(
     Returns arrays of shape ``(n_kinks + 1, n_nodes)``; segments outside
     ``[lo, hi]`` collapse to zero length (zero weight).
     """
-    xi, wi = np.polynomial.legendre.leggauss(n_nodes)
     edges = jnp.concatenate([lo[None], jnp.clip(kinks, lo, hi), hi[None]])
-    a, b = edges[:-1], edges[1:]
-    half = 0.5 * (b - a)
-    mid = 0.5 * (a + b)
-    return mid[:, None] + half[:, None] * xi[None, :], half[:, None] * wi[None, :]
+    return gauss_legendre(edges[:-1], edges[1:], n_nodes)
 
 
 def log_nested_w_general(
@@ -94,7 +88,7 @@ def log_nested_w_general(
     death: RateFunction,
     b: jax.Array,
     *,
-    n_nodes: int = _DEFAULT_NODES,
+    n_nodes: int = DEFAULT_NODES,
     method: Method = "auto",
 ) -> jax.Array:
     r"""Return $\ln \mathcal W(b)$, where $\pi(b) = 1/\mathcal W(b)$.
@@ -124,7 +118,7 @@ def spine_age_log_density(
     birth: RateFunction,
     death: RateFunction,
     *,
-    n_nodes: int = _DEFAULT_NODES,
+    n_nodes: int = DEFAULT_NODES,
     method: Method = "auto",
 ) -> jax.Array:
     r"""Log density of the continuous part of the spine age $A^*$, ``0 < a < T``.
@@ -140,7 +134,7 @@ def spine_age_log_atom(
     birth: RateFunction,
     death: RateFunction,
     *,
-    n_nodes: int = _DEFAULT_NODES,
+    n_nodes: int = DEFAULT_NODES,
     method: Method = "auto",
 ) -> jax.Array:
     r"""Log of $\Pr(A^* = T) = \mathcal W(T) e^{-\Lambda(0,T]}$."""
@@ -152,7 +146,7 @@ def non_spine_age_log_density(
     birth: RateFunction,
     death: RateFunction,
     *,
-    n_nodes: int = _DEFAULT_NODES,
+    n_nodes: int = DEFAULT_NODES,
     method: Method = "auto",
 ) -> jax.Array:
     r"""Log density of the non-spine age $A$, ``0 < a < T``."""
@@ -166,7 +160,7 @@ def age_log_densities_general(
     birth: RateFunction,
     death: RateFunction,
     *,
-    n_nodes: int = _DEFAULT_NODES,
+    n_nodes: int = DEFAULT_NODES,
     method: Method = "auto",
 ) -> tuple[jax.Array, jax.Array]:
     """Return the continuous ``(non_spine, spine)`` log densities in one call.
@@ -207,7 +201,7 @@ def non_spine_age_cdf(
     birth: RateFunction,
     death: RateFunction,
     *,
-    n_nodes: int = _DEFAULT_NODES,
+    n_nodes: int = DEFAULT_NODES,
 ) -> jax.Array:
     """CDF $F_A(a)$ of the non-spine age."""
     end = birth.end_time
@@ -225,7 +219,7 @@ def spine_age_cdf(
     birth: RateFunction,
     death: RateFunction,
     *,
-    n_nodes: int = _DEFAULT_NODES,
+    n_nodes: int = DEFAULT_NODES,
 ) -> jax.Array:
     """CDF $F_{A^*}(a)$ of the spine age, including the atom at ``T``."""
     end = birth.end_time
@@ -245,7 +239,7 @@ def random_individual_cdf(
     birth: RateFunction,
     death: RateFunction,
     *,
-    n_nodes: int = _DEFAULT_NODES,
+    n_nodes: int = DEFAULT_NODES,
 ) -> jax.Array:
     r"""CDF $F_{A^\dagger}$ of the age of a uniformly chosen individual.
 

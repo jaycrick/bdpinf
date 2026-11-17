@@ -689,8 +689,9 @@ class BirthDeathProcess:
         """Test equality against another BirthDeathProcess instance."""
         if not isinstance(other, BirthDeathProcess):
             return False
-        if self._records is not None and other._records is not None:
-            return self._records.equals(other._records)
+        mine, theirs = self._records, other._records  # noqa: SLF001  # same-class comparison
+        if mine is not None and theirs is not None:
+            return mine.equals(theirs)
 
         def _arrays_equal(a: jax.Array | None, b: jax.Array | None) -> bool:
             if a is None and b is None:
@@ -701,9 +702,9 @@ class BirthDeathProcess:
 
         return (
             self.creation_times == other.creation_times
-            and _arrays_equal(self._epoch_end_times, other._epoch_end_times)
-            and _arrays_equal(self._birth_rates, other._birth_rates)
-            and _arrays_equal(self._death_rates, other._death_rates)
+            and _arrays_equal(self.epoch_end_times, other.epoch_end_times)
+            and _arrays_equal(self.birth_rates, other.birth_rates)
+            and _arrays_equal(self.death_rates, other.death_rates)
         )
 
     def __eq__(self, other: object) -> bool:

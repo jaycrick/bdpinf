@@ -21,7 +21,18 @@ from bdpinf.inference.rate_models import Param
 __all__ = ["CompiledConstraints", "Constraints"]
 
 _MIN_GROUP_SIZE = 2
-_CODES = {"identity": 0, "log": 1, "logit": 2, "interval": 3}
+IDENTITY_CODE = 0
+LOG_CODE = 1
+LOGIT_CODE = 2
+INTERVAL_CODE = 3
+"""Integer transform codes stored in ``CompiledConstraints.codes``."""
+
+_CODES = {
+    "identity": IDENTITY_CODE,
+    "log": LOG_CODE,
+    "logit": LOGIT_CODE,
+    "interval": INTERVAL_CODE,
+}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -263,13 +274,13 @@ class CompiledConstraints:
         u = unconstrained
         unit = jax.nn.sigmoid(u)
         natural = jnp.where(
-            self.codes == _CODES["log"],
+            self.codes == LOG_CODE,
             self.lower + jnp.exp(u),
             jnp.where(
-                self.codes == _CODES["logit"],
+                self.codes == LOGIT_CODE,
                 unit,
                 jnp.where(
-                    self.codes == _CODES["interval"],
+                    self.codes == INTERVAL_CODE,
                     self.lower + (self.upper - self.lower) * unit,
                     u,
                 ),
@@ -286,23 +297,19 @@ class CompiledConstraints:
         values = jnp.asarray(natural, dtype=jnp.float64)[self.free_indices]
         codes = self.codes[self.free_indices]
         lower, upper = self.lower[self.free_indices], self.upper[self.free_indices]
-        is_log = codes == _CODES["log"]
+        is_log = codes == LOG_CODE
         # A log parameter is measured above its minimum; values at or below it
         # are lifted to 1e-6 (relative) above, so the log stays finite.
         shifted = values - jnp.where(is_log, lower, 0.0)
         floor = jnp.where(is_log, 1e-6 * lower, 0.0) + 1e-300
-        safe = jnp.where(
-            codes == _CODES["identity"], values, jnp.clip(shifted, floor, None)
-        )
+        safe = jnp.where(codes == IDENTITY_CODE, values, jnp.clip(shifted, floor, None))
         frac = jnp.clip((values - lower) / (upper - lower), 1e-12, 1.0 - 1e-12)
         return jnp.where(
-            codes == _CODES["log"],
+            codes == LOG_CODE,
             jnp.log(safe),
             jnp.where(
-                codes == _CODES["logit"],
+                codes == LOGIT_CODE,
                 jnp.log(safe / (1.0 - safe)),
-                jnp.where(
-                    codes == _CODES["interval"], jnp.log(frac / (1.0 - frac)), values
-                ),
+                jnp.where(codes == INTERVAL_CODE, jnp.log(frac / (1.0 - frac)), values),
             ),
         )

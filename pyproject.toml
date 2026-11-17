@@ -147,9 +147,6 @@ convention = "numpy"
   "E501",
   "I001"
 ]
-# TEMPORARY: removed by step B8
-"scripts/bench_fitting.py" = ["PLR0917", "SLF001"]
-"src/**/process.py" = ["SLF001"]
 
 [tool.pytest.ini_options]
 addopts = "-m \"not slow\" --strict-markers"

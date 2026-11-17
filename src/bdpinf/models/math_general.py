@@ -37,6 +37,7 @@ the exact backend has no such limit, which is one reason piecewise-constant
 rates keep their own path.
 """
 
+import functools
 from typing import NamedTuple
 
 import jax
@@ -44,7 +45,12 @@ import jax.numpy as jnp
 import numpy as np
 
 from bdpinf.models import math_nested
-from bdpinf.models.math_nested import LOG_ZERO, NestedTerms, restore_neg_inf
+from bdpinf.models.math_nested import (
+    LOG_ZERO,
+    NestedTerms,
+    log_or_floor,
+    restore_neg_inf,
+)
 from bdpinf.models.rate_functions import PiecewiseConstantRate, RateFunction
 
 __all__ = [
@@ -95,10 +101,24 @@ AgeTerms = NestedTerms | GeneralTerms
 # ---------------------------------------------------------------------------
 
 
-def _log_rate(rate: jax.Array) -> jax.Array:
-    """``log rate`` with the finite floor ``LOG_ZERO`` at ``rate <= 0``."""
-    positive = rate > 0
-    return jnp.where(positive, jnp.log(jnp.where(positive, rate, 1.0)), LOG_ZERO)
+@functools.cache
+def _unit_rule(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
+    """Gauss-Legendre nodes and weights on ``[-1, 1]``, computed once per size."""
+    return np.polynomial.legendre.leggauss(n_nodes)
+
+
+def gauss_legendre(
+    lo: jax.Array, hi: jax.Array, n_nodes: int
+) -> tuple[jax.Array, jax.Array]:
+    """Gauss-Legendre nodes and weights on each interval ``[lo, hi]``.
+
+    ``lo`` and ``hi`` may have any (equal) shape ``S``;
+    both results have shape ``S + (n_nodes,)``, and empty intervals get zero weight.
+    The unit rule is cached per ``n_nodes``, so this is safe under ``jit``.
+    """
+    xi, wi = _unit_rule(n_nodes)
+    half = 0.5 * (hi - lo)
+    return (0.5 * (lo + hi))[..., None] + half[..., None] * xi, half[..., None] * wi
 
 
 def _log_gamma_neg(birth: RateFunction, death: RateFunction, x: jax.Array) -> jax.Array:
@@ -121,12 +141,10 @@ def _log_integral(
     ``lo`` and ``hi`` may have any (equal) shape; the result has that shape.
     ``LOG_ZERO`` is returned for an empty interval or an identically zero weight.
     """
-    xi, wi = np.polynomial.legendre.leggauss(n_nodes)
-    half = 0.5 * (hi - lo)
-    x = (0.5 * (lo + hi))[..., None] + half[..., None] * xi
-    log_f = _log_rate(weight(x)) + _log_gamma_neg(birth, death, x)
+    x, w = gauss_legendre(lo, hi, n_nodes)
+    log_f = log_or_floor(weight(x)) + _log_gamma_neg(birth, death, x)
     peak = jax.lax.stop_gradient(jnp.max(log_f, axis=-1, keepdims=True))
-    total = jnp.sum((half[..., None] * wi) * jnp.exp(log_f - peak), axis=-1)
+    total = jnp.sum(w * jnp.exp(log_f - peak), axis=-1)
     positive = total > 0
     return jnp.where(
         positive,
@@ -310,55 +328,54 @@ def log_nested_w(terms: AgeTerms, b: jax.Array) -> jax.Array:
     return _log_w_at(terms, b, _segment_of(terms, b))
 
 
-def _densities(
-    terms: GeneralTerms,
-    ages: jax.Array,
-    *,
-    want_non_spine: bool,
-    want_spine: bool,
-    atom_at_boundary: bool,
-) -> tuple[jax.Array | None, jax.Array | None]:
+class _Pass(NamedTuple):
+    """Per-age quantities shared by the non-spine and spine densities."""
+
+    ages: jax.Array
+    s: jax.Array  # birth time ``T - age`` of each individual
+    k: jax.Array  # segment containing ``s``
+    log_birth: jax.Array  # -inf where the rate is zero
+
+
+def _prepare(terms: GeneralTerms, ages: jax.Array) -> _Pass:
     ages = jnp.asarray(ages, dtype=jnp.float64)
-    birth, death, q = terms.birth, terms.death, terms.n_nodes
     end = terms.edges[-1]
     s = jnp.clip(end - ages, 0.0, end)
-    k = _segment_of(terms, s)
-    seg_hi = terms.edges[k + 1]
-    log_birth = jnp.where(
-        birth(s) > 0, _log_rate(birth(s)), -jnp.inf
-    )  # -inf where the rate is zero
+    birth_s = terms.birth(s)
+    log_birth = jnp.where(birth_s > 0, log_or_floor(birth_s), -jnp.inf)
+    return _Pass(ages, s, _segment_of(terms, s), log_birth)
 
-    non_spine = None
-    if want_non_spine:
-        log_w_s = _log_w_at(terms, s, k)
-        log_norm = math_nested.log_nested_w_minus_one(terms)
-        value = log_birth + log_w_s - death.integral(s, end) - log_norm
-        non_spine = jnp.where(log_norm < 0.5 * LOG_ZERO, -jnp.inf, value)
 
-    spine = None
-    if want_spine:
-        part = _log_integral(death, birth, death, s, seg_hi, n_nodes=q)
-        log_l_mu = restore_neg_inf(
-            terms.gamma_total + jnp.logaddexp(part, terms.log_i_after[k])
-        )
-        continuous = log_birth - birth.integral(s, end) + log_l_mu
-        spine = (
-            jnp.where(ages >= end, spine_log_atom(terms), continuous)
-            if atom_at_boundary
-            else continuous
-        )
-    return non_spine, spine
+def _non_spine(terms: GeneralTerms, p: _Pass) -> jax.Array:
+    log_norm = math_nested.log_nested_w_minus_one(terms)
+    value = (
+        p.log_birth
+        + _log_w_at(terms, p.s, p.k)
+        - terms.death.integral(p.s, terms.edges[-1])
+        - log_norm
+    )
+    return jnp.where(log_norm < 0.5 * LOG_ZERO, -jnp.inf, value)
+
+
+def _spine(terms: GeneralTerms, p: _Pass, *, atom_at_boundary: bool) -> jax.Array:
+    birth, death, end = terms.birth, terms.death, terms.edges[-1]
+    part = _log_integral(
+        death, birth, death, p.s, terms.edges[p.k + 1], n_nodes=terms.n_nodes
+    )
+    log_l_mu = restore_neg_inf(
+        terms.gamma_total + jnp.logaddexp(part, terms.log_i_after[p.k])
+    )
+    continuous = p.log_birth - birth.integral(p.s, end) + log_l_mu
+    if atom_at_boundary:
+        return jnp.where(p.ages >= end, spine_log_atom(terms), continuous)
+    return continuous
 
 
 def non_spine_log_density(terms: AgeTerms, ages: jax.Array) -> jax.Array:
     r"""Log density of the non-spine age $A$ at ``ages`` (no atom)."""
     if isinstance(terms, NestedTerms):
         return math_nested.non_spine_log_density(terms, ages)
-    out, _ = _densities(
-        terms, ages, want_non_spine=True, want_spine=False, atom_at_boundary=False
-    )
-    assert out is not None
-    return out
+    return _non_spine(terms, _prepare(terms, ages))
 
 
 def spine_log_density(
@@ -369,15 +386,7 @@ def spine_log_density(
         return math_nested.spine_log_density(
             terms, ages, atom_at_boundary=atom_at_boundary
         )
-    _, out = _densities(
-        terms,
-        ages,
-        want_non_spine=False,
-        want_spine=True,
-        atom_at_boundary=atom_at_boundary,
-    )
-    assert out is not None
-    return out
+    return _spine(terms, _prepare(terms, ages), atom_at_boundary=atom_at_boundary)
 
 
 def age_log_densities(
@@ -388,13 +397,5 @@ def age_log_densities(
         return math_nested.age_log_densities(
             terms, ages, atom_at_boundary=atom_at_boundary
         )
-    non_spine, spine = _densities(
-        terms,
-        ages,
-        want_non_spine=True,
-        want_spine=True,
-        atom_at_boundary=atom_at_boundary,
-    )
-    assert non_spine is not None
-    assert spine is not None
-    return non_spine, spine
+    p = _prepare(terms, ages)
+    return _non_spine(terms, p), _spine(terms, p, atom_at_boundary=atom_at_boundary)
