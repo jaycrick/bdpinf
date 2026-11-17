@@ -63,6 +63,7 @@ $$
 where $N_i$ is $N$ evaluated at $t = t_i$ ($D$ does not depend on $t$).
 
 Expanding this, we get the same formula as in\ [@kuck_age_2018, (3.6)].
+<!-- TODO(author): check the (3.6) locator against Kuck et al. (2018). -->
 $$
   f(t)
   = \frac{

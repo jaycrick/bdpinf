@@ -6,7 +6,7 @@ project:
     - docs/*.qmd
 
 bibliography: bibliography.bib
-cite-method: biblatex
+cite-method: citeproc
 link-citations: true
 
 website:
