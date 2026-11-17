@@ -44,18 +44,8 @@ def _as_scalar_float(value: object, *, name: str) -> float:
     return scalar_value
 
 
-def _draw_from_density_by_rejection(
-    density_fn: Callable[[float], float],
-    max_time: float,
-    rng: np.random.Generator,
-    *,
-    grid_size: int = 2048,
-    max_attempts: int = 200_000,
-) -> float:
-    # A dense grid gives a robust envelope estimate for smooth age densities.
-    grid = np.linspace(0.0, max_time, num=grid_size, endpoint=False)
-    density_vals = np.array([density_fn(float(age)) for age in grid], dtype=np.float64)
-
+def _envelope_from_density_values(density_vals: np.ndarray) -> float:
+    """Return the rejection envelope ``1.05 * max`` of density values on a grid."""
     if not np.all(np.isfinite(density_vals)):
         msg = "Density envelope contains non-finite values"
         raise RuntimeError(msg)
@@ -64,7 +54,35 @@ def _draw_from_density_by_rejection(
     if envelope <= 0.0:
         msg = "Density envelope must be strictly positive"
         raise RuntimeError(msg)
+    return envelope
 
+
+def _spine_envelope(
+    terms: NestedTerms,
+    max_time: float,
+    continuous_mass: float,
+    *,
+    grid_size: int = 2048,
+) -> float:
+    """Envelope of the normalised continuous spine density, in one vectorised call."""
+    # A dense grid gives a robust envelope estimate for smooth age densities.
+    grid = np.linspace(0.0, max_time, num=grid_size, endpoint=False)
+    log_lik = np.asarray(spine_log_density(terms, jnp.asarray(grid)), dtype=np.float64)
+    with np.errstate(over="ignore", invalid="ignore"):
+        density = np.exp(log_lik)
+    valid = np.isfinite(log_lik) & np.isfinite(density) & (density >= 0.0)
+    density_vals = np.where(valid, density / continuous_mass, 0.0)
+    return _envelope_from_density_values(density_vals)
+
+
+def _draw_from_density_by_rejection(
+    density_fn: Callable[[float], float],
+    max_time: float,
+    rng: np.random.Generator,
+    *,
+    envelope: float,
+    max_attempts: int = 200_000,
+) -> float:
     for _ in range(max_attempts):
         candidate_age = float(rng.uniform(0.0, max_time))
         candidate_density = float(density_fn(candidate_age))
@@ -117,16 +135,21 @@ def _sample_spine_ages(
             return 0.0
         return float(density / continuous_mass)
 
+    # Built lazily, once per batch, so all-boundary batches stay cheap.
+    envelope: float | None = None
     sampled_ages: list[float] = []
     for _ in range(n_samples):
         if rng.uniform() < boundary_mass:
             sampled_ages.append(max_time)
             continue
+        if envelope is None:
+            envelope = _spine_envelope(terms, max_time, continuous_mass)
         sampled_ages.append(
             _draw_from_density_by_rejection(
                 density_fn=normalized_continuous_density,
                 max_time=max_time,
                 rng=rng,
+                envelope=envelope,
             ),
         )
 

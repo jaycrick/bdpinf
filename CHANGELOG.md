@@ -11,6 +11,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Rates singular at 0 list geometric breakpoints so the Gauss-Legendre quadrature resolves them.
 - `qmd_scripts/validation/time_varying_rates/05_parametric_hazard_shapes.qmd`: vignette of spine and non-spine age densities for Weibull, Rayleigh, Gompertz, log-logistic, Lomax, quadratic and piecewise birth and death rates, with mass and `scipy` quadrature checks.
 
+### Changed
+
+- `simulation.simulator`: the rejection sampler's density envelope is computed once per batch with one vectorised call instead of once per sample; seeded draws are unchanged.
+
 ### Fixed
 
 - `process`: `BirthDeathProcess.log_likelihood` now passes `initial_population` to the likelihood; with `condition_on_survival=False` and more than one founder it previously scored the process as if it had one.

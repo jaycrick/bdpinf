@@ -209,3 +209,97 @@ class TestBdpAgeDistributionSampling:
         assert jnp.isfinite(sampled_non_spine_mean_ll)
         assert sampled_spine_mean_ll > baseline_spine_mean_ll
         assert sampled_non_spine_mean_ll > baseline_non_spine_mean_ll
+
+
+# Recorded from the per-sample-envelope implementation (before the envelope was
+# computed once per batch); `_sample_spine_ages(..., np.random.default_rng(123),
+# n_samples=8)` must keep reproducing them exactly.
+SEEDED_SPINE_AGES = {
+    (0.5, 0.2, 5.0): [
+        0.9218590534933485,
+        4.616724990135282,
+        4.4494634655559295,
+        5.0,
+        3.149701022948404,
+        5.0,
+        2.5908251842635712,
+        5.0,
+    ],
+    (0.3, 0.3, 4.0): [
+        0.7374872427946788,
+        3.6933799921082255,
+        3.5595707724447436,
+        4.0,
+        2.072660147410857,
+        4.0,
+        4.0,
+        4.0,
+    ],
+    (1.0, 1.0 + 1e-13, 3.0): [
+        0.16146305640666803,
+        3.0,
+        3.0,
+        2.7700349940811693,
+        0.7348938032063894,
+        2.782221775575501,
+        1.5544951105581426,
+        3.0,
+    ],
+    (0.1, 0.4, 8.0): [
+        0.4305681504177814,
+        8.0,
+        8.0,
+        7.386759984216451,
+        7.119141544889487,
+        8.0,
+        5.0395216367174465,
+        8.0,
+    ],
+}
+
+
+def _scalar_spine_envelope(terms, max_time, continuous_mass, grid_size=2048):
+    """Per-point envelope exactly as the sampler computed it before batching."""
+    grid = np.linspace(0.0, max_time, num=grid_size, endpoint=False)
+
+    def density(age):
+        log_lik = spine_log_density(terms, age).sum()
+        if not bool(jnp.isfinite(log_lik)):
+            return 0.0
+        value = float(jnp.exp(log_lik))
+        if value < 0.0 or not np.isfinite(value):
+            return 0.0
+        return value / continuous_mass
+
+    return 1.05 * max(density(float(a)) for a in grid)
+
+
+class TestSpineEnvelope:
+    """Test the batched rejection-sampling envelope."""
+
+    @pytest.mark.parametrize(
+        ("birth", "death", "max_time"),
+        [(0.5, 0.2, 5.0), (0.3, 0.3, 4.0), (1.0, 1.0 + 1e-13, 3.0), (0.1, 0.4, 8.0)],
+    )
+    def test_vectorised_envelope_matches_per_point(
+        self,
+        birth,
+        death,
+        max_time,
+    ) -> None:
+        terms = nested_terms(birth, death, max_time)
+        continuous_mass = 0.7
+        expected = _scalar_spine_envelope(terms, max_time, continuous_mass)
+        actual = simulator_module._spine_envelope(terms, max_time, continuous_mass)
+        assert actual == pytest.approx(expected, rel=1e-12)
+
+    @pytest.mark.parametrize(("birth", "death", "max_time"), list(SEEDED_SPINE_AGES))
+    def test_seeded_spine_ages_unchanged(self, birth, death, max_time) -> None:
+        ages = simulator_module._sample_spine_ages(
+            birth,
+            death,
+            max_time,
+            np.random.default_rng(123),
+            n_samples=8,
+        )
+        assert ages == SEEDED_SPINE_AGES[(birth, death, max_time)]
