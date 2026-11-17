@@ -14,10 +14,15 @@ things from a rate:
 
 Any class providing these (the :class:`RateFunction` protocol) can be used,
 which leaves room for further spline or rational rates.
-Five families are provided: :class:`PiecewiseConstantRate`,
+These families are provided: :class:`PiecewiseConstantRate`,
 :class:`PiecewiseLinearRate`, :class:`PiecewiseExponentialRate`
-(linear on the log scale), :class:`PiecewiseQuadraticRate`
-(including C1 quadratic splines) and :class:`SinusoidalRate`.
+(linear on the log scale, with a :meth:`~PiecewiseExponentialRate.gompertz`
+constructor), :class:`PiecewiseQuadraticRate`
+(including C1 quadratic splines), :class:`SinusoidalRate`,
+the parametric hazards :class:`PowerRate` (with Weibull and Rayleigh
+constructors), :class:`LogLogisticRate` and :class:`LomaxRate`,
+and :class:`PiecewiseRate`, which glues any rate functions together
+epoch by epoch in local time.
 All are JAX pytrees, so they can be passed through ``jit``/``grad``.
 """
 
@@ -29,10 +34,14 @@ import jax.numpy as jnp
 import numpy as np
 
 __all__ = [
+    "LogLogisticRate",
+    "LomaxRate",
     "PiecewiseConstantRate",
     "PiecewiseExponentialRate",
     "PiecewiseLinearRate",
     "PiecewiseQuadraticRate",
+    "PiecewiseRate",
+    "PowerRate",
     "RateFunction",
     "SinusoidalRate",
 ]
@@ -362,6 +371,21 @@ class PiecewiseExponentialRate:
         """Piecewise-constant rate expressed as a (zero log-slope) exponential rate."""
         v = jnp.asarray(values, dtype=jnp.float64)
         return cls(v, v, jnp.asarray(epoch_end_times))
+
+    @classmethod
+    def gompertz(
+        cls, a: float | jax.Array, b: float | jax.Array, end_time: float
+    ) -> "PiecewiseExponentialRate":
+        r"""Gompertz rate $w(t) = a e^{b t}$ on $[0, T]$ as a single epoch.
+
+        Here $a > 0$ and $b$ is any real number
+        (the rate decays when $b < 0$);
+        the epoch runs from $a$ at time 0 to $a e^{bT}$ at time $T$.
+        """
+        a = jnp.asarray(a, dtype=jnp.float64)
+        b = jnp.asarray(b, dtype=jnp.float64)
+        end = jnp.asarray(end_time, dtype=jnp.float64)
+        return cls(a[None], (a * jnp.exp(b * end))[None], end[None])
 
     @property
     def end_time(self) -> jax.Array:
@@ -714,6 +738,388 @@ class SinusoidalRate:
         )
 
 
+# ---------------------------------------------------------------------------
+# Parametric hazards: power (Weibull, Rayleigh), log-logistic, Lomax
+# ---------------------------------------------------------------------------
+
+_N_GEOMETRIC = 30
+
+
+def _is_concrete_scalar(x: object) -> bool:
+    return isinstance(x, np.ndarray | np.generic | jax.Array | float | int) and not (
+        isinstance(x, jax.core.Tracer)
+    )
+
+
+def _geometric_breakpoints(end_time: float) -> jax.Array:
+    r"""Ascending $T 2^{-j}$ for $j = 30, \dots, 1$.
+
+    Geometric grading towards 0 lets one Gauss-Legendre panel per segment
+    resolve an integrable singularity of the rate at 0.
+    """
+    j = np.arange(_N_GEOMETRIC, 0, -1)
+    return jnp.asarray(float(end_time) * 0.5**j, dtype=jnp.float64)
+
+
+def _check_end_time(end_time: object) -> np.float64:
+    end = np.float64(end_time)  # pyright: ignore[reportArgumentType]
+    if not (np.isfinite(end) and end > 0):
+        raise ValueError("end_time must be finite and positive")
+    return end
+
+
+def _check_finite(**named: object) -> None:
+    """Concrete values only: every entry finite."""
+    for name, v in named.items():
+        if _is_concrete_scalar(v) and not np.all(np.isfinite(np.asarray(v))):
+            raise ValueError(f"{name} must be finite")
+
+
+def _check_positive(**named: object) -> None:
+    """Concrete values only: every entry finite and strictly positive."""
+    for name, v in named.items():
+        if _is_concrete_scalar(v):
+            arr = np.asarray(v)
+            if not np.all(np.isfinite(arr)) or np.any(arr <= 0):
+                raise ValueError(f"{name} must be positive and finite")
+
+
+def _singular_at_zero(shape: object) -> bool:
+    """Whether a rate with this exponent-like parameter is singular at 0.
+
+    Unknown (traced) values are treated as singular, which is always safe.
+    """
+    if not _is_concrete_scalar(shape):
+        return True
+    return bool(np.any(np.asarray(shape) < 1.0))
+
+
+@dataclasses.dataclass(frozen=True)
+class PowerRate:
+    r"""Power-law rate $w(t) = c\,t^p$ on $[0, T]$, with $c > 0$ and $p > -1$.
+
+    The Weibull hazard with shape $k$ and scale $\eta$ is the case
+    $c = k/\eta^k$, $p = k - 1$ (:meth:`weibull`),
+    and the Rayleigh hazard is $p = 1$ (:meth:`rayleigh`).
+
+    Parameters
+    ----------
+    c : float or jax.Array
+        Coefficient $c > 0$ (scalar, differentiable).
+    p : float or jax.Array
+        Exponent $p > -1$ (scalar, differentiable).
+    end_time : float
+        Observation time $T > 0$ (static, keyword-only).
+
+    Notes
+    -----
+    Concrete inputs are validated; validation is skipped under tracing.
+    ``c`` and ``p`` are pytree data fields and ``end_time`` is a static meta field.
+
+    The integral is $\frac{c}{p+1}(e^{p+1} - s^{p+1})$,
+    evaluated as $s^{p+1}\,\mathrm{expm1}((p+1)\ln(e/s))$ for $s > 0$
+    so that it stays accurate when $e$ is close to $s$.
+
+    For $p < 0$ the rate is singular at 0 (integrably).
+    ``breakpoints`` then returns the geometric times $T 2^{-j}$, $j = 1, \dots, 30$,
+    so that the single Gauss-Legendre panel per segment in
+    :mod:`bdpinf.models.math_general` resolves the singularity;
+    if ``p`` is traced it is not known to be non-negative,
+    and the geometric breakpoints are returned as well.
+    Otherwise there are no breakpoints.
+
+    """
+
+    c: jax.Array | float
+    p: jax.Array | float
+    end_time: float = dataclasses.field(default=0.0, kw_only=True)
+
+    def __post_init__(self) -> None:
+        """Coerce, and validate concrete inputs."""
+        object.__setattr__(self, "c", _as_f64(self.c))
+        object.__setattr__(self, "p", _as_f64(self.p))
+        object.__setattr__(self, "end_time", _check_end_time(self.end_time))
+        _check_positive(c=self.c)
+        _check_finite(p=self.p)
+        if _is_concrete_scalar(self.p) and np.any(np.asarray(self.p) <= -1.0):
+            raise ValueError("p must be greater than -1")
+
+    @classmethod
+    def weibull(
+        cls, shape: float | jax.Array, scale: float | jax.Array, *, end_time: float
+    ) -> "PowerRate":
+        r"""Weibull hazard $(k/\eta)(t/\eta)^{k-1}$ with $c = k/\eta^k$, $p = k - 1$."""
+        k = jnp.asarray(shape, dtype=jnp.float64)
+        eta = jnp.asarray(scale, dtype=jnp.float64)
+        return cls(k / eta**k, k - 1.0, end_time=end_time)
+
+    @classmethod
+    def rayleigh(cls, c: float | jax.Array, *, end_time: float) -> "PowerRate":
+        r"""Rayleigh hazard $c\,t$ (the case $p = 1$)."""
+        return cls(c, 1.0, end_time=end_time)
+
+    @property
+    def breakpoints(self) -> jax.Array:
+        """Geometric times $T 2^{-j}$ when singular at 0 ($p < 0$), else empty."""
+        if _is_concrete_scalar(self.p) and not np.any(np.asarray(self.p) < 0.0):
+            return jnp.zeros(0, dtype=jnp.float64)
+        return _geometric_breakpoints(self.end_time)
+
+    def __call__(self, t: jax.Array) -> jax.Array:
+        """Evaluate the rate at ``t``."""
+        return self.c * jnp.asarray(t) ** self.p
+
+    def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
+        r"""Exact $\int_s^e w$ (stable form in the class docstring)."""
+        s, e = jnp.asarray(s), jnp.asarray(e)
+        k = self.p + 1.0
+        s_pos, e_pos = s > 0, e > 0
+        s_safe = jnp.where(s_pos, s, 1.0)
+        e_safe = jnp.where(e_pos, e, 1.0)
+        diff = jnp.where(
+            s_pos,
+            s_safe**k * jnp.expm1(k * (jnp.log(e_safe) - jnp.log(s_safe))),
+            jnp.where(e_pos, e_safe**k, 0.0),
+        )
+        return self.c / k * diff
+
+
+@dataclasses.dataclass(frozen=True)
+class LogLogisticRate:
+    r"""Log-logistic hazard on $[0, T]$.
+
+    $$
+    w(t) = \frac{(k/\eta)(t/\eta)^{k-1}}{1 + (t/\eta)^k}.
+    $$
+
+    Parameters
+    ----------
+    shape : float or jax.Array
+        Shape $k > 0$ (scalar, differentiable).
+    scale : float or jax.Array
+        Scale $\eta > 0$ (scalar, differentiable).
+    end_time : float
+        Observation time $T > 0$ (static, keyword-only).
+
+    Notes
+    -----
+    Concrete inputs are validated; validation is skipped under tracing.
+    ``shape`` and ``scale`` are data fields and ``end_time`` is a static meta field.
+
+    The cumulative hazard is $\ln(1 + x)$ with $x = (t/\eta)^k$,
+    so the integral is $\mathrm{log1p}((x_e - x_s)/(1 + x_s))$.
+    For $k < 1$ the rate is singular at 0,
+    and ``breakpoints`` returns the geometric times $T 2^{-j}$,
+    as for :class:`PowerRate`.
+
+    """
+
+    shape: jax.Array | float
+    scale: jax.Array | float
+    end_time: float = dataclasses.field(default=0.0, kw_only=True)
+
+    def __post_init__(self) -> None:
+        """Coerce, and validate concrete inputs."""
+        object.__setattr__(self, "shape", _as_f64(self.shape))
+        object.__setattr__(self, "scale", _as_f64(self.scale))
+        object.__setattr__(self, "end_time", _check_end_time(self.end_time))
+        _check_positive(shape=self.shape, scale=self.scale)
+
+    @property
+    def breakpoints(self) -> jax.Array:
+        """Geometric times $T 2^{-j}$ when singular at 0 ($k < 1$), else empty."""
+        if _singular_at_zero(self.shape):
+            return _geometric_breakpoints(self.end_time)
+        return jnp.zeros(0, dtype=jnp.float64)
+
+    def __call__(self, t: jax.Array) -> jax.Array:
+        """Evaluate the rate at ``t``."""
+        z = jnp.asarray(t) / self.scale
+        return self.shape / self.scale * z ** (self.shape - 1.0) / (1.0 + z**self.shape)
+
+    def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
+        r"""Exact $\int_s^e w$ (stable form in the class docstring)."""
+        x_s = (jnp.asarray(s) / self.scale) ** self.shape
+        x_e = (jnp.asarray(e) / self.scale) ** self.shape
+        return jnp.log1p((x_e - x_s) / (1.0 + x_s))
+
+
+@dataclasses.dataclass(frozen=True)
+class LomaxRate:
+    r"""Lomax (Pareto II) hazard $w(t) = k/(\eta + t)$ on $[0, T]$.
+
+    Parameters
+    ----------
+    shape : float or jax.Array
+        Shape $k > 0$ (scalar, differentiable).
+    scale : float or jax.Array
+        Scale $\eta > 0$ (scalar, differentiable).
+    end_time : float
+        Observation time $T > 0$ (static, keyword-only).
+
+    Notes
+    -----
+    Concrete inputs are validated; validation is skipped under tracing.
+    The rate is smooth, so there are no breakpoints.
+    The integral is $k\,\mathrm{log1p}((e - s)/(\eta + s))$.
+
+    """
+
+    shape: jax.Array | float
+    scale: jax.Array | float
+    end_time: float = dataclasses.field(default=0.0, kw_only=True)
+
+    def __post_init__(self) -> None:
+        """Coerce, and validate concrete inputs."""
+        object.__setattr__(self, "shape", _as_f64(self.shape))
+        object.__setattr__(self, "scale", _as_f64(self.scale))
+        object.__setattr__(self, "end_time", _check_end_time(self.end_time))
+        _check_positive(shape=self.shape, scale=self.scale)
+
+    @property
+    def breakpoints(self) -> jax.Array:
+        """No interior breakpoints (the rate is smooth)."""
+        return jnp.zeros(0, dtype=jnp.float64)
+
+    def __call__(self, t: jax.Array) -> jax.Array:
+        """Evaluate the rate at ``t``."""
+        return self.shape / (self.scale + jnp.asarray(t))
+
+    def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
+        r"""Exact $\int_s^e w$."""
+        s, e = jnp.asarray(s), jnp.asarray(e)
+        return self.shape * jnp.log1p((e - s) / (self.scale + s))
+
+
+# ---------------------------------------------------------------------------
+# Piecewise composition of arbitrary rate functions
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class PiecewiseRate:
+    r"""Glue rate functions together epoch by epoch, each in local time.
+
+    Piece $k$ applies on $(\tau_{k-1}, \tau_k]$ and is evaluated at the
+    *local* time $u = t - \tau_{k-1}$, so each piece is defined on $[0, d_k]$
+    with $d_k = \tau_k - \tau_{k-1}$ and need not know where its epoch sits.
+
+    Parameters
+    ----------
+    pieces : tuple of RateFunction
+        One rate function per epoch (a static-length tuple of pytrees).
+        The ``end_time`` of piece $k$ must equal $d_k$.
+    epoch_end_times : jax.Array
+        Strictly increasing epoch end times, shape ``(n_epochs,)``.
+        The last entry is the observation time $T$.
+
+    Notes
+    -----
+    Concrete inputs are validated, including that each piece's ``end_time``
+    matches its epoch length; validation is skipped under tracing.
+    Values may jump at epoch boundaries.
+    ``pieces`` and ``epoch_end_times`` are pytree data fields.
+
+    The integral to time $t$ in epoch $k$ is the sum of the full-epoch integrals
+    before it plus ``pieces[k].integral(0, u)``.
+    ``breakpoints`` are the interior epoch ends together with each piece's own
+    breakpoints shifted by its epoch start, sorted.
+
+    Every piece is evaluated at every time and the right one selected
+    (at a harmless in-domain time for the others),
+    so this works under ``jit`` and ``grad`` at a cost proportional to the
+    number of epochs.
+
+    """
+
+    pieces: tuple[RateFunction, ...]
+    epoch_end_times: jax.Array
+
+    def __post_init__(self) -> None:
+        """Coerce, and validate concrete inputs."""
+        pieces: object = self.pieces
+        if isinstance(pieces, list):
+            pieces = tuple(pieces)
+            object.__setattr__(self, "pieces", pieces)
+        object.__setattr__(self, "epoch_end_times", _as_f64(self.epoch_end_times))
+        times = self.epoch_end_times
+        if not isinstance(pieces, tuple) or not _is_concrete_array(times):  # pyright: ignore[reportUnnecessaryIsInstance]
+            return
+        _validate_epochs(times)
+        if len(pieces) != np.asarray(times).shape[0]:
+            raise ValueError(
+                f"got {len(pieces)} pieces for {np.asarray(times).shape[0]} epochs"
+            )
+        lengths = np.diff(np.asarray(times), prepend=0.0)
+        for k, (piece, length) in enumerate(zip(pieces, lengths, strict=True)):
+            end = getattr(piece, "end_time", None)
+            if _is_concrete_scalar(end) and not np.isclose(
+                float(np.asarray(end)), length, rtol=1e-9, atol=0.0
+            ):
+                raise ValueError(
+                    f"piece {k} has end_time {float(np.asarray(end)):.12g}, "
+                    f"but its epoch has length {length:.12g}"
+                )
+
+    @property
+    def end_time(self) -> jax.Array:
+        """Observation time $T$."""
+        return self.epoch_end_times[-1]
+
+    @property
+    def breakpoints(self) -> jax.Array:
+        """Interior epoch ends and the pieces' own breakpoints, sorted."""
+        times = self.epoch_end_times
+        starts = _epoch_starts(times)
+        parts = [times[:-1]]
+        parts.extend(
+            starts[k] + jnp.asarray(piece.breakpoints, dtype=jnp.float64)
+            for k, piece in enumerate(self.pieces)
+        )
+        return jnp.sort(jnp.concatenate(parts))
+
+    def _local(self, t: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """Epoch index, local time, and epoch lengths."""
+        times = self.epoch_end_times
+        starts = _epoch_starts(times)
+        k = _epoch_index(times, t)
+        return k, t - starts[k], times - starts
+
+    def __call__(self, t: jax.Array) -> jax.Array:
+        """Evaluate the rate at ``t`` (each piece in its local time)."""
+        t = jnp.asarray(t, dtype=jnp.float64)
+        k, u, dur = self._local(t)
+        out = jnp.zeros_like(u)
+        for j, piece in enumerate(self.pieces):
+            here = k == j
+            out = jnp.where(here, piece(jnp.where(here, u, 0.5 * dur[j])), out)
+        return out
+
+    def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
+        r"""Exact $\int_s^e w$, as a difference of cumulative integrals."""
+        return self._cumulative(jnp.asarray(e)) - self._cumulative(jnp.asarray(s))
+
+    def _cumulative(self, t: jax.Array) -> jax.Array:
+        times = self.epoch_end_times
+        t = jnp.clip(jnp.asarray(t, dtype=jnp.float64), 0.0, times[-1])
+        k, u, dur = self._local(t)
+        full = jnp.stack(
+            [
+                piece.integral(jnp.zeros(()), dur[j])
+                for j, piece in enumerate(self.pieces)
+            ]
+        )
+        cum_before = jnp.concatenate(
+            [jnp.zeros(1, dtype=jnp.float64), jnp.cumsum(full)[:-1]]
+        )
+        out = jnp.zeros_like(u)
+        for j, piece in enumerate(self.pieces):
+            here = k == j
+            u_j = jnp.where(here, u, 0.5 * dur[j])
+            out = jnp.where(here, piece.integral(jnp.zeros_like(u_j), u_j), out)
+        return cum_before[k] + out
+
+
 jax.tree_util.register_dataclass(
     PiecewiseConstantRate, data_fields=["values", "epoch_end_times"], meta_fields=[]
 )
@@ -736,4 +1142,16 @@ jax.tree_util.register_dataclass(
     SinusoidalRate,
     data_fields=["mean", "amplitude", "phase"],
     meta_fields=["period", "end_time"],
+)
+jax.tree_util.register_dataclass(
+    PowerRate, data_fields=["c", "p"], meta_fields=["end_time"]
+)
+jax.tree_util.register_dataclass(
+    LogLogisticRate, data_fields=["shape", "scale"], meta_fields=["end_time"]
+)
+jax.tree_util.register_dataclass(
+    LomaxRate, data_fields=["shape", "scale"], meta_fields=["end_time"]
+)
+jax.tree_util.register_dataclass(
+    PiecewiseRate, data_fields=["pieces", "epoch_end_times"], meta_fields=[]
 )

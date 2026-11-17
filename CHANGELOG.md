@@ -5,6 +5,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `models.rate_functions`: parametric rate functions `PowerRate` (with `weibull` and `rayleigh` constructors), `LogLogisticRate` and `LomaxRate`, a `PiecewiseExponentialRate.gompertz(a, b, end_time)` constructor, and `PiecewiseRate`, which glues any rate functions together epoch by epoch in local time.
+  Rates singular at 0 list geometric breakpoints so the Gauss-Legendre quadrature resolves them.
+- `qmd_scripts/validation/time_varying_rates/05_parametric_hazard_shapes.qmd`: vignette of spine and non-spine age densities for Weibull, Rayleigh, Gompertz, log-logistic, Lomax, quadratic and piecewise birth and death rates, with mass and `scipy` quadrature checks.
+
+### Fixed
+
+- `visualization.scenario_row`, `rate_frame`: points where a rate is infinite (singular hazards at calendar time 0) are left out of the rate panels instead of breaking the axis limits.
+
 ### Changed (breaking)
 
 `bdsurv` is now 0.5.0, which unifies its public API, and `bdpinf`'s simulation names follow it.
