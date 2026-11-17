@@ -126,7 +126,8 @@ buf = io.StringIO()
 ps = pstats.Stats(profiler, stream=buf).sort_stats("cumulative")
 ps.print_stats(30)
 report = buf.getvalue()
-open("prof-single-fit.txt", "w").write(report)
+with open("prof-single-fit.txt", "w") as _fh:
+    _fh.write(report)
 print(report)
 ```
 

@@ -31,7 +31,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import TypedDict, cast
 
 import numpy as np
 import pandas as pd
@@ -146,7 +146,7 @@ for (regime, sampling, observation_time), group in results_df.groupby(
             "regime": regime,
             "sampling": sampling,
             "T": float(observation_time),
-            "n_replicates": int(len(group)),
+            "n_replicates": len(group),
             "success_rate": float(group["success"].mean()),
             "population_mean": safe_mean(group["population_size"]),
             "birth_mean": safe_mean(successful["birth_estimate"]),

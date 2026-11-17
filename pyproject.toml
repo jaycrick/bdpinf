@@ -79,6 +79,12 @@ reportReturnType = "none"
 # ruff F811 catches genuine duplicate imports in src/, so suppressing here is safe.
 reportDuplicateImport = "none"
 
+# Notebook cells end with a bare expression so Quarto displays the value; scope the
+# relaxation to qmd_scripts so src/ keeps the strict setting.
+[[tool.basedpyright.executionEnvironments]]
+root = "qmd_scripts"
+reportUnusedExpression = "none"
+
 [tool.ruff]
 line-length = 88
 

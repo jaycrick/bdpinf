@@ -19,6 +19,7 @@ date: last-modified
 # | echo: false
 # | include: false
 
+import importlib
 import time
 
 __compile_start = time.perf_counter()
@@ -771,11 +772,9 @@ print_rate_summary(
 # can exit cleanly.  Without this, the loky atexit handler tries to join workers
 # that may be blocked in JAX cleanup, hanging the process for hours after the
 # notebook finishes.
-from joblib.externals.loky import (
-    get_reusable_executor as _get_loky_executor,  # pyright: ignore[reportMissingImports]
-)
-
-_get_loky_executor().shutdown(wait=False, kill_workers=True)
+# (Imported dynamically because the vendored loky has no stubs.)
+_loky = importlib.import_module("joblib.externals.loky")
+_loky.get_reusable_executor().shutdown(wait=False, kill_workers=True)
 ```
 
 ```{python}

@@ -172,7 +172,7 @@ scatter_data = {
 
 if len(successful) > 0 and len(scatter_data) == len(parameter_specs):
     _col_names = ["lambda_1", "mu_1", "lambda_2", "mu_2"]
-    scatter_df = pd.DataFrame(dict(zip(_col_names, [v for v in scatter_data.values()])))
+    scatter_df = pd.DataFrame(dict(zip(_col_names, scatter_data.values())))
     fig_pairs = (
         alt.Chart(scatter_df)
         .mark_point(size=4, opacity=0.1)

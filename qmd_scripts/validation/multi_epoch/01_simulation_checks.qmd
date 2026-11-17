@@ -222,7 +222,7 @@ for method_name, ages_list, population_sizes in [
     rows.append(
         {
             "method": method_name,
-            "n_sims": int(len(ages_list)),
+            "n_sims": len(ages_list),
             "mean_population": float(np.mean(population_sizes)),
             "extinct_fraction": float((population_sizes == 0).mean()),
             "mean_age": float(
