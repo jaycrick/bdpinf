@@ -184,6 +184,9 @@ def restore_neg_inf(x: jax.Array) -> jax.Array:
 def log_kappa_minus(growth: jax.Array, duration: jax.Array) -> jax.Array:
     r"""Return $\ln\kappa^-(g, d)$ with $\kappa^- = (1-e^{-gd})/g$.
 
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
+
     Writing $\kappa^- = d\,(1-e^{-x})/x$ with $x = gd$:
     for $|x|$ below ``_SERIES_THRESHOLD`` (including exactly critical
     epochs) a short polynomial for $(1-e^{-x})/x$ is used, otherwise
@@ -221,6 +224,9 @@ def nested_terms(
     times: jax.Array | float,
 ) -> NestedTerms:
     r"""Precompute the epoch-wise quantities behind $\mathcal W$.
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
 
     Concrete inputs are validated and coerced to 1-D float64 arrays;
     traced inputs (inside ``jax.jit``/``grad``) are assumed already valid.
@@ -329,26 +335,44 @@ def epoch_row(terms: NestedTerms, s: jax.Array) -> EpochRow:
 
 
 def _log_w_from_row(row: EpochRow, u: jax.Array, *, single_epoch: bool) -> jax.Array:
-    """``log W`` at ``start + u`` inside the epoch described by ``row``."""
+    """``log W`` at ``start + u`` inside the epoch described by ``row``.
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
+
+    """
     partial = row.log_death - row.gamma_before + log_kappa_minus(row.growth, u)
     log_i_b = partial if single_epoch else jnp.logaddexp(row.log_i_before, partial)
     return row.gamma_before + row.growth * u + jnp.logaddexp(0.0, log_i_b)
 
 
 def log_nested_w(terms: NestedTerms, b: jax.Array) -> jax.Array:
-    r"""Return $\ln\mathcal W(b)$ at times ``b`` (clipped to ``[0, T]``)."""
+    r"""Return $\ln\mathcal W(b)$ at times ``b`` (clipped to ``[0, T]``).
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
+
+    """
     b = jnp.clip(jnp.asarray(b, dtype=jnp.float64), 0.0, terms.times[-1])
     row = epoch_row(terms, b)
     return _log_w_from_row(row, b - row.start, single_epoch=terms.table.shape[0] == 1)
 
 
 def log_nested_w_total(terms: Totals) -> jax.Array:
-    r"""Return $\ln\mathcal W(T)$, i.e. $-\ln\pi(T)$."""
+    r"""Return $\ln\mathcal W(T)$, i.e. $-\ln\pi(T)$.
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
+
+    """
     return terms.gamma_total + jnp.logaddexp(0.0, terms.log_i_total)
 
 
 def log_extinction_odds(terms: Totals) -> jax.Array:
     r"""Return $\ln I(T)$ with $I(T) = \int_0^T \mu e^{-\Gamma(0,t]}dt$.
+
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
 
     $I(T) = P_0(T)/(1 - P_0(T))$ is the odds of extinction by $T$,
     so $\ln I = \operatorname{logit} P_0$.
@@ -359,6 +383,9 @@ def log_extinction_odds(terms: Totals) -> jax.Array:
 
 def log_extinction_and_survival_pr(terms: Totals) -> tuple[jax.Array, jax.Array]:
     r"""Return $(\ln P_0(T), \ln(1 - P_0(T)))$ from the extinction odds.
+
+    Formula: see the section "Population term"
+    of ``docs/likelihoods.qmd``.
 
     Evaluated as $\ln I - \operatorname{softplus}(\ln I)$ and
     $-\operatorname{softplus}(\ln I)$, which stay accurate when $I$ is tiny
@@ -372,6 +399,9 @@ def log_extinction_and_survival_pr(terms: Totals) -> tuple[jax.Array, jax.Array]
 def log_nested_w_minus_one(terms: Totals) -> jax.Array:
     r"""Return $\ln(\mathcal W(T) - 1) = \Gamma(0,T] + \ln L(T)$.
 
+    Formula: see the section "Piecewise-constant rates (exact)"
+    of ``docs/likelihoods.qmd``.
+
     ``LOG_ZERO`` when there are no births.
     """
     return terms.gamma_total + terms.log_l_total
@@ -383,7 +413,12 @@ def log_nested_w_minus_one(terms: Totals) -> jax.Array:
 
 
 def spine_log_atom(terms: Totals) -> jax.Array:
-    r"""Log of $\Pr(A^* = T) = \mathcal W(T)\,e^{-\Lambda(0,T]}$."""
+    r"""Log of $\Pr(A^* = T) = \mathcal W(T)\,e^{-\Lambda(0,T]}$.
+
+    Formula: see the section "General rates and the nested integral $\mathcal W$"
+    of ``docs/likelihoods.qmd``.
+
+    """
     return log_nested_w_total(terms) - terms.lam_total
 
 
@@ -409,6 +444,8 @@ def _prepare(terms: NestedTerms, ages: jax.Array) -> _Pass:
     return _Pass(ages, end, row, terms.table.shape[0] == 1, s - row.start, row.time - s)
 
 
+# Formula: see the section "General rates and the nested integral $\mathcal W$"
+# of ``docs/likelihoods.qmd``.
 def _non_spine(terms: NestedTerms, p: _Pass) -> jax.Array:
     row = p.row
     log_norm = log_nested_w_minus_one(terms)
@@ -421,6 +458,8 @@ def _non_spine(terms: NestedTerms, p: _Pass) -> jax.Array:
     return jnp.where(log_norm < 0.5 * LOG_ZERO, -jnp.inf, value)
 
 
+# Formula: see the section "General rates and the nested integral $\mathcal W$"
+# of ``docs/likelihoods.qmd``.
 def _spine(terms: NestedTerms, p: _Pass, *, atom_at_boundary: bool) -> jax.Array:
     row, rem = p.row, p.rem
     partial = (
@@ -439,7 +478,12 @@ def _spine(terms: NestedTerms, p: _Pass, *, atom_at_boundary: bool) -> jax.Array
 
 
 def non_spine_log_density(terms: NestedTerms, ages: jax.Array) -> jax.Array:
-    r"""Log density of the non-spine age $A$ at ``ages`` (no atom)."""
+    r"""Log density of the non-spine age $A$ at ``ages`` (no atom).
+
+    Formula: see the section "General rates and the nested integral $\mathcal W$"
+    of ``docs/likelihoods.qmd``.
+
+    """
     return _non_spine(terms, _prepare(terms, ages))
 
 
@@ -447,6 +491,9 @@ def spine_log_density(
     terms: NestedTerms, ages: jax.Array, *, atom_at_boundary: bool = True
 ) -> jax.Array:
     r"""Log density of $A^*$.
+
+    Formula: see the section "General rates and the nested integral $\mathcal W$"
+    of ``docs/likelihoods.qmd``.
 
     With ``atom_at_boundary`` (default) ages ``>= T`` return the log atom
     $\Pr(A^*=T)$; otherwise only the continuous density is evaluated.
@@ -457,6 +504,11 @@ def spine_log_density(
 def age_log_densities(
     terms: NestedTerms, ages: jax.Array, *, atom_at_boundary: bool = True
 ) -> tuple[jax.Array, jax.Array]:
-    """Return ``(non_spine, spine)`` log densities sharing one pass."""
+    r"""Return ``(non_spine, spine)`` log densities sharing one pass.
+
+    Formula: see the section "General rates and the nested integral $\mathcal W$"
+    of ``docs/likelihoods.qmd``.
+
+    """
     p = _prepare(terms, ages)
     return _non_spine(terms, p), _spine(terms, p, atom_at_boundary=atom_at_boundary)

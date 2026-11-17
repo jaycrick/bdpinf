@@ -58,7 +58,11 @@ The commit that introduced it (39a81c5) records no other rationale.
 
 
 def _log_l_before(terms: NestedTerms) -> jax.Array:
-    r"""$\ln L(\tau_{k-1})$ per epoch (``LOG_ZERO`` for the first epoch)."""
+    r"""$\ln L(\tau_{k-1})$ per epoch (``LOG_ZERO`` for the first epoch).
+
+    Formula and symbols: see the module docstring.
+
+    """
     durations = terms.times - terms.starts
     l_terms = (
         log_or_floor(terms.birth_rates)
@@ -70,7 +74,11 @@ def _log_l_before(terms: NestedTerms) -> jax.Array:
 
 
 def _log_g(terms: NestedTerms, log_l_before: jax.Array, s: jax.Array) -> jax.Array:
-    r"""$\ln G(s)$ with $G = (\mathcal W - 1)e^{-M(s,T]}$."""
+    r"""$\ln G(s)$ with $G = (\mathcal W - 1)e^{-M(s,T]}$.
+
+    Formula and symbols: see the module docstring.
+
+    """
     row = epoch_row(terms, s)
     u = s - row.start
     rem = row.time - s
@@ -84,7 +92,11 @@ def _log_g(terms: NestedTerms, log_l_before: jax.Array, s: jax.Array) -> jax.Arr
 
 
 def _log_h(terms: NestedTerms, s: jax.Array) -> jax.Array:
-    r"""$\ln H(s)$, the CDF of the spine's birth time (atom at ``s = 0``)."""
+    r"""$\ln H(s)$, the CDF of the spine's birth time (atom at ``s = 0``).
+
+    Formula and symbols: see the module docstring.
+
+    """
     row = epoch_row(terms, s)
     u = s - row.start
     rem = row.time - s
@@ -111,6 +123,8 @@ def closed_form_log_masses(
     terms: NestedTerms, lo: jax.Array, hi: jax.Array
 ) -> tuple[jax.Array, jax.Array]:
     """Log masses of ``[lo, hi]`` under the non-spine and spine age laws (exact).
+
+    Formula and symbols: see the module docstring.
 
     Valid for piecewise-constant rates only.
     """
@@ -145,7 +159,11 @@ def _interior_breakpoints(terms: AgeTerms) -> jax.Array:
 def quadrature_log_masses(
     terms: AgeTerms, lo: jax.Array, hi: jax.Array, n_nodes: int = _RANGE_NODES
 ) -> tuple[jax.Array, jax.Array]:
-    """Log masses of ``[lo, hi]`` by Gauss-Legendre quadrature (any rates)."""
+    """Log masses of ``[lo, hi]`` by Gauss-Legendre quadrature (any rates).
+
+    Formula and symbols: see the module docstring.
+
+    """
     end = _end_time(terms)
     cuts = jnp.clip(
         end - _interior_breakpoints(terms)[None, :], lo[:, None], hi[:, None]
@@ -169,6 +187,8 @@ def cdf_log_masses(
     terms: GeneralTerms, lo: jax.Array, hi: jax.Array
 ) -> tuple[jax.Array, jax.Array]:
     """Log masses of ``[lo, hi]`` from the cumulative functions at the endpoints.
+
+    Formula and symbols: see the module docstring.
 
     Equal to :func:`quadrature_log_masses` but needs one short partial-segment
     integral per endpoint instead of a density quadrature over every piece of
@@ -195,6 +215,8 @@ def range_log_masses(
     terms: AgeTerms, lo: jax.Array, hi: jax.Array, *, quadrature: bool = False
 ) -> tuple[jax.Array, jax.Array]:
     """Log masses of ``[lo, hi]``: closed form for piecewise-constant rates.
+
+    Formula and symbols: see the module docstring.
 
     Other rates use the cumulative-function form (:func:`cdf_log_masses`).
     Set ``quadrature`` to integrate the densities numerically instead, which is

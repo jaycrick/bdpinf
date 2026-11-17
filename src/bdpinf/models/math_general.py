@@ -138,6 +138,8 @@ def _log_integral(
 ) -> jax.Array:
     r"""$\ln\int_{lo}^{hi} w(t)\,e^{-\Gamma(0,t]}\,dt$ by Gauss-Legendre.
 
+    Formula and symbols: see the module docstring.
+
     ``lo`` and ``hi`` may have any (equal) shape; the result has that shape.
     ``LOG_ZERO`` is returned for an empty interval or an identically zero weight.
     """
@@ -168,6 +170,8 @@ def general_terms(
     birth: RateFunction, death: RateFunction, *, n_nodes: int = DEFAULT_NODES
 ) -> GeneralTerms:
     r"""Precompute the segment integrals behind $\mathcal W$.
+
+    Formula and symbols: see the module docstring.
 
     Parameters
     ----------
@@ -258,7 +262,11 @@ def terms_for(
 
 
 def spine_log_atom(terms: AgeTerms) -> jax.Array:
-    r"""Log of $\Pr(A^* = T) = \mathcal W(T)\,e^{-\Lambda(0,T]}$."""
+    r"""Log of $\Pr(A^* = T) = \mathcal W(T)\,e^{-\Lambda(0,T]}$.
+
+    Formula and symbols: see the module docstring.
+
+    """
     return math_nested.spine_log_atom(terms)
 
 
@@ -270,7 +278,11 @@ def _segment_of(terms: GeneralTerms, s: jax.Array) -> jax.Array:
 
 
 def _log_w_at(terms: GeneralTerms, s: jax.Array, k: jax.Array) -> jax.Array:
-    r"""$\ln\mathcal W(s)$ for ``s`` inside segment ``k``."""
+    r"""$\ln\mathcal W(s)$ for ``s`` inside segment ``k``.
+
+    Formula and symbols: see the module docstring.
+
+    """
     birth, death = terms.birth, terms.death
     part = _log_integral(death, birth, death, terms.edges[k], s, n_nodes=terms.n_nodes)
     log_i_s = jnp.logaddexp(terms.log_i_before[k], part)
@@ -281,6 +293,8 @@ def _log_w_at(terms: GeneralTerms, s: jax.Array, k: jax.Array) -> jax.Array:
 
 def log_non_spine_cdf_kernel(terms: GeneralTerms, s: jax.Array) -> jax.Array:
     r"""$\ln G(s)$ with $G = (\mathcal W(s) - 1)\,e^{-M(s,T]}$, one partial integral.
+
+    Formula and symbols: see the docstring of :mod:`bdpinf.models.math_age_masses`.
 
     $G' = \lambda\mathcal W e^{-M}$ and $G(0) = 0$, so the non-spine mass of the
     ages $[a_1, a_2]$ is $[G(T-a_1) - G(T-a_2)] / (\mathcal W(T) - 1)$.
@@ -299,6 +313,8 @@ def log_non_spine_cdf_kernel(terms: GeneralTerms, s: jax.Array) -> jax.Array:
 
 def log_spine_cdf_kernel(terms: GeneralTerms, s: jax.Array) -> jax.Array:
     r"""$\ln H(s)$, the CDF of the spine's birth time $s$ (atom at $s = 0$).
+
+    Formula and symbols: see the docstring of :mod:`bdpinf.models.math_age_masses`.
 
     $H(s) = e^{-\Lambda(s,T]}(L_\mu(s,T) + e^{\Gamma(s,T]})$ with
     $H(T) = 1$, so the spine mass of the ages $[a_1, a_2]$ is
@@ -321,7 +337,11 @@ def log_spine_cdf_kernel(terms: GeneralTerms, s: jax.Array) -> jax.Array:
 
 
 def log_nested_w(terms: AgeTerms, b: jax.Array) -> jax.Array:
-    r"""Return $\ln\mathcal W(b)$ at times ``b`` (clipped to ``[0, T]``)."""
+    r"""Return $\ln\mathcal W(b)$ at times ``b`` (clipped to ``[0, T]``).
+
+    Formula and symbols: see the module docstring.
+
+    """
     if isinstance(terms, NestedTerms):
         return math_nested.log_nested_w(terms, b)
     b = jnp.clip(jnp.asarray(b, dtype=jnp.float64), 0.0, terms.edges[-1])
@@ -346,6 +366,7 @@ def _prepare(terms: GeneralTerms, ages: jax.Array) -> _Pass:
     return _Pass(ages, s, _segment_of(terms, s), log_birth)
 
 
+# Formula and symbols: see the module docstring.
 def _non_spine(terms: GeneralTerms, p: _Pass) -> jax.Array:
     log_norm = math_nested.log_nested_w_minus_one(terms)
     value = (
@@ -357,6 +378,7 @@ def _non_spine(terms: GeneralTerms, p: _Pass) -> jax.Array:
     return jnp.where(log_norm < 0.5 * LOG_ZERO, -jnp.inf, value)
 
 
+# Formula and symbols: see the module docstring.
 def _spine(terms: GeneralTerms, p: _Pass, *, atom_at_boundary: bool) -> jax.Array:
     birth, death, end = terms.birth, terms.death, terms.edges[-1]
     part = _log_integral(
@@ -372,7 +394,11 @@ def _spine(terms: GeneralTerms, p: _Pass, *, atom_at_boundary: bool) -> jax.Arra
 
 
 def non_spine_log_density(terms: AgeTerms, ages: jax.Array) -> jax.Array:
-    r"""Log density of the non-spine age $A$ at ``ages`` (no atom)."""
+    r"""Log density of the non-spine age $A$ at ``ages`` (no atom).
+
+    Formula and symbols: see the module docstring.
+
+    """
     if isinstance(terms, NestedTerms):
         return math_nested.non_spine_log_density(terms, ages)
     return _non_spine(terms, _prepare(terms, ages))
@@ -381,7 +407,11 @@ def non_spine_log_density(terms: AgeTerms, ages: jax.Array) -> jax.Array:
 def spine_log_density(
     terms: AgeTerms, ages: jax.Array, *, atom_at_boundary: bool = True
 ) -> jax.Array:
-    r"""Log density of $A^*$; ages ``>= T`` score the atom if ``atom_at_boundary``."""
+    r"""Log density of $A^*$; ages ``>= T`` score the atom if ``atom_at_boundary``.
+
+    Formula and symbols: see the module docstring.
+
+    """
     if isinstance(terms, NestedTerms):
         return math_nested.spine_log_density(
             terms, ages, atom_at_boundary=atom_at_boundary
@@ -392,7 +422,11 @@ def spine_log_density(
 def age_log_densities(
     terms: AgeTerms, ages: jax.Array, *, atom_at_boundary: bool = True
 ) -> tuple[jax.Array, jax.Array]:
-    """Return ``(non_spine, spine)`` log densities sharing one pass."""
+    """Return ``(non_spine, spine)`` log densities sharing one pass.
+
+    Formula and symbols: see the module docstring.
+
+    """
     if isinstance(terms, NestedTerms):
         return math_nested.age_log_densities(
             terms, ages, atom_at_boundary=atom_at_boundary

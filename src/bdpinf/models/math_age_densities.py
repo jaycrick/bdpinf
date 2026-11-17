@@ -93,6 +93,8 @@ def log_nested_w_general(
 ) -> jax.Array:
     r"""Return $\ln \mathcal W(b)$, where $\pi(b) = 1/\mathcal W(b)$.
 
+    Formula and symbols: see the module docstring.
+
     Parameters
     ----------
     birth, death : RateFunction
@@ -123,6 +125,8 @@ def spine_age_log_density(
 ) -> jax.Array:
     r"""Log density of the continuous part of the spine age $A^*$, ``0 < a < T``.
 
+    Formula and symbols: see the module docstring.
+
     The atom at $a = T$ is :func:`spine_age_log_atom`.
     """
     return math_general.spine_log_density(
@@ -137,7 +141,11 @@ def spine_age_log_atom(
     n_nodes: int = DEFAULT_NODES,
     method: Method = "auto",
 ) -> jax.Array:
-    r"""Log of $\Pr(A^* = T) = \mathcal W(T) e^{-\Lambda(0,T]}$."""
+    r"""Log of $\Pr(A^* = T) = \mathcal W(T) e^{-\Lambda(0,T]}$.
+
+    Formula and symbols: see the module docstring.
+
+    """
     return math_general.spine_log_atom(_terms(birth, death, n_nodes, method))
 
 
@@ -149,7 +157,11 @@ def non_spine_age_log_density(
     n_nodes: int = DEFAULT_NODES,
     method: Method = "auto",
 ) -> jax.Array:
-    r"""Log density of the non-spine age $A$, ``0 < a < T``."""
+    r"""Log density of the non-spine age $A$, ``0 < a < T``.
+
+    Formula and symbols: see the module docstring.
+
+    """
     return math_general.non_spine_log_density(
         _terms(birth, death, n_nodes, method), ages
     )
@@ -164,6 +176,8 @@ def age_log_densities_general(
     method: Method = "auto",
 ) -> tuple[jax.Array, jax.Array]:
     """Return the continuous ``(non_spine, spine)`` log densities in one call.
+
+    Formula and symbols: see the module docstring.
 
     For piecewise-constant rates both come from one shared pass.
     """
@@ -203,7 +217,11 @@ def non_spine_age_cdf(
     *,
     n_nodes: int = DEFAULT_NODES,
 ) -> jax.Array:
-    """CDF $F_A(a)$ of the non-spine age."""
+    """CDF $F_A(a)$ of the non-spine age.
+
+    Formula and symbols: see the module docstring.
+
+    """
     end = birth.end_time
     a = jnp.minimum(jnp.asarray(ages, dtype=jnp.float64), end)
     return _integrate_age_density(
@@ -221,7 +239,11 @@ def spine_age_cdf(
     *,
     n_nodes: int = DEFAULT_NODES,
 ) -> jax.Array:
-    """CDF $F_{A^*}(a)$ of the spine age, including the atom at ``T``."""
+    """CDF $F_{A^*}(a)$ of the spine age, including the atom at ``T``.
+
+    Formula and symbols: see the module docstring.
+
+    """
     end = birth.end_time
     ages = jnp.asarray(ages, dtype=jnp.float64)
     cont = _integrate_age_density(

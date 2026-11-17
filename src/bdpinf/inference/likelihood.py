@@ -445,6 +445,9 @@ def log_likelihood_rates(
 ) -> jax.Array:
     """Log-likelihood of ``data`` under arbitrary birth and death rate functions.
 
+    Formulas: see the sections "Population term" and
+    "Unknown Spine (Default Inference Path)" of ``docs/likelihoods.qmd``.
+
     Piecewise-constant rates on shared epochs use the exact epoch-wise backend,
     anything else uses Gauss-Legendre quadrature
     (see :func:`bdpinf.models.math_general.terms_for`).
@@ -493,6 +496,9 @@ def log_likelihood(
     log_scale_params: bool = False,
 ) -> jnp.ndarray:
     """Compute the log-likelihood of observed individual ages in a birth--death process.
+
+    Formulas: see the sections "Population term" and
+    "Unknown Spine (Default Inference Path)" of ``docs/likelihoods.qmd``.
 
     This function evaluates the joint log-likelihood
     for a dataset of observed individual ages
@@ -751,6 +757,9 @@ def _range_log_likelihood(
 ) -> jnp.ndarray:
     """Log-likelihood of ages known only to lie in ``[lo, hi]`` (unknown spine).
 
+    Formula: see the section "Unknown Spine (Default Inference Path)"
+    of ``docs/likelihoods.qmd``.
+
     ``weights`` count the observations sharing each range (0 for padding).
     The unknown-spine mixture is a sum of products, so integrating it over a box
     of ranges replaces every density by the matching range mass: the likelihood
@@ -789,6 +798,9 @@ def _log_likelihood_core(
     n_valid: int | jax.Array | None = None,
 ) -> jnp.ndarray:
     """Shared log-likelihood core for ``log_likelihood`` and the fitters.
+
+    Formulas: see the sections "Population term" and
+    "Unknown Spine (Default Inference Path)" of ``docs/likelihoods.qmd``.
 
     All host-side validation and spine resolution must be completed by the
     caller (see :class:`AgeData`); this function contains no host-side hazards

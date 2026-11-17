@@ -1,7 +1,7 @@
 r"""Population log-likelihood calculations for birth-death processes.
 
-Tavaré (2018) formula for P(Z_T = n | Z_0 = n0), written in the paper's
-notation [paper: Eq. ?]: from one ancestor,
+Tavaré (2018) formula for P(Z_T = n | Z_0 = n0) (see ``bibliography.bib``),
+written in the paper's notation [paper: Eq. ?]: from one ancestor,
 $\Pr(Z_T = 0) = P_0(T) = I/(1+I)$ and, given survival,
 $Z_T$ is geometric with success probability $\pi(T) = 1/\mathcal W(T)$,
 i.e. $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
@@ -100,7 +100,12 @@ def _safe_mul(count: jax.Array, log_value: jax.Array) -> jax.Array:
 def _population_logs(
     terms: Totals,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
-    r"""Return $(\ln P_0, \ln(1-P_0), \ln(1-\pi), \ln\pi)$ at ``T``."""
+    r"""Return $(\ln P_0, \ln(1-P_0), \ln(1-\pi), \ln\pi)$ at ``T``.
+
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
+
+    """
     log_extinction_pr, log_survival_pr = log_extinction_and_survival_pr(terms)
     log_w_total = log_nested_w_total(terms)
     log_one_minus_pi = restore_neg_inf(log_nested_w_minus_one(terms) - log_w_total)
@@ -118,6 +123,10 @@ def _compute_populations_log_lik_multi_start(
     log_one_minus: Float[Array, ""],
 ) -> Float[Array, " n"]:
     r"""Log probabilities for populations when initial_population > 1.
+
+    The sum over ``j`` is stated neither in ``docs/likelihoods.qmd``
+    nor in the module docstring;
+    TODO(author): state it.
 
     Replaces the ragged ``torch.arange(j_min, j_max+1)`` per-element loop with
     a fixed-width ``n0``-length sum masked by validity conditions, vectorized
@@ -194,6 +203,9 @@ def calculate_populations_log_pmf_from_terms(
 ) -> Float[Array, " n"]:
     r"""Per-element log P(Z_T = ns[i]) from precomputed terms.
 
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
+
     ``terms`` is either kind of epoch terms
     (:class:`~bdpinf.models.math_nested.NestedTerms` or
     :class:`~bdpinf.models.math_general.GeneralTerms`), so the rates may be any
@@ -259,6 +271,9 @@ def calculate_populations_log_pmf(
 ) -> Float[Array, " n"]:
     r"""Per-element log P(Z_T = ns[i]) for piecewise-constant rates.
 
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
+
     Same math as ``calculate_populations_log_lik`` but returns the shape-(m,)
     per-element log-probability array rather than their sum.  JIT- and vmap-safe
     with ``_skip_normalization=True``.
@@ -303,6 +318,9 @@ def population_geometric_parameter(
 ) -> Float[Array, ""]:
     r"""Geometric parameter $\pi(T) = 1/\mathcal W(T)$ of $Z_T$.
 
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
+
     Given survival, $Z_T$ is geometric on $\{1, 2, \dots\}$.
 
     Parameters
@@ -331,6 +349,9 @@ def calculate_populations_log_lik_from_terms(
     condition_on_survival: bool = False,
 ) -> Float[Array, ""]:
     r"""Log P(Z_T = n) summed over provided counts, from precomputed terms.
+
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
 
     Same as :func:`calculate_populations_log_lik` but for any
     :class:`~bdpinf.models.rate_functions.RateFunction` pair, through terms
@@ -397,6 +418,9 @@ def calculate_populations_log_lik(
     _skip_normalization: bool = False,
 ) -> Float[Array, ""]:
     r"""Log P(Z_T = n) summed over provided counts.
+
+    Formula: see the section "Population term" of ``docs/likelihoods.qmd``
+    and the module docstring.
 
     Tavaré (2018) formula. Supports single- and multi-epoch models.
 
