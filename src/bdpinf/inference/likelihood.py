@@ -23,7 +23,10 @@ from bdpinf.models.math_general import (
     terms_for,
 )
 from bdpinf.models.math_nested import nested_terms
-from bdpinf.models.math_populations import calculate_populations_log_lik_from_terms
+from bdpinf.models.math_populations import (
+    calculate_populations_log_lik_from_terms,
+    check_conditioning,
+)
 from bdpinf.models.rate_functions import RateFunction
 from bdpinf.models.validation import normalize_and_validate_inputs
 from bdpinf.utils import ensure_1d_tensor, ensure_1d_tensors
@@ -446,7 +449,13 @@ def log_likelihood_rates(
     anything else uses Gauss-Legendre quadrature
     (see :func:`bdpinf.models.math_general.terms_for`).
     Safe under ``jit`` and ``grad``; returns ``-inf`` for invalid parameters.
+
+    Raises
+    ------
+    ValueError
+        If ``condition_on_survival`` is True and ``data.initial_population > 1``.
     """
+    check_conditioning(data.initial_population, condition_on_survival)
     terms = terms_for(birth, death, n_nodes=n_nodes)
     if data.upper_ages is not None and data.weights is not None:
         return _range_log_likelihood(
@@ -545,12 +554,15 @@ def log_likelihood(
     ns : jax.Array | None, optional
         Counts per population/class that sum to the total number of ages. If None,
         a single population with one count per provided age is assumed.
-    initial_population: int
+    initial_population : int
         Initial population size.
     condition_on_survival : bool, optional
         If True (default), condition the population-count term on the process
         not having gone extinct by ``T`` (the observed individuals imply survival).
-        Only affects the count term, and only for ``initial_population == 1``.
+        Only affects the count term.
+        Only defined for ``initial_population == 1``:
+        with more than one initial individual it raises,
+        so pass ``condition_on_survival=False``.
     is_ordered : bool, optional
         If True, the first element of ages is treated as a spine and the rest as
         ordinary observations. Cannot be used together with spine_ages. When False
@@ -568,14 +580,16 @@ def log_likelihood(
     Raises
     ------
     ValueError
-        If both is_ordered=True and spine_ages is provided, or if the sum of ns does
-        not equal the number of provided ages.
+        If both is_ordered=True and spine_ages is provided, if the sum of ns does
+        not equal the number of provided ages,
+        or if ``condition_on_survival`` is True and ``initial_population > 1``.
 
     See Also
     --------
         calculate_populations_log_lik
 
     """
+    check_conditioning(initial_population, condition_on_survival)
     _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
 
     birth_rates, death_rates, ages, times = ensure_1d_tensors(
@@ -742,6 +756,7 @@ def _range_log_likelihood(
     of ranges replaces every density by the matching range mass: the likelihood
     is exact.
     """
+    check_conditioning(initial_population, condition_on_survival)
     log_p = calculate_populations_log_lik_from_terms(
         terms,
         ns,
@@ -799,6 +814,7 @@ def _log_likelihood_core(
         Initial population size (static, Python int).
     condition_on_survival : bool
         Condition on non-extinction for positive counts (static, Python bool).
+        Raises ``ValueError`` with ``initial_population > 1``.
     use_unknown_spine_marginal : bool
         If True, ``non_spine_ages`` contains all ages and the spine position
         is marginalized via logsumexp.  Static Python bool resolved at trace
@@ -813,6 +829,7 @@ def _log_likelihood_core(
         Scalar float64 log-likelihood, or ``-inf`` for invalid parameters.
 
     """
+    check_conditioning(initial_population, condition_on_survival)
     _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
 
     log_P_n_T = calculate_populations_log_lik_from_terms(

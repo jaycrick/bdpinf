@@ -46,6 +46,43 @@ from bdpinf.models.validation import normalize_and_validate_inputs
 from bdpinf.utils import ensure_1d_tensor
 
 # ---------------------------------------------------------------------------
+# Argument check shared by every public entry point
+# ---------------------------------------------------------------------------
+
+
+def check_conditioning(initial_population: int, condition_on_survival: bool) -> None:
+    r"""Raise ``ValueError`` for survival conditioning with several founders.
+
+    The conditioned count term $\Pr(Z_T = z \mid Z_T \ge 1)$ is derived only for a
+    process started from one individual.
+    Both arguments are static Python values (never traced), so this runs on the
+    host and is safe to call from code that is later wrapped in ``jit`` or ``grad``.
+
+    Parameters
+    ----------
+    initial_population : int
+        Number of individuals at time 0.
+    condition_on_survival : bool
+        Whether the count term is conditioned on non-extinction.
+
+    Raises
+    ------
+    ValueError
+        If ``condition_on_survival`` is True and ``initial_population > 1``.
+        Other values of ``initial_population`` are not checked here.
+
+    """
+    if condition_on_survival and initial_population > 1:
+        msg = (
+            "condition_on_survival=True is only defined for initial_population == 1 "
+            f"(got initial_population={initial_population}); "
+            "pass condition_on_survival=False for a process started from "
+            "more than one individual"
+        )
+        raise ValueError(msg)
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 #
 # _compute_populations_log_lik_multi_start is only ever called with already-
@@ -309,15 +346,22 @@ def calculate_populations_log_lik_from_terms(
     initial_population : int
         Z_0. Default 1.
     condition_on_survival : bool
-        If True and initial_population == 1, condition on non-extinction for
-        positive counts: $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
+        If True, condition on non-extinction for positive counts:
+        $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
+        Only defined for ``initial_population == 1``.
 
     Returns
     -------
     jax.Array
         Scalar float64.
 
+    Raises
+    ------
+    ValueError
+        If ``condition_on_survival`` is True and ``initial_population > 1``.
+
     """
+    check_conditioning(initial_population, condition_on_survival)
     _ninf = jnp.array(-jnp.inf, dtype=jnp.float64)
     _zero = jnp.float64(0.0)
 
@@ -329,8 +373,8 @@ def calculate_populations_log_lik_from_terms(
         )
         return jnp.where(jnp.all(jnp.isfinite(log_pr)), log_pr.sum(), _ninf)
 
-    # condition_on_survival=True path (initial_population==1 only):
-    # condition on non-extinction.
+    # condition_on_survival=True path: condition on non-extinction
+    # (initial_population == 1, enforced by check_conditioning above).
     log_extinction_pr, _, log_one_minus_pi, log_pi = _population_logs(terms)
     zero_mask = ns == 0
     log_term3 = jnp.where(ns == 1, _zero, _safe_mul(ns - 1.0, log_one_minus_pi))
@@ -365,15 +409,22 @@ def calculate_populations_log_lik(
     initial_population : int
         Z_0. Default 1.
     condition_on_survival : bool
-        If True and initial_population == 1, condition on non-extinction for
-        positive counts: $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
+        If True, condition on non-extinction for positive counts:
+        $\Pr(Z_T = z \mid Z_T \ge 1) = \pi(1-\pi)^{z-1}$.
+        Only defined for ``initial_population == 1``.
 
     Returns
     -------
     jax.Array
         Scalar float64.
 
+    Raises
+    ------
+    ValueError
+        If ``condition_on_survival`` is True and ``initial_population > 1``.
+
     """
+    check_conditioning(initial_population, condition_on_survival)
     if not _skip_normalization:
         birth_rates, death_rates, times = normalize_and_validate_inputs(
             birth_rates, death_rates, times

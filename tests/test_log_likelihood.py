@@ -2,18 +2,32 @@
 
 import re
 import warnings
+from collections.abc import Callable
 from typing import Any
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from bdpinf.inference.likelihood import log_likelihood
+from bdpinf.inference import AgeData, BirthDeathModel, fit, fit_bayesian
+from bdpinf.inference.bayesian import BayesianMCMCConfig
+from bdpinf.inference.likelihood import (
+    _log_likelihood_core,  # pyright: ignore[reportPrivateUsage]
+    log_likelihood,
+    log_likelihood_rates,
+)
+from bdpinf.models.math_general import terms_for
 from bdpinf.models.math_nested import (
     nested_terms,
     non_spine_log_density,
 )
-from bdpinf.models.math_populations import calculate_populations_log_lik
+from bdpinf.models.math_populations import (
+    calculate_populations_log_lik,
+    calculate_populations_log_lik_from_terms,
+)
+from bdpinf.models.rate_functions import PiecewiseConstantRate
 from bdpinf.process import BirthDeathProcess
 
 
@@ -120,15 +134,17 @@ _VALID_CALLS: dict[str, tuple[dict[str, Any], float]] = {
         },
         -16.874234351397412,
     ),
-    "initial_population_3": (
+    # recorded before the check; the conditioned value was the n0 = 1 value
+    "initial_population_3_no_conditioning": (
         {
             "birth_rates": 0.5,
             "death_rates": 0.3,
             "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
             "times": 10.0,
             "initial_population": 3,
+            "condition_on_survival": False,
         },
-        -16.920659590678973,
+        -17.616312795204987,
     ),
     "no_conditioning": (
         {
@@ -244,8 +260,24 @@ _VALID_CALLS: dict[str, tuple[dict[str, Any], float]] = {
     ),
 }
 
+_FOUNDERS_MESSAGE = (
+    "condition_on_survival=True is only defined for initial_population == 1 "
+    "(got initial_population=3); pass condition_on_survival=False for a process "
+    "started from more than one individual"
+)
+
 _INVALID_CALLS: dict[str, tuple[dict[str, Any], str | None]] = {
     # value is the exact ValueError message, or None where the call returns -inf
+    "initial_population_3_conditioned": (
+        {
+            "birth_rates": 0.5,
+            "death_rates": 0.3,
+            "ages": [1.0, 2.5, 4.0, 6.5, 8.0],
+            "times": 10.0,
+            "initial_population": 3,
+        },
+        _FOUNDERS_MESSAGE,
+    ),
     "shape_mismatch": (
         {
             "birth_rates": [0.5, 0.4],
@@ -1093,3 +1125,144 @@ class TestRecordedCalls:
             with pytest.raises(ValueError, match=f"^{re.escape(message or '')}$"):
                 log_likelihood(**kwargs)
         assert len(caught) == 1
+
+
+_FOUNDER_AGES = [1.0, 2.5, 4.0, 6.5, 8.0]
+
+
+def _founder_data() -> AgeData:
+    return AgeData.from_groups([jnp.array(_FOUNDER_AGES)], 10.0, initial_population=3)
+
+
+def _founder_rates() -> tuple[PiecewiseConstantRate, PiecewiseConstantRate]:
+    times = jnp.array([10.0])
+    return (
+        PiecewiseConstantRate(jnp.array([0.5]), times),
+        PiecewiseConstantRate(jnp.array([0.3]), times),
+    )
+
+
+def _call_populations_log_lik(**cond: bool) -> object:
+    return calculate_populations_log_lik(
+        jnp.array([0.5]),
+        jnp.array([0.3]),
+        jnp.array([5.0]),
+        jnp.array([10.0]),
+        initial_population=3,
+        **cond,
+    )
+
+
+def _call_from_terms(**cond: bool) -> object:
+    birth, death = _founder_rates()
+    return calculate_populations_log_lik_from_terms(
+        terms_for(birth, death),
+        jnp.array([5.0]),
+        initial_population=3,
+        **cond,
+    )
+
+
+def _call_log_likelihood(**cond: bool) -> object:
+    return log_likelihood(0.5, 0.3, _FOUNDER_AGES, 10.0, initial_population=3, **cond)
+
+
+def _call_log_likelihood_rates(**cond: bool) -> object:
+    birth, death = _founder_rates()
+    return log_likelihood_rates(_founder_data(), birth, death, **cond)
+
+
+def _call_core(**cond: bool) -> object:
+    birth, death = _founder_rates()
+    data = _founder_data()
+    return _log_likelihood_core(
+        terms_for(birth, death),
+        data.non_spine_ages,
+        data.spine_ages,
+        data.ns,
+        initial_population=3,
+        **cond,
+    )
+
+
+def _call_fit(**cond: bool) -> object:
+    return fit(_founder_data(), BirthDeathModel.piecewise_constant([10.0]), **cond)
+
+
+def _call_fit_bayesian(**cond: bool) -> object:
+    mcmc = BayesianMCMCConfig(
+        num_samples=2, warmup_steps=2, num_chains=1, disable_progressbar=True
+    )
+    return fit_bayesian(
+        _founder_data(),
+        BirthDeathModel.piecewise_constant([10.0]),
+        mcmc=mcmc,
+        **cond,
+    )
+
+
+def _call_process(**cond: bool) -> object:
+    process = BirthDeathProcess(
+        creation_times=[1.0, 2.0],
+        epoch_end_times=10.0,
+        initial_population=3,
+        birth_rates=0.5,
+        death_rates=0.3,
+    )
+    return process.log_likelihood(**cond)
+
+
+# (entry point, whether omitting condition_on_survival means True)
+_FOUNDER_ENTRY_POINTS: dict[str, tuple[Callable[..., object], bool]] = {
+    "calculate_populations_log_lik": (_call_populations_log_lik, False),
+    "calculate_populations_log_lik_from_terms": (_call_from_terms, False),
+    "log_likelihood": (_call_log_likelihood, True),
+    "log_likelihood_rates": (_call_log_likelihood_rates, True),
+    "_log_likelihood_core": (_call_core, True),
+    "fit": (_call_fit, True),
+    "fit_bayesian": (_call_fit_bayesian, True),
+    "BirthDeathProcess.log_likelihood": (_call_process, True),
+}
+
+
+class TestConditioningWithSeveralFounders:
+    """Test that survival conditioning is rejected for more than one founder."""
+
+    @pytest.mark.parametrize("name", list(_FOUNDER_ENTRY_POINTS))
+    def test_explicit_conditioning_raises(self, name: str) -> None:
+        call, _ = _FOUNDER_ENTRY_POINTS[name]
+        with pytest.raises(ValueError, match=f"^{re.escape(_FOUNDERS_MESSAGE)}$"):
+            call(condition_on_survival=True)
+
+    @pytest.mark.parametrize(
+        "name", [n for n, (_, default) in _FOUNDER_ENTRY_POINTS.items() if default]
+    )
+    def test_default_conditioning_raises(self, name: str) -> None:
+        call, _ = _FOUNDER_ENTRY_POINTS[name]
+        with pytest.raises(ValueError, match=f"^{re.escape(_FOUNDERS_MESSAGE)}$"):
+            call()
+
+    @pytest.mark.parametrize(
+        "name", [n for n, (_, default) in _FOUNDER_ENTRY_POINTS.items() if not default]
+    )
+    def test_population_functions_default_to_unconditioned(self, name: str) -> None:
+        call, _ = _FOUNDER_ENTRY_POINTS[name]
+        assert np.isfinite(_as_float(call()))
+
+    def test_unconditioned_value_for_three_founders_is_unchanged(self) -> None:
+        # recorded from the code before the check was added
+        value = log_likelihood(
+            0.5,
+            0.3,
+            _FOUNDER_AGES,
+            10.0,
+            initial_population=3,
+            condition_on_survival=False,
+        )
+        assert_allclose(_as_float(value), -17.616312795204987, rtol=1e-12)
+
+    def test_check_runs_before_jit_tracing(self) -> None:
+        birth, death = _founder_rates()
+        data = _founder_data()
+        with pytest.raises(ValueError, match="only defined for initial_population"):
+            jax.jit(lambda: log_likelihood_rates(data, birth, death))()

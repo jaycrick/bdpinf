@@ -44,6 +44,7 @@ from bdpinf.inference.fitting import FitResult
 from bdpinf.inference.likelihood import AgeData, log_likelihood_rates
 from bdpinf.inference.rate_models import BirthDeathModel
 from bdpinf.models.math_general import DEFAULT_NODES
+from bdpinf.models.math_populations import check_conditioning
 
 __all__ = [
     "BayesianMCMCConfig",
@@ -626,6 +627,8 @@ def fit_bayesian(
         Seed for the JAX PRNG.
     condition_on_survival : bool
         Condition the population-count term on non-extinction.
+        Only defined for ``data.initial_population == 1``;
+        pass ``False`` for more than one initial individual.
     n_nodes : int
         Gauss-Legendre nodes for non-piecewise-constant rates.
 
@@ -643,10 +646,12 @@ def fit_bayesian(
     Raises
     ------
     ValueError
-        For an unknown-spine marginal with ``initial_population > 1``, an
-        invalid constraint, or a mismatched prior.
+        For an unknown-spine marginal with ``initial_population > 1``,
+        ``condition_on_survival=True`` with ``initial_population > 1``,
+        an invalid constraint, or a mismatched prior.
 
     """
+    check_conditioning(data.initial_population, condition_on_survival)
     mcmc = mcmc or BayesianMCMCConfig()
     prior = prior or BayesianPriorConfig()
     if data.initial_population <= 0:

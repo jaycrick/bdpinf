@@ -223,4 +223,9 @@ class TestFitBayesian:
             fit_bayesian(data, BirthDeathModel.piecewise_constant([100.0]), mcmc=_MCMC)
         many = AgeData.from_groups([_AGES], 300.0, initial_population=2)
         with pytest.raises(ValueError, match="Unknown-spine marginal"):
-            fit_bayesian(many, BirthDeathModel.piecewise_constant([300.0]), mcmc=_MCMC)
+            fit_bayesian(
+                many,
+                BirthDeathModel.piecewise_constant([300.0]),
+                mcmc=_MCMC,
+                condition_on_survival=False,
+            )

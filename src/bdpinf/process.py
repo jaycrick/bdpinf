@@ -18,6 +18,7 @@ from numpy.typing import NDArray
 
 from bdpinf.inference.likelihood import log_likelihood as _log_likelihood
 from bdpinf.models.genealogy import genealogy_dfs_order as _genealogy_dfs_order
+from bdpinf.models.math_populations import check_conditioning
 from bdpinf.models.validation import (
     ValidationConfig,
     normalize_and_validate_inputs,
@@ -790,9 +791,13 @@ class BirthDeathProcess:
         Raises
         ------
         ValueError
-            If birth/death rates are not set on the instance.
+            If birth/death rates are not set on the instance,
+            or if ``condition_on_survival`` is True and
+            ``initial_population > 1``
+            (pass ``condition_on_survival=False``).
 
         """
+        check_conditioning(self.initial_population, condition_on_survival)
         if self._birth_rates is None or self._death_rates is None:
             msg = "birth_rates and death_rates must be set before likelihood calls"
             raise ValueError(msg)

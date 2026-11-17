@@ -20,6 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 `bdsurv` is now 0.5.0, which unifies its public API, and `bdpinf`'s simulation names follow it.
 There are no aliases for the old names.
 
+- `models.math_populations`, `inference`, `process`: `condition_on_survival=True` with `initial_population > 1` now raises `ValueError`, through one shared `check_conditioning(initial_population, condition_on_survival)`.
+  The conditioning is derived only for one initial individual, and this combination previously returned the `initial_population=1` count term silently, whatever the value.
+  `log_likelihood`, `log_likelihood_rates`, `fit`, `fit_bayesian`, `BirthDeathProcess.log_likelihood` and the `calculate_populations_log_lik*` functions are affected; pass `condition_on_survival=False` for a process started from more than one individual (values with conditioning off are unchanged).
 - `simulation`: the `bdsurv` pin moves to 0.5.0 (`176e9a1`); the dependency floor is `bdsurv>=0.5.0`.
 - `simulation`: every simulator still returns `BirthDeathProcess`, through one shared converter from `bdsurv.SimulatedTree`.
   When both rates are piecewise constant on the same epochs the process stores the per-epoch rates and epoch end times;

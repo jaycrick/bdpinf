@@ -35,6 +35,7 @@ from bdpinf.inference.likelihood import AgeData, log_likelihood_rates
 from bdpinf.inference.rate_models import BirthDeathModel
 from bdpinf.inference.uncertainty import covariance_from_hessian
 from bdpinf.models.math_general import DEFAULT_NODES
+from bdpinf.models.math_populations import check_conditioning
 from bdpinf.models.rate_functions import RateFunction
 from bdpinf.models.validation import normalize_and_validate_inputs
 from bdpinf.utils import ensure_1d_tensor
@@ -969,6 +970,8 @@ def fit(  # noqa: PLR0913  # public entry point: documented keyword options
         Iteration limit per optimiser run.
     condition_on_survival : bool
         Condition the population-count term on non-extinction.
+        Only defined for ``data.initial_population == 1``;
+        pass ``False`` for more than one initial individual.
     compute_covariance : bool
         Compute the covariance from the observed information.
     n_nodes : int
@@ -992,10 +995,12 @@ def fit(  # noqa: PLR0913  # public entry point: documented keyword options
     Raises
     ------
     ValueError
-        If the model and data windows differ, ``method`` is unknown, or no
-        starting point has a finite likelihood.
+        If the model and data windows differ, ``method`` is unknown, no
+        starting point has a finite likelihood, or ``condition_on_survival`` is
+        True with ``data.initial_population > 1``.
 
     """
+    check_conditioning(data.initial_population, condition_on_survival)
     _check_method_and_window(data, model, method)
     constraints = constraints or Constraints()
     if n_starts is None:
