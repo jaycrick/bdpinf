@@ -20,42 +20,34 @@ def _layer_mark_types(spec: dict) -> set[str]:
 _T = 500.0
 
 
-def _simple_records() -> pd.DataFrame:
-    """Two-generation tree: root → child (both survived)."""
-    return pd.DataFrame(
-        {
-            "individual_id": [1, 2],
-            "parent_id": [None, 1],
-            "creation_time": [0.0, 100.0],
-            "death_time": [_T, _T],
-            "survived": [True, True],
-            "is_spine": [False, False],
-        }
-    )
-
-
 class TestGenealogy:
     """Test genealogy tree rendering."""
 
-    def test_plot_genealogy_tree_returns_layered_rule_chart(self) -> None:
-        records = _simple_records()
-        chart = plot_genealogy_tree(records, start_time=0.0, simulation_end_time=_T)
+    def test_plot_genealogy_tree_returns_layered_rule_chart(
+        self, simple_records: pd.DataFrame
+    ) -> None:
+        chart = plot_genealogy_tree(
+            simple_records, start_time=0.0, simulation_end_time=_T
+        )
         assert isinstance(chart, alt.LayerChart)
         spec = chart.to_dict()
         assert _layer_mark_types(spec) == {"rule"}
         # y axis is labelled by individual_id with the root (id 1) on top.
         assert spec["layer"][0]["encoding"]["y"]["scale"]["domain"] == ["1", "2"]
 
-    def test_plot_genealogy_tree_missing_times_raises(self) -> None:
+    def test_plot_genealogy_tree_missing_times_raises(
+        self, simple_records: pd.DataFrame
+    ) -> None:
         with pytest.raises(ValueError, match="start_time and simulation_end_time"):
-            plot_genealogy_tree(_simple_records())
+            plot_genealogy_tree(simple_records)
 
-    def test_plot_genealogy_tree_accepts_process_directly(self) -> None:
-        records = _simple_records()
-        records["age"] = [_T, _T - 100.0]
-        records["lifespan"] = [float("nan"), float("nan")]
+    def test_plot_genealogy_tree_accepts_process_directly(
+        self, simple_records: pd.DataFrame
+    ) -> None:
+        simple_records["age"] = [_T, _T - 100.0]
+        simple_records["lifespan"] = [float("nan"), float("nan")]
         process = BirthDeathProcess.from_records(
-            records,
+            simple_records,
             epoch_end_times=_T,
             start_time=0.0,
         )

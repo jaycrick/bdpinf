@@ -8,34 +8,26 @@ from bdpinf.models.genealogy import genealogy_dfs_order
 _T = 500.0
 
 
-def _simple_records() -> pd.DataFrame:
-    """Two-generation tree: root → child (both survived)."""
-    return pd.DataFrame(
-        {
-            "individual_id": [1, 2],
-            "parent_id": [None, 1],
-            "creation_time": [0.0, 100.0],
-            "death_time": [_T, _T],
-            "survived": [True, True],
-            "is_spine": [False, False],
-        }
-    )
-
-
 class TestModelsGenealogy:
     """Test genealogy DFS ordering."""
 
-    def test_genealogy_dfs_order_correct_for_simple_tree(self) -> None:
-        records = _simple_records()
-        frame = genealogy_dfs_order(records, start_time=0.0, simulation_end_time=_T)
+    def test_genealogy_dfs_order_correct_for_simple_tree(
+        self, simple_records: pd.DataFrame
+    ) -> None:
+        frame = genealogy_dfs_order(
+            simple_records, start_time=0.0, simulation_end_time=_T
+        )
         assert len(frame) == 2
         assert list(frame["individual_id"]) == [1, 2]
         assert list(frame["dfs_index"]) == [0, 1]
 
-    def test_genealogy_dfs_order_marks_spine(self) -> None:
+    def test_genealogy_dfs_order_marks_spine(
+        self, simple_records: pd.DataFrame
+    ) -> None:
         """DFS order result has an is_spine column with boolean values."""
-        records = _simple_records()
-        frame = genealogy_dfs_order(records, start_time=0.0, simulation_end_time=_T)
+        frame = genealogy_dfs_order(
+            simple_records, start_time=0.0, simulation_end_time=_T
+        )
         # is_spine column should exist with boolean dtype
         assert "is_spine" in frame.columns
         assert (

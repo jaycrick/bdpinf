@@ -27,7 +27,7 @@ All are JAX pytrees, so they can be passed through ``jit``/``grad``.
 """
 
 import dataclasses
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 import jax
 import jax.numpy as jnp
@@ -754,7 +754,7 @@ def _geometric_breakpoints(end_time: float) -> jax.Array:
 
 
 def _check_end_time(end_time: object) -> np.float64:
-    end = np.float64(end_time)  # pyright: ignore[reportArgumentType]
+    end = np.float64(cast("float", end_time))
     if not (np.isfinite(end) and end > 0):
         raise ValueError("end_time must be finite and positive")
     return end
@@ -1051,7 +1051,7 @@ class PiecewiseRate:
             object.__setattr__(self, "pieces", pieces)
         object.__setattr__(self, "epoch_end_times", _as_f64(self.epoch_end_times))
         times = self.epoch_end_times
-        if not isinstance(pieces, tuple) or not is_concrete(times):  # pyright: ignore[reportUnnecessaryIsInstance]
+        if not isinstance(pieces, tuple) or not is_concrete(times):  # pyright: ignore[reportUnnecessaryIsInstance]  # pieces may be a non-sequence at runtime; skip validation and let later code reject it
             return
         _validate_epochs(times)
         if len(pieces) != np.asarray(times).shape[0]:

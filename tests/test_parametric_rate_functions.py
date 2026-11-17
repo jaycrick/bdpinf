@@ -49,6 +49,8 @@ def _oracle(rate: RateFunction, s: float, e: float) -> float:
 
 
 class TestPowerRate:
+    """Test power-law rate."""
+
     def test_values(self) -> None:
         rate = PowerRate(2.0, 3.0, end_time=_T)
         assert _scalar(rate(jnp.array(1.5))) == pytest.approx(2.0 * 1.5**3)
@@ -115,6 +117,8 @@ class TestPowerRate:
 
 
 class TestLogLogisticRate:
+    """Test log-logistic rate."""
+
     def test_value(self) -> None:
         k, eta, t = 2.0, 3.0, 1.5
         x = (t / eta) ** k
@@ -160,6 +164,8 @@ class TestLogLogisticRate:
 
 
 class TestLomaxRate:
+    """Test Lomax rate."""
+
     def test_value_and_integral(self) -> None:
         rate = LomaxRate(1.5, 2.0, end_time=_T)
         assert _scalar(rate(jnp.array(1.0))) == pytest.approx(0.5)
@@ -176,6 +182,8 @@ class TestLomaxRate:
 
 
 class TestGompertz:
+    """Test Gompertz rate."""
+
     def test_single_epoch_values(self) -> None:
         a, b = 0.2, 0.4
         rate = PiecewiseExponentialRate.gompertz(a, b, _T)
@@ -193,6 +201,8 @@ class TestGompertz:
 
 
 class TestAgainstQuad:
+    """Test integrals against scipy quadrature."""
+
     @pytest.mark.parametrize("rate", _rates())
     def test_protocol(self, rate: RateFunction) -> None:
         assert isinstance(rate, RateFunction)
@@ -220,6 +230,8 @@ class TestAgainstQuad:
 
 
 class TestJitAndGrad:
+    """Test jit and grad compatibility of each family."""
+
     def test_jit_runs_for_each_family(self) -> None:
         @jax.jit
         def total(rate: RateFunction) -> jax.Array:
@@ -263,6 +275,8 @@ class TestJitAndGrad:
 
 
 class TestPiecewiseRate:
+    """Test piecewise-composed rates."""
+
     _TIMES = jnp.array([1.0, 2.5, 4.0])
 
     def _linear_pair(self) -> tuple[PiecewiseRate, PiecewiseLinearRate]:
@@ -360,6 +374,8 @@ class TestPiecewiseRate:
 
 
 class TestAgeDensityNormalisation:
+    """Test age-density normalisation."""
+
     def test_spine_and_non_spine_integrate_to_one(self) -> None:
         end = 6.0
         birth = PowerRate.weibull(0.6, 2.0, end_time=end)
