@@ -218,7 +218,7 @@ gpu = [
 [package.metadata]
 requires-dist = [
     { name = "altair", specifier = ">=6.0.0" },
-    { name = "bdsurv", git = "ssh://git@github.com/jaycrick/bdsurv.git?rev=176e9a1" },
+    { name = "bdsurv", git = "ssh://git@github.com/jaycrick/bdsurv.git?rev=b660a53" },
     { name = "beartype", specifier = ">=0.19.0" },
     { name = "itables", specifier = ">=2.7.0" },
     { name = "jax", specifier = ">=0.4.38" },
@@ -261,11 +261,12 @@ gpu = [
 [[package]]
 name = "bdsurv"
 version = "0.5.0"
-source = { git = "ssh://git@github.com/jaycrick/bdsurv.git?rev=176e9a1#176e9a1bea2af5322b11e3d895044b45081e0a86" }
+source = { git = "ssh://git@github.com/jaycrick/bdsurv.git?rev=b660a53#b660a53bc793953c9f597692e32d404a00a920a0" }
 dependencies = [
     { name = "jax" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "scipy" },
 ]
 
 [[package]]

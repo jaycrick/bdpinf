@@ -25,7 +25,7 @@ dependencies = [
 # changes; its tags are for internal tracking only).  For local co-development,
 # temporarily point this at `{ path = "../bdsurv", editable = true }`.
 [tool.uv.sources]
-bdsurv = { git = "ssh://git@github.com/jaycrick/bdsurv.git", rev = "176e9a1" }
+bdsurv = { git = "ssh://git@github.com/jaycrick/bdsurv.git", rev = "b660a53" }
 
 [dependency-groups]
 gpu = [
