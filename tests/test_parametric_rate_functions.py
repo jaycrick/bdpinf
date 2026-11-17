@@ -127,6 +127,27 @@ class TestLogLogisticRate:
         got = _scalar(rate.integral(jnp.array(0.0), jnp.array(3.0)))
         assert got == pytest.approx(np.log1p((3.0 / 2.0) ** 1.8), rel=1e-12)
 
+    @pytest.mark.parametrize("shape", [0.4, 0.7, 1.0, 1.5])
+    def test_integral_from_zero_gradient_matches_closed_form(
+        self, shape: float
+    ) -> None:
+        # The cumulative hazard is log1p((e / scale)**shape); for shape < 1 the
+        # power has an infinite slope at 0, which once gave a NaN gradient.
+        e, scale = 2.5, 3.0
+
+        def cumulative(params: jax.Array) -> jax.Array:
+            return LogLogisticRate(params[0], params[1], end_time=e).integral(
+                jnp.array(0.0), jnp.array(e)
+            )
+
+        got = np.asarray(jax.grad(cumulative)(jnp.array([shape, scale])))
+        x = (e / scale) ** shape
+        expected = np.array(
+            [x * np.log(e / scale) / (1 + x), -shape * x / (scale * (1 + x))]
+        )
+        assert np.all(np.isfinite(got)), f"gradient {got} is not finite"
+        np.testing.assert_allclose(got, expected, rtol=1e-12)
+
     def test_breakpoints_only_when_singular(self) -> None:
         assert LogLogisticRate(1.0, 2.0, end_time=_T).breakpoints.shape == (0,)
         assert LogLogisticRate(0.5, 2.0, end_time=_T).breakpoints.shape == (30,)

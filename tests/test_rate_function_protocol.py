@@ -7,10 +7,14 @@ import pytest
 from scipy.integrate import quad
 
 from bdpinf.models.rate_functions import (
+    LogLogisticRate,
+    LomaxRate,
     PiecewiseConstantRate,
     PiecewiseExponentialRate,
     PiecewiseLinearRate,
     PiecewiseQuadraticRate,
+    PiecewiseRate,
+    PowerRate,
     RateFunction,
     SinusoidalRate,
 )
@@ -65,6 +69,21 @@ _EXAMPLES: dict[str, RateFunction] = {
     "sinusoidal-touches-zero": SinusoidalRate(0.5, 0.5, 2.0, 1.1, end_time=3.0),
     "sinusoidal-under-half-period": SinusoidalRate(1.2, -0.4, 10.0, end_time=2.0),
     "sinusoidal-period-divides-end": SinusoidalRate(1.0, 0.3, 1.0, end_time=3.0),
+    "gompertz-growing": PiecewiseExponentialRate.gompertz(0.2, 0.4, 2.5),
+    "gompertz-decaying": PiecewiseExponentialRate.gompertz(0.5, -0.6, 2.5),
+    "power-increasing": PowerRate(0.7, 0.5, end_time=2.5),
+    "power-rayleigh": PowerRate.rayleigh(0.3, end_time=2.5),
+    "power-weibull-wearout": PowerRate.weibull(2.5, 3.0, end_time=2.5),
+    "loglogistic-unimodal": LogLogisticRate(2.0, 3.0, end_time=2.5),
+    "lomax": LomaxRate(1.5, 2.0, end_time=2.5),
+    "piecewise-mixed-families": PiecewiseRate(
+        (
+            PiecewiseExponentialRate.gompertz(0.3, 0.5, 0.8),
+            PowerRate.weibull(0.7, 2.0, end_time=1.1),
+            LomaxRate(1.2, 1.0, end_time=1.1),
+        ),
+        _TIMES3,
+    ),
 }
 _IDS = list(_EXAMPLES)
 _RATES = list(_EXAMPLES.values())

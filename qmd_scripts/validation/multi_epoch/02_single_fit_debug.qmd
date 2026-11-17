@@ -40,6 +40,7 @@ sim = simulate_birth_death(
     PiecewiseConstant(birth_rates, times),
     PiecewiseConstant(death_rates, times),
     random_seed=42,
+    ensure_non_extinct=True,  # a debug fit needs survivors
 )
 alive = sim.surviving_records
 assert alive is not None

@@ -931,9 +931,25 @@ class LogLogisticRate:
 
     def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
         r"""Exact $\int_s^e w$ (stable form in the class docstring)."""
-        x_s = (jnp.asarray(s) / self.scale) ** self.shape
-        x_e = (jnp.asarray(e) / self.scale) ** self.shape
+        x_s = self._scaled_power(jnp.asarray(s))
+        x_e = self._scaled_power(jnp.asarray(e))
         return jnp.log1p((x_e - x_s) / (1.0 + x_s))
+
+    def _scaled_power(self, t: jax.Array) -> jax.Array:
+        r"""$(t / \text{scale})^{\text{shape}}$, zero at $t = 0$ with finite gradients.
+
+        For ``shape < 1`` the power has an infinite derivative at ``t = 0``, so
+        the direct form gives ``inf * 0 = nan`` in gradients with respect to
+        ``scale`` and ``shape``; evaluating through the logarithm on ``t > 0``
+        only keeps them finite.
+        """
+        positive = t > 0
+        t_safe = jnp.where(positive, t, 1.0)
+        return jnp.where(
+            positive,
+            jnp.exp(self.shape * (jnp.log(t_safe) - jnp.log(self.scale))),
+            0.0,
+        )
 
 
 @dataclasses.dataclass(frozen=True)
