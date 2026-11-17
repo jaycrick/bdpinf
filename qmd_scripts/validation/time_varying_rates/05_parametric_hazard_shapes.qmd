@@ -1,0 +1,618 @@
+---
+title: "Time-Varying Rates: Spine and Non-Spine Age Densities for Parametric Hazards"
+subtitle: "Weibull, Rayleigh, Gompertz, Log-Logistic, Lomax, Quadratic and Piecewise Birth and Death Rates"
+author: "JC"
+date: last-modified
+---
+
+```{python}
+# ruff: noqa: E402
+# | label: compile-time-start
+# | cache: false
+# | echo: false
+# | include: false
+
+import time
+
+__compile_start = time.perf_counter()
+```
+
+## Overview
+
+`01_spine_age_shapes.qmd` and `02_non_spine_age_shapes.qmd` show how the age densities respond to constant, linear and piecewise-linear rates,
+and `04_spine_age_shapes_nonlinear.qmd` adds exponential, quadratic and sinusoidal rates.
+This notebook repeats the exercise for the parametric hazard families
+that survival analysis uses:
+Weibull (and its special case Rayleigh), Gompertz, log-logistic and Lomax,
+together with a U-shaped quadratic rate and two-epoch piecewise compositions.
+Each family is used as a birth rate $\lambda$ against a constant death rate,
+and Gompertz is also used as a death rate against a constant birth rate.
+
+The notation is that of the earlier notebooks:
+$\gamma=\lambda-\mu$,
+$\Lambda(s,e]=\int_s^e\lambda$,
+$M(s,e]=\int_s^e\mu$,
+$\Gamma(s,e]=\Lambda(s,e]-M(s,e]$.
+Conditional on at least one individual being alive at $T$,
+the *spine* age $A^*$ has a density on $(0,T)$ and an atom at $a=T$,
+
+$$
+  \Pr(A^*\in da)=\lambda(T-a)\,e^{-\Lambda(T-a,T]}\,L_\mu(T-a,T)\,da,
+  \qquad
+  L_\mu(s,T)=\int_s^T\mu(t)\,e^{\Gamma(t,T]}\,dt,
+$$
+
+and the age of each *non-spine* individual has a single continuous density on $(0,T)$ with no atom,
+
+$$
+  \Pr(A\in da)=\frac{\lambda(T-a)\,\mathcal W(T-a)\,e^{-M(T-a,T]}}{\mathcal W(T)-1}\,da,
+  \qquad
+  \mathcal W(b)=1+\int_0^b\lambda(t)\,e^{\Gamma(t,b]}\,dt.
+$$
+
+Age and calendar time are mirrored, $a=T-\tau$,
+so a feature of a rate at calendar time $\tau$ shows up in the density at age $T-\tau$.
+In particular a hazard that is singular at calendar time $0$
+(Weibull and log-logistic with shape $k<1$)
+puts the singularity at age $a=T$.
+The singularity is integrable, so the densities are proper,
+but the density may be large near $a=T$.
+The singular rate is infinite at $\tau=0$ itself, so the point is left out of the rate panels.
+
+Each figure has the rates $\lambda(\tau)$ and $\mu(\tau)$ against calendar time on top
+and the age density against age underneath.
+The atom of the spine age at $a=T$ is drawn as a point on a stem;
+its height is a probability mass, not a density.
+The observation time is $T=3$, as in `04_spine_age_shapes_nonlinear.qmd`.
+
+## Setup
+
+```{python}
+# ruff: noqa: E402
+# bdpinf must be imported before jax so its JAX_PLATFORMS=cpu default
+# (see src/bdpinf/__init__.py) takes effect before jax reads the env var.
+from collections.abc import Callable
+from functools import partial
+
+import jax.numpy as jnp
+import numpy as np
+import pandas as pd
+from IPython.display import display
+from scipy.integrate import quad
+
+from bdpinf import find_project_root
+from bdpinf.models import (
+    LogLogisticRate,
+    LomaxRate,
+    PiecewiseExponentialRate,
+    PiecewiseQuadraticRate,
+    PiecewiseRate,
+    PowerRate,
+)
+from bdpinf.models.math_age_densities import (
+    non_spine_age_cdf,
+    non_spine_age_log_density,
+    spine_age_cdf,
+    spine_age_log_atom,
+    spine_age_log_density,
+)
+from bdpinf.models.rate_functions import PiecewiseConstantRate, RateFunction
+from bdpinf.visualization import save_chart, scenario_row
+
+figures_dir = find_project_root() / "figures" / "validation" / "time_varying_rates"
+figures_dir.mkdir(parents=True, exist_ok=True)
+
+T = 3.0
+AGES = jnp.linspace(1e-3, T - 1e-3, 400)
+TIMES = jnp.array([T])
+HALF = 0.5 * T
+TWO_EPOCHS = jnp.array([HALF, T])
+```
+
+```{python}
+Scenario = tuple[RateFunction, RateFunction]
+
+# Every scenario drawn below is registered here for the numerical checks.
+registry: dict[str, Scenario] = {}
+# Scenarios whose birth rate is singular, or has an unbounded derivative,
+# at calendar time 0; the numerical checks allow them a larger error.
+rough: set[str] = set()
+
+LogDensity = Callable[[jnp.ndarray, RateFunction, RateFunction], jnp.ndarray]
+
+
+def const(value: float) -> PiecewiseConstantRate:
+    """Constant rate ``value`` on ``[0, T]``."""
+    return PiecewiseConstantRate.constant(value, T)
+
+
+def weibull(shape: float, scale: float, end_time: float = T) -> PowerRate:
+    """Weibull hazard on ``[0, end_time]``."""
+    return PowerRate.weibull(shape, scale, end_time=end_time)
+
+
+def gompertz(a: float, b: float, end_time: float = T) -> PiecewiseExponentialRate:
+    """Gompertz hazard ``a exp(b t)`` on ``[0, end_time]``."""
+    return PiecewiseExponentialRate.gompertz(a, b, end_time)
+
+
+def local_maxima(density: np.ndarray) -> int:
+    """Count the interior local maxima of a sampled density."""
+    return int(np.sum((density[1:-1] > density[:-2]) & (density[1:-1] > density[2:])))
+
+
+def spine_figure(scenarios: dict[str, Scenario], slug: str) -> pd.DataFrame:
+    """Register, draw and save a row of spine panels; return their summary."""
+    registry.update(scenarios)
+    fig = partial(scenario_row, primary="spine", show_secondary=False, ages=AGES)(
+        scenarios
+    )
+    display(fig)
+    save_chart(fig, slug, output_dir=figures_dir)
+    return shape_summary(scenarios, spine_age_log_density, atom=True)
+
+
+def non_spine_figure(scenarios: dict[str, Scenario], slug: str) -> pd.DataFrame:
+    """Draw and save a row of non-spine panels; return their summary."""
+    fig = partial(scenario_row, primary="non_spine", show_secondary=False, ages=AGES)(
+        scenarios
+    )
+    display(fig)
+    save_chart(fig, slug, output_dir=figures_dir)
+    return shape_summary(scenarios, non_spine_age_log_density, atom=False)
+
+
+def shape_summary(
+    scenarios: dict[str, Scenario], log_density: LogDensity, *, atom: bool
+) -> pd.DataFrame:
+    """Mode and height of the density on the grid (and the spine atom mass)."""
+    rows = []
+    for name, (lam, mu) in scenarios.items():
+        density = np.exp(np.asarray(log_density(AGES, lam, mu)))
+        row = {
+            "scenario": name,
+            "mode age": float(AGES[np.argmax(density)]),
+            "peak density": float(density.max()),
+            "density at a=0": float(density[0]),
+            "density at a=T": float(density[-1]),
+            "local maxima": local_maxima(density),
+        }
+        if atom:
+            row["atom mass"] = float(jnp.exp(spine_age_log_atom(lam, mu)))
+        rows.append(row)
+    return pd.DataFrame(rows).round(3)
+```
+
+In every table below, the density columns refer to the continuous part of the density on the plotting grid
+(400 ages from $0.001$ to $T-0.001$),
+"mode age" is the grid age of the maximum,
+and "atom mass" is $\Pr(A^*=T)$.
+"Local maxima" counts interior maxima only,
+so a density that increases up to $a=T$ has none there.
+
+## Weibull birth rate
+
+The Weibull hazard with shape $k$ and scale $\eta$ is $(k/\eta)(t/\eta)^{k-1}$.
+It decreases for $k<1$ (and is singular at $\tau=0$),
+is constant for $k=1$,
+and increases for $k>1$.
+The scales below keep the rates of order one on $[0,3]$:
+$k=1$ with $\eta=1.25$ is the constant comparison rate $\lambda=0.8$,
+$k=0.6$ has $\eta=1.5$ and $k=2.5$ has $\eta=2.5$.
+The death rate is constant, $\mu=0.7$.
+
+```{python}
+MU_FIXED = 0.7
+WEIBULL = {  # name: (shape, scale)
+    "k=0.6": (0.6, 1.5),
+    "k=1 (constant)": (1.0, 1.25),
+    "k=2.5": (2.5, 2.5),
+}
+
+weibull_scenarios = {
+    f"λ Weibull, {name}": (weibull(*params), const(MU_FIXED))
+    for name, params in WEIBULL.items()
+}
+rough.add("λ Weibull, k=0.6")
+rough.add("λ Weibull, k=2.5")  # t^1.5: unbounded second derivative at 0
+
+summary_weibull_spine = spine_figure(weibull_scenarios, "vtv05_weibull_spine")
+display(summary_weibull_spine)
+```
+
+Among the continuous spine densities, $k=1$ and $k=2.5$ each have one mode,
+at age 1.34 (peak 0.275) and age 0.73 (peak 0.238).
+Their atoms are 0.345 and 0.602:
+the faster the Weibull rate grows with $\tau$, the more of the spine mass sits at $a=T$.
+For $k=0.6$ the density has no interior maximum and increases towards $a=T$,
+where the singularity of $\lambda$ at $\tau=0$ is mirrored (grid value 2.21 at $a=T-0.001$, against 0.27 at $a=2.5$).
+The atom is 0.416, between the other two.
+
+```{python}
+summary_weibull_non_spine = non_spine_figure(
+    weibull_scenarios, "vtv05_weibull_non_spine"
+)
+display(summary_weibull_non_spine)
+```
+
+All three non-spine densities are largest at, or near, one end of the age range.
+For $k=1$ and $k=2.5$ the density is largest at $a=0$ (1.085 and 1.996) and decreases;
+the density at $a=2.5$ is 0.07 for $k=1$ and 0.008 for $k=2.5$,
+so the increasing rate puts much more non-spine mass at young ages.
+For $k=0.6$ the density starts at 0.642, falls to a minimum of 0.181 at age 2.68
+and then rises to 1.04 at $a=T-0.001$, again the mirrored singularity.
+It is the only one of the three with substantial density at old ages.
+
+## Rayleigh birth rate
+
+The Rayleigh hazard $c\,t$ is the Weibull hazard with $k=2$.
+It starts at $0$ and increases linearly, so no individuals are born at calendar time $0$ and many near $T$.
+With $c=0.8$ the rate reaches $2.4$ at $T=3$.
+
+```{python}
+rayleigh_scenarios = {
+    "λ Rayleigh, c=0.8": (PowerRate.rayleigh(0.8, end_time=T), const(MU_FIXED)),
+}
+
+summary_rayleigh_spine = spine_figure(rayleigh_scenarios, "vtv05_rayleigh_spine")
+display(summary_rayleigh_spine)
+```
+
+The spine density has one mode, at age 0.65 (peak 0.362),
+and the atom is 0.369.
+The density at $a=2.5$ is 0.086,
+so very few spines are old:
+births near $\tau=0$ are rare when $\lambda(0)=0$.
+
+```{python}
+summary_rayleigh_non_spine = non_spine_figure(
+    rayleigh_scenarios, "vtv05_rayleigh_non_spine"
+)
+display(summary_rayleigh_non_spine)
+```
+
+The non-spine density is largest at $a=0$ (2.585) and decreases monotonically,
+to 0.068 at $a=1.5$ and 0.006 at $a=2.5$.
+Its peak is higher than that of the Weibull $k=2.5$ density (1.996).
+
+## Gompertz birth and death rates
+
+The Gompertz hazard $a\,e^{bt}$ is exponential in time:
+it increases for $b>0$ and decreases for $b<0$.
+Two birth-rate scenarios have a constant death rate $\mu=0.7$,
+$\lambda=0.4\,e^{0.5\tau}$ (from $0.4$ to $1.79$)
+and $\lambda=1.8\,e^{-0.6\tau}$ (from $1.8$ to $0.30$).
+In a third scenario the birth rate is constant, $\lambda=1.0$,
+and the death rate is Gompertz, $\mu=0.3\,e^{0.6\tau}$ (from $0.3$ to $1.79$).
+
+```{python}
+gompertz_scenarios = {
+    "λ Gompertz, b=0.5": (gompertz(0.4, 0.5), const(MU_FIXED)),
+    "λ Gompertz, b=-0.6": (gompertz(1.8, -0.6), const(MU_FIXED)),
+    "μ Gompertz, b=0.6": (const(1.0), gompertz(0.3, 0.6)),
+}
+
+summary_gompertz_spine = spine_figure(gompertz_scenarios, "vtv05_gompertz_spine")
+display(summary_gompertz_spine)
+```
+
+The two birth-rate scenarios give one mode each:
+age 0.74 (peak 0.298, atom 0.384) for the increasing $\lambda$
+and age 2.15 (peak 0.350, atom 0.272) for the decreasing $\lambda$.
+For the decreasing rate the density at $a=0.5$ is only 0.107 and it rises to 0.334 at $a=2.5$,
+because the early births are mirrored at old ages.
+The Gompertz death rate against a constant birth rate gives a single mode at age 0.69 (peak 0.427) and the smallest atom of the three (0.186).
+
+```{python}
+summary_gompertz_non_spine = non_spine_figure(
+    gompertz_scenarios, "vtv05_gompertz_non_spine"
+)
+display(summary_gompertz_non_spine)
+```
+
+The increasing $\lambda$ and the increasing $\mu$ give non-spine densities that decrease from $a=0$ (2.131 and 1.364).
+The decreasing $\lambda$ does not:
+its density is 0.425 at $a=0$, has a maximum of 0.436 at age 0.51, and then decreases to 0.095 at $a=T-0.001$.
+It is much flatter than the others,
+with density 0.378 at $a=1.5$ against 0.108 for the increasing rate.
+
+## Log-logistic birth rate
+
+The log-logistic hazard is $(k/\eta)(t/\eta)^{k-1}/(1+(t/\eta)^k)$.
+For $k<1$ it decreases from a singularity at $\tau=0$.
+For $k>1$ it is zero at $\tau=0$,
+rises to a maximum and then decreases:
+a hump, unlike the monotone Weibull hazard.
+Here $k=0.6$ with $\eta=0.5$,
+and $k=3$ with $\eta=1.5$, whose maximum is about $1.06$ near $\tau=1.9$.
+The death rate is $\mu=0.7$.
+
+```{python}
+LOGLOGISTIC = {"k=0.6": (0.6, 0.5), "k=3": (3.0, 1.5)}
+
+loglogistic_scenarios = {
+    f"λ log-logistic, {name}": (
+        LogLogisticRate(shape, scale, end_time=T),
+        const(MU_FIXED),
+    )
+    for name, (shape, scale) in LOGLOGISTIC.items()
+}
+rough.add("λ log-logistic, k=0.6")
+
+summary_loglogistic_spine = spine_figure(
+    loglogistic_scenarios, "vtv05_loglogistic_spine"
+)
+display(summary_loglogistic_spine)
+```
+
+For $k=0.6$ the spine density has no interior maximum and increases towards the singularity at $a=T$
+(0.049 at $a=0.5$, 0.307 at $a=2.5$, and 4.13 at $a=T-0.001$),
+with atom 0.409.
+For $k=3$ the hump in $\lambda$ gives a single mode at age 1.12 (peak 0.318) and a larger atom (0.447).
+
+```{python}
+summary_loglogistic_non_spine = non_spine_figure(
+    loglogistic_scenarios, "vtv05_loglogistic_non_spine"
+)
+display(summary_loglogistic_non_spine)
+```
+
+For $k=0.6$ the non-spine density starts at 0.394, falls to a minimum of 0.279 at age 1.91 and then rises to 2.91 at $a=T-0.001$.
+For $k=3$ the density is 1.182 at $a=0$ and decreases to 0.013 at $a=2.5$;
+the hump in $\lambda$ does not produce an interior mode of the non-spine density.
+
+## Lomax birth rate
+
+The Lomax hazard $k/(\eta+t)$ is smooth and decreasing, with no singularity.
+Here $k=1.5$ and $\eta=1$, so $\lambda$ falls from $1.5$ to $0.375$.
+The death rate is $\mu=0.7$.
+
+```{python}
+lomax_scenarios = {
+    "λ Lomax, k=1.5, η=1": (LomaxRate(1.5, 1.0, end_time=T), const(MU_FIXED)),
+}
+
+summary_lomax_spine = spine_figure(lomax_scenarios, "vtv05_lomax_spine")
+display(summary_lomax_spine)
+```
+
+The spine density has one mode, at age 2.71 (peak 0.314), and the atom is 0.330.
+The density is 0.113 at $a=0.5$ and 0.312 at $a=2.5$:
+the decreasing $\lambda$ puts the spine's birth at early calendar times, that is at old ages.
+There is no singularity, and the density at $a=T-0.001$ is 0.311.
+
+```{python}
+summary_lomax_non_spine = non_spine_figure(lomax_scenarios, "vtv05_lomax_non_spine")
+display(summary_lomax_non_spine)
+```
+
+The non-spine density is largest at $a=0$ (0.604) and decreases monotonically, to 0.112 at $a=T-0.001$.
+Its decay is slower than for the increasing rates above: the value at $a=2.5$ is 0.179.
+
+## Quadratic (bathtub) birth rate
+
+A quadratic rate through the values $1.6$, $0.3$ and $1.2$ at the start, midpoint and end of $[0,T]$ is U-shaped:
+high at birth-time zero, low in the middle, and rising again.
+It is the "bathtub" shape of a failure rate.
+The death rate is $\mu=0.7$.
+
+```{python}
+bathtub = PiecewiseQuadraticRate(
+    jnp.array([1.6]), jnp.array([0.3]), jnp.array([1.2]), TIMES
+)
+assert float(jnp.min(bathtub(AGES))) >= 0.0
+quadratic_scenarios = {"λ quadratic bathtub": (bathtub, const(MU_FIXED))}
+
+summary_quadratic_spine = spine_figure(quadratic_scenarios, "vtv05_quadratic_spine")
+display(summary_quadratic_spine)
+```
+
+The spine density has two local maxima, a low one at age 0.53 (0.157) and a high one at age 2.86 (0.405),
+with a minimum of 0.125 at age 1.24 between them.
+The high maximum is the mirror image of the high birth rate near $\tau=0$, and the atom is 0.371.
+The density minimum is at age 1.24, not at the mirror image $a=1.5$ of the minimum of $\lambda$.
+
+```{python}
+summary_quadratic_non_spine = non_spine_figure(
+    quadratic_scenarios, "vtv05_quadratic_non_spine"
+)
+display(summary_quadratic_non_spine)
+```
+
+The non-spine density is largest at $a=0$ (1.884) and falls to a minimum of 0.122 at age 1.57.
+It then has a small local maximum of 0.157 at age 2.42,
+which is the mirror of the high $\lambda$ near $\tau=0$,
+and decreases to 0.113 at $a=T-0.001$.
+
+## Piecewise Weibull and piecewise Gompertz birth rates
+
+`PiecewiseRate` glues rate functions epoch by epoch,
+each piece evaluated in *local* time $u=\tau-\tau_{k-1}$,
+so every piece starts again from $u=0$.
+Both scenarios have two epochs of length $1.5$ and a constant death rate $\mu=0.7$.
+
+- Piecewise Weibull: a decreasing piece ($k=0.6$, $\eta=1$) followed by an increasing one ($k=2$, $\eta=1.5$),
+  which restarts at zero rate at $\tau=1.5$.
+  The first piece is singular at $\tau=0$.
+- Piecewise Gompertz: a rising piece ($a=0.4$, $b=0.8$, reaching $1.33$) followed by a falling one ($a=1.3$, $b=-1$, reaching $0.29$).
+  The two pieces nearly meet at $\tau=1.5$.
+
+```{python}
+piecewise_scenarios = {
+    "λ piecewise Weibull": (
+        PiecewiseRate((weibull(0.6, 1.0, HALF), weibull(2.0, 1.5, HALF)), TWO_EPOCHS),
+        const(MU_FIXED),
+    ),
+    "λ piecewise Gompertz": (
+        PiecewiseRate(
+            (gompertz(0.4, 0.8, HALF), gompertz(1.3, -1.0, HALF)), TWO_EPOCHS
+        ),
+        const(MU_FIXED),
+    ),
+}
+rough.add("λ piecewise Weibull")
+
+summary_piecewise_spine = spine_figure(piecewise_scenarios, "vtv05_piecewise_spine")
+display(summary_piecewise_spine)
+```
+
+The epoch boundary $\tau=1.5$ is mirrored at age $T-1.5=1.5$.
+For the piecewise Weibull rate the second piece starts at zero rate at $\tau=1.5$,
+so the density just below $a=1.5$ is almost zero (about 0.001 at $a=1.5$) and jumps up for ages above it.
+There is a local maximum of 0.204 at age 0.57 and then the singularity of the first piece takes over,
+with density 2.15 at $a=T-0.001$ and atom 0.345.
+The piecewise Gompertz rate is nearly continuous, so the density is smooth with a peak of 0.439 at age 1.50 and atom 0.363.
+
+```{python}
+summary_piecewise_non_spine = non_spine_figure(
+    piecewise_scenarios, "vtv05_piecewise_non_spine"
+)
+display(summary_piecewise_non_spine)
+```
+
+The piecewise Weibull non-spine density has the same jump at $a=1.5$:
+it is about 0.001 just below it and 0.17 just above.
+It is 0.645 at $a=0.5$, has a local minimum of 0.096 at age 2.73,
+and rises again to 0.502 at $a=T-0.001$.
+For the piecewise Gompertz rate the non-spine density has two local maxima, 0.565 at age 0.99 and 0.499 at age 1.5,
+separated by a very shallow dip (the minimum between them is 0.494, at the boundary age 1.5), and it decreases to 0.023 at $a=T-0.001$.
+
+## Numerical checks
+
+Two checks support the figures above, over every scenario drawn in this notebook.
+Each check has an `assert`, so rendering fails if one fails.
+
+1. Total mass: the spine CDF at $T$ (including the atom) and the non-spine CDF at $T$ both equal 1.
+2. An independent oracle for the spine density: it equals
+   $\lambda(T-a)\,e^{-\Lambda(T-a,T]}\,L_\mu(T-a,T)$,
+   with $L_\mu$ computed by adaptive quadrature (`scipy.integrate.quad`)
+   from the rates' own `integral` for $\Lambda$ and $\Gamma$,
+   a different code path from the Gauss--Legendre segments used by the library.
+   The ages include $a=2.95$ and $a=2.995$,
+   where a hazard that is singular at calendar time 0 is evaluated close to its singularity.
+
+```{python}
+end = jnp.array([T])
+MASS_ATOL = 1e-12
+MASS_ATOL_ROUGH = 1e-6
+mass_table = pd.DataFrame(
+    {
+        "scenario": list(registry),
+        "spine mass": [float(spine_age_cdf(end, *v)[0]) for v in registry.values()],
+        "non-spine mass": [
+            float(non_spine_age_cdf(end, *v)[0]) for v in registry.values()
+        ],
+    }
+)
+mass_table["max |error|"] = np.maximum(
+    np.abs(mass_table["spine mass"] - 1.0), np.abs(mass_table["non-spine mass"] - 1.0)
+)
+display(mass_table)
+is_rough = mass_table["scenario"].isin(rough)
+assert (mass_table.loc[~is_rough, "max |error|"] < MASS_ATOL).all()
+assert (mass_table.loc[is_rough, "max |error|"] < MASS_ATOL_ROUGH).all()
+print(
+    f"{len(mass_table)} scenarios, largest mass error "
+    f"{mass_table.loc[~is_rough, 'max |error|'].max():.2e} (smooth), "
+    f"{mass_table.loc[is_rough, 'max |error|'].max():.2e} (rough)"
+)
+```
+
+```{python}
+ORACLE_AGES = (0.4, 1.3, 2.5, 2.95, 2.995)
+ORACLE_RTOL = 1e-12
+ORACLE_RTOL_ROUGH = 1e-10
+
+
+def oracle_spine_density(lam: RateFunction, mu: RateFunction, age: float) -> float:
+    """lambda(T-a) exp(-Lambda(T-a,T)) L_mu(T-a,T), with L_mu by adaptive quadrature."""
+    s = T - age
+
+    def integrand(t: float) -> float:
+        gamma_t = float(
+            lam.integral(jnp.array(t), jnp.array(T))
+            - mu.integral(jnp.array(t), jnp.array(T))
+        )
+        return float(mu(jnp.array(t))) * np.exp(gamma_t)
+
+    kinks = {
+        float(b)
+        for rate in (lam, mu)
+        for b in np.asarray(rate.breakpoints)
+        if s < b < T
+    }
+    l_mu, _ = quad(
+        integrand,
+        s,
+        T,
+        points=sorted(kinks) or None,
+        epsabs=0.0,
+        epsrel=1e-13,
+        limit=400,
+    )
+    big_lambda = float(lam.integral(jnp.array(s), jnp.array(T)))
+    return float(lam(jnp.array(s))) * np.exp(-big_lambda) * l_mu
+
+
+oracle_rows = []
+for name, (lam, mu) in registry.items():
+    library = np.exp(np.asarray(spine_age_log_density(jnp.array(ORACLE_AGES), lam, mu)))
+    for age, value in zip(ORACLE_AGES, library, strict=True):
+        expected = oracle_spine_density(lam, mu, age)
+        oracle_rows.append(
+            {
+                "scenario": name,
+                "age": age,
+                "bdpinf": float(value),
+                "quadrature oracle": expected,
+                "relative error": abs(float(value) - expected) / abs(expected),
+            }
+        )
+oracle_table = pd.DataFrame(oracle_rows)
+oracle_summary = (
+    oracle_table.groupby("scenario", sort=False)["relative error"]
+    .max()
+    .rename("max relative error")
+    .reset_index()
+)
+oracle_summary["rough at 0"] = oracle_summary["scenario"].isin(rough)
+display(oracle_summary)
+is_rough = oracle_summary["rough at 0"]
+smooth_err = oracle_summary.loc[~is_rough, "max relative error"]
+rough_err = oracle_summary.loc[is_rough, "max relative error"]
+assert (smooth_err < ORACLE_RTOL).all()
+assert (rough_err < ORACLE_RTOL_ROUGH).all()
+print(
+    f"largest oracle relative error: {smooth_err.max():.2e} (smooth), "
+    f"{rough_err.max():.2e} (rough)"
+)
+```
+
+```{python}
+# | label: compile-time-report
+# | cache: false
+# | echo: false
+
+import json
+import os
+import time
+from pathlib import Path
+
+doc_name = "validation_time_varying_rates_parametric_hazard_shapes.qmd"
+project_dir = Path(os.environ.get("QUARTO_PROJECT_DIR", Path.cwd()))
+compile_log = project_dir / "_output" / "compile_times.json"
+compile_log.parent.mkdir(parents=True, exist_ok=True)
+
+duration_seconds = time.perf_counter() - __compile_start
+timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+try:
+    data = json.loads(compile_log.read_text()) if compile_log.exists() else {}
+except Exception:
+    data = {}
+
+data[doc_name] = {"duration_seconds": duration_seconds, "timestamp": timestamp}
+compile_log.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+print(f"Render duration (non-cached): {duration_seconds:.2f}s")
+```

@@ -54,7 +54,7 @@ def rate_frame(
 ) -> pd.DataFrame:
     """Both rates against calendar time (columns ``t``, ``rate``, ``kind``)."""
     t = jnp.linspace(0.0, birth.end_time, n)
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "scenario": label,
             "t": np.tile(np.asarray(t), 2),
@@ -62,6 +62,8 @@ def rate_frame(
             "kind": [BIRTH_LABEL] * n + [DEATH_LABEL] * n,
         }
     )
+    # A rate singular at 0 (e.g. Weibull with shape < 1) is infinite there.
+    return frame[np.isfinite(frame["rate"])].reset_index(drop=True)
 
 
 def age_density_frame(
@@ -211,9 +213,7 @@ def scenario_row(
     kinds = _kinds(primary, show_secondary)
     y_max = 1.05 * max(_y_extent(*v, ages, kinds) for v in scenarios.values())
     r_max = 1.1 * max(
-        float(jnp.max(rate(jnp.linspace(0.0, rate.end_time, 301))))
-        for v in scenarios.values()
-        for rate in v
+        float(rate_frame("", *v)["rate"].max()) for v in scenarios.values()
     )
     return alt.hconcat(
         *[

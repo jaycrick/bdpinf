@@ -71,6 +71,8 @@ website:
             file: qmd_scripts/validation/time_varying_rates/03_piecewise_linear_recovery.qmd
           - text: "Spine-age shapes: exponential, quadratic, sinusoidal"
             file: qmd_scripts/validation/time_varying_rates/04_spine_age_shapes_nonlinear.qmd
+          - text: "Age densities: parametric hazards"
+            file: qmd_scripts/validation/time_varying_rates/05_parametric_hazard_shapes.qmd
       - text: "Validation: Survival-Conditioned Simulation"
         menu:
           - text: "Simulator comparison"
