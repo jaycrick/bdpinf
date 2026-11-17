@@ -218,7 +218,7 @@ def plot_creation_year_fit(
                 ),
                 dtype=np.float64,
             )
-        except Exception as exc:  # overlay is optional; skip on failure
+        except (ValueError, FloatingPointError) as exc:  # overlay is optional
             logger.warning("Could not compute theoretical overlay: %s", exc)
             density_years = None
             density_values = None

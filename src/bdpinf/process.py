@@ -202,7 +202,7 @@ class BirthDeathProcess:
             raise ValueError(msg)
 
         observed = records[records["survived"]].copy()
-        process = cls(
+        return cls(
             creation_times=observed["creation_time"].astype(float).tolist(),
             epoch_end_times=epoch_end_times,
             start_time=start_time,
@@ -211,7 +211,6 @@ class BirthDeathProcess:
             death_rates=death_rates,
             records=records.copy(),
         )
-        return process
 
     @classmethod
     def from_age_samples(
@@ -231,7 +230,7 @@ class BirthDeathProcess:
         creation_times = [
             max_time - float(age) for age in [*spine_ages, *non_spine_ages]
         ]
-        process = cls(
+        return cls(
             creation_times=creation_times,
             epoch_end_times=epoch_end_times,
             start_time=start_time,
@@ -241,7 +240,6 @@ class BirthDeathProcess:
             spine_ages=spine_ages,
             non_spine_ages=non_spine_ages,
         )
-        return process
 
     @property
     def epoch_end_times(self) -> jax.Array:

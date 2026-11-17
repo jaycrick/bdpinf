@@ -30,7 +30,7 @@ class TestBdpAgeDistributionSampler:
         monkeypatch.setattr(
             simulator_module,
             "calculate_extinction_pr",
-            lambda *args, **kwargs: 1.0,
+            lambda *_args, **_kwargs: 1.0,
         )
 
         sampled = simulate_bdp_ages_from_distributions(
@@ -59,17 +59,17 @@ class TestBdpAgeDistributionSampler:
         monkeypatch.setattr(
             simulator_module,
             "population_geometric_parameter",
-            lambda *args, **kwargs: 0.5,
+            lambda *_args, **_kwargs: 0.5,
         )
         monkeypatch.setattr(
             simulator_module,
             "_sample_spine_ages",
-            lambda *args, **kwargs: [1.23],
+            lambda *_args, **_kwargs: [1.23],
         )
         monkeypatch.setattr(
             simulator_module,
             "_sample_non_spine_ages",
-            lambda *args, **kwargs: [4.56],
+            lambda *_args, **_kwargs: [4.56],
         )
 
         sampled = simulate_bdp_ages_from_distributions(

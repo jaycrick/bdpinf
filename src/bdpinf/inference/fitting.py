@@ -573,15 +573,15 @@ def _hessian_function(penalised: Callable[..., jax.Array], mode: str) -> Any:
     if mode == "fd-grad":
         grad = jax.grad(penalised)
 
-        def hessian(free: jax.Array, *args: jax.Array) -> jax.Array:
+        def hessian(free: jax.Array, **arrays: jax.Array) -> jax.Array:
             step = _FD_STEP * jnp.maximum(1.0, jnp.abs(free))
             moves = jnp.diag(step)
 
             def up_grad(move: jax.Array) -> jax.Array:
-                return grad(free + move, *args)
+                return grad(free + move, **arrays)
 
             def down_grad(move: jax.Array) -> jax.Array:
-                return grad(free - move, *args)
+                return grad(free - move, **arrays)
 
             up = jax.vmap(up_grad)(moves)
             down = jax.vmap(down_grad)(moves)
@@ -634,6 +634,7 @@ def _objective(
 
     def penalised(
         free: jax.Array,
+        *,
         non_spine: jax.Array,
         spine: jax.Array,
         ns: jax.Array,
@@ -732,24 +733,32 @@ def _prepare_problem(
         if pad_to_bucket is False or data.n_non_spine is not None
         else data.padded(_bucket(n_rest))
     )
-    runtime = (
-        jnp.asarray(padded.non_spine_ages),
-        jnp.zeros(0) if data.spine_ages is None else jnp.asarray(data.spine_ages),
-        jnp.asarray(data.ns),
-        jnp.asarray(compiled.fixed_natural),
-        jnp.asarray(n_rest),
-        jnp.zeros(0) if padded.upper_ages is None else jnp.asarray(padded.upper_ages),
-        jnp.zeros(0) if padded.weights is None else jnp.asarray(padded.weights),
-    )
+    runtime = {
+        "non_spine": jnp.asarray(padded.non_spine_ages),
+        "spine": (
+            jnp.zeros(0) if data.spine_ages is None else jnp.asarray(data.spine_ages)
+        ),
+        "ns": jnp.asarray(data.ns),
+        "fixed_natural": jnp.asarray(compiled.fixed_natural),
+        "n_valid": jnp.asarray(n_rest),
+        "upper": (
+            jnp.zeros(0)
+            if padded.upper_ages is None
+            else jnp.asarray(padded.upper_ages)
+        ),
+        "weights": (
+            jnp.zeros(0) if padded.weights is None else jnp.asarray(padded.weights)
+        ),
+    }
 
     def nll(free: jax.Array) -> jax.Array:
-        return objective.nll(free, *runtime)
+        return objective.nll(free, **runtime)
 
     def value_and_grad(free: jax.Array) -> tuple[jax.Array, jax.Array]:
-        return objective.value_and_grad(free, *runtime)
+        return objective.value_and_grad(free, **runtime)
 
     def hessian(free: jax.Array) -> jax.Array:
-        return objective.hessian(free, *runtime)
+        return objective.hessian(free, **runtime)
 
     n_obs = max(1, data.n_observations)
     return _Problem(
@@ -901,7 +910,7 @@ def _at_boundary(compiled: CompiledConstraints, x_best: NDArray[np.float64]) -> 
     )
 
 
-def fit(
+def fit(  # noqa: PLR0913  # public entry point: documented keyword options
     data: AgeData,
     model: BirthDeathModel,
     *,

@@ -28,6 +28,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Failures a subset fit is allowed to end in: validation errors, non-finite
+# arithmetic, singular matrices, and runtime errors from the optimiser or JAX.
+# Anything else (TypeError, AttributeError, ...) is a programming error and propagates.
+_EXPECTED_FIT_ERRORS = (
+    ValueError,
+    RuntimeError,
+    FloatingPointError,
+    np.linalg.LinAlgError,
+)
+
 
 @dataclass
 class DataSubset:
@@ -108,6 +118,7 @@ def _subset_age_data(
     times: NDArray[np.float64],
     epochs: Sequence[tuple[int, int, str]],
     start_time: int | float,
+    *,
     range_cols: tuple[str, str] | None,
 ) -> Any:
     """Point-age or date-range ``AgeData`` for one subset."""
@@ -250,8 +261,9 @@ def fit_subset(
     -------
     SubsetFitResult
         On convergence failure, ``success=False`` and ``epoch_results`` is
-        empty.  The result never raises — all exceptions are caught and
-        logged as warnings.
+        empty.  Validation failures and optimiser errors (``ValueError``,
+        ``RuntimeError``, ``FloatingPointError``, ``LinAlgError``) are caught and
+        logged as warnings; programming errors such as ``TypeError`` propagate.
     """
     from bdpinf.inference import BirthDeathModel, fit
     from bdpinf.process import BirthDeathProcess
@@ -300,7 +312,7 @@ def fit_subset(
             epoch_end_times=[int(e[1]) for e in epochs],
             start_time=float(start_time),
         )
-    except Exception as exc:
+    except ValueError as exc:
         return _fail(f"BirthDeathProcess construction failed: {exc}")
 
     ages_tensor = bdp.ages
@@ -314,12 +326,14 @@ def fit_subset(
     # Run the fit
     try:
         result = fit(
-            _subset_age_data(frame, ages_np, times, epochs, start_time, range_cols),
+            _subset_age_data(
+                frame, ages_np, times, epochs, start_time, range_cols=range_cols
+            ),
             BirthDeathModel.piecewise_constant(times),
             seed=random_seed,
             **fit_kwargs,
         )
-    except Exception as exc:
+    except _EXPECTED_FIT_ERRORS as exc:
         return _fail(f"fit raised: {exc}", times=times, ages=ages_np)
 
     nll_history: list[float] = [float(v) for v in result.nll_history]
@@ -478,7 +492,7 @@ def fit_subset_bayesian(
             epoch_end_times=[int(e[1]) for e in epochs],
             start_time=float(start_time),
         )
-    except Exception as exc:
+    except ValueError as exc:
         logger.warning(
             "Bayesian fit skipped for %s: BDP construction failed: %s", subset.key, exc
         )
@@ -500,7 +514,7 @@ def fit_subset_bayesian(
         times_np,
         epochs,
         start_time,
-        _range_columns(config.early_column, config.late_column),
+        range_cols=_range_columns(config.early_column, config.late_column),
     )
     model = BirthDeathModel.piecewise_constant(times_np)
 
@@ -515,7 +529,7 @@ def fit_subset_bayesian(
             seed=model_seed,
             compute_covariance=False,
         )
-    except Exception as exc:
+    except _EXPECTED_FIT_ERRORS as exc:
         logger.warning("MLE reference fit failed for %s: %s", subset.key, exc)
 
     # NumPyro NUTS fit

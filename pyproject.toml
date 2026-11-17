@@ -147,34 +147,6 @@ convention = "numpy"
   "E501",
   "I001"
 ]
-# TEMPORARY: removed by step B7
-# (TOML forbids repeating a key, so where a file also appears under another
-# step, its entry here uses the equivalent glob `src/**/<dir>/<file>`.)
-"src/**/analysis/bootstrap_date_density.py" = ["PLR0913", "PLR0917"]
-"src/bdpinf/analysis/latex_tables.py" = ["ARG001", "PERF401"]
-"src/bdpinf/analysis/multi_epoch_recovery.py" = ["PLR0917"]
-"src/**/analysis/subset_fitting.py" = ["BLE001", "PLR0917"]
-"src/bdpinf/analysis/validation_helpers.py" = ["BLE001"]
-"src/**/inference/fitting.py" = ["PLR0913", "PLR0917"]
-"src/bdpinf/models/math_general.py" = ["PLR0917"]
-"src/bdpinf/models/math_populations.py" = ["PLR0917"]
-"src/bdpinf/process.py" = ["RET504"]
-"src/**/utils.py" = ["BLE001", "PLR0124"]
-"src/bdpinf/visualization/age_fit_plot.py" = ["BLE001"]
-"src/bdpinf/visualization/altair_theme.py" = ["BLE001"]
-"src/bdpinf/visualization/date_distribution_plots.py" = ["PLR0913"]
-"src/bdpinf/visualization/plotting.py" = ["BLE001", "PLR0913", "PLR0917"]
-"tests/test_asymptotic_consistency.py" = ["ARG001", "ARG005"]
-"tests/test_bootstrap_date_density.py" = ["N802"]
-"tests/test_integration.py" = ["BLE001"]
-"tests/test_layering.py" = ["PERF401"]
-"tests/test_likelihood.py" = ["N802"]
-"tests/test_multi_epoch_recovery_helpers.py" = ["ARG001", "ARG005"]
-"tests/test_population_probability.py" = ["ERA001"]
-"tests/test_simulation.py" = ["ARG005"]
-"tests/test_single_epoch_recovery_helpers.py" = ["ARG001", "ARG005"]
-"tests/test_subset_fitting.py" = ["ERA001"]
-"tests/test_validation_helpers.py" = ["ARG001"]
 # TEMPORARY: removed by step B8
 "scripts/bench_fitting.py" = ["PLR0917", "SLF001"]
 "src/**/process.py" = ["SLF001"]

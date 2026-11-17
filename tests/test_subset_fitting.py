@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import bdpinf.inference
+import bdpinf.process
 from bdpinf.analysis.subset_fitting import (
     BayesianSubsetConfig,
     DataSubset,
@@ -290,6 +292,66 @@ class TestFitSubsetPinned:
         assert fit.ages[:3].tolist() == [1731.0, 430.0, 657.0]
 
 
+_FIT_SUBSET_KWARGS = {
+    "epochs": _ONE_EPOCH,
+    "start_time": 100,
+    "age_column": "year",
+    "random_seed": 42,
+}
+
+
+class TestFitSubsetErrorHandling:
+    """Test which exceptions fit_subset turns into a failed result."""
+
+    def test_invalid_ages_give_a_failed_result(self) -> None:
+        frame = pd.DataFrame({"year": ["early", "late", "middle"]})
+        subset = DataSubset(key="bad", label="Bad", frame=frame)
+
+        fit = fit_subset(subset, **_FIT_SUBSET_KWARGS)
+
+        assert not fit.success
+        assert fit.epoch_results == []
+
+    def test_unexpected_fit_keyword_propagates(self) -> None:
+        with pytest.raises(TypeError, match="unexpected keyword"):
+            fit_subset(_make_subset(), not_a_fit_option=1, **_FIT_SUBSET_KWARGS)
+
+    def test_type_error_in_process_construction_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(bdpinf.process, "BirthDeathProcess", broken)
+
+        with pytest.raises(TypeError, match="programming error"):
+            fit_subset(_make_subset(), **_FIT_SUBSET_KWARGS)
+
+    def test_optimiser_failure_gives_a_failed_result(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def stalled(*_args: object, **_kwargs: object) -> None:
+            raise FloatingPointError("non-finite objective")
+
+        monkeypatch.setattr(bdpinf.inference, "fit", stalled)
+
+        fit = fit_subset(_make_subset(), **_FIT_SUBSET_KWARGS)
+
+        assert not fit.success
+        assert fit.times.tolist() == [1900.0]
+
+    def test_type_error_in_fit_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(bdpinf.inference, "fit", broken)
+
+        with pytest.raises(TypeError, match="programming error"):
+            fit_subset(_make_subset(), **_FIT_SUBSET_KWARGS)
+
+
 # ---------------------------------------------------------------------------
 # Helpers for Bayesian driver tests
 # ---------------------------------------------------------------------------
@@ -406,7 +468,7 @@ class TestFitSubsetBayesian:
             model_seed=42,
         )
         bs = result["posterior_samples"]["birth_rates"]
-        # shape: [n_samples, n_epochs]
+        # Samples have one row per draw and one column per epoch.
         assert bs.ndim == 2
         assert bs.shape[1] == len(cfg.epochs)
         assert bs.shape[0] == mcmc_cfg.num_samples
@@ -433,6 +495,67 @@ class TestFitSubsetBayesian:
             model_seed=42,
         )
         assert result["success"] is False
+
+
+class _StopAfterReferenceFitError(Exception):
+    """Raised by a stub to end fit_subset_bayesian once the MLE step is done."""
+
+
+class TestFitSubsetBayesianErrorHandling:
+    """Test which exceptions fit_subset_bayesian absorbs (no sampling is run)."""
+
+    def _run(self, subset: DataSubset) -> dict:
+        return fit_subset_bayesian(
+            _make_minimal_config(subset),
+            mcmc_config=_minimal_mcmc_config(),
+            model_seed=42,
+        )
+
+    def test_invalid_ages_skip_the_subset(self) -> None:
+        frame = pd.DataFrame({"year": ["early", "late", "middle"]})
+
+        result = self._run(DataSubset(key="bad", label="Bad", frame=frame))
+
+        assert result["success"] is False
+        assert result["key"] == "bad"
+
+    def test_type_error_in_process_construction_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(bdpinf.process, "BirthDeathProcess", broken)
+
+        with pytest.raises(TypeError, match="programming error"):
+            self._run(_make_subset())
+
+    def test_failed_reference_fit_does_not_stop_sampling(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def invalid(*_args: object, **_kwargs: object) -> None:
+            raise ValueError("no finite start")
+
+        def sampler(*_args: object, **kwargs: object) -> None:
+            assert kwargs["init"] is None
+            raise _StopAfterReferenceFitError
+
+        monkeypatch.setattr(bdpinf.inference, "fit", invalid)
+        monkeypatch.setattr(bdpinf.inference, "fit_bayesian", sampler)
+
+        with pytest.raises(_StopAfterReferenceFitError):
+            self._run(_make_subset())
+
+    def test_type_error_in_reference_fit_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(bdpinf.inference, "fit", broken)
+
+        with pytest.raises(TypeError, match="programming error"):
+            self._run(_make_subset())
 
 
 class TestFitSubsetsBayesian:

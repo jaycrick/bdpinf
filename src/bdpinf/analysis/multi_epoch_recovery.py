@@ -54,6 +54,7 @@ def run_two_rate_replicate(
     birth_rates_true: NDArray[np.float64],
     death_rates_true: NDArray[np.float64],
     times: NDArray[np.float64],
+    *,
     fit_config: FitModelConfig,
 ) -> dict[str, Any] | None:
     """Simulate one two-epoch replicate (distinct rates) and fit it.
@@ -80,6 +81,7 @@ def run_single_rate_replicate(
     birth_rate: float,
     death_rate: float,
     time_span: float,
+    *,
     fit_times: NDArray[np.float64],
     fit_config: FitModelConfig,
 ) -> dict[str, Any] | None:
@@ -147,6 +149,7 @@ def run_zero_birth_replicate(
     death_time_seed: int,
     birth_rate_epoch_1: float,
     death_rate: float,
+    *,
     times: NDArray[np.float64],
     fit_config: FitModelConfig,
     param_constraints: Constraints,

@@ -2,7 +2,9 @@
 
 import altair as alt
 import numpy as np
+import pytest
 
+import bdpinf.inference
 from bdpinf.visualization.age_fit_plot import (
     creation_year_fit_chart,
     plot_creation_year_fit,
@@ -51,6 +53,49 @@ class TestPlotCreationYearFit:
         expected_layer = chart.layer[1]
         counts = expected_layer.data["count"].to_numpy()
         assert np.all(np.isfinite(counts))
+
+    def test_overlay_is_skipped_when_density_fails_validation(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        def invalid(*_args: object, **_kwargs: object) -> None:
+            raise ValueError("invalid rates")
+
+        monkeypatch.setattr(
+            bdpinf.inference, "calculate_unknown_spine_mixture_birth_density", invalid
+        )
+
+        with caplog.at_level("WARNING"):
+            chart = plot_creation_year_fit(
+                ages=np.array([10.0, 40.0, 70.0, 90.0]),
+                times=np.array([100.0], dtype=np.float64),
+                start_time=0.0,
+                birth_rate=0.05,
+                death_rate=0.01,
+                title="test",
+            )
+
+        assert len(chart.layer) == 1  # observed histogram only
+        assert "invalid rates" in caplog.text
+
+    def test_type_error_in_density_propagates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(
+            bdpinf.inference, "calculate_unknown_spine_mixture_birth_density", broken
+        )
+
+        with pytest.raises(TypeError, match="programming error"):
+            plot_creation_year_fit(
+                ages=np.array([10.0, 40.0, 70.0, 90.0]),
+                times=np.array([100.0], dtype=np.float64),
+                start_time=0.0,
+                birth_rate=0.05,
+                death_rate=0.01,
+                title="test",
+            )
 
 
 class TestCreationYearFitChart:

@@ -8,6 +8,7 @@ import pytest
 
 from bdpinf.analysis.bootstrap_date_density import (
     _build_weight_matrix,  # pyright: ignore[reportPrivateUsage]
+    _KdeSetup,  # pyright: ignore[reportPrivateUsage]
     _resample_batch,  # pyright: ignore[reportPrivateUsage]
     bootstrap_epoch_counts,
     bootstrap_quantile_resample_dates,
@@ -71,6 +72,29 @@ def _make_precomputed(
     }
 
 
+def _resample_with(k: np.ndarray, pre: dict) -> np.ndarray:
+    """Call _resample_batch with the precomputed quantities in ``pre``."""
+    setup = _KdeSetup(
+        A=pre["A"],
+        D0_sq=pre["D0_sq"],
+        D1_sq=pre["D1_sq"],
+        D2_sq=pre["D2_sq"],
+        x_grid=pre["x_grid"],
+        year_grid=pre["year_grid"],
+        quantiles=pre["quantiles"],
+        mid_age=pre["mid_age"],
+        within_var=pre["within_var"],
+        c=pre["c"],
+    )
+    return _resample_batch(
+        k,
+        setup,
+        min_year=pre["min_year"],
+        max_year=pre["max_year"],
+        grid_chunk=30,
+    )
+
+
 class TestBuildWeightMatrix:
     """Test _build_weight_matrix."""
 
@@ -99,7 +123,7 @@ class TestBuildWeightMatrix:
         assert A.shape == (1, 1)
         np.testing.assert_allclose(A[0, 0], 1.0)
 
-    def test_k_at_A_gives_per_year_weights(self) -> None:
+    def test_k_at_a_gives_per_year_weights(self) -> None:
         # k = [1, 1, 1, 1, 1] → W = k @ A / M should equal c_m for each year in range
         A = _build_weight_matrix(
             _EARLY, _LATE_CLAMPED, int(_EARLY.min()), int(_LATE_CLAMPED.max())
@@ -120,22 +144,7 @@ class TestResampleBatch:
         pre = _make_precomputed(_EARLY, _LATE_CLAMPED)
         k = np.ones((1, _M), dtype=np.float64)  # [1, M] identity multiplicity
 
-        resampled = _resample_batch(
-            k,
-            pre["A"],
-            pre["D0_sq"],
-            pre["D1_sq"],
-            pre["D2_sq"],
-            pre["x_grid"],
-            pre["year_grid"],
-            pre["quantiles"],
-            pre["mid_age"],
-            pre["within_var"],
-            pre["c"],
-            pre["min_year"],
-            pre["max_year"],
-            grid_chunk=30,
-        )  # [1, M]
+        resampled = _resample_with(k, pre)  # [1, M]
 
         ref = quantile_resample_dates(
             _EARLY, _LATE_CLAMPED, current_year=_CURRENT_YEAR, n_samples=_M
@@ -157,22 +166,7 @@ class TestResampleBatch:
 
         pre = _make_precomputed(early, late)
         k = np.ones((1, n), dtype=np.float64)
-        resampled = _resample_batch(
-            k,
-            pre["A"],
-            pre["D0_sq"],
-            pre["D1_sq"],
-            pre["D2_sq"],
-            pre["x_grid"],
-            pre["year_grid"],
-            pre["quantiles"],
-            pre["mid_age"],
-            pre["within_var"],
-            pre["c"],
-            pre["min_year"],
-            pre["max_year"],
-            grid_chunk=30,
-        )
+        resampled = _resample_with(k, pre)
 
         computed = np.round(resampled[0]).astype(np.int64)
         np.testing.assert_array_equal(computed, ref)
@@ -183,44 +177,14 @@ class TestResampleBatch:
         # Give different multiplicities to the 3 rows
         k[1, 0] += 2.0
         k[2, 2] += 1.0
-        resampled = _resample_batch(
-            k,
-            pre["A"],
-            pre["D0_sq"],
-            pre["D1_sq"],
-            pre["D2_sq"],
-            pre["x_grid"],
-            pre["year_grid"],
-            pre["quantiles"],
-            pre["mid_age"],
-            pre["within_var"],
-            pre["c"],
-            pre["min_year"],
-            pre["max_year"],
-            grid_chunk=30,
-        )
+        resampled = _resample_with(k, pre)
         assert np.all(resampled >= pre["min_year"])
         assert np.all(resampled <= pre["max_year"])
 
     def test_output_is_sorted_ascending(self) -> None:
         pre = _make_precomputed(_EARLY, _LATE_CLAMPED)
         k = np.ones((5, _M), dtype=np.float64)
-        resampled = _resample_batch(
-            k,
-            pre["A"],
-            pre["D0_sq"],
-            pre["D1_sq"],
-            pre["D2_sq"],
-            pre["x_grid"],
-            pre["year_grid"],
-            pre["quantiles"],
-            pre["mid_age"],
-            pre["within_var"],
-            pre["c"],
-            pre["min_year"],
-            pre["max_year"],
-            grid_chunk=30,
-        )
+        resampled = _resample_with(k, pre)
         # Each row (bootstrap) must be sorted ascending
         for b in range(5):
             assert np.all(np.diff(resampled[b]) >= 0), f"Row {b} is not sorted"

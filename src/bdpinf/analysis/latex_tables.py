@@ -166,15 +166,13 @@ def rates_latex_table(
     # Build tabular column specification
     s_col = f"S[table-format={num_format}]"
     col_parts: list[str] = ["@{}", "l", "l"]
-    for col in columns:
-        col_parts.append(s_col if col.kind == "num" else "l")
+    col_parts.extend(s_col if col.kind == "num" else "l" for col in columns)
     col_spec = "\n      ".join(col_parts) + "@{}"
 
     # Header row — all data-column headers wrapped in {} so siunitx S columns
     # do not attempt to parse them as numbers.
     header_cells = ["Param.", row_header]
-    for col in columns:
-        header_cells.append("{" + col.header + "}")
+    header_cells.extend("{" + col.header + "}" for col in columns)
     header_row = " & ".join(header_cells) + r" \\"
 
     lines: list[str] = [
@@ -309,7 +307,6 @@ def subset_fits_latex_by_epoch(
     subset_fits: list[SubsetFitResult],
     epoch_names: Sequence[str],
     *,
-    entity_noun: str = "individual",
     caption: str | None = None,
     num_format: str = "1.6",
     num_precision: int = 6,
@@ -327,11 +324,8 @@ def subset_fits_latex_by_epoch(
         :func:`~bdpinf.analysis.subset_fitting.fit_subset`.
     epoch_names : Sequence[str]
         Canonical epoch names in display order.
-    entity_noun : str
-        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
-        ``caption`` is given.
     caption : str | None
-        Full caption override; if ``None``, derived from ``entity_noun``.
+        Full caption override; if ``None``, a default caption is used.
     num_format : str
         Forwarded to :func:`rates_latex_table`.
     num_precision : int
@@ -407,7 +401,6 @@ def subset_fits_latex_by_epoch(
 def subset_fits_latex_by_subset(
     subset_fits: list[SubsetFitResult],
     *,
-    entity_noun: str = "individual",
     caption: str | None = None,
     num_format: str = "1.6",
     num_precision: int = 6,
@@ -421,11 +414,8 @@ def subset_fits_latex_by_subset(
     ----------
     subset_fits : list[SubsetFitResult]
         Converged MLE fits.
-    entity_noun : str
-        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
-        ``caption`` is given.
     caption : str | None
-        Full caption override; if ``None``, derived from ``entity_noun``.
+        Full caption override; if ``None``, a default caption is used.
     num_format : str
         Forwarded to :func:`rates_latex_table`.
     num_precision : int
@@ -534,7 +524,6 @@ def bayesian_results_latex_by_epoch(
     bayesian_results: dict[str, dict[str, Any]],
     epoch_names: Sequence[str],
     *,
-    entity_noun: str = "individual",
     caption: str | None = None,
     num_format: str = "1.6",
     num_precision: int = 6,
@@ -557,11 +546,8 @@ def bayesian_results_latex_by_epoch(
         ``"posterior_samples"`` (``{"birth_rates": ndarray, "death_rates": ndarray}``).
     epoch_names : Sequence[str]
         Canonical epoch names in display order.
-    entity_noun : str
-        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
-        ``caption`` is given.
     caption : str | None
-        Full caption override; if ``None``, derived from ``entity_noun``.
+        Full caption override; if ``None``, a default caption is used.
     num_format : str
         Forwarded to :func:`rates_latex_table`.
     num_precision : int
@@ -948,7 +934,6 @@ def bayesian_results_halflife_latex_by_subset(
 def bayesian_results_latex_by_subset(
     bayesian_results: dict[str, dict[str, Any]],
     *,
-    entity_noun: str = "individual",
     caption: str | None = None,
     num_format: str = "1.6",
     num_precision: int = 6,
@@ -963,11 +948,8 @@ def bayesian_results_latex_by_subset(
     bayesian_results : dict[str, dict]
         Output of
         :func:`~bdpinf.analysis.subset_fitting.fit_subsets_bayesian`.
-    entity_noun : str
-        Noun used in the default caption (e.g. ``"manuscript"``). Ignored if
-        ``caption`` is given.
     caption : str | None
-        Full caption override; if ``None``, derived from ``entity_noun``.
+        Full caption override; if ``None``, a default caption is used.
     num_format : str
         Forwarded to :func:`rates_latex_table`.
     num_precision : int

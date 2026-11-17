@@ -31,14 +31,14 @@ class TestAsymptoticConsistency:
         # stub fit function to return predictable result
         captured = {}
 
-        def fake_fit(*args, **kwargs):
+        def fake_fit(*_args, **kwargs):
             captured.update(kwargs)
             return make_fit_result([1.23], [0.45], times=[1.0])
 
         monkeypatch.setattr(ac, "fit", fake_fit)
         # also patch sampling to simple vector
         monkeypatch.setattr(
-            ac, "sample_age_vector", lambda *a, **k: np.array([0.1, 0.2])
+            ac, "sample_age_vector", lambda *_a, **_k: np.array([0.1, 0.2])
         )
 
         row = {
@@ -92,7 +92,7 @@ class TestAsymptoticConsistency:
     def test_run_fixed_time_replicate_warm_starts(self, monkeypatch, make_fit_result):
         inits = []
 
-        def fake_fit(data, model, **kwargs):
+        def fake_fit(_data, _model, **kwargs):
             inits.append(kwargs["init"])
             return make_fit_result([1.1], [0.4], times=[3.0])
 

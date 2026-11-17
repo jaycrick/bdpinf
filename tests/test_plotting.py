@@ -6,7 +6,9 @@ from pathlib import Path
 import altair as alt
 import numpy as np
 import pandas as pd
+import pytest
 
+import bdpinf.inference.likelihood
 from bdpinf.inference import FitResult
 from bdpinf.visualization.plotting import (
     convergence_chart,
@@ -111,11 +113,67 @@ class TestSaveMultiEpochBirthTimeFigure:
             epochs,
             birth_years,
             times,
-            "birth_time_slug",
+            output_slug="birth_time_slug",
             figures_dir=tmp_path,
         )
 
         assert (tmp_path / "birth_time_slug.pdf").exists()
+
+    def test_overlay_failure_still_saves_the_histogram(
+        self,
+        make_fit_result: Callable[..., FitResult],
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        tmp_path: Path,
+    ) -> None:
+        def invalid(*_args: object, **_kwargs: object) -> None:
+            raise ValueError("invalid rates")
+
+        monkeypatch.setattr(
+            bdpinf.inference.likelihood,
+            "calculate_unknown_spine_mixture_age_density_rates",
+            invalid,
+        )
+
+        with caplog.at_level("WARNING"):
+            save_multi_epoch_birth_time_figure(
+                "Test Case",
+                _fit_result(make_fit_result),
+                [(0.0, 100.0, "Epoch 1"), (100.0, 200.0, "Epoch 2")],
+                np.array([20.0, 50.0, 80.0, 150.0]),
+                np.array([100.0, 200.0], dtype=np.float64),
+                output_slug="birth_time_slug",
+                figures_dir=tmp_path,
+            )
+
+        assert (tmp_path / "birth_time_slug.pdf").exists()
+        assert "invalid rates" in caplog.text
+
+    def test_type_error_in_overlay_propagates(
+        self,
+        make_fit_result: Callable[..., FitResult],
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        def broken(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("programming error")
+
+        monkeypatch.setattr(
+            bdpinf.inference.likelihood,
+            "calculate_unknown_spine_mixture_age_density_rates",
+            broken,
+        )
+
+        with pytest.raises(TypeError, match="programming error"):
+            save_multi_epoch_birth_time_figure(
+                "Test Case",
+                _fit_result(make_fit_result),
+                [(0.0, 100.0, "Epoch 1"), (100.0, 200.0, "Epoch 2")],
+                np.array([20.0, 50.0, 80.0, 150.0]),
+                np.array([100.0, 200.0], dtype=np.float64),
+                output_slug="birth_time_slug",
+                figures_dir=tmp_path,
+            )
 
     def test_skips_unsuccessful_result(
         self, make_fit_result: Callable[..., FitResult], tmp_path: Path
@@ -131,7 +189,7 @@ class TestSaveMultiEpochBirthTimeFigure:
             epochs,
             birth_years,
             times,
-            "birth_time_slug",
+            output_slug="birth_time_slug",
             figures_dir=tmp_path,
         )
 
@@ -153,7 +211,7 @@ class TestSaveMultiEpochBirthTimeFigure:
             epochs,
             birth_years,
             times,
-            "birth_time_slug",
+            output_slug="birth_time_slug",
             figures_dir=tmp_path,
         )
 

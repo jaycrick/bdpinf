@@ -1,5 +1,6 @@
 """Common utilities for API data collection and processing."""
 
+import operator
 from collections.abc import Callable
 from numbers import Integral, Real
 
@@ -93,8 +94,8 @@ def json_safe(value: object) -> object:
 def _is_nan_like(value: object) -> bool:
     """Whether ``value != value`` holds (NaN, ``NaT``); False if it cannot be tested."""
     try:
-        return bool(value != value)
-    except Exception:
+        return bool(operator.ne(value, value))
+    except Exception:  # noqa: BLE001  # arbitrary objects: __ne__ may raise anything
         return False
 
 

@@ -75,6 +75,7 @@ def _compute_populations_log_lik_multi_start(
     ns: Float[Array, " n"],
     nonzero_mask: Bool[Array, " n"],
     n0: int,
+    *,
     log_extinction_pr: Float[Array, ""],
     log_one_minus_pi: Float[Array, ""],
     log_one_minus: Float[Array, ""],

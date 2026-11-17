@@ -29,6 +29,7 @@ def compute_consistency_bands(
     regime_configs: Sequence[Mapping[str, Any]],
     bootstrap_samples: int,
     seed: int,
+    *,
     parameter_name: str,
     true_rate_key: str,
     x: str = "T",
@@ -168,6 +169,7 @@ def plot_parameter_consistency(
     regime_configs: Sequence[Mapping[str, Any]],
     bootstrap_samples: int,
     seed: int,
+    *,
     parameter_name: str,
     true_rate_key: str,
     title: str,
@@ -189,9 +191,9 @@ def plot_parameter_consistency(
         regime_configs,
         bootstrap_samples,
         seed,
-        parameter_name,
-        true_rate_key,
-        x,
+        parameter_name=parameter_name,
+        true_rate_key=true_rate_key,
+        x=x,
     )
     regime_order = [regime_config["name"] for regime_config in regime_configs]
 
@@ -316,8 +318,8 @@ def save_multi_epoch_birth_time_figure(
     epochs: list[Any],
     birth_years: NDArray[np.float64],
     times: NDArray[np.float64],
-    output_slug: str,
     *,
+    output_slug: str,
     figures_dir: Path | None = None,
     title: str | None = None,
     x_title: str = "Birth year",
@@ -377,7 +379,7 @@ def save_multi_epoch_birth_time_figure(
             ),
             dtype=np.float64,
         )
-    except Exception as exc:  # overlay is optional; skip on failure
+    except (ValueError, FloatingPointError) as exc:  # overlay is optional
         logger.warning(
             "Could not generate theoretical overlay for %s: %s", case_name, exc
         )
@@ -423,7 +425,7 @@ def _rate_axis_config(values: NDArray[np.float64], *, log_scale: bool) -> alt.Ax
     return alt.Axis(values=tick_values, grid=True)
 
 
-def rate_ci_panel(
+def rate_ci_panel(  # noqa: PLR0913  # public entry point: documented keyword options
     frame: pd.DataFrame,
     category_col: str,
     rate_col: str,

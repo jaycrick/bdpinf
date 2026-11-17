@@ -16,6 +16,21 @@ There are no aliases for the old names.
   otherwise (linear rates, or constant rates on different epochs) it stores no per-epoch rates and its epochs are the sorted union of the two rates' epoch end times.
 - `inference`: the rate-model families are renamed, ending the clash with the `bdsurv` rate objects `PiecewiseConstant` and `PiecewiseLinear`.
   The `BirthDeathModel.piecewise_constant(...)` and `.piecewise_linear(...)` constructors keep their names.
+- `analysis.multi_epoch_recovery`: options are keyword-only.
+  `run_two_rate_replicate(..., *, fit_config)`,
+  `run_single_rate_replicate(..., time_span, *, fit_times, fit_config)` and
+  `run_zero_birth_replicate(..., death_rate, *, times, fit_config, param_constraints)`.
+- `visualization.plotting`: `compute_consistency_bands(summary_df, results_df, regime_configs, bootstrap_samples, seed, *, parameter_name, true_rate_key, x="T")` and
+  `plot_parameter_consistency(..., seed, *, parameter_name, true_rate_key, title, x="T", log_x=True)` take their column and label options by keyword;
+  `save_multi_epoch_birth_time_figure(case_name, result, epochs, birth_years, times, *, output_slug, ...)` takes `output_slug` by keyword.
+- `analysis.latex_tables`: `subset_fits_latex_by_epoch`, `subset_fits_latex_by_subset`, `bayesian_results_latex_by_epoch` and `bayesian_results_latex_by_subset` no longer accept `entity_noun`.
+  It never reached their captions;
+  the half-life table functions still use it.
+- `analysis.subset_fitting`, `analysis.validation_helpers`, `visualization`: the batch and best-effort helpers no longer turn programming errors into failed results or logged warnings.
+  `fit_subset`, `fit_subset_bayesian` and `fit_single_model` catch only the failures a fit is expected to end in (`ValueError`, `RuntimeError`, `FloatingPointError`, `LinAlgError`);
+  the overlay in `plot_creation_year_fit` and `save_multi_epoch_birth_time_figure` is skipped only for `ValueError` and `FloatingPointError`,
+  and font registration is skipped only for `OSError` and `ValueError`.
+  A `TypeError` (for example an unknown keyword passed on to `fit`) now propagates.
 - Seeded simulation output differs from earlier releases for every simulator, because `bdsurv` 0.5.0 spawns its child generators differently.
   Invalid inputs (NaN or infinite rates and times, and so on) now raise `ValueError`.
 

@@ -364,7 +364,7 @@ def register_export_fonts() -> None:
             continue
         try:
             vlc.register_font_directory(str(candidate))
-        except Exception as exc:  # font registration is best-effort
+        except (OSError, ValueError) as exc:  # font registration is best-effort
             logger.debug("Could not register font directory %s: %s", candidate, exc)
     _fonts_registered = True
 

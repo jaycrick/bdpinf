@@ -105,9 +105,11 @@ def _bdpinf_import_edges() -> list[tuple[str, str]]:
         tree = ast.parse(path.read_text(), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name == "bdpinf" or alias.name.startswith("bdpinf."):
-                        edges.append((current_module, alias.name))
+                edges.extend(
+                    (current_module, alias.name)
+                    for alias in node.names
+                    if alias.name == "bdpinf" or alias.name.startswith("bdpinf.")
+                )
             elif isinstance(node, ast.ImportFrom):
                 resolved = _resolve_import_from(node, current_module, is_package)
                 if resolved and (

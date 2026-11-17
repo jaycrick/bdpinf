@@ -24,7 +24,7 @@ class TestSampleSingleEpochAges:
     def test_concatenates_spine_and_non_spine(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def fake_simulate(*args: Any, **kwargs: Any) -> _FakeSampledAges:
+        def fake_simulate(*_args: Any, **_kwargs: Any) -> _FakeSampledAges:
             return _FakeSampledAges([1.0, 2.0], [3.0])
 
         monkeypatch.setattr(ser, "simulate_bdp_ages_from_distributions", fake_simulate)
@@ -44,10 +44,10 @@ class TestRunSingleEpochRecoveryReplicate:
         monkeypatch: pytest.MonkeyPatch,
         make_fit_result: Callable[..., FitResult],
     ) -> None:
-        def fake_sample(*args: Any, **kwargs: Any) -> np.ndarray:
+        def fake_sample(*_args: Any, **_kwargs: Any) -> np.ndarray:
             return np.array([1.0, 2.0, 15.0])  # includes a boundary age
 
-        def fake_fit(*args: Any, **kwargs: Any) -> FitResult:
+        def fake_fit(*_args: Any, **_kwargs: Any) -> FitResult:
             return make_fit_result([0.48], [0.09], method="L-BFGS-B")
 
         monkeypatch.setattr(ser, "sample_single_epoch_ages", fake_sample)
@@ -73,12 +73,12 @@ class TestRunSingleEpochRecoveryReplicate:
     ) -> None:
         captured: dict[str, Any] = {}
 
-        def fake_fit(ages: Any, config: Any) -> FitResult:
+        def fake_fit(_ages: Any, config: Any) -> FitResult:
             captured["config"] = config
             return make_fit_result([0.5], [0.1])
 
         monkeypatch.setattr(
-            ser, "sample_single_epoch_ages", lambda *a, **k: np.array([1.0, 2.0])
+            ser, "sample_single_epoch_ages", lambda *_a, **_k: np.array([1.0, 2.0])
         )
         monkeypatch.setattr(ser, "fit_single_model", fake_fit)
 
@@ -98,10 +98,10 @@ class TestRunSingleEpochRecoveryReplicate:
         monkeypatch: pytest.MonkeyPatch,
         make_fit_result: Callable[..., FitResult],
     ) -> None:
-        def fake_sample(*args: Any, **kwargs: Any) -> np.ndarray:
+        def fake_sample(*_args: Any, **_kwargs: Any) -> np.ndarray:
             return np.array([1.0, 2.0, 3.0])  # max < time_span
 
-        def fake_fit(*args: Any, **kwargs: Any) -> FitResult:
+        def fake_fit(*_args: Any, **_kwargs: Any) -> FitResult:
             return make_fit_result([0.5], [0.1])
 
         monkeypatch.setattr(ser, "sample_single_epoch_ages", fake_sample)
@@ -116,7 +116,7 @@ class TestRunSingleEpochRecoveryReplicate:
         monkeypatch.setattr(
             ser,
             "sample_single_epoch_ages",
-            lambda *a, **k: np.array([], dtype=np.float64),
+            lambda *_a, **_k: np.array([], dtype=np.float64),
         )
 
         row = ser.run_single_epoch_recovery_replicate(
@@ -129,9 +129,9 @@ class TestRunSingleEpochRecoveryReplicate:
 
     def test_failed_fit_replicate_row(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            ser, "sample_single_epoch_ages", lambda *a, **k: np.array([1.0, 2.0])
+            ser, "sample_single_epoch_ages", lambda *_a, **_k: np.array([1.0, 2.0])
         )
-        monkeypatch.setattr(ser, "fit_single_model", lambda *a, **k: None)
+        monkeypatch.setattr(ser, "fit_single_model", lambda *_a, **_k: None)
 
         row = ser.run_single_epoch_recovery_replicate(
             simulation_index=0, seed=0, birth_rate=0.5, death_rate=0.1, time_span=15.0

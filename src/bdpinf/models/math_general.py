@@ -113,6 +113,7 @@ def _log_integral(
     death: RateFunction,
     lo: jax.Array,
     hi: jax.Array,
+    *,
     n_nodes: int,
 ) -> jax.Array:
     r"""$\ln\int_{lo}^{hi} w(t)\,e^{-\Gamma(0,t]}\,dt$ by Gauss-Legendre.
@@ -160,8 +161,8 @@ def general_terms(
     """
     edges = _segment_edges(birth, death)
     lo, hi = edges[:-1], edges[1:]
-    log_i_seg = _log_integral(death, birth, death, lo, hi, n_nodes)
-    log_l_seg = _log_integral(birth, birth, death, lo, hi, n_nodes)
+    log_i_seg = _log_integral(death, birth, death, lo, hi, n_nodes=n_nodes)
+    log_l_seg = _log_integral(birth, birth, death, lo, hi, n_nodes=n_nodes)
     if log_i_seg.shape[0] == 1:  # static: nothing to accumulate
         log_i_total = log_i_seg[0]
         log_l_total = log_l_seg[0]
@@ -253,7 +254,7 @@ def _segment_of(terms: GeneralTerms, s: jax.Array) -> jax.Array:
 def _log_w_at(terms: GeneralTerms, s: jax.Array, k: jax.Array) -> jax.Array:
     r"""$\ln\mathcal W(s)$ for ``s`` inside segment ``k``."""
     birth, death = terms.birth, terms.death
-    part = _log_integral(death, birth, death, terms.edges[k], s, terms.n_nodes)
+    part = _log_integral(death, birth, death, terms.edges[k], s, n_nodes=terms.n_nodes)
     log_i_s = jnp.logaddexp(terms.log_i_before[k], part)
     zero = jnp.zeros_like(s)
     gamma_s = birth.integral(zero, s) - death.integral(zero, s)
@@ -271,7 +272,7 @@ def log_non_spine_cdf_kernel(terms: GeneralTerms, s: jax.Array) -> jax.Array:
     birth, death = terms.birth, terms.death
     end = terms.edges[-1]
     k = _segment_of(terms, s)
-    part = _log_integral(birth, birth, death, terms.edges[k], s, terms.n_nodes)
+    part = _log_integral(birth, birth, death, terms.edges[k], s, n_nodes=terms.n_nodes)
     log_l_s = jnp.logaddexp(terms.log_l_before[k], part)
     zero = jnp.zeros_like(s)
     gamma_s = birth.integral(zero, s) - death.integral(zero, s)
@@ -288,7 +289,9 @@ def log_spine_cdf_kernel(terms: GeneralTerms, s: jax.Array) -> jax.Array:
     birth, death = terms.birth, terms.death
     end = terms.edges[-1]
     k = _segment_of(terms, s)
-    part = _log_integral(death, birth, death, s, terms.edges[k + 1], terms.n_nodes)
+    part = _log_integral(
+        death, birth, death, s, terms.edges[k + 1], n_nodes=terms.n_nodes
+    )
     log_l_mu = restore_neg_inf(
         terms.gamma_total + jnp.logaddexp(part, terms.log_i_after[k])
     )
@@ -334,7 +337,7 @@ def _densities(
 
     spine = None
     if want_spine:
-        part = _log_integral(death, birth, death, s, seg_hi, q)
+        part = _log_integral(death, birth, death, s, seg_hi, n_nodes=q)
         log_l_mu = restore_neg_inf(
             terms.gamma_total + jnp.logaddexp(part, terms.log_i_after[k])
         )

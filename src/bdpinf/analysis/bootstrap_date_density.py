@@ -116,47 +116,29 @@ def _build_weight_matrix(
 
 def _resample_batch(
     k: NDArray[np.float64],
-    A: NDArray[np.float64],
-    D0_sq: NDArray[np.float64],
-    D1_sq: NDArray[np.float64],
-    D2_sq: NDArray[np.float64],
-    x_grid: NDArray[np.float64],
-    year_grid: NDArray[np.float64],
-    quantiles: NDArray[np.float64],
-    mid_age: NDArray[np.float64],
-    within_var: NDArray[np.float64],
-    c: NDArray[np.float64],
+    setup: _KdeSetup,
+    *,
     min_year: float,
     max_year: float,
     grid_chunk: int,
 ) -> NDArray[np.float64]:
     """Apply the vectorized KDE-quantile pipeline to a batch of multiplicity arrays.
 
-    All precomputed quantities (``A``, ``D*_sq``, ``x_grid``, etc.) are
+    The precomputed quantities (``A``, ``D*_sq``, ``x_grid``, etc.) are
     produced once per subgroup by :func:`bootstrap_quantile_resample_dates`
-    and reused across batches.
+    as a :class:`_KdeSetup` and reused across batches.
 
     Parameters
     ----------
     k : NDArray[np.float64], shape ``[B, M]``
         Per-item multiplicities for ``B`` bootstraps.
-    A : NDArray[np.float64], shape ``[M, Y]``
-        Weight matrix; see :func:`_build_weight_matrix`.
-    D0_sq, D1_sq, D2_sq : NDArray[np.float64], shape ``[n_grid, Y]``
-        Squared age-space distances for the main and two reflection kernel
-        terms; all precomputed from the fixed grid and year-age mapping.
-    x_grid : NDArray[np.float64], shape ``[n_grid]``
-        Age grid ``[0, max_age]`` (uniform).
-    year_grid : NDArray[np.float64], shape ``[n_grid]``
-        Corresponding year grid ``[y_min, current_year]`` (uniform).
-    quantiles : NDArray[np.float64], shape ``[M]``
-        Hazen plotting positions ``(k - 0.5) / M`` for ``k = 1..M``.
-    mid_age : NDArray[np.float64], shape ``[M]``
-        ``current_year - mid_value`` for each item.
-    within_var : NDArray[np.float64], shape ``[M]``
-        ``(n_m^2 - 1) / 12`` — within-item age variance.
-    c : NDArray[np.float64], shape ``[M]``
-        ``1 / n_m`` for each item.
+    setup : _KdeSetup
+        Per-item and grid quantities shared by every bootstrap: the weight
+        matrix ``A`` (``[M, Y]``), the squared age-space distances ``D0_sq``,
+        ``D1_sq`` and ``D2_sq`` for the main and two reflection kernel terms
+        (``[n_grid, Y]``), the age and year grids, the Hazen plotting
+        positions ``quantiles``, ``mid_age``, ``within_var`` and ``c``
+        (``[M]``); see the field comments on :class:`_KdeSetup`.
     min_year, max_year : float
         Clamp limits for the resampled years.
     grid_chunk : int
@@ -168,6 +150,9 @@ def _resample_batch(
     NDArray[np.float64], shape ``[B, M]``
         Resampled years (sorted ascending, unrounded float64).
     """
+    A, D0_sq, D1_sq, D2_sq = setup.A, setup.D0_sq, setup.D1_sq, setup.D2_sq
+    x_grid, year_grid, quantiles = setup.x_grid, setup.year_grid, setup.quantiles
+    mid_age, within_var, c = setup.mid_age, setup.within_var, setup.c
     B, _M = k.shape
     n_grid = len(x_grid)
 
@@ -483,19 +468,10 @@ def bootstrap_quantile_resample_dates(
         # Vectorised KDE + quantile pipeline
         resampled_f = _resample_batch(
             k,
-            setup.A,
-            setup.D0_sq,
-            setup.D1_sq,
-            setup.D2_sq,
-            setup.x_grid,
-            setup.year_grid,
-            setup.quantiles,
-            setup.mid_age,
-            setup.within_var,
-            setup.c,
-            min_year_f,
-            max_year_f,
-            grid_chunk,
+            setup,
+            min_year=min_year_f,
+            max_year=max_year_f,
+            grid_chunk=grid_chunk,
         )  # [B, M] float64, already sorted ascending
 
         # Sort bootstrapped items by mid_value; resampled_f is already
