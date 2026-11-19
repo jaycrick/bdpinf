@@ -31,13 +31,23 @@ cd bdpinf
 uv sync
 ```
 
-On an HPC login node (no display for the HTTPS askpass prompt), clone over
-SSH instead, using a deploy key or your own key registered with GitHub:
+To use bdpinf as a dependency of another uv project,
+pin it to a release tag
+(it is not on PyPI, so the tag is the release):
 
 ```sh
-git clone ssh://git@github.com/jaycrick/bdpinf.git
-cd bdpinf
-uv sync
+uv add "bdpinf @ git+https://github.com/jaycrick/bdpinf" --tag v0.6.0
+```
+
+which records a lower bound in `[project] dependencies`
+and the tag in `[tool.uv.sources]`:
+
+```toml
+[project]
+dependencies = ["bdpinf>=0.6.0"]
+
+[tool.uv.sources]
+bdpinf = { git = "https://github.com/jaycrick/bdpinf", tag = "v0.6.0" }
 ```
 
 For development (includes testing and documentation tools):

@@ -5,8 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] --- 2026-11-19
+
 ### Changed
 
+- The GitHub repository is now public, so bdpinf installs over HTTPS with no credentials;
+  downstream projects should pin it by release tag (`bdpinf = { git = "https://github.com/jaycrick/bdpinf", tag = "v0.6.0" }`), as the README now shows.
+- `uv.lock`: every locked dependency is upgraded (among them JAX 0.11.1, NumPyro 0.22.0, SciPy 1.18.1, pandas 3.1.1, Altair 6.3.0).
+  Fits agree with 0.5.0 to about 1e-8 relative; the two-knot `fit_knots` Brent search now takes a different path and reaches a higher likelihood on the pinned test case.
 - `simulation`: `bdsurv` moves to 0.6.0, installed from its now-public GitHub repository over HTTPS and pinned by release tag (`tag = "v0.6.0"` in `[tool.uv.sources]`) instead of by commit over SSH; the dependency floor is `bdsurv>=0.6.0`.
 
 ## [0.5.0] --- 2026-11-17

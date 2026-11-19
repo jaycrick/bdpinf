@@ -1,10 +1,12 @@
 """Test the RateFunction protocol properties for every rate family."""
 
+import warnings
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from scipy.integrate import quad
+from scipy.integrate import IntegrationWarning, quad
 
 from bdpinf.models.rate_functions import (
     LogLogisticRate,
@@ -109,15 +111,20 @@ def _pairs(rate: RateFunction) -> list[tuple[float, float]]:
 
 def _quad_integral(rate: RateFunction, s: float, e: float) -> float:
     pts = [float(b) for b in np.asarray(rate.breakpoints) if s < float(b) < e]
-    value, _ = quad(
-        lambda x: float(_CALL(rate, jnp.float64(x))),
-        s,
-        e,
-        points=pts or None,
-        epsabs=1e-13,
-        epsrel=1e-13,
-        limit=1000,
-    )
+    # Rates singular at an epoch start (Weibull shape < 1) are integrable but
+    # make quad warn at this tolerance; the caller's comparison with the exact
+    # integral is the real check.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", IntegrationWarning)
+        value, _ = quad(
+            lambda x: float(_CALL(rate, jnp.float64(x))),
+            s,
+            e,
+            points=pts or None,
+            epsabs=1e-13,
+            epsrel=1e-13,
+            limit=1000,
+        )
     return value
 
 
