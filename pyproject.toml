@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
   "altair>=6.0.0",
-  "bdsurv>=0.5.0",
+  "bdsurv>=0.6.0",
   "beartype>=0.19.0",
   "itables>=2.7.0",
   "jax>=0.4.38",
@@ -21,11 +21,13 @@ dependencies = [
   "vl-convert-python>=1.9.0.post1"
 ]
 
-# bdsurv is not published; pin to a git revision (bump `rev` to pick up bdsurv
-# changes; its tags are for internal tracking only).  For local co-development,
-# temporarily point this at `{ path = "../bdsurv", editable = true }`.
+# bdsurv is not on PyPI; it is installed from its public GitHub repository,
+# pinned to a release tag (uv.lock records the tag's commit).  To upgrade, bump
+# both the tag here and the lower bound in `dependencies`, then `uv lock`.
+# For local co-development, temporarily point this at
+# `{ path = "../bdsurv", editable = true }`.
 [tool.uv.sources]
-bdsurv = { git = "ssh://git@github.com/jaycrick/bdsurv.git", rev = "b660a53" }
+bdsurv = { git = "https://github.com/jaycrick/bdsurv", tag = "v0.6.0" }
 
 [dependency-groups]
 gpu = [

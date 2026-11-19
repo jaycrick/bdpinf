@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `simulation`: `bdsurv` moves to 0.6.0, installed from its now-public GitHub repository over HTTPS and pinned by release tag (`tag = "v0.6.0"` in `[tool.uv.sources]`) instead of by commit over SSH; the dependency floor is `bdsurv>=0.6.0`.
+
 ## [0.5.0] --- 2026-11-17
 
 ### Added
