@@ -102,6 +102,7 @@ reference:
       - inference.fitting.moment_initial_rates
       - inference.rate_models
       - inference.knots
+      - inference.selection
       - inference.constraints
       - inference.likelihood.AgeData
       - inference.likelihood.range_bounds

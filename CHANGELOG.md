@@ -12,6 +12,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `log_likelihood_rates` returns `-inf` for a rate that exposes `min_values()` and is negative anywhere (the non-negativity guard for the spline families).
 - `BirthDeathModel.n_free(constraints)`: the number of free unconstrained coordinates, for AIC and BIC.
 - `simulation.to_bdsurv_rate`: spline rates are simulated through `bdsurv.PiecewiseHazard.from_polynomials` (needs `bdsurv` 0.8.0).
+- `inference.knots.fit_knots`: `starts` and `start_rates` (extra free-knot placements, profiled and joint-polished in every method, never beaten by the result), search effort that scales with the number of free knots (`n_candidates`, new `n_polish`, DE generations; unchanged for one or two knots), and `KnotFitResult` fields recording the effort and the multimodality diagnostics `n_distinct_optima` and `runner_up_gap`.
+- `inference.knots.neighbour_placements` and `nested_start`: placements from a fit with one knot more or fewer, and the natural parameters that reproduce a lower fit on refined knots.
+- `inference.selection` (`effective_df`, `information_criteria`): AIC, AICc and BIC with a knot cost per searched knot.
 
 ## [0.7.0] --- 2026-11-20
 

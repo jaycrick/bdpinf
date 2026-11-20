@@ -24,6 +24,8 @@ from .knots import (
     MethodResult,
     evenly_spaced_knots,
     fit_knots,
+    neighbour_placements,
+    nested_start,
     place_knots,
 )
 from .likelihood import (
@@ -50,6 +52,7 @@ from .rate_models import (
     SplineKind,
     SplineModel,
 )
+from .selection import effective_df, information_criteria
 from .uncertainty import (
     confidence_intervals_from_log_covariance,
     covariance_from_hessian,
@@ -77,16 +80,20 @@ __all__ = [
     "calculate_unknown_spine_mixture_birth_density",
     "confidence_intervals_from_log_covariance",
     "covariance_from_hessian",
+    "effective_df",
     "evenly_spaced_knots",
     "fit",
     "fit_bayesian",
     "fit_knots",
     "get_crude_parameter_estimates",
+    "information_criteria",
     "load_posterior_samples",
     "load_recovery_results",
     "log_likelihood",
     "log_likelihood_rates",
     "moment_initial_rates",
+    "neighbour_placements",
+    "nested_start",
     "place_knots",
     "profile_likelihood_interval",
     "range_bounds",

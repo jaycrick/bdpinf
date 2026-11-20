@@ -68,6 +68,32 @@ If an optimum sits on the guard boundary, the fitted rate touches zero between k
 - Splines of different degrees are **not** nested in one another (a $C^0$ linear rate is not a $C^1$ quadratic on the same knots), so compare kinds by AIC or BIC only.
 - Knot locations are irregular parameters: the likelihood is not a smooth regular function of $\tau$, so counting each knot as one degree of freedom is conventional but probably under-penalises.
 
+## Information criteria with searched knots
+
+A free knot costs more than one degree of freedom, because its location is searched.
+`bdpinf.inference.effective_df(p_rates, n_knots, knot_cost=3.0)` charges each knot `knot_cost` in total:
+its coefficient (already in `p_rates`) plus `knot_cost - 1` for its location and the search,
+
+$$
+  \mathrm{df} = p_{\text{rates}} + (c - 1) K .
+$$
+
+For one spline of degree $d$ with $K$ knots, $p_{\text{rates}} = d + 1 + K$, so $\mathrm{df} = d + 1 + cK$.
+`information_criteria(log_lik, n, df)` returns `aic`, `aicc`, `bic` and `aicc_recommended` ($n / \mathrm{df} < 40$).
+It uses $-2\hat\ell$ in place of $n \ln(\mathrm{RSS}/n)$, which agrees with the regression form up to a model-independent constant.
+The AICc correction is the Gaussian linear-regression one, so it is an approximation here, and it is infinite when $n - \mathrm{df} - 1 \le 0$.
+
+Guidance for the knot cost $c$:
+
+- $c = 3.0$ (default) for spaced free knots;
+- $c = 3.5$ to $4.0$ for unconstrained knots that may coalesce;
+- $c = 2.0$ to $2.5$ for a coarse grid of knot locations.
+
+Friedman (1991) charges MARS about three degrees of freedom per knot in addition to the coefficient.
+A specific constant from Spiriti et al.
+is not verified here and is not claimed.
+Fixed epochs (no search) have $\mathrm{df} = p$.
+
 ## Simulation
 
 `bdpinf.simulation.to_bdsurv_rate` converts a `PiecewiseQuadraticRate` or `PiecewiseCubicRate` to `bdsurv.PiecewiseHazard.from_polynomials`, using local-time coefficients (`local_coefficients()`), and `simulate_birth_death` and `simulate_contour_given_survival` apply it automatically.

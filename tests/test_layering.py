@@ -34,6 +34,7 @@ _LAYERS: dict[str, int] = {
     "bdpinf.inference.likelihood": 3,
     "bdpinf.inference.persistence": 3,
     "bdpinf.inference.rate_models": 3,
+    "bdpinf.inference.selection": 3,
     "bdpinf.inference.uncertainty": 3,
     "bdpinf.inference": 3,
     "bdpinf.models.genealogy": 4,
