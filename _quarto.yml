@@ -83,6 +83,8 @@ website:
         menu:
           - text: "Likelihoods"
             file: docs/likelihoods.qmd
+          - text: "Spline rate families"
+            file: docs/spline_rates.qmd
 
 format:
   html:

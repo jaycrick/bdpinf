@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `models.rate_functions.PiecewiseCubicRate` (cubic Hermite per epoch, with exact integral, `min_values()` and the `hermite`, `natural_spline`, `clamped_spline` and `pchip` constructors) and `PiecewiseQuadraticRate.min_values()`.
+- `inference.rate_models.SplineModel` and `BirthDeathModel.spline`: quadratic, cubic (natural, clamped, Hermite) and PCHIP rate families through values at the knots, with slope parameters scaled by `T`.
+- `log_likelihood_rates` returns `-inf` for a rate that exposes `min_values()` and is negative anywhere (the non-negativity guard for the spline families).
+- `BirthDeathModel.n_free(constraints)`: the number of free unconstrained coordinates, for AIC and BIC.
+- `simulation.to_bdsurv_rate`: spline rates are simulated through `bdsurv.PiecewiseHazard.from_polynomials` (needs `bdsurv` 0.8.0).
+
 ## [0.7.0] --- 2026-11-20
 
 ### Added

@@ -24,7 +24,11 @@ from .conditioned import (
     simulate_contour_given_survival,
     simulate_survival_splitting,
 )
-from .forward import simulate_birth_death, simulate_birth_death_lifespans
+from .forward import (
+    simulate_birth_death,
+    simulate_birth_death_lifespans,
+    to_bdsurv_rate,
+)
 from .simulator import (
     simulate_bdp_ages_from_distributions,
     simulate_bdp_ages_given_size,
@@ -49,4 +53,5 @@ __all__ = [
     "simulate_birth_death_lifespans_arrays",
     "simulate_contour_given_survival",
     "simulate_survival_splitting",
+    "to_bdsurv_rate",
 ]

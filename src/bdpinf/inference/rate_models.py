@@ -12,7 +12,10 @@ Provided families:
 - :class:`PiecewiseLinearModel`: values at epoch boundaries (``continuous=True``,
   the default) or separate start and end values per epoch, which allows jumps.
   A jump-form linear model whose start and end values are tied
-  (``flat_groups``) is the piecewise-constant model.
+  (``flat_groups``) is the piecewise-constant model;
+- :class:`SplineModel`: smooth quadratic or cubic rates through values at the
+  knots (``quadratic``, ``cubic_natural``, ``cubic_clamped``, ``pchip`` and
+  ``cubic_hermite``), kept non-negative by a guard in the likelihood.
 
 :class:`BirthDeathModel` pairs a birth and a death family and owns the full
 parameter list.
@@ -28,7 +31,7 @@ along with the rates, inside the ranges the caller allows.
 import dataclasses
 import itertools
 from collections.abc import Sequence
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 import jax
 import jax.numpy as jnp
@@ -37,9 +40,14 @@ from numpy.typing import ArrayLike, NDArray
 
 from bdpinf.models.rate_functions import (
     PiecewiseConstantRate,
+    PiecewiseCubicRate,
     PiecewiseLinearRate,
+    PiecewiseQuadraticRate,
     RateFunction,
 )
+
+if TYPE_CHECKING:
+    from bdpinf.inference.constraints import Constraints
 
 __all__ = [
     "BirthDeathModel",
@@ -48,6 +56,8 @@ __all__ = [
     "PiecewiseConstantModel",
     "PiecewiseLinearModel",
     "RateModel",
+    "SplineKind",
+    "SplineModel",
     "Transform",
 ]
 
@@ -326,6 +336,186 @@ class PiecewiseLinearModel:
             msg = "flat_groups needs continuous=False (epochs must be able to jump)"
             raise ValueError(msg)
         return [[f"{prefix}start{k}", f"{prefix}end{k}"] for k in range(self.n_epochs)]
+
+
+SplineKind = Literal[
+    "quadratic", "cubic_natural", "cubic_clamped", "pchip", "cubic_hermite"
+]
+"""Smooth rate families of :class:`SplineModel`."""
+
+_SPLINE_KINDS = (
+    "quadratic",
+    "cubic_natural",
+    "cubic_clamped",
+    "pchip",
+    "cubic_hermite",
+)
+
+
+@dataclasses.dataclass(frozen=True)
+class SplineModel:
+    r"""Smooth rate through its values at the knots, in one of several spline forms.
+
+    The parameters are the rate values at time 0 and at each epoch end
+    (``knot0 .. knotK``, log scale, at least ``min_value``) plus,
+    depending on ``kind``, slope parameters (identity scale):
+
+    ===============  =====================================  ========  ==========
+    ``kind``         parameters                             count     continuity
+    ===============  =====================================  ========  ==========
+    quadratic        ``knot*``, ``slope0``                  K + 2     C1
+    cubic_natural    ``knot*``                              K + 1     C2
+    cubic_clamped    ``knot*``, ``slope0``, ``slopeT``      K + 3     C2
+    pchip            ``knot*``                              K + 1     C1
+    cubic_hermite    ``knot*``, ``slope0 .. slopeK``        2K + 2    C1
+    ===============  =====================================  ========  ==========
+
+    with $K$ epochs.
+    A slope parameter is *scaled*: its natural value is the derivative times the
+    observation time $T$ (so it has the units of a rate, like the knot values),
+    and the rate built uses ``value / T``.
+    ``quadratic`` is :meth:`PiecewiseQuadraticRate.spline`;
+    ``cubic_natural``, ``cubic_clamped`` and ``pchip`` are the matching
+    :class:`~bdpinf.models.rate_functions.PiecewiseCubicRate` constructors;
+    ``cubic_hermite`` is the C1 cubic with free slope at every knot.
+
+    Parameters
+    ----------
+    epoch_end_times : sequence of float
+        Strictly increasing epoch end times; the last is the observation time.
+    kind : str
+        One of ``"quadratic"``, ``"cubic_natural"``, ``"cubic_clamped"``,
+        ``"pchip"`` and ``"cubic_hermite"``.
+    min_value : float
+        Lower bound on every knot value (the ``lower`` of its log transform).
+        Between knots a spline can still dip below the knot values and even
+        below zero (never for ``pchip``);
+        the likelihood returns ``-inf`` for a rate that is negative anywhere,
+        so the fitter stays on the non-negative side.
+        Default 0.
+
+    """
+
+    epoch_end_times: EpochTimes
+    kind: SplineKind = "cubic_natural"
+    min_value: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Validate and freeze the epoch end times; check the kind."""
+        object.__setattr__(
+            self, "epoch_end_times", _as_epoch_tuple(self.epoch_end_times)
+        )
+        object.__setattr__(self, "min_value", _check_min_value(self.min_value))
+        if self.kind not in _SPLINE_KINDS:
+            msg = f"kind must be one of {_SPLINE_KINDS}, got '{self.kind}'"
+            raise ValueError(msg)
+
+    @property
+    def n_epochs(self) -> int:
+        """Number of epochs."""
+        return len(self.epoch_end_times)
+
+    @property
+    def end_time(self) -> float:
+        """Observation time ``T``."""
+        return float(self.epoch_end_times[-1])
+
+    @property
+    def _slope_names(self) -> tuple[str, ...]:
+        if self.kind == "quadratic":
+            return ("slope0",)
+        if self.kind == "cubic_clamped":
+            return ("slope0", "slopeT")
+        if self.kind == "cubic_hermite":
+            return tuple(f"slope{k}" for k in range(self.n_epochs + 1))
+        return ()
+
+    @property
+    def params(self) -> tuple[Param, ...]:
+        """Log-scale knot values, then identity-scale scaled slopes."""
+        knots = tuple(
+            Param(f"knot{k}", lower=self.min_value) for k in range(self.n_epochs + 1)
+        )
+        return knots + tuple(Param(n, "identity") for n in self._slope_names)
+
+    def build(
+        self, values: jax.Array, epoch_end_times: jax.Array | None = None
+    ) -> PiecewiseQuadraticRate | PiecewiseCubicRate:
+        """Return the spline rate for the given parameter values."""
+        times = jnp.asarray(
+            self.epoch_end_times if epoch_end_times is None else epoch_end_times
+        )
+        n = self.n_epochs + 1
+        knots, slopes = values[:n], values[n:] / self.end_time
+        match self.kind:
+            case "quadratic":
+                return PiecewiseQuadraticRate.spline(knots, slopes[0], times)
+            case "cubic_natural":
+                return PiecewiseCubicRate.natural_spline(knots, times)
+            case "cubic_clamped":
+                return PiecewiseCubicRate.clamped_spline(
+                    knots, slopes[0], slopes[1], times
+                )
+            case "pchip":
+                return PiecewiseCubicRate.pchip(knots, times)
+            case _:
+                return PiecewiseCubicRate.hermite(knots, slopes, times)
+
+    def constant_values(self, value: float) -> jax.Array:
+        """Flat rate: equal knot values and zero slopes."""
+        knots = _above_minimum(
+            jnp.full(self.n_epochs + 1, value, dtype=jnp.float64), self.min_value
+        )
+        return jnp.concatenate([knots, jnp.zeros(len(self._slope_names))])
+
+    def values_from_rate(self, rate: RateFunction) -> jax.Array:
+        """Knot values (and slopes) of ``rate`` at this family's knots.
+
+        A piecewise linear, quadratic or cubic rate is evaluated exactly at the
+        knots (left limits) and its own derivative gives the slopes;
+        any other rate is averaged just either side of each knot and slopes come
+        from central differences.
+        For ``quadratic``, ``cubic_natural`` and ``cubic_clamped`` the spline
+        built from these values equals ``rate`` whenever ``rate`` is itself such
+        a spline on knots that are a subset of this family's, so a knot can be
+        inserted without changing the function.
+        """
+        ends = jnp.asarray(self.epoch_end_times)
+        end = ends[-1]
+        knots_t = jnp.concatenate([jnp.zeros(1), ends])
+        exact = isinstance(
+            rate, PiecewiseLinearRate | PiecewiseQuadraticRate | PiecewiseCubicRate
+        )
+        if exact:
+            values = jnp.asarray(rate(knots_t), dtype=jnp.float64)
+            slope_at = rate.derivative  # type: ignore[union-attr]
+        else:
+            eps = _EDGE_FRACTION * end
+            values = jnp.asarray(
+                0.5
+                * (
+                    rate(jnp.clip(knots_t - eps, 0.0, end))
+                    + rate(jnp.clip(knots_t + eps, 0.0, end))
+                ),
+                dtype=jnp.float64,
+            )
+            step = 1e-5 * end
+
+            def slope_at(t: jax.Array) -> jax.Array:
+                lo, hi = jnp.clip(t - step, 0.0, end), jnp.clip(t + step, 0.0, end)
+                return (rate(hi) - rate(lo)) / (hi - lo)
+
+        knot_values = _above_minimum(values, self.min_value)
+        scale = end
+        if self.kind == "quadratic":
+            slopes = scale * slope_at(knots_t[:1])
+        elif self.kind == "cubic_clamped":
+            slopes = scale * slope_at(knots_t[jnp.array([0, -1])])
+        elif self.kind == "cubic_hermite":
+            slopes = scale * slope_at(knots_t)
+        else:
+            slopes = jnp.zeros(0)
+        return jnp.concatenate([knot_values, jnp.asarray(slopes, dtype=jnp.float64)])
 
 
 KnotBounds = Sequence[float] | Sequence[Sequence[float]]
@@ -612,6 +802,46 @@ class BirthDeathModel:
             PiecewiseLinearModel(epochs, continuous, min_death),
             knots,
         )
+
+    @classmethod
+    def spline(
+        cls,
+        epoch_end_times: EpochTimes | FreeKnots,
+        birth_kind: SplineKind = "cubic_natural",
+        death_kind: SplineKind | Literal["linear"] = "linear",
+        *,
+        min_birth: float = 0.0,
+        min_death: float = 0.0,
+    ) -> "BirthDeathModel":
+        """Smooth birth and death rates on shared epochs.
+
+        ``birth_kind`` and ``death_kind`` are a :class:`SplineModel` kind, or
+        ``"linear"`` for a continuous :class:`PiecewiseLinearModel`
+        (the default death rate, so only the birth rate is smoothed).
+        Pass a :class:`FreeKnots` to fit the epoch boundaries as well.
+        ``min_birth`` and ``min_death`` bound the knot values from below.
+        Spline rates that dip below zero between knots make the likelihood
+        ``-inf`` (see :class:`SplineModel`).
+        """
+        epochs, knots = _template(epoch_end_times)
+
+        def family(kind: str, minimum: float) -> RateModel:
+            if kind == "linear":
+                return PiecewiseLinearModel(epochs, True, minimum)
+            return SplineModel(epochs, kind, minimum)  # type: ignore[arg-type]
+
+        return cls(family(birth_kind, min_birth), family(death_kind, min_death), knots)
+
+    def n_free(self, constraints: "Constraints | None" = None) -> int:
+        """Count the free unconstrained coordinates (the $p$ of AIC and BIC).
+
+        Fixed parameters and tied parameters (an equality group counts once)
+        are removed; free knot times are included.
+        This is the count :func:`~bdpinf.inference.fitting.fit` optimises over.
+        """
+        from bdpinf.inference.constraints import Constraints
+
+        return (constraints or Constraints()).compile(self.params).n_free
 
     @property
     def end_time(self) -> float:

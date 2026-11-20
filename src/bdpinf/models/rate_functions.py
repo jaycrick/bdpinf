@@ -18,7 +18,9 @@ These families are provided: :class:`PiecewiseConstantRate`,
 :class:`PiecewiseLinearRate`, :class:`PiecewiseExponentialRate`
 (linear on the log scale, with a :meth:`~PiecewiseExponentialRate.gompertz`
 constructor), :class:`PiecewiseQuadraticRate`
-(including C1 quadratic splines), :class:`SinusoidalRate`,
+(including C1 quadratic splines), :class:`PiecewiseCubicRate`
+(cubic Hermite pieces, with C1 and C2 spline constructors),
+:class:`SinusoidalRate`,
 the parametric hazards :class:`PowerRate` (with Weibull and Rayleigh
 constructors), :class:`LogLogisticRate` and :class:`LomaxRate`,
 and :class:`PiecewiseRate`, which glues any rate functions together
@@ -39,6 +41,7 @@ __all__ = [
     "LogLogisticRate",
     "LomaxRate",
     "PiecewiseConstantRate",
+    "PiecewiseCubicRate",
     "PiecewiseExponentialRate",
     "PiecewiseLinearRate",
     "PiecewiseQuadraticRate",
@@ -279,6 +282,13 @@ class PiecewiseLinearRate:
         return _linear_value(
             self.start_values, self.end_values, self.epoch_end_times, jnp.asarray(t)
         )
+
+    def derivative(self, t: jax.Array) -> jax.Array:
+        """Slope at ``t`` (the left limit at an epoch boundary)."""
+        times = self.epoch_end_times
+        k = epoch_index(times, jnp.asarray(t))
+        dur = times - _epoch_starts(times)
+        return ((self.end_values - self.start_values) / dur)[k]
 
     def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
         r"""Exact $\int_s^e w$."""
@@ -618,6 +628,62 @@ class PiecewiseQuadraticRate:
         u = (t - starts[k]) / (times[k] - starts[k])
         return a0 + u * (a1 + u * a2)
 
+    def flat_unless(self, ok: jax.Array) -> "PiecewiseQuadraticRate":
+        """Return this rate where ``ok`` is true, else the constant rate 1.
+
+        Lets a guard evaluate a harmless rate on infeasible parameters,
+        so the gradient through ``jnp.where`` carries no NaN.
+        """
+        one = jnp.ones_like(self.start_values)
+        return PiecewiseQuadraticRate(
+            jnp.where(ok, self.start_values, one),
+            jnp.where(ok, self.mid_values, one),
+            jnp.where(ok, self.end_values, one),
+            self.epoch_end_times,
+        )
+
+    def local_coefficients(self) -> np.ndarray:
+        r"""Host array ``(n_epochs, 3)`` of local-time coefficients $(a, b, c)$."""
+        times = np.asarray(self.epoch_end_times, dtype=np.float64)
+        dur = times - np.concatenate([[0.0], times[:-1]])
+        a0, a1, a2 = (
+            np.asarray(c, dtype=np.float64)
+            for c in _quadratic_coefficients(
+                self.start_values, self.mid_values, self.end_values
+            )
+        )
+        return np.stack([a0, a1 / dur, a2 / dur**2], axis=1)
+
+    def min_values(self) -> jax.Array:
+        """Exact minimum of the rate on each epoch, shape ``(n_epochs,)``.
+
+        Endpoint values and, when the vertex lies inside the epoch,
+        the vertex value.
+        Jittable (no Python branching on traced values).
+        """
+        v0, v1 = self.start_values, self.end_values
+        a0, a1, a2 = _quadratic_coefficients(v0, self.mid_values, v1)
+        curved = a2 != 0
+        vertex = jnp.where(curved, -a1 / jnp.where(curved, 2.0 * a2, 1.0), 0.0)
+        interior = (a2 > 0) & (vertex > 0) & (vertex < 1)
+        vertex_value = a0 + vertex * (a1 + vertex * a2)
+        return jnp.minimum(
+            jnp.minimum(v0, v1), jnp.where(interior, vertex_value, jnp.inf)
+        )
+
+    def derivative(self, t: jax.Array) -> jax.Array:
+        """Slope at ``t`` (the left limit at an epoch boundary)."""
+        times = self.epoch_end_times
+        t = jnp.asarray(t)
+        k = epoch_index(times, t)
+        starts = _epoch_starts(times)
+        _, a1, a2 = _quadratic_coefficients(
+            self.start_values[k], self.mid_values[k], self.end_values[k]
+        )
+        dur = times[k] - starts[k]
+        u = (t - starts[k]) / dur
+        return (a1 + 2.0 * a2 * u) / dur
+
     def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
         r"""Exact $\int_s^e w$, as a difference of cumulative integrals."""
         return self._cumulative(jnp.asarray(e)) - self._cumulative(jnp.asarray(s))
@@ -637,6 +703,357 @@ class PiecewiseQuadraticRate:
         )
         u = (t - starts[k]) / dur[k]
         return cum_before[k] + dur[k] * u * (a0 + u * (a1 / 2.0 + u * a2 / 3.0))
+
+
+# ---------------------------------------------------------------------------
+# Piecewise cubic (Hermite form)
+# ---------------------------------------------------------------------------
+
+
+def _cubic_coefficients(
+    v0: jax.Array, v1: jax.Array, m0: jax.Array, m1: jax.Array, dur: jax.Array
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    r"""Coefficients of $c_0 + c_1 u + c_2 u^2 + c_3 u^3$, $u \in [0, 1]$.
+
+    ``m0`` and ``m1`` are slopes in time units; the Hermite form uses ``dur * m``.
+    """
+    s0, s1 = dur * m0, dur * m1
+    return (
+        v0,
+        s0,
+        -3.0 * v0 - 2.0 * s0 + 3.0 * v1 - s1,
+        2.0 * v0 + s0 - 2.0 * v1 + s1,
+    )
+
+
+def _validate_cubic(times: object, *values: object) -> None:
+    """Shapes and finiteness of concrete inputs (non-negativity is the guard's job)."""
+    if not is_concrete(times, *values):
+        return
+    t = _checked_epoch_times(times)
+    for v in values:
+        arr = np.asarray(v, dtype=float)
+        if arr.shape != t.shape:
+            raise ValueError(f"rate values shape {arr.shape} != times shape {t.shape}")
+        if not np.all(np.isfinite(arr)):
+            raise ValueError("rate values and slopes must be finite")
+
+
+def _knot_grid(times: jax.Array) -> jax.Array:
+    """Knot positions ``0, tau_1, ..., tau_K`` (length ``n_epochs + 1``)."""
+    return jnp.concatenate([jnp.zeros(1, dtype=jnp.float64), times])
+
+
+def _spline_slopes(
+    values: jax.Array,
+    times: jax.Array,
+    start: jax.Array | None,
+    end: jax.Array | None,
+) -> jax.Array:
+    """Knot slopes of the C2 spline (natural end where ``start``/``end`` is None)."""
+    x = _knot_grid(times)
+    h = x[1:] - x[:-1]
+    delta = (values[1:] - values[:-1]) / h
+    n = values.shape[0]
+    a = jnp.zeros((n, n), dtype=jnp.float64)
+    rhs = jnp.zeros(n, dtype=jnp.float64)
+    inner = jnp.arange(1, n - 1)
+    a = a.at[inner, inner - 1].set(h[1:])
+    a = a.at[inner, inner].set(2.0 * (h[:-1] + h[1:]))
+    a = a.at[inner, inner + 1].set(h[:-1])
+    rhs = rhs.at[inner].set(3.0 * (h[1:] * delta[:-1] + h[:-1] * delta[1:]))
+    if start is None:  # natural: f'' = 0, i.e. 2 m_0 + m_1 = 3 delta_0
+        a = a.at[0, 0].set(2.0).at[0, 1].set(1.0)
+        rhs = rhs.at[0].set(3.0 * delta[0])
+    else:
+        a = a.at[0, 0].set(1.0)
+        rhs = rhs.at[0].set(jnp.asarray(start, dtype=jnp.float64))
+    if end is None:
+        a = a.at[n - 1, n - 2].set(1.0).at[n - 1, n - 1].set(2.0)
+        rhs = rhs.at[n - 1].set(3.0 * delta[-1])
+    else:
+        a = a.at[n - 1, n - 1].set(1.0)
+        rhs = rhs.at[n - 1].set(jnp.asarray(end, dtype=jnp.float64))
+    return jnp.linalg.solve(a, rhs)
+
+
+def _safe_div(num: jax.Array, den: jax.Array) -> jax.Array:
+    """``num / den`` with 0 where ``den == 0`` (gradient-safe)."""
+    ok = den != 0
+    return jnp.where(ok, num / jnp.where(ok, den, 1.0), 0.0)
+
+
+def _pchip_end_slope(h0: jax.Array, h1: jax.Array, d0: jax.Array, d1: jax.Array):
+    """Shape-preserving three-point end slope (Fritsch-Carlson, as in SciPy)."""
+    slope = ((2.0 * h0 + h1) * d0 - h0 * d1) / (h0 + h1)
+    slope = jnp.where(jnp.sign(slope) != jnp.sign(d0), 0.0, slope)
+    clip = (jnp.sign(d0) != jnp.sign(d1)) & (jnp.abs(slope) > 3.0 * jnp.abs(d0))
+    return jnp.where(clip, 3.0 * d0, slope)
+
+
+def _pchip_slopes(values: jax.Array, times: jax.Array) -> jax.Array:
+    """Knot slopes of the Fritsch-Carlson monotone (PCHIP) interpolant."""
+    x = _knot_grid(times)
+    h = x[1:] - x[:-1]
+    delta = (values[1:] - values[:-1]) / h
+    if delta.shape[0] == 1:
+        return jnp.concatenate([delta, delta])
+    w1 = 2.0 * h[1:] + h[:-1]
+    w2 = h[1:] + 2.0 * h[:-1]
+    same_sign = delta[:-1] * delta[1:] > 0
+    d_prev = jnp.where(same_sign, delta[:-1], 1.0)
+    d_next = jnp.where(same_sign, delta[1:], 1.0)
+    inner = jnp.where(same_sign, (w1 + w2) / (w1 / d_prev + w2 / d_next), 0.0)
+    first = _pchip_end_slope(h[0], h[1], delta[0], delta[1])
+    last = _pchip_end_slope(h[-1], h[-2], delta[-1], delta[-2])
+    return jnp.concatenate([first[None], inner, last[None]])
+
+
+@dataclasses.dataclass(frozen=True)
+class PiecewiseCubicRate:
+    r"""Rate that is a cubic Hermite polynomial in time within each epoch.
+
+    On epoch $k = (\tau_{k-1}, \tau_k]$ of duration $d_k$, with
+    $u = (t - \tau_{k-1}) / d_k \in [0, 1]$, the rate is the cubic
+    with the given values $v_0, v_1$ and slopes $m_0, m_1$ (derivatives
+    with respect to time) at the two ends,
+
+    $$
+    w = v_0 h_{00}(u) + d_k m_0 h_{10}(u) + v_1 h_{01}(u) + d_k m_1 h_{11}(u).
+    $$
+
+    Setting the next epoch's start value or slope different from this epoch's
+    end value or slope gives a jump or a kink;
+    the constructors :meth:`hermite`, :meth:`natural_spline`,
+    :meth:`clamped_spline` and :meth:`pchip` build continuous rates through
+    knot values.
+
+    Parameters
+    ----------
+    start_values, end_values : jax.Array
+        Rate at the start and end of each epoch, shape ``(n_epochs,)``.
+    start_slopes, end_slopes : jax.Array
+        Time derivative of the rate at the start and end of each epoch.
+    epoch_end_times : jax.Array
+        Strictly increasing epoch end times, shape ``(n_epochs,)``.
+
+    Notes
+    -----
+    Concrete inputs are checked for shape and finiteness only
+    (and the check is skipped under tracing).
+    Unlike :class:`PiecewiseQuadraticRate`, a rate that dips below zero is
+    *not* rejected here:
+    :meth:`min_values` reports the exact minimum of each epoch
+    and the likelihood (:func:`~bdpinf.inference.likelihood.log_likelihood_rates`)
+    returns ``-inf`` for a rate that is negative anywhere.
+    The integral over a full epoch is exact,
+    $d_k (v_0 + v_1) / 2 + d_k^2 (m_0 - m_1) / 12$.
+
+    """
+
+    start_values: jax.Array
+    end_values: jax.Array
+    start_slopes: jax.Array
+    end_slopes: jax.Array
+    epoch_end_times: jax.Array
+
+    def __post_init__(self) -> None:
+        """Coerce to float64 arrays and validate concrete inputs."""
+        for name in (
+            "start_values",
+            "end_values",
+            "start_slopes",
+            "end_slopes",
+            "epoch_end_times",
+        ):
+            object.__setattr__(self, name, _as_f64(getattr(self, name)))
+        _validate_cubic(
+            self.epoch_end_times,
+            self.start_values,
+            self.end_values,
+            self.start_slopes,
+            self.end_slopes,
+        )
+
+    @classmethod
+    def hermite(
+        cls,
+        knot_values: jax.Array,
+        knot_slopes: jax.Array,
+        epoch_end_times: jax.Array,
+    ) -> "PiecewiseCubicRate":
+        """C1 rate from values and slopes at ``0`` and at each epoch end.
+
+        Both arrays have length ``n_epochs + 1``.
+        """
+        v = jnp.asarray(knot_values, dtype=jnp.float64)
+        m = jnp.asarray(knot_slopes, dtype=jnp.float64)
+        return cls(v[:-1], v[1:], m[:-1], m[1:], jnp.asarray(epoch_end_times))
+
+    @classmethod
+    def natural_spline(
+        cls, knot_values: jax.Array, epoch_end_times: jax.Array
+    ) -> "PiecewiseCubicRate":
+        """C2 natural cubic spline ($w''=0$ at the ends) through the knot values."""
+        v = jnp.asarray(knot_values, dtype=jnp.float64)
+        times = jnp.asarray(epoch_end_times, dtype=jnp.float64)
+        return cls.hermite(v, _spline_slopes(v, times, None, None), times)
+
+    @classmethod
+    def clamped_spline(
+        cls,
+        knot_values: jax.Array,
+        slope_start: float | jax.Array,
+        slope_end: float | jax.Array,
+        epoch_end_times: jax.Array,
+    ) -> "PiecewiseCubicRate":
+        """C2 cubic spline through the knot values with given end slopes.
+
+        With the knot values and the two end slopes this spans the whole
+        cubic spline space on these knots.
+        """
+        v = jnp.asarray(knot_values, dtype=jnp.float64)
+        times = jnp.asarray(epoch_end_times, dtype=jnp.float64)
+        slopes = _spline_slopes(
+            v, times, jnp.asarray(slope_start), jnp.asarray(slope_end)
+        )
+        return cls.hermite(v, slopes, times)
+
+    @classmethod
+    def pchip(
+        cls, knot_values: jax.Array, epoch_end_times: jax.Array
+    ) -> "PiecewiseCubicRate":
+        """C1 shape-preserving (Fritsch-Carlson) interpolant of the knot values.
+
+        It never overshoots the knot values, so it is non-negative whenever
+        they are.
+        """
+        v = jnp.asarray(knot_values, dtype=jnp.float64)
+        times = jnp.asarray(epoch_end_times, dtype=jnp.float64)
+        return cls.hermite(v, _pchip_slopes(v, times), times)
+
+    @property
+    def end_time(self) -> jax.Array:
+        """Observation time $T$."""
+        return self.epoch_end_times[-1]
+
+    @property
+    def breakpoints(self) -> jax.Array:
+        """Interior epoch boundaries."""
+        return self.epoch_end_times[:-1]
+
+    def _local(self, t: jax.Array) -> tuple[jax.Array, ...]:
+        """Epoch index, power-basis coefficients and offset ``u`` at ``t``."""
+        times = self.epoch_end_times
+        starts = _epoch_starts(times)
+        k = epoch_index(times, t)
+        dur = times[k] - starts[k]
+        coef = _cubic_coefficients(
+            self.start_values[k],
+            self.end_values[k],
+            self.start_slopes[k],
+            self.end_slopes[k],
+            dur,
+        )
+        return k, dur, (t - starts[k]) / dur, *coef
+
+    def __call__(self, t: jax.Array) -> jax.Array:
+        """Evaluate the rate at ``t``."""
+        _, _, u, c0, c1, c2, c3 = self._local(jnp.asarray(t))
+        return c0 + u * (c1 + u * (c2 + u * c3))
+
+    def derivative(self, t: jax.Array) -> jax.Array:
+        """Slope at ``t`` (the left limit at an epoch boundary)."""
+        _, dur, u, _, c1, c2, c3 = self._local(jnp.asarray(t))
+        return (c1 + u * (2.0 * c2 + 3.0 * u * c3)) / dur
+
+    def flat_unless(self, ok: jax.Array) -> "PiecewiseCubicRate":
+        """Return this rate where ``ok`` is true, else the constant rate 1.
+
+        Lets a guard evaluate a harmless rate on infeasible parameters,
+        so the gradient through ``jnp.where`` carries no NaN.
+        """
+        one = jnp.ones_like(self.start_values)
+        zero = jnp.zeros_like(self.start_values)
+        return PiecewiseCubicRate(
+            jnp.where(ok, self.start_values, one),
+            jnp.where(ok, self.end_values, one),
+            jnp.where(ok, self.start_slopes, zero),
+            jnp.where(ok, self.end_slopes, zero),
+            self.epoch_end_times,
+        )
+
+    def local_coefficients(self) -> np.ndarray:
+        r"""Host array ``(n_epochs, 4)`` of local-time coefficients $(a, b, c, d)$.
+
+        Row $k$ is the epoch's polynomial $a + b s + c s^2 + d s^3$ in
+        $s = t - \tau_{k-1}$, the form ``bdsurv`` takes for simulation.
+        """
+        times = np.asarray(self.epoch_end_times, dtype=np.float64)
+        dur = times - np.concatenate([[0.0], times[:-1]])
+        coef = _cubic_coefficients(
+            self.start_values,
+            self.end_values,
+            self.start_slopes,
+            self.end_slopes,
+            jnp.asarray(dur),
+        )
+        c = np.stack([np.asarray(x, dtype=np.float64) for x in coef], axis=1)
+        return c / dur[:, None] ** np.arange(4)
+
+    def min_values(self) -> jax.Array:
+        """Exact minimum of the rate on each epoch, shape ``(n_epochs,)``.
+
+        Endpoint values and the values at the real roots of $w'$ inside the
+        epoch (a quadratic).
+        Jittable: no Python branching on traced values.
+        """
+        times = self.epoch_end_times
+        dur = times - _epoch_starts(times)
+        c0, c1, c2, c3 = _cubic_coefficients(
+            self.start_values,
+            self.end_values,
+            self.start_slopes,
+            self.end_slopes,
+            dur,
+        )
+        # w'(u) = c1 + 2 c2 u + 3 c3 u^2 = qa u^2 + qb u + c1
+        qa, qb = 3.0 * c3, 2.0 * c2
+        disc = qb * qb - 4.0 * qa * c1
+        sqrt_disc = jnp.sqrt(jnp.maximum(disc, 0.0))
+        q = -0.5 * (qb + jnp.where(qb >= 0, 1.0, -1.0) * sqrt_disc)
+        scale = jnp.maximum(jnp.abs(qa), jnp.abs(qb))
+        tiny = 1e-14 * jnp.maximum(scale, jnp.abs(c1)) + 1e-300
+        roots = (
+            jnp.where(jnp.abs(qa) > tiny, _safe_div(q, qa), jnp.nan),
+            jnp.where(jnp.abs(q) > tiny, _safe_div(c1, q), jnp.nan),
+        )
+        lowest = jnp.minimum(self.start_values, self.end_values)
+        for root in roots:
+            inside = (disc >= 0) & (root > 0) & (root < 1)
+            u = jnp.where(inside, root, 0.0)
+            value = c0 + u * (c1 + u * (c2 + u * c3))
+            lowest = jnp.minimum(lowest, jnp.where(inside, value, jnp.inf))
+        return lowest
+
+    def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
+        r"""Exact $\int_s^e w$, as a difference of cumulative integrals."""
+        return self._cumulative(jnp.asarray(e)) - self._cumulative(jnp.asarray(s))
+
+    def _cumulative(self, t: jax.Array) -> jax.Array:
+        times = self.epoch_end_times
+        dur = times - _epoch_starts(times)
+        full = (
+            dur * 0.5 * (self.start_values + self.end_values)
+            + dur * dur * (self.start_slopes - self.end_slopes) / 12.0
+        )
+        cum_before = jnp.concatenate(
+            [jnp.zeros(1, dtype=jnp.float64), jnp.cumsum(full)[:-1]]
+        )
+        t = jnp.clip(t, 0.0, times[-1])
+        k, dur_k, u, c0, c1, c2, c3 = self._local(t)
+        poly = u * (c0 + u * (c1 / 2.0 + u * (c2 / 3.0 + u * c3 / 4.0)))
+        return cum_before[k] + dur_k * poly
 
 
 # ---------------------------------------------------------------------------
@@ -1144,6 +1561,17 @@ jax.tree_util.register_dataclass(
 jax.tree_util.register_dataclass(
     PiecewiseQuadraticRate,
     data_fields=["start_values", "mid_values", "end_values", "epoch_end_times"],
+    meta_fields=[],
+)
+jax.tree_util.register_dataclass(
+    PiecewiseCubicRate,
+    data_fields=[
+        "start_values",
+        "end_values",
+        "start_slopes",
+        "end_slopes",
+        "epoch_end_times",
+    ],
     meta_fields=[],
 )
 jax.tree_util.register_dataclass(

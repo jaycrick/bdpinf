@@ -117,6 +117,7 @@ reference:
     contents:
       - simulation.forward.simulate_birth_death
       - simulation.forward.simulate_birth_death_lifespans
+      - simulation.forward.to_bdsurv_rate
       - simulation.conditioned.simulate_contour_given_survival
       - simulation.conditioned.simulate_survival_splitting
       - name: simulation.conditioned.ConditionedTrajectory

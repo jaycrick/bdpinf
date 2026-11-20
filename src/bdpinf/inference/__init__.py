@@ -47,6 +47,8 @@ from .rate_models import (
     PiecewiseConstantModel,
     PiecewiseLinearModel,
     RateModel,
+    SplineKind,
+    SplineModel,
 )
 from .uncertainty import (
     confidence_intervals_from_log_covariance,
@@ -69,6 +71,8 @@ __all__ = [
     "PiecewiseConstantModel",
     "PiecewiseLinearModel",
     "RateModel",
+    "SplineKind",
+    "SplineModel",
     "calculate_unknown_spine_mixture_age_density",
     "calculate_unknown_spine_mixture_birth_density",
     "confidence_intervals_from_log_covariance",

@@ -488,6 +488,25 @@ class AgeData:
         return cls.from_groups([ages], end_time, **kwargs)
 
 
+_NEGATIVE_TOLERANCE = 1e-12
+
+
+def _guarded(rate: RateFunction) -> tuple[RateFunction, jax.Array]:
+    """Return ``(rate_to_evaluate, is_non_negative)``.
+
+    Duck-typed: only rates that expose ``min_values()`` (the spline families)
+    can dip below zero between knots; every other family is non-negative by
+    construction and passes through.
+    An infeasible rate is replaced by a harmless flat one (``flat_unless``),
+    so that no NaN gradient leaks through the final ``jnp.where``.
+    """
+    min_values = getattr(rate, "min_values", None)
+    if min_values is None:
+        return rate, jnp.asarray(True)
+    ok = jnp.min(jax.lax.stop_gradient(min_values())) >= -_NEGATIVE_TOLERANCE
+    return rate.flat_unless(ok), ok  # type: ignore[attr-defined]
+
+
 def log_likelihood_rates(
     data: AgeData,
     birth: RateFunction,
@@ -505,6 +524,9 @@ def log_likelihood_rates(
     anything else uses Gauss-Legendre quadrature
     (see :func:`bdpinf.models.math_general.terms_for`).
     Safe under ``jit`` and ``grad``; returns ``-inf`` for invalid parameters.
+    A rate that exposes ``min_values()`` (the spline rates) and is negative
+    anywhere is invalid: this is the single non-negativity guard for the fitters,
+    the Bayesian model and direct calls.
 
     Raises
     ------
@@ -512,6 +534,26 @@ def log_likelihood_rates(
         If ``condition_on_survival`` is True and ``data.initial_population > 1``.
     """
     check_conditioning(data.initial_population, condition_on_survival)
+    safe_birth, birth_ok = _guarded(birth)
+    safe_death, death_ok = _guarded(death)
+    value = _log_likelihood_rates(
+        data,
+        safe_birth,
+        safe_death,
+        condition_on_survival=condition_on_survival,
+        n_nodes=n_nodes,
+    )
+    return jnp.where(birth_ok & death_ok, value, -jnp.inf)
+
+
+def _log_likelihood_rates(
+    data: AgeData,
+    birth: RateFunction,
+    death: RateFunction,
+    *,
+    condition_on_survival: bool,
+    n_nodes: int,
+) -> jax.Array:
     terms = terms_for(birth, death, n_nodes=n_nodes)
     if data.upper_ages is not None and data.weights is not None:
         return _range_log_likelihood(

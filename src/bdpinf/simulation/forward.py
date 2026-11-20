@@ -21,17 +21,41 @@ from __future__ import annotations
 from typing import cast
 
 import numpy as np
-from bdsurv import ConstantRateLike, LinearRateLike, RateInput, SimulatedTree
+from bdsurv import (
+    ConstantRateLike,
+    LinearRateLike,
+    PiecewiseHazard,
+    RateInput,
+    SimulatedTree,
+)
 from bdsurv import simulate_birth_death as _simulate_birth_death
 from bdsurv import simulate_birth_death_lifespans as _lifespans
 from numpy.typing import NDArray
 
+from bdpinf.models.rate_functions import PiecewiseCubicRate, PiecewiseQuadraticRate
 from bdpinf.process import BirthDeathProcess
 
 __all__ = [
     "simulate_birth_death",
     "simulate_birth_death_lifespans",
 ]
+
+
+def to_bdsurv_rate(rate: object) -> RateInput:
+    """Convert a spline rate to a ``bdsurv`` hazard; pass anything else through.
+
+    :class:`~bdpinf.models.rate_functions.PiecewiseQuadraticRate` and
+    :class:`~bdpinf.models.rate_functions.PiecewiseCubicRate` become a
+    ``bdsurv.PiecewiseHazard`` built with ``PiecewiseHazard.from_polynomials``
+    from their local-time coefficients (needs ``bdsurv`` 0.8 or later).
+    ``bdsurv`` checks that the rate is non-negative on ``[0, T]``.
+    """
+    if isinstance(rate, PiecewiseQuadraticRate | PiecewiseCubicRate):
+        return PiecewiseHazard.from_polynomials(
+            rate.local_coefficients(),
+            np.asarray(rate.epoch_end_times, dtype=np.float64),
+        )
+    return cast("RateInput", rate)
 
 
 def _epoch_ends(rate: ConstantRateLike | LinearRateLike) -> NDArray[np.float64]:
@@ -106,8 +130,8 @@ def simulate_birth_death(
     """
     return tree_to_birth_death_process(
         _simulate_birth_death(
-            birth_rate,
-            death_rate,
+            to_bdsurv_rate(birth_rate),
+            to_bdsurv_rate(death_rate),
             terminal_time,
             random_seed,
             ensure_non_extinct=ensure_non_extinct,

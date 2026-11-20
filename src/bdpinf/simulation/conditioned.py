@@ -25,7 +25,7 @@ from bdsurv import simulate_survival_splitting as _splitting
 
 from bdpinf.process import BirthDeathProcess
 
-from .forward import tree_to_birth_death_process
+from .forward import to_bdsurv_rate, tree_to_birth_death_process
 
 __all__ = [
     "ConditionedTrajectory",
@@ -77,7 +77,12 @@ def simulate_contour_given_survival(
 
     """
     return tree_to_birth_death_process(
-        _contour(birth_rate, death_rate, terminal_time, random_seed)
+        _contour(
+            to_bdsurv_rate(birth_rate),
+            to_bdsurv_rate(death_rate),
+            terminal_time,
+            random_seed,
+        )
     )
 
 

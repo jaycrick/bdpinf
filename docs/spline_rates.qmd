@@ -1,0 +1,74 @@
+---
+title: "Spline Rate Families"
+subtitle: "Parameterisation, Degrees of Freedom, the Non-Negativity Guard and Nesting"
+---
+
+## Overview
+
+`BirthDeathModel.spline(epochs, birth_kind, death_kind="linear")` fits a smooth birth rate (and optionally a smooth death rate) through values at the knots.
+The knots are the epoch boundaries $0 = \tau_0 < \tau_1 < \dots < \tau_K = T$, fixed or free (`FreeKnots`).
+The rate functions are `PiecewiseQuadraticRate` and `PiecewiseCubicRate` in `bdpinf.models.rate_functions`;
+the likelihood reaches them through the general quadrature backend (`math_general`), which splits the integrals at the knots.
+
+## Parameterisation
+
+Every family has the rate values at the knots, `knot0 .. knotK`, on the log scale (so they stay at least `min_value`),
+plus slope parameters on the identity scale, depending on the `kind`:
+
+  | `kind`          | parameters                         | count    | continuity              |
+  | ------          | ----------                         | -----    | ----------              |
+  | `quadratic`     | `knot0..knotK`, `slope0`           | $K + 2$  | $C^1$                   |
+  | `cubic_natural` | `knot0..knotK`                     | $K + 1$  | $C^2$                   |
+  | `cubic_clamped` | `knot0..knotK`, `slope0`, `slopeT` | $K + 3$  | $C^2$                   |
+  | `pchip`         | `knot0..knotK`                     | $K + 1$  | $C^1$, shape preserving |
+  | `cubic_hermite` | `knot0..knotK`, `slope0..slopeK`   | $2K + 2$ | $C^1$                   |
+
+with $K$ epochs ($k = K - 1$ interior knots).
+
+- `quadratic` is the $C^1$ quadratic spline through the knot values with the slope at time 0 given
+  (`PiecewiseQuadraticRate.spline`); the later slopes follow from $s_{j+1} = 2 (v_{j+1} - v_j) / d_j - s_j$.
+- `cubic_natural` is the natural cubic spline ($w'' = 0$ at $0$ and $T$);
+  `cubic_clamped` replaces those two conditions by given end slopes and so spans the whole cubic spline space on the knots.
+- `pchip` is the Fritsch--Carlson monotone interpolant: it never overshoots the knot values, so it is non-negative whenever they are.
+- `cubic_hermite` is the $C^1$ cubic with a free slope at every knot.
+
+**Slope scaling.**
+A slope parameter is the derivative multiplied by the observation time $T$, so it has the units of a rate and shares the scale of the knot values.
+`SplineModel.build` divides by $T$.
+The slopes are on the identity scale (they can be negative), the knot values on the log scale.
+
+## Degrees of freedom
+
+`BirthDeathModel.n_free(constraints)` is the single source of truth for the parameter count $p$ in AIC and BIC.
+It counts the free unconstrained coordinates that `fit` optimises over: fixed parameters are removed, an equality group counts once, and free knot times are included.
+For a birth spline plus a continuous piecewise-linear death rate ($K + 1$ parameters) and $k = K - 1$ free interior knots,
+the unconstrained count is the birth count in the table plus $K + 1 + k$.
+Fixing the birth rate at the observation time to zero (`Constraints(fixed={"birth.knotK": 0.0})`) removes one.
+
+## The non-negativity guard
+
+Between knots a spline can dip below the knot values, and below zero.
+The rates are not constrained to be non-negative by construction, so `log_likelihood_rates` is the single guard:
+a rate that exposes `min_values()` (the exact minimum on each epoch, from the endpoint values and the real roots of $w'$) and is negative anywhere gives a log-likelihood of $-\infty$.
+The fitters map that to a large finite penalty, so the trust-region Newton method rejects any step into the infeasible region and shrinks its radius.
+`pchip` never triggers the guard.
+
+`min_value` bounds the *knot values* from below (as in the other families); the guard itself only requires non-negativity.
+Concrete construction of a `PiecewiseQuadraticRate` that dips raises a `ValueError`; under `jit` (as in every fit) the guard returns $-\infty$ instead.
+`PiecewiseCubicRate` never raises for a dip.
+
+If an optimum sits on the guard boundary, the fitted rate touches zero between knots; this is evidence that a linear or `pchip` rate is the better description.
+
+## Nesting
+
+- A cubic or quadratic spline with all knot values equal (and zero end slopes where there are any) is the constant rate, so every kind contains the constant model.
+- `cubic_hermite` contains the continuous piecewise-linear model on the same knots whenever the linear rate is straight through the knot (one slope); with a kink the Hermite slope is a single value per knot, so the kinked linear model is not contained exactly.
+- `quadratic`, `cubic_natural` and `cubic_clamped` are *refinable*:
+  `values_from_rate(f)` on a knot set that contains the knots of a spline $f$ of the same kind reproduces $f$ exactly (spline uniqueness), so a knot can be inserted without changing the function.
+- Splines of different degrees are **not** nested in one another (a $C^0$ linear rate is not a $C^1$ quadratic on the same knots), so compare kinds by AIC or BIC only.
+- Knot locations are irregular parameters: the likelihood is not a smooth regular function of $\tau$, so counting each knot as one degree of freedom is conventional but probably under-penalises.
+
+## Simulation
+
+`bdpinf.simulation.to_bdsurv_rate` converts a `PiecewiseQuadraticRate` or `PiecewiseCubicRate` to `bdsurv.PiecewiseHazard.from_polynomials`, using local-time coefficients (`local_coefficients()`), and `simulate_birth_death` and `simulate_contour_given_survival` apply it automatically.
+This needs bdsurv 0.8.0 or later.

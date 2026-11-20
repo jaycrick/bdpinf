@@ -121,6 +121,9 @@ Imports may only point at the same or a lower layer; `tests/test_layering.py` en
   `AgeData.from_ranges` takes ages known only to lie in ranges (the density is averaged uniformly over each range; `models.math_age_masses`), which makes the likelihood continuous in a knot.
   The jitted objective is cached per model and constraint structure with the data and fixed values as arguments, and the age vector is padded (masked) to a power-of-two bucket, so repeated fits (bootstrap, profile likelihood, recovery studies) compile once; compile time, not run time, dominates a single fit (`scripts/bench_fitting.py`, `docs/design/FITTING_DERIVATIVES.md`).
   `fit_single_model` / `FitModelConfig` in `analysis.validation_helpers` is the one fit-an-age-vector helper used by the recovery studies.
+- **Spline rates.** `SplineModel` (`quadratic`, `cubic_natural`, `cubic_clamped`, `pchip`, `cubic_hermite`) puts the rate values at the knots (log) and scaled slopes (natural value = slope $\times T$, identity) in the parameter vector, built into `PiecewiseQuadraticRate` / `PiecewiseCubicRate` and evaluated by the quadrature backend.
+  Splines can dip below zero between knots, so `log_likelihood_rates` is the one guard (`-inf` when a rate's duck-typed `min_values()` is negative; the fitters turn that into the finite penalty and Newton steps are rejected).
+  `BirthDeathModel.n_free(constraints)` is the single source of truth for $p$ in AIC/BIC (see `docs/spline_rates.qmd`).
 - **Plots.** Reusable, tested builders live in `visualization`; one-off diagnostic charts are built inline in notebooks with `alt.Chart(...)`, the shared `PTOLQUAL` palette and `save_chart`/`display_svg`.
 
 ## Design rules
