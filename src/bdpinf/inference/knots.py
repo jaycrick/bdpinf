@@ -916,6 +916,14 @@ def fit_knots(  # noqa: PLR0913
     )
     if polish:
         chosen = _polished(data, model, user, chosen, fit_kwargs)
+    if chosen.log_likelihood < best_result.log_likelihood - 1e-6:
+        logger.warning(
+            "fit_knots: final fit log-likelihood %.6f is below the %s search "
+            "value %.6f; the reported fit may not be the best placement found",
+            chosen.log_likelihood,
+            winner,
+            best_result.log_likelihood,
+        )
 
     knot_times = chosen.knot_times
     if knot_times is None:  # unreachable: the model has free knots
