@@ -5,6 +5,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.0] --- 2026-11-20
+
+### Added
+
+- `inference.likelihood.range_bounds` (exported from `bdpinf.inference`): per-row `[lower, upper)` creation-year interval of each `[early, late]` range, clipped to the support and aligned with the input rows (no merging or reordering).
+- `inference.knots.place_knots` and `inference.knots.evenly_spaced_knots` (exported from `bdpinf.inference`): sort starting knots into the support and push them at least `min_spacing` apart, optionally keeping a `margin` from each end.
+
+### Changed
+
+- `AgeData.from_year_ranges` now computes its bounds with `range_bounds`; the output is unchanged.
+- `simulation`: `bdsurv` moves to 0.7.0 (`tag = "v0.7.0"` in `[tool.uv.sources]`; the dependency floor is `bdsurv>=0.7.0`).
+
 ## [0.6.0] --- 2026-11-19
 
 ### Changed

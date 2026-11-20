@@ -22,7 +22,9 @@ from .fitting import (
 from .knots import (
     KnotFitResult,
     MethodResult,
+    evenly_spaced_knots,
     fit_knots,
+    place_knots,
 )
 from .likelihood import (
     AgeData,
@@ -30,6 +32,7 @@ from .likelihood import (
     calculate_unknown_spine_mixture_birth_density,
     log_likelihood,
     log_likelihood_rates,
+    range_bounds,
 )
 from .persistence import (
     load_posterior_samples,
@@ -70,6 +73,7 @@ __all__ = [
     "calculate_unknown_spine_mixture_birth_density",
     "confidence_intervals_from_log_covariance",
     "covariance_from_hessian",
+    "evenly_spaced_knots",
     "fit",
     "fit_bayesian",
     "fit_knots",
@@ -79,7 +83,9 @@ __all__ = [
     "log_likelihood",
     "log_likelihood_rates",
     "moment_initial_rates",
+    "place_knots",
     "profile_likelihood_interval",
+    "range_bounds",
     "sample_prior",
     "save_posterior_samples",
     "save_recovery_results",

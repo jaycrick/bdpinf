@@ -104,6 +104,7 @@ reference:
       - inference.knots
       - inference.constraints
       - inference.likelihood.AgeData
+      - inference.likelihood.range_bounds
       - inference.likelihood.log_likelihood
       - inference.likelihood.log_likelihood_rates
       - inference.likelihood.resolve_spine_ages

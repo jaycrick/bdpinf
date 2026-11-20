@@ -28,6 +28,10 @@ data sets (90% at the best likelihood for one knot, 91% for five).
 ``FreeKnots(min_spacing=...)`` keeps knots apart: no placement closer than that
 between any two sorted knots (fixed knots included) is evaluated as a candidate
 or returned.
+
+:func:`place_knots` and :func:`evenly_spaced_knots` are the public
+counterparts of that spacing repair: they build starting knots that are inside
+the support and at least ``min_spacing`` apart.
 """
 
 import concurrent.futures
@@ -51,7 +55,13 @@ from bdpinf.inference.fitting import FitResult, fit
 from bdpinf.inference.likelihood import AgeData
 from bdpinf.inference.rate_models import BirthDeathModel, FreeKnots
 
-__all__ = ["KnotFitResult", "MethodResult", "fit_knots"]
+__all__ = [
+    "KnotFitResult",
+    "MethodResult",
+    "evenly_spaced_knots",
+    "fit_knots",
+    "place_knots",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +73,9 @@ _SLACK = 1e-9
 _MIN_VALID_CANDIDATES = 4
 _MAX_REDRAWS = 8
 _DE_MIN_POPULATION = 5
+# Extra gap added to ``min_spacing`` in ``place_knots`` so that the returned
+# knots are at least ``min_spacing`` apart despite floating-point rounding.
+_PLACE_TOL = 1e-6
 
 
 @dataclasses.dataclass(frozen=True)
@@ -765,4 +778,111 @@ def fit_knots(
         log_likelihood=chosen.log_likelihood,
         method=winner,
         method_results={n: r for n, (r, _) in found.items()},
+    )
+
+
+def place_knots(
+    knots: Sequence[float],
+    lo: float,
+    hi: float,
+    min_spacing: float = 0.0,
+    *,
+    margin: float = 0.0,
+) -> list[float]:
+    """Sort knots into ``(lo, hi)`` and push them at least ``min_spacing`` apart.
+
+    The knots are sorted and clipped to ``[lo + margin, hi - margin]``.
+    Each is then moved up where needed to clear its predecessor, and if the
+    last one then exceeds the upper limit, the knots are moved back down from
+    it.
+    The gap used is ``min_spacing + 1e-6``, so the returned knots are at least
+    ``min_spacing`` apart despite floating-point rounding.
+
+    Parameters
+    ----------
+    knots : sequence of float
+        Candidate knot times, in any order.
+    lo, hi : float
+        Support of the knots; ``hi`` must exceed ``lo``.
+    min_spacing : float
+        Minimum distance between neighbouring knots (non-negative).
+    margin : float
+        Distance kept from each end of the support (non-negative).
+
+    Returns
+    -------
+    list of float
+        The sorted, spaced knots.
+
+    Raises
+    ------
+    ValueError
+        If ``margin`` or ``min_spacing`` is negative, ``hi <= lo``, or the
+        knots cannot fit in the support at that spacing.
+
+    """
+    if margin < 0 or min_spacing < 0:
+        msg = "margin and min_spacing must be non-negative"
+        raise ValueError(msg)
+    if hi <= lo:
+        msg = f"hi ({hi}) must exceed lo ({lo})"
+        raise ValueError(msg)
+    gap = min_spacing + _PLACE_TOL
+    x = np.sort(np.clip(np.asarray(knots, dtype=np.float64), lo + margin, hi - margin))
+    for i in range(1, len(x)):
+        x[i] = max(x[i], x[i - 1] + gap)
+    if len(x) and x[-1] > hi - margin:
+        x[-1] = hi - margin
+        for i in range(len(x) - 2, -1, -1):
+            x[i] = min(x[i], x[i + 1] - gap)
+    if len(x) and x[0] < lo + margin - _PLACE_TOL:
+        msg = f"{len(x)} knots {min_spacing} apart do not fit in ({lo}, {hi})"
+        raise ValueError(msg)
+    return [float(v) for v in x]
+
+
+def evenly_spaced_knots(
+    k: int,
+    lo: float,
+    hi: float,
+    min_spacing: float = 0.0,
+    *,
+    margin: float = 0.0,
+) -> list[float]:
+    """Return ``k`` evenly spaced knots in ``(lo, hi)``, repaired by spacing.
+
+    The knots start at ``lo + (hi - lo) * (i + 1) / (k + 1)`` and are passed to
+    :func:`place_knots`.
+
+    Parameters
+    ----------
+    k : int
+        Number of knots (non-negative).
+    lo, hi : float
+        Support of the knots.
+    min_spacing : float
+        Minimum distance between neighbouring knots.
+    margin : float
+        Distance kept from each end of the support.
+
+    Returns
+    -------
+    list of float
+        The ``k`` sorted knots.
+
+    Raises
+    ------
+    ValueError
+        If ``k`` is negative or :func:`place_knots` rejects the arguments.
+
+    """
+    if k < 0:
+        msg = "k must be non-negative"
+        raise ValueError(msg)
+    return place_knots(
+        [lo + (hi - lo) * (i + 1) / (k + 1) for i in range(k)],
+        lo,
+        hi,
+        min_spacing,
+        margin=margin,
     )

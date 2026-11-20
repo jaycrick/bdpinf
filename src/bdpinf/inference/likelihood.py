@@ -86,6 +86,63 @@ def resolve_spine_ages(
     return SpineResolution(None, ages_np, True)
 
 
+def range_bounds(
+    early_year: ArrayLike,
+    late_year: ArrayLike,
+    start_year: float | None = None,
+    observation_year: float | None = None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return the ``[lower, upper)`` creation-year interval of every range.
+
+    An integer-year range ``[early, late]`` is the interval
+    ``[early, late + 1)``.
+    With ``start_year`` and ``observation_year`` the interval is clipped to the
+    support ``[start_year, observation_year]`` and kept at least one year wide,
+    so a range lying wholly outside the support still contributes its nearest
+    year.
+    The bounds are aligned with the input rows: nothing is merged or reordered
+    (unlike :meth:`AgeData.from_year_ranges`, whose ``from_ranges`` step
+    merges equal ranges), so callers can attach them to a data frame.
+
+    Parameters
+    ----------
+    early_year, late_year : array-like
+        Earliest and latest creation year of each individual
+        (``late_year`` below ``early_year`` is raised to it).
+    start_year : float, optional
+        First year of the support.
+        Without it the lower bound is ``early_year``, not capped at ``upper - 1``.
+    observation_year : float, optional
+        Last year of the support, the cap on the upper bound.
+
+    Returns
+    -------
+    lower, upper : tuple of numpy.ndarray
+        Per-row interval bounds, in calendar years.
+
+    Raises
+    ------
+    ValueError
+        If the arrays differ in length.
+
+    """
+    early = np.asarray(early_year, dtype=np.float64).reshape(-1)
+    late = np.asarray(late_year, dtype=np.float64).reshape(-1)
+    if early.shape != late.shape:
+        msg = "early_year and late_year must have the same length"
+        raise ValueError(msg)
+    late = np.maximum(late, early)
+    upper = late + 1.0
+    lower = early
+    if observation_year is not None:
+        upper = np.minimum(upper, observation_year)
+    if start_year is not None:
+        lower = np.maximum(np.minimum(lower, upper - 1.0), start_year)
+    if observation_year is not None or start_year is not None:
+        upper = np.maximum(upper, lower + 1.0)
+    return lower, upper
+
+
 @dataclasses.dataclass(frozen=True)
 class AgeData:
     """Validated age observations in the form the likelihood core consumes.
@@ -365,6 +422,7 @@ class AgeData:
         range lying wholly outside the support still contributes its nearest
         year.  Then it is passed to :meth:`from_ranges` with end time
         ``observation_year - start_year``.
+        The per-row bounds come from :func:`range_bounds`.
 
         Parameters
         ----------
@@ -385,18 +443,13 @@ class AgeData:
             ``observation_year <= start_year``.
 
         """
-        early = np.asarray(early_year, dtype=np.float64).reshape(-1)
-        late = np.asarray(late_year, dtype=np.float64).reshape(-1)
-        if early.shape != late.shape:
+        if np.size(early_year) != np.size(late_year):
             msg = "early_year and late_year must have the same length"
             raise ValueError(msg)
         if observation_year <= start_year:
             msg = "observation_year must be later than start_year"
             raise ValueError(msg)
-        late = np.maximum(late, early)
-        upper = np.minimum(late + 1.0, observation_year)
-        lower = np.maximum(np.minimum(early, upper - 1.0), start_year)
-        upper = np.maximum(upper, lower + 1.0)
+        lower, upper = range_bounds(early_year, late_year, start_year, observation_year)
         return cls.from_ranges(
             observation_year - upper,
             observation_year - lower,
