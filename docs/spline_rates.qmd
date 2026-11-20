@@ -16,7 +16,7 @@ Every family has the rate values at the knots, `knot0 .. knotK`, on the log scal
 plus slope parameters on the identity scale, depending on the `kind`:
 
   | `kind`          | parameters                         | count    | continuity              |
-  | ------          | ----------                         | -----    | ----------              |
+  | --------------- | ---------------------------------- | -------- | ----------------------- |
   | `quadratic`     | `knot0..knotK`, `slope0`           | $K + 2$  | $C^1$                   |
   | `cubic_natural` | `knot0..knotK`                     | $K + 1$  | $C^2$                   |
   | `cubic_clamped` | `knot0..knotK`, `slope0`, `slopeT` | $K + 3$  | $C^2$                   |
