@@ -84,7 +84,7 @@ class TestSubject:
 ## Architecture
 
 **bdpinf** is a library for linear birth-death (branching) processes: exact likelihoods, MLE and Bayesian inference, simulation and plotting.
-It has no domain-specific content; the New Testament manuscript application lives in the separate `nt-manuscripts` repo, and rare-event simulation methodology in `bdsurv` (a runtime dependency, installed from its public GitHub repository and pinned to release tag `v0.7.0`, used by `simulation/forward.py` and `simulation/conditioned.py`).
+It has no domain-specific content; the New Testament manuscript application lives in the separate `nt-manuscripts` repo, and rare-event simulation methodology in `bdsurv` (a runtime dependency, installed from its public GitHub repository and pinned to release tag `v0.8.0`, used by `simulation/forward.py` and `simulation/conditioned.py`).
 Public names, signatures and docstrings are in the generated API reference (`great-docs.yml` defines its structure), so this section only records the layering and the ideas that are not obvious from the code.
 
 ### Layers

@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-20
+
 ### Added
 
 - `models.rate_functions.PiecewiseCubicRate` (cubic Hermite per epoch, with exact integral, `min_values()` and the `hermite`, `natural_spline`, `clamped_spline` and `pchip` constructors) and `PiecewiseQuadraticRate.min_values()`.
