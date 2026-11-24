@@ -104,6 +104,7 @@ reference:
       - inference.knots
       - inference.selection
       - inference.constraints
+      - inference.constrained
       - inference.likelihood.AgeData
       - inference.likelihood.range_bounds
       - inference.likelihood.log_likelihood

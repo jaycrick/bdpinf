@@ -30,6 +30,13 @@ import scipy.optimize
 import scipy.stats
 from numpy.typing import ArrayLike, NDArray
 
+from bdpinf.inference.constrained import (
+    ACTIVE_TOL,
+    ConstrainedOutcome,
+    WallConstraints,
+    refine_constrained,
+    wall_constraints,
+)
 from bdpinf.inference.constraints import (
     INTERVAL_CODE,
     LOG_CODE,
@@ -98,7 +105,9 @@ class FitResult:
     log_likelihood : float
         Maximised log-likelihood.
     converged : bool
-        Whether the per-observation gradient norm met the tolerance.
+        Whether the per-observation gradient norm met the tolerance, or, for a
+        constrained optimum on the non-negativity wall, whether the KKT
+        conditions were verified (see :mod:`bdpinf.inference.constrained`).
     score_norm : float
         Euclidean norm of the gradient of the log-likelihood in the free
         unconstrained parameters.
@@ -107,7 +116,7 @@ class FitResult:
         positive at a strict interior maximum.
     at_interior_optimum : bool
         Converged, positive-definite Hessian and no rate at its boundary (zero, or
-        the family's ``min_value``).
+        the family's ``min_value``), and the non-negativity guard inactive.
     covariance_free : NDArray | None
         Covariance of the free unconstrained parameters (inverse observed
         information).
@@ -131,6 +140,22 @@ class FitResult:
         Fitted free unconstrained parameters.
     compiled : CompiledConstraints
         The expansion maps for ``free_values``.
+    at_guard : bool
+        A non-negativity constraint of a spline rate is active at the result
+        (scaled margin at most 1e-6): the optimum is on the wall.
+    kkt_residual : float | None
+        Stationarity residual of the constrained solution
+        (``||grad - J_A' lambda||``); ``None`` if the constrained step did not run.
+    reduced_hessian_min_eig : float | None
+        Smallest eigenvalue of the Lagrangian Hessian reduced to the tangent
+        space of the active constraints; ``None`` if it did not run or the
+        tangent space is empty.
+    active_constraints : tuple[str, ...]
+        Names of the active constraints (walls and transform bounds)
+        of a constrained solution.
+    constrained_optimum : bool
+        The result is the verified output of the constrained solver
+        (SLSQP and KKT Newton polish), not of the plain Newton method.
 
     """
 
@@ -155,6 +180,11 @@ class FitResult:
     starts: list[StartSummary]
     free_values: NDArray[np.float64]
     compiled: CompiledConstraints
+    at_guard: bool = False
+    kkt_residual: float | None = None
+    reduced_hessian_min_eig: float | None = None
+    active_constraints: tuple[str, ...] = ()
+    constrained_optimum: bool = False
 
     @property
     def success(self) -> bool:
@@ -227,6 +257,11 @@ class FitResult:
             "score_norm": self.score_norm,
             "min_hessian_eig": self.min_hessian_eig,
             "at_interior_optimum": self.at_interior_optimum,
+            "at_guard": self.at_guard,
+            "kkt_residual": self.kkt_residual,
+            "reduced_hessian_min_eig": self.reduced_hessian_min_eig,
+            "active_constraints": list(self.active_constraints),
+            "constrained_optimum": self.constrained_optimum,
             "n_iter": self.n_iter,
             "n_function_evals": self.n_function_evals,
             "message": self.message,
@@ -914,6 +949,107 @@ def _at_boundary(compiled: CompiledConstraints, x_best: NDArray[np.float64]) -> 
     )
 
 
+@dataclasses.dataclass(frozen=True)
+class _GuardState:
+    """What the non-negativity step found (the default: it did not apply)."""
+
+    at_guard: bool = False
+    outcome: ConstrainedOutcome | None = None
+    best: Any = None
+    converged: bool = False
+
+    @property
+    def kkt_residual(self) -> float | None:
+        return None if self.outcome is None else self.outcome.report.residual
+
+    @property
+    def reduced_eig(self) -> float | None:
+        return None if self.outcome is None else self.outcome.report.min_reduced_eig
+
+    @property
+    def active(self) -> tuple[str, ...]:
+        return () if self.outcome is None else self.outcome.labels
+
+
+def _wall_step(
+    problem: _Problem,
+    model: BirthDeathModel,
+    natural: NDArray[np.float64],
+    *,
+    best: _RunOutcome,
+    converged: bool,
+    outcomes: list[_RunOutcome],
+    run: bool,
+    seed: int | None,
+) -> _GuardState:
+    """Constrained refinement of a spline-rate fit that is on, or near, the wall.
+
+    Skipped (but ``at_guard`` is still reported) when the best start is a
+    converged optimum with every scaled margin above ``ACTIVE_TOL``.
+    The constrained result is accepted if its log-likelihood is at least
+    ``best``'s minus 1e-6, or ``best`` is infeasible; it replaces an unverified
+    plain result only if it is also better by 1e-6.
+    """
+    compiled = problem.compiled
+    wall: WallConstraints | None = wall_constraints(
+        model, compiled, natural, bound_log=_BOUNDARY_LOG_RATE
+    )
+    if wall is None:
+        return _GuardState()
+    margin_now = float(np.min(wall(best.x)))
+    at_guard = margin_now <= ACTIVE_TOL
+    if not run or (converged and not at_guard):
+        return _GuardState(at_guard=at_guard)
+
+    def nll_grad(x: NDArray[np.float64]) -> tuple[float, NDArray[np.float64]]:
+        value, grad = problem.value_and_grad(jnp.asarray(x))
+        if float(value) >= _PENALTY:
+            return _PENALTY, np.zeros(len(x))
+        return float(value), np.asarray(grad, dtype=np.float64)
+
+    def hessian(x: NDArray[np.float64]) -> NDArray[np.float64]:
+        return np.asarray(problem.hessian(jnp.asarray(x)), dtype=np.float64)
+
+    extra = [o.x for o in sorted(outcomes, key=lambda o: o.nll) if o is not best]
+    result = refine_constrained(
+        wall,
+        nll_grad,
+        hessian,
+        best.x,
+        grad_tol=problem.grad_tol,
+        penalty=_PENALTY,
+        extra_starts=extra,
+        seed=seed,
+    )
+    if result is None:
+        return _GuardState(at_guard=at_guard)
+    plain_ok = best.nll < _PENALTY and margin_now >= 0
+    if plain_ok and result.nll > best.nll + 1e-6:
+        return _GuardState(at_guard=at_guard)
+    if plain_ok and not result.verified and result.nll > best.nll - 1e-6:
+        return _GuardState(at_guard=at_guard)
+    refined = _RunOutcome(
+        x=result.x,
+        nll=result.nll,
+        grad_norm=result.report.residual,
+        n_iter=best.n_iter,
+        n_evals=best.n_evals,
+        message=(
+            "constrained optimum (SLSQP, KKT Newton polish)"
+            if result.verified
+            else "constrained solve did not verify"
+        ),
+        method="SLSQP+KKT",
+        history=[*best.history, result.nll],
+    )
+    return _GuardState(
+        at_guard=result.at_guard,
+        outcome=result,
+        best=refined,
+        converged=result.verified,
+    )
+
+
 def fit(  # noqa: PLR0913  # public entry point: documented keyword options
     data: AgeData,
     model: BirthDeathModel,
@@ -932,6 +1068,7 @@ def fit(  # noqa: PLR0913  # public entry point: documented keyword options
     n_nodes: int = DEFAULT_NODES,
     pad_to_bucket: bool = True,
     hessian_mode: str = "fwd-fwd",
+    constrained: bool = True,
 ) -> FitResult:
     r"""Fit a birth-death rate model to age data by maximum likelihood.
 
@@ -991,6 +1128,16 @@ def fit(  # noqa: PLR0913  # public entry point: documented keyword options
         faster per call than the exact forms on a 13-rate piecewise-linear
         model; ``"fwd-fwd"`` (exact, the default) and ``"fwd-rev"`` are exact.
 
+    constrained : bool
+        For a model with a spline rate (one exposing ``nonneg_margins``), run
+        the constrained solver of :mod:`bdpinf.inference.constrained` after the
+        best start unless that start is already a converged optimum clear of
+        the non-negativity wall.
+        Its result is used if its log-likelihood is no more than 1e-6 lower
+        (or the plain result is infeasible), and ``converged`` is then
+        whether the KKT conditions were verified.
+        Other models never take this step.
+
     Returns
     -------
     FitResult
@@ -1027,6 +1174,7 @@ def fit(  # noqa: PLR0913  # public entry point: documented keyword options
             np.zeros(0), value, 0.0, 0, 1, "no free parameters", method, [value]
         )
         summaries.append(StartSummary(-value, True, 0))
+        outcomes = [best]
     else:
         first, natural0 = _first_start(problem, init, data, model)
         starts = _starting_points(
@@ -1047,12 +1195,33 @@ def fit(  # noqa: PLR0913  # public entry point: documented keyword options
     converged = best.grad_norm <= problem.grad_tol and best.nll < _PENALTY
     natural = model.canonical(compiled.expand(jnp.asarray(x_best)))
     birth, death = model.rates(jnp.asarray(natural))
+    guard = _GuardState()
+    if compiled.n_free > 0 and (
+        hasattr(birth, "nonneg_margins") or hasattr(death, "nonneg_margins")
+    ):
+        guard = _wall_step(
+            problem,
+            model,
+            natural,
+            best=best,
+            converged=converged,
+            outcomes=outcomes,
+            run=constrained,
+            seed=seed,
+        )
+        if guard.outcome is not None:
+            best = guard.best
+            x_best = best.x
+            converged = guard.converged
+            natural = model.canonical(compiled.expand(jnp.asarray(x_best)))
+            birth, death = model.rates(jnp.asarray(natural))
     spread = _covariances(
         problem, x_best, len(natural), converged=converged, compute=compute_covariance
     )
     boundary = _at_boundary(compiled, x_best)
     interior = bool(
         converged
+        and not guard.at_guard
         and not boundary
         and (spread.min_eig > 0 if spread.min_eig is not None else compiled.n_free == 0)
     )
@@ -1079,6 +1248,11 @@ def fit(  # noqa: PLR0913  # public entry point: documented keyword options
         starts=summaries,
         free_values=x_best,
         compiled=compiled,
+        at_guard=guard.at_guard,
+        kkt_residual=guard.kkt_residual,
+        reduced_hessian_min_eig=guard.reduced_eig,
+        active_constraints=guard.active,
+        constrained_optimum=guard.outcome is not None,
     )
 
 

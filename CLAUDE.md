@@ -124,6 +124,7 @@ Imports may only point at the same or a lower layer; `tests/test_layering.py` en
 - **Spline rates.** `SplineModel` (`quadratic`, `cubic_natural`, `cubic_clamped`, `pchip`, `cubic_hermite`) puts the rate values at the knots (log) and scaled slopes (natural value = slope $\times T$, identity) in the parameter vector, built into `PiecewiseQuadraticRate` / `PiecewiseCubicRate` and evaluated by the quadrature backend.
   Splines can dip below zero between knots, so `log_likelihood_rates` is the one guard (`-inf` when a rate's duck-typed `min_values()` is negative; the fitters turn that into the finite penalty and Newton steps are rejected).
   `BirthDeathModel.n_free(constraints)` is the single source of truth for $p$ in AIC/BIC (see `docs/spline_rates.qmd`).
+  Optima often sit on that wall (end slope $w'(T^-)\le 0$ under a fixed zero at $T$, or an interior tangency), where plain Newton cannot converge, so `fit` adds a constrained post-step (`inference.constrained`: `nonneg_margins` rows, SLSQP, KKT Newton polish, `verify_kkt`) for rates exposing `nonneg_margins`, reporting `at_guard`, `kkt_residual` and `constrained_optimum`; `fit_knots` runs it only in its final and joint fits.
 - **Plots.** Reusable, tested builders live in `visualization`; one-off diagnostic charts are built inline in notebooks with `alt.Chart(...)`, the shared `PTOLQUAL` palette and `save_chart`/`display_svg`.
 
 ## Design rules

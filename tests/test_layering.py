@@ -28,6 +28,7 @@ _LAYERS: dict[str, int] = {
     "bdpinf.models.math_age_masses": 2,
     "bdpinf.models": 2,
     "bdpinf.inference.bayesian": 3,
+    "bdpinf.inference.constrained": 3,
     "bdpinf.inference.constraints": 3,
     "bdpinf.inference.fitting": 3,
     "bdpinf.inference.knots": 3,

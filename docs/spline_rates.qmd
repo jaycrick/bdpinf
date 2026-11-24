@@ -58,7 +58,34 @@ Neither `SplineModel.build`, `PiecewiseQuadraticRate.spline` nor direct construc
 `PiecewiseCubicRate` behaves the same way.
 Only the `continuous` and `from_linear` constructors of `PiecewiseQuadraticRate` check non-negativity and raise a `ValueError`.
 
-If an optimum sits on the guard boundary, the fitted rate touches zero between knots; this is evidence that a linear or `pchip` rate is the better description.
+### Optima on the wall
+
+The maximum likelihood estimate of a spline is often *on* the guard boundary, in one of two ways:
+
+- the end-slope condition: with the rate value at $T$ fixed at zero (`Constraints(fixed={"birth.knotK": 0.0})`) the rate is non-negative next to $T$ only if $w'(T^-) \le 0$, which for `cubic_clamped` is `slopeT <= 0`;
+- an interior tangency, where the minimum of a cubic or quadratic segment touches zero.
+
+The plain trust-region Newton method cannot converge there: every step out of the feasible set is rejected, and the gradient is not zero at a constrained optimum.
+So `fit` follows the best start with a constrained solve whenever a birth or death rate exposes `nonneg_margins` and the result is not already a converged optimum clear of the wall (every scaled margin above $10^{-6}$).
+The margins are quantities that are $\ge 0$ exactly when the rate is: per epoch the exact interior minimum, plus, for a knot pinned to zero by a fixed parameter, the one-sided slope conditions (`pinned_zero` of `PiecewiseCubicRate.nonneg_margins`; the knot values themselves are positive by their log transform).
+The solve is a phase-1 projection onto the feasible set (only if the start violates it), SLSQP, a Newton polish on the KKT system of the active set that non-negative least squares finds, and a verification, retried from up to two more starts (`bdpinf.inference.constrained`).
+The final point is strictly feasible, with every margin at least $10^{-9}$ of the largest knot value of that rate, so re-evaluating the likelihood from the saved parameters is finite rather than sitting on the $-10^{-12}$ guard tolerance.
+Its result replaces the plain fit if its log-likelihood is within $10^{-6}$ of it (or the plain fit is infeasible).
+
+A guard-active optimum counts as **converged** (`FitResult.converged`, with `constrained_optimum = True`) when
+
+1. the log-likelihood is finite;
+2. with the active set the margins at most $10^{-6}$ together with the coordinates on a transform bound (the death floor, or a log coordinate below $-12$), the non-negative least-squares multipliers $\lambda \ge 0$ of $\nabla\ell$ on the active rows leave a residual $\lVert \nabla\ell - J_A^\top\lambda \rVert_2$ no larger than the tolerance `fit` uses for the gradient;
+3. complementary slackness holds, $\max_i \lambda_i (c_i - m) \le 10^{-6}$, where $m = 2\times 10^{-9}$ is the margin the solver holds the active constraints at (the multipliers grow with the sample size, so the plain product $\lambda_i c_i$ would reject large-sample optima for the deliberate price of strict feasibility);
+4. the Lagrangian Hessian reduced to the tangent space of the active constraints with positive multiplier has smallest eigenvalue above $-10^{-8}\max(1, \max|\text{eig}|)$ (a flat direction along an active transform bound is `at_boundary`, not non-convergence);
+5. with no active constraint the ordinary interior test applies.
+
+`FitResult` reports `at_guard`, `kkt_residual`, `reduced_hessian_min_eig` and `active_constraints`; `at_interior_optimum` is false when the guard is active.
+Covariances at a wall optimum are not valid in the constrained directions (the Hessian need not be positive definite there).
+Linear and constant models never take this step, and `fit(..., constrained=False)` switches it off.
+`fit_knots` uses the plain method only for the profile fits over many fixed placements; every joint fit that competes for the final choice (all methods, the polished candidates and the user `starts`) and the final fit run the constrained solver, so placements are ranked by constrained log-likelihoods.
+
+An optimum on the wall means the fitted rate touches zero; this is evidence that a linear or `pchip` rate is the better description.
 
 ## Nesting
 

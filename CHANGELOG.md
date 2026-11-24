@@ -5,6 +5,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-11-24
+
+### Added
+
+- `inference.constrained` (new module): constrained maximum likelihood for spline rates on the non-negativity wall (`wall_constraints`, `project_feasible`, `solve_slsqp`, `kkt_polish`, `verify_kkt`, `refine_constrained`).
+- `models.rate_functions.PiecewiseCubicRate.nonneg_margins` and `PiecewiseQuadraticRate.nonneg_margins` (with `nonneg_margin_labels`): smooth, jittable quantities that are all non-negative exactly when the rate is, with a `pinned_zero` option for knots fixed at zero (one-sided slope conditions instead of the value).
+- `inference.fitting.FitResult` fields `at_guard`, `kkt_residual`, `reduced_hessian_min_eig`, `active_constraints` and `constrained_optimum` (defaults keep existing construction working; all are in `to_dict`), and `KnotFitResult` properties `converged`, `at_guard`, `constrained_optimum`, `kkt_residual`.
+
+### Fixed
+
+- `inference.fitting.fit` for spline rates: an optimum on the non-negativity wall (end slope under a fixed zero at `T`, or an interior tangency) no longer ends unconverged and below the constrained optimum; a constrained solve with KKT verification follows the best start (`constrained=False` switches it off), and the result is strictly feasible, so re-evaluating it from saved parameters is finite.
+  `at_interior_optimum` is false when the guard is active.
+  `fit_knots` runs the step in its final fit and in every joint fit that competes for the final choice, not in the profile fits.
+  Linear and constant models are unchanged.
+
 ## [0.8.1] - 2026-11-24
 
 ### Fixed

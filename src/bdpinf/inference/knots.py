@@ -135,6 +135,13 @@ class KnotFitResult:
     ----------
     fit : FitResult
         The fit at the selected knot times.
+        For spline rates the profile fits over many placements use the plain
+        Newton method for speed; every joint fit that competes for the final
+        choice (the polished starts, the user ``starts``, and the final polish)
+        and the final fit run the constrained solver, so placements are ranked
+        by constrained log-likelihoods
+        (``fit.converged``, ``fit.at_guard``, ``fit.kkt_residual`` and the
+        properties of the same names here report it).
         Its covariance is conditional on the knots unless the joint polish
         was accepted (``fit.constraints.fixed`` then has no free ``tau`` entries).
         Usable as ``init`` for :func:`~bdpinf.inference.fitting.fit` and
@@ -178,6 +185,26 @@ class KnotFitResult:
     n_starts: int = 0
     n_distinct_optima: int = 1
     runner_up_gap: float = float("inf")
+
+    @property
+    def converged(self) -> bool:
+        """Whether the final fit converged (``fit.converged``)."""
+        return self.fit.converged
+
+    @property
+    def at_guard(self) -> bool:
+        """Whether the final fit is on the spline non-negativity wall."""
+        return self.fit.at_guard
+
+    @property
+    def constrained_optimum(self) -> bool:
+        """Whether the final fit is a verified constrained optimum."""
+        return self.fit.constrained_optimum
+
+    @property
+    def kkt_residual(self) -> float | None:
+        """KKT residual of the final fit (``None`` if the constrained step skipped)."""
+        return self.fit.kkt_residual
 
 
 def _spacing_ok(knots: Any, min_spacing: float) -> bool:
@@ -471,7 +498,7 @@ class _KnotSearch:
             job.model,
             constraints=Constraints(fixed=fixed, equal=job.user.equal),
             init=start,
-            **{**job.fit_kwargs, **extra},
+            **{**job.fit_kwargs, "constrained": False, **extra},
         )
 
     def record(

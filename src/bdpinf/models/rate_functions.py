@@ -29,6 +29,7 @@ All are JAX pytrees, so they can be passed through ``jit``/``grad``.
 """
 
 import dataclasses
+from collections.abc import Sequence
 from typing import Protocol, cast, runtime_checkable
 
 import jax
@@ -491,6 +492,78 @@ def _validate_quadratic(
         )
 
 
+def _margin_layout(
+    n_epochs: int,
+    pinned_zero: Sequence[int],
+    continuous: bool,
+    include_values: bool = True,
+) -> list[tuple[str, int]]:
+    """Row layout of ``nonneg_margins``: ``(kind, epoch)`` pairs, in order.
+
+    ``kind`` is ``start_value``, ``start_slope``, ``end_value``, ``end_slope``
+    or ``interior``.
+    Knot ``j`` is the start of epoch ``j`` and the end of epoch ``j - 1``.
+    A pinned knot contributes its one-sided slope condition instead of its value.
+    """
+    pinned = {int(j) for j in pinned_zero}
+    bad = [j for j in pinned if not 0 <= j <= n_epochs]
+    if bad:
+        msg = f"pinned_zero knot indices {sorted(bad)} outside 0..{n_epochs}"
+        raise ValueError(msg)
+    rows: list[tuple[str, int]] = []
+    for k in range(n_epochs):
+        if k in pinned:
+            rows.append(("start_slope", k))
+        elif include_values and (k == 0 or not continuous):
+            rows.append(("start_value", k))
+        if k + 1 in pinned:
+            rows.append(("end_slope", k))
+        elif include_values:
+            rows.append(("end_value", k))
+    rows.extend(("interior", k) for k in range(n_epochs))
+    return rows
+
+
+def _margin_labels(
+    n_epochs: int,
+    pinned_zero: Sequence[int],
+    continuous: bool,
+    include_values: bool = True,
+) -> tuple[str, ...]:
+    """Human-readable names of the ``nonneg_margins`` rows."""
+    names = {
+        "start_value": "value at start of epoch {k}",
+        "start_slope": "slope at start of epoch {k}",
+        "end_value": "value at end of epoch {k}",
+        "end_slope": "slope at end of epoch {k}",
+        "interior": "interior minimum of epoch {k}",
+    }
+    return tuple(
+        names[kind].format(k=k)
+        for kind, k in _margin_layout(n_epochs, pinned_zero, continuous, include_values)
+    )
+
+
+def _assemble_margins(
+    layout: list[tuple[str, int]],
+    *,
+    start_values: jax.Array,
+    end_values: jax.Array,
+    start_slope_dur: jax.Array,
+    end_slope_dur: jax.Array,
+    interior: jax.Array,
+) -> jax.Array:
+    """Stack the margin rows named by ``layout`` (slopes already times duration)."""
+    source = {
+        "start_value": start_values,
+        "start_slope": start_slope_dur,
+        "end_value": end_values,
+        "end_slope": -end_slope_dur,
+        "interior": interior,
+    }
+    return jnp.stack([source[kind][k] for kind, k in layout])
+
+
 @dataclasses.dataclass(frozen=True)
 class PiecewiseQuadraticRate:
     r"""Rate that is a quadratic in time within each epoch.
@@ -692,6 +765,72 @@ class PiecewiseQuadraticRate:
         vertex_value = a0 + vertex * (a1 + vertex * a2)
         return jnp.minimum(
             jnp.minimum(v0, v1), jnp.where(interior, vertex_value, jnp.inf)
+        )
+
+    def nonneg_margins(
+        self,
+        pinned_zero: Sequence[int] = (),
+        *,
+        continuous: bool = True,
+        include_values: bool = True,
+    ) -> jax.Array:
+        r"""Quantities that are all $\ge 0$ exactly when the rate is $\ge 0$.
+
+        Smooth almost everywhere and jittable; the constrained fitter
+        (:mod:`bdpinf.inference.constrained`) uses them as inequality
+        constraints, where :meth:`min_values` (a minimum over pieces) is not
+        differentiable on the wall.
+        The rows are, in order, for each epoch the value at its start
+        (only epoch 0 when ``continuous``, because the end value of epoch
+        $k-1$ is then the start value of epoch $k$) and at its end,
+        then for each epoch the value at its interior vertex when that is a
+        minimum inside the epoch (a large positive number otherwise).
+
+        A knot that a fixed parameter pins to exactly zero cannot be handled
+        by its value (it is identically zero, with no gradient to push on).
+        List its index in ``pinned_zero`` (knot $j$ is the start of epoch $j$
+        and the end of epoch $j-1$; the last knot is the observation time):
+        its value row is dropped and the one-sided slope condition is used
+        instead, $w'(\tau_j^-) \le 0$ (the row holds $-w' d$) and
+        $w'(\tau_j^+) \ge 0$ (the row holds $w' d$, with $d$ the epoch
+        duration), so every slope row has the units of a rate.
+        ``include_values=False`` drops the endpoint value rows (a fitter whose
+        knot values are positive by their transform does not need them),
+        keeping the slope rows of pinned knots and the interior rows.
+        :meth:`nonneg_margin_labels` names the rows.
+        """
+        layout = _margin_layout(
+            len(self.epoch_end_times), pinned_zero, continuous, include_values
+        )
+        v0, v1 = self.start_values, self.end_values
+        a0, a1, a2 = _quadratic_coefficients(v0, self.mid_values, v1)
+        curved = a2 != 0
+        vertex = jnp.where(curved, -a1 / jnp.where(curved, 2.0 * a2, 1.0), 0.0)
+        inside = (a2 > 0) & (vertex > 0) & (vertex < 1)
+        vertex_value = a0 + vertex * (a1 + vertex * a2)
+        scale = jax.lax.stop_gradient(
+            jnp.max(jnp.abs(jnp.stack([v0, v1, a1, a1 + 2.0 * a2])))
+        )
+        interior = jnp.where(inside, vertex_value, 10.0 * scale + 1e-12)
+        return _assemble_margins(
+            layout,
+            start_values=v0,
+            end_values=v1,
+            start_slope_dur=a1,
+            end_slope_dur=a1 + 2.0 * a2,
+            interior=interior,
+        )
+
+    def nonneg_margin_labels(
+        self,
+        pinned_zero: Sequence[int] = (),
+        *,
+        continuous: bool = True,
+        include_values: bool = True,
+    ) -> tuple[str, ...]:
+        """Names of the rows of :meth:`nonneg_margins`."""
+        return _margin_labels(
+            len(self.epoch_end_times), pinned_zero, continuous, include_values
         )
 
     def derivative(self, t: jax.Array) -> jax.Array:
@@ -1058,6 +1197,96 @@ class PiecewiseCubicRate:
             value = c0 + u * (c1 + u * (c2 + u * c3))
             lowest = jnp.minimum(lowest, jnp.where(inside, value, jnp.inf))
         return lowest
+
+    def nonneg_margins(
+        self,
+        pinned_zero: Sequence[int] = (),
+        *,
+        continuous: bool = True,
+        include_values: bool = True,
+    ) -> jax.Array:
+        r"""Quantities that are all $\ge 0$ exactly when the rate is $\ge 0$.
+
+        Smooth almost everywhere and jittable; the constrained fitter
+        (:mod:`bdpinf.inference.constrained`) uses them as inequality
+        constraints, where :meth:`min_values` (a minimum over pieces) is not
+        differentiable on the wall.
+        The rows are, in order, for each epoch the value at its start
+        (only epoch 0 when ``continuous``, because the end value of epoch
+        $k-1$ is then the start value of epoch $k$) and at its end,
+        then for each epoch the value at its interior local minimum when there
+        is one inside the epoch (a large positive number otherwise).
+
+        A knot that a fixed parameter pins to exactly zero cannot be handled
+        by its value (it is identically zero, with no gradient to push on).
+        List its index in ``pinned_zero`` (knot $j$ is the start of epoch $j$
+        and the end of epoch $j-1$; the last knot is the observation time):
+        its value row is dropped and the one-sided slope condition is used
+        instead, $w'(\tau_j^-) \le 0$ (the row holds $-w' d$) and
+        $w'(\tau_j^+) \ge 0$ (the row holds $w' d$, with $d$ the epoch
+        duration), so every slope row has the units of a rate.
+        ``include_values=False`` drops the endpoint value rows (a fitter whose
+        knot values are positive by their transform does not need them),
+        keeping the slope rows of pinned knots and the interior rows.
+        :meth:`nonneg_margin_labels` names the rows.
+        """
+        layout = _margin_layout(
+            len(self.epoch_end_times), pinned_zero, continuous, include_values
+        )
+        times = self.epoch_end_times
+        dur = times - _epoch_starts(times)
+        c0, c1, c2, c3 = _cubic_coefficients(
+            self.start_values,
+            self.end_values,
+            self.start_slopes,
+            self.end_slopes,
+            dur,
+        )
+        qa, qb = 3.0 * c3, 2.0 * c2
+        disc = qb * qb - 4.0 * qa * c1
+        sqrt_disc = jnp.sqrt(jnp.maximum(disc, 0.0))
+        q = -0.5 * (qb + jnp.where(qb >= 0, 1.0, -1.0) * sqrt_disc)
+        tiny = 1e-14 * jnp.maximum(jnp.maximum(jnp.abs(qa), jnp.abs(qb)), jnp.abs(c1))
+        tiny = tiny + 1e-300
+        roots = (
+            jnp.where(jnp.abs(qa) > tiny, _safe_div(q, qa), jnp.nan),
+            jnp.where(jnp.abs(q) > tiny, _safe_div(c1, q), jnp.nan),
+        )
+        end_slope_dur = c1 + qb + qa
+        scale = jax.lax.stop_gradient(
+            jnp.max(
+                jnp.abs(
+                    jnp.stack([self.start_values, self.end_values, c1, end_slope_dur])
+                )
+            )
+        )
+        big = 10.0 * scale + 1e-12
+        interior = jnp.full_like(c0, big)
+        for root in roots:
+            is_min = (disc >= 0) & (root > 0) & (root < 1) & (qb + 2.0 * qa * root > 0)
+            u = jnp.where(is_min, root, 0.0)
+            value = c0 + u * (c1 + u * (c2 + u * c3))
+            interior = jnp.minimum(interior, jnp.where(is_min, value, big))
+        return _assemble_margins(
+            layout,
+            start_values=self.start_values,
+            end_values=self.end_values,
+            start_slope_dur=c1,
+            end_slope_dur=end_slope_dur,
+            interior=interior,
+        )
+
+    def nonneg_margin_labels(
+        self,
+        pinned_zero: Sequence[int] = (),
+        *,
+        continuous: bool = True,
+        include_values: bool = True,
+    ) -> tuple[str, ...]:
+        """Names of the rows of :meth:`nonneg_margins`."""
+        return _margin_labels(
+            len(self.epoch_end_times), pinned_zero, continuous, include_values
+        )
 
     def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
         r"""Exact $\int_s^e w$, as a difference of cumulative integrals."""
