@@ -971,7 +971,7 @@ class _GuardState:
         return () if self.outcome is None else self.outcome.labels
 
 
-def _wall_step(
+def _wall_step(  # noqa: C901, PLR0911  # a chain of early exits
     problem: _Problem,
     model: BirthDeathModel,
     natural: NDArray[np.float64],
@@ -996,7 +996,11 @@ def _wall_step(
     )
     if wall is None:
         return _GuardState()
-    margin_now = float(np.min(wall(best.x)))
+    try:
+        margin_now = float(np.min(wall(best.x)))
+    except Exception:  # the post-step must never break a fit
+        logger.warning("non-negativity margins failed", exc_info=True)
+        return _GuardState()
     at_guard = margin_now <= ACTIVE_TOL
     if not run or (converged and not at_guard):
         return _GuardState(at_guard=at_guard)
@@ -1011,16 +1015,22 @@ def _wall_step(
         return np.asarray(problem.hessian(jnp.asarray(x)), dtype=np.float64)
 
     extra = [o.x for o in sorted(outcomes, key=lambda o: o.nll) if o is not best]
-    result = refine_constrained(
-        wall,
-        nll_grad,
-        hessian,
-        best.x,
-        grad_tol=problem.grad_tol,
-        penalty=_PENALTY,
-        extra_starts=extra,
-        seed=seed,
-    )
+    try:
+        result = refine_constrained(
+            wall,
+            nll_grad,
+            hessian,
+            best.x,
+            grad_tol=problem.grad_tol,
+            penalty=_PENALTY,
+            extra_starts=extra,
+            seed=seed,
+        )
+    except Exception:  # the post-step must never break a fit
+        logger.warning(
+            "constrained post-step failed; keeping the plain result", exc_info=True
+        )
+        return _GuardState(at_guard=at_guard)
     if result is None:
         return _GuardState(at_guard=at_guard)
     plain_ok = best.nll < _PENALTY and margin_now >= 0

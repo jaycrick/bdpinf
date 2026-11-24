@@ -5,6 +5,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-11-24
+
+### Fixed
+
+- `inference.fitting.fit` crashed (`ValueError: array must not contain infs or NaNs`) for a clamped spline on the wall: SLSQP let a log coordinate at its transform bound drift to -150 (a rate of 1e-67), where the likelihood is finite but its gradient is NaN.
+  The SLSQP solve now has a box on the log and interval coordinates (8 beyond the transform-bound threshold).
+  `verify_kkt` and `kkt_polish` treat a non-finite gradient, Jacobian or Hessian as unverified, `refine_constrained` moves on to its retry starts, and any exception in the post-step makes `fit` keep the plain result and log a warning.
+- `at_guard` was true for every D15 `pchip` fit: `pchip` is non-negative by construction, so it no longer takes part in the wall constraints (its zero end slope is not a binding constraint).
+- The constrained solve repeats SLSQP and the KKT polish from the previous point (at most 8 rounds) and first moves an SLSQP point that stopped just inside the margin back onto it, so ill-conditioned wall optima now verify.
+
 ## [0.8.2] - 2026-11-24
 
 ### Added

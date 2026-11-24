@@ -45,6 +45,7 @@ With no active constraint the ordinary interior test applies
 """
 
 import dataclasses
+import logging
 import re
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -89,7 +90,10 @@ TARGET_MARGIN = 2e-9
 EIG_TOL = 1e-8
 """Relative tolerance on the smallest reduced-Hessian eigenvalue."""
 
+logger = logging.getLogger(__name__)
+
 _MAX_TRIES = 3
+_MAX_ROUNDS = 8
 _MAX_CACHED = 64
 _PERTURB = (0.05, 0.15)
 _POLISH_ITERS = 30
@@ -193,6 +197,15 @@ def verify_kkt(  # noqa: PLR0913  # the problem data and the tolerances
     KKTReport
     """
     n = len(grad)
+    if not (
+        np.all(np.isfinite(grad))
+        and np.all(np.isfinite(hess))
+        and np.all(np.isfinite(c))
+        and np.all(np.isfinite(jac))
+    ):
+        return KKTReport(
+            False, "non-finite", float("inf"), None, 0.0, (), (), np.zeros(0)
+        )
     act = np.flatnonzero(np.asarray(c) <= active_tol)
     bounds = np.zeros((0, n)) if bound_rows is None else np.asarray(bound_rows)
     try:
@@ -319,6 +332,26 @@ class WallConstraints:
             out[:, :, j] = (self.jac(x + e) - self.jac(x - e)) / (2.0 * step)
         return 0.5 * (out + out.transpose(0, 2, 1))
 
+    def coordinate_bounds(self) -> list[tuple[float | None, float | None]]:
+        """Box for each free coordinate that keeps its transform well defined.
+
+        A log coordinate is kept above ``bound_log - 8`` and an interval
+        coordinate within ``-bound_log + 8`` of zero.
+        Without it SLSQP drifts a coordinate at its transform bound towards
+        minus infinity (a rate of 1e-67 and smaller), where the likelihood
+        stays finite but its gradient is NaN.
+        """
+        codes = self.compiled.codes[self.compiled.free_indices]
+        floor, ceiling = self.bound_log - 8.0, -self.bound_log + 8.0
+        return [
+            (floor, None)
+            if code == LOG_CODE
+            else (-ceiling, ceiling)
+            if code == INTERVAL_CODE
+            else (None, None)
+            for code in codes
+        ]
+
     def bound_rows(
         self, x: NDArray[np.float64]
     ) -> tuple[NDArray[np.float64], tuple[str, ...]]:
@@ -350,7 +383,9 @@ def wall_constraints(
 ) -> WallConstraints | None:
     """Build the non-negativity constraints, or ``None`` if no rate has any.
 
-    A rate takes part when it exposes ``nonneg_margins`` (the spline rates).
+    A rate takes part when it exposes ``nonneg_margins`` (the spline rates),
+    except ``pchip``, which is non-negative by construction (its end slope of
+    zero is not a binding constraint).
     A knot parameter that is fixed at exactly zero is passed as pinned
     (see :meth:`PiecewiseCubicRate.nonneg_margins`).
     The knot-value rows are left out: the log transform keeps them positive,
@@ -368,7 +403,13 @@ def wall_constraints(
     natural = jnp.asarray(natural)
     birth, death = model.rates(natural)
     rates = {"birth": birth, "death": death}
-    taking = [p for p, r in rates.items() if hasattr(r, "nonneg_margins")]
+    families = {"birth": model.birth, "death": model.death}
+    taking = [
+        p
+        for p, r in rates.items()
+        if hasattr(r, "nonneg_margins")
+        and getattr(families[p], "kind", None) != "pchip"
+    ]
     if not taking:
         return None
     pinned = {p: _pinned_knots(compiled, p) for p in taking}
@@ -472,11 +513,15 @@ def solve_slsqp(
     def gradient(z: NDArray[np.float64]) -> NDArray[np.float64]:
         return nll_grad(z)[1]
 
+    bounds = wall.coordinate_bounds()
+    lower = np.array([-np.inf if b[0] is None else b[0] for b in bounds])
+    upper = np.array([np.inf if b[1] is None else b[1] for b in bounds])
     result = scipy.optimize.minimize(
         value,
-        x0,
+        np.clip(x0, lower, upper),
         jac=gradient,
         method="SLSQP",
+        bounds=bounds,
         constraints=[_margin_constraint(wall, margin)],
         options={"ftol": 1e-14, "maxiter": max_iter},
     )
@@ -531,6 +576,8 @@ def kkt_polish(  # one Newton loop with its line search
     if act.size == 0:
         return x
     _, grad0 = nll_grad(x)
+    if not (np.all(np.isfinite(grad0)) and np.all(np.isfinite(jac0))):
+        return x
     lam, _ = scipy.optimize.nnls(jac0[act].T, grad0, maxiter=50 * n)
     act, lam = act[lam > 0], lam[lam > 0]
     if act.size == 0:
@@ -642,6 +689,53 @@ def check_point(
     return report, labels, value, bool(report.active)
 
 
+def _one_try(  # noqa: PLR0917  # one start of the driver
+    wall: WallConstraints,
+    nll_grad: NllGrad,
+    hessian: Hessian,
+    start: NDArray[np.float64],
+    tries: int,
+    grad_tol: float,
+    penalty: float,
+    finite: Callable[[NDArray[np.float64]], bool],
+) -> ConstrainedOutcome | None:
+    """Project, then rounds of solve, polish and check (``None`` if infeasible).
+
+    SLSQP often stops early on an ill-conditioned wall problem, so the
+    solve and polish are repeated from the previous point (at most
+    ``_MAX_ROUNDS``) until the point is verified or stops improving.
+    """
+    x = project_feasible(wall, start, is_finite=finite)
+    if x is None:
+        return None
+    best: ConstrainedOutcome | None = None
+    for _ in range(_MAX_ROUNDS):
+        solved = solve_slsqp(wall, nll_grad, x)
+        # SLSQP can stop a hair inside the margin; move back onto it.
+        moved = project_feasible(wall, solved, is_finite=finite)
+        if moved is None:
+            break
+        x = moved
+        for candidate in (kkt_polish(wall, nll_grad, hessian, x), x):
+            if bool(np.all(wall(candidate) >= MIN_MARGIN)) and finite(candidate):
+                x = candidate
+                break
+        else:
+            break
+        report, labels, value, at_guard = check_point(
+            wall, nll_grad, hessian, x, grad_tol=grad_tol, penalty=penalty
+        )
+        outcome = ConstrainedOutcome(x, value, report, labels, at_guard, tries)
+        if report.verified:
+            return outcome
+        improved = best is None or outcome.nll < best.nll - 1e-9
+        if best is None or outcome.nll < best.nll:
+            best = outcome
+        if not improved:
+            break
+    return best
+
+
 def refine_constrained(  # solver inputs and tolerances
     wall: WallConstraints,
     nll_grad: NllGrad,
@@ -673,20 +767,15 @@ def refine_constrained(  # solver inputs and tolerances
         starts.append(starts[0] + rng.normal(0.0, std, size=starts[0].shape))
     best: ConstrainedOutcome | None = None
     for tries, start in enumerate(starts[:max_tries], start=1):
-        z = project_feasible(wall, start, is_finite=finite)
-        if z is None:
+        try:
+            outcome = _one_try(
+                wall, nll_grad, hessian, start, tries, grad_tol, penalty, finite
+            )
+        except (ValueError, FloatingPointError, np.linalg.LinAlgError) as exc:
+            logger.warning("constrained try %d failed: %s", tries, exc)
             continue
-        x = solve_slsqp(wall, nll_grad, z)
-        for candidate in (kkt_polish(wall, nll_grad, hessian, x), x):
-            if bool(np.all(wall(candidate) >= MIN_MARGIN)) and finite(candidate):
-                x = candidate
-                break
-        else:
+        if outcome is None:
             continue
-        report, labels, value, at_guard = check_point(
-            wall, nll_grad, hessian, x, grad_tol=grad_tol, penalty=penalty
-        )
-        outcome = ConstrainedOutcome(x, value, report, labels, at_guard, tries)
         if outcome.verified:
             return outcome
         if best is None or outcome.nll < best.nll:

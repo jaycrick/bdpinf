@@ -1,7 +1,10 @@
 """Test the constrained post-step of fit for spline rates on the non-negativity wall."""
 
+import logging
+
 import jax.numpy as jnp
 import numpy as np
+import pandas as pd
 import pytest
 
 from bdpinf.inference import fitting
@@ -270,3 +273,81 @@ class TestKnotSearch:
         assert all(c[1] is not False for c in joint)
         assert any(c[1] is False for c in calls if not c[0])
         assert result.log_likelihood >= max(c[2] for c in joint) - 1e-9
+
+
+def _year_data(weights: list[float], n: int = 200, seed: int = 3) -> AgeData:
+    """Interval-censored years 100-1100 whose density follows ``weights``."""
+    rng = np.random.default_rng(seed)
+    grid = np.arange(100, 1100)
+    density = np.interp(grid, [100, 400, 700, 1100], weights)
+    early = rng.choice(grid, size=n, p=density / density.sum())
+    frame = pd.DataFrame({"early": early, "late": early + rng.integers(0, 80, size=n)})
+    return AgeData.from_year_ranges(
+        frame["early"], frame["late"], start_year=100, observation_year=1100
+    )
+
+
+class TestRobustness:
+    """Test the 0.8.3 fixes: non-finite gradients, pchip at_guard, retries."""
+
+    @pytest.mark.parametrize("weights", [[3, 3, 0.1, 0.1], [1, 3, 0.2, 0.05]])
+    def test_clamped_two_knots_does_not_crash(self, weights: list[float]) -> None:
+        # SLSQP used to drift a log coordinate at its bound to -150, where the
+        # likelihood is finite but the gradient is NaN, and nnls then raised.
+        data = _year_data(weights)
+        model = BirthDeathModel.spline([300.0, 600.0, 1000.0], "cubic_clamped")
+        result = fit(
+            data,
+            model,
+            constraints=Constraints(fixed={"birth.knot3": 0.0}),
+            compute_covariance=False,
+        )
+        assert np.isfinite(result.log_likelihood)
+        assert result.converged
+        assert result.constrained_optimum
+        assert np.isfinite(_reevaluated(model, result, data))
+
+    def test_hard_wall_case_reaches_verification(self) -> None:
+        data = _year_data([1, 3, 0.2, 0.05])
+        model = BirthDeathModel.spline([400.0, 1000.0], "cubic_clamped")
+        d15 = Constraints(fixed={"birth.knot2": 0.0})
+        plain = fit(
+            data, model, constraints=d15, constrained=False, compute_covariance=False
+        )
+        result = fit(data, model, constraints=d15, compute_covariance=False)
+        assert result.converged
+        assert result.log_likelihood > plain.log_likelihood + 10.0
+        assert result.log_likelihood == pytest.approx(-1287.4848, abs=1e-3)
+
+    @pytest.mark.parametrize("kind", ["pchip", "cubic_natural"])
+    def test_interior_d15_fit_is_not_at_guard(self, kind: SplineKind) -> None:
+        data = _year_data([3, 3, 0.1, 0.1])
+        model = BirthDeathModel.spline([400.0, 1000.0], kind)
+        result = fit(
+            data,
+            model,
+            constraints=Constraints(fixed={"birth.knot2": 0.0}),
+            compute_covariance=False,
+        )
+        assert not result.at_guard
+        assert not result.constrained_optimum
+        assert result.active_constraints == ()
+
+    def test_post_step_exception_falls_back_to_plain(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        def boom(*_a: object, **_k: object) -> None:
+            raise RuntimeError("boom")
+
+        data = _year_data([1, 3, 0.2, 0.05])
+        model = BirthDeathModel.spline([400.0, 1000.0], "cubic_clamped")
+        d15 = Constraints(fixed={"birth.knot2": 0.0})
+        plain = fit(
+            data, model, constraints=d15, constrained=False, compute_covariance=False
+        )
+        monkeypatch.setattr(fitting, "refine_constrained", boom)
+        with caplog.at_level(logging.WARNING):
+            result = fit(data, model, constraints=d15, compute_covariance=False)
+        assert result.log_likelihood == plain.log_likelihood
+        assert not result.constrained_optimum
+        assert "post-step failed" in caplog.text

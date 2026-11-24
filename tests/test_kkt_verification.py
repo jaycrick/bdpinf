@@ -111,3 +111,10 @@ class TestVerifyKKT:
         held = verify_kkt(**problem, grad_tol=1e-6, margin=margin)
         assert held.complementarity <= 1e-6
         assert held.verified
+
+    def test_non_finite_gradient_is_unverified_not_an_error(self) -> None:
+        problem = _toy(np.array([1.0, 0.0]))
+        problem["grad"] = np.array([np.nan, 0.0])
+        report = verify_kkt(**problem, grad_tol=_TOL)
+        assert not report.verified
+        assert report.kind == "non-finite"
