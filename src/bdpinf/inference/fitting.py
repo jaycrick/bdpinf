@@ -548,7 +548,14 @@ def _optimise_start(
                 grad_tol=grad_tol,
                 max_iter=max_iter,
             )
-        except (ValueError, FloatingPointError, np.linalg.LinAlgError) as exc:
+        except (
+            ValueError,
+            FloatingPointError,
+            np.linalg.LinAlgError,
+            # scipy ``trust-exact`` leaves ``p`` unbound when every Cholesky
+            # factorisation fails (ill-conditioned indefinite Hessian).
+            UnboundLocalError,
+        ) as exc:
             logger.debug("%s failed from %s: %s", how, start, exc)
             return None
 

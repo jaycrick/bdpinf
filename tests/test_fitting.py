@@ -1057,3 +1057,28 @@ def test_fit_emits_no_warnings_on_clean_data() -> None:
             AgeData.from_groups([ages], 9.0),
             BirthDeathModel.piecewise_constant([9.0]),
         )
+
+
+class TestTrustExactFailure:
+    """Test the fallback when scipy ``trust-exact`` leaves ``p`` unbound."""
+
+    def test_fit_falls_back_to_lbfgsb(
+        self,
+        init_case: tuple[AgeData, BirthDeathModel],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import scipy.optimize
+
+        real = scipy.optimize.minimize
+
+        def broken(*args: Any, **kwargs: Any) -> Any:
+            if kwargs.get("method") == "trust-exact":
+                msg = "cannot access local variable 'p'"
+                raise UnboundLocalError(msg)
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(scipy.optimize, "minimize", broken)
+        data, model = init_case
+        result = fit(data, model, compute_covariance=False)
+        assert result.method == "L-BFGS-B"
+        assert np.isfinite(result.log_likelihood)

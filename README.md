@@ -36,7 +36,7 @@ pin it to a release tag
 (it is not on PyPI, so the tag is the release):
 
 ```sh
-uv add "bdpinf @ git+https://github.com/jaycrick/bdpinf" --tag v0.8.3
+uv add "bdpinf @ git+https://github.com/jaycrick/bdpinf" --tag v0.8.4
 ```
 
 which records a lower bound in `[project] dependencies`
@@ -44,10 +44,10 @@ and the tag in `[tool.uv.sources]`:
 
 ```toml
 [project]
-dependencies = ["bdpinf>=0.8.3"]
+dependencies = ["bdpinf>=0.8.4"]
 
 [tool.uv.sources]
-bdpinf = { git = "https://github.com/jaycrick/bdpinf", tag = "v0.8.3" }
+bdpinf = { git = "https://github.com/jaycrick/bdpinf", tag = "v0.8.4" }
 ```
 
 For development (includes testing and documentation tools):

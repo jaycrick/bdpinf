@@ -5,6 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-11-24
+
+### Fixed
+
+- `inference.fitting.fit` and `fit_knots` could fail with `UnboundLocalError: cannot access local variable 'p'`: scipy's `trust-exact` leaves `p` unbound when every Cholesky factorisation fails on an ill-conditioned indefinite Hessian.
+  The start now treats this as a failed attempt and falls back to L-BFGS-B.
+
 ## [0.8.3] - 2026-11-24
 
 ### Fixed
