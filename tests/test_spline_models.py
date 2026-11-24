@@ -19,6 +19,7 @@ from bdpinf.models.rate_functions import (
     PiecewiseConstantRate,
     PiecewiseCubicRate,
     PiecewiseLinearRate,
+    PiecewiseQuadraticRate,
 )
 from bdpinf.simulation.age_sampling import simulate_ages_from_rates
 
@@ -455,9 +456,18 @@ class TestQuadraticValidationUnderTracing:
     def test_traced_dip_is_minus_infinity(self, data: AgeData) -> None:
         model = BirthDeathModel.spline(EPOCHS, "quadratic")
         natural = jnp.array([0.004, 1e-6, 0.004, 1e-6, 0.0, *([0.002] * 4)])
-        # Concretely the quadratic constructor rejects the dip ...
-        with pytest.raises(ValueError, match="non-negative"):
-            model.rates(natural)
-        # ... and under jit the likelihood guard returns -inf.
+        # Concrete building does not raise, and the guard gives -inf ...
+        birth, _ = model.rates(natural)
+        assert float(birth.min_values().min()) < 0.0
+        assert _ll(model, natural, data) == -np.inf
+        # ... as it does under jit.
         value = jax.jit(lambda x: log_likelihood_rates(data, *model.rates(x)))(natural)
         assert float(value) == -np.inf
+
+    def test_spline_constructor_defers_to_guard_but_checks_finiteness(self) -> None:
+        times = jnp.array(EPOCHS)
+        knots = jnp.array([0.5, 0.5, 0.5, 0.5])
+        rate = PiecewiseQuadraticRate.spline(knots, -0.01, times)
+        assert float(rate.min_values().min()) < 0.0
+        with pytest.raises(ValueError, match="finite"):
+            PiecewiseQuadraticRate.spline(knots.at[1].set(jnp.nan), 0.0, times)

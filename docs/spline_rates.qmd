@@ -54,8 +54,9 @@ The fitters map that to a large finite penalty, so the trust-region Newton metho
 `pchip` never triggers the guard.
 
 `min_value` bounds the *knot values* from below (as in the other families); the guard itself only requires non-negativity.
-Concrete construction of a `PiecewiseQuadraticRate` that dips raises a `ValueError`; under `jit` (as in every fit) the guard returns $-\infty$ instead.
-`PiecewiseCubicRate` never raises for a dip.
+Neither `SplineModel.build`, `PiecewiseQuadraticRate.spline` nor direct construction of `PiecewiseQuadraticRate(...)` raises for a dip, concretely or under `jit` (they still check finiteness and shape), so NumPyro's initial trace at a random prior draw and pytree unflattening work; the guard returns $-\infty$ instead.
+`PiecewiseCubicRate` behaves the same way.
+Only the `continuous` and `from_linear` constructors of `PiecewiseQuadraticRate` check non-negativity and raise a `ValueError`.
 
 If an optimum sits on the guard boundary, the fitted rate touches zero between knots; this is evidence that a linear or `pchip` rate is the better description.
 

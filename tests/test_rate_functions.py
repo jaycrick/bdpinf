@@ -222,21 +222,40 @@ class TestPiecewiseQuadraticRate:
         slope = jax.grad(lambda t: rate(t))
         assert float(slope(jnp.array(0.8 - 1e-9))) == pytest.approx(end_slope, abs=1e-6)
 
-    def test_spline_dipping_below_zero_raises(self) -> None:
+    def test_spline_dipping_below_zero_defers_to_guard(self) -> None:
+        rate = PiecewiseQuadraticRate.spline(
+            jnp.array([1.0, 0.1, 1.0]), -3.0, jnp.array([1.0, 2.0])
+        )
+        assert float(rate.min_values()[0]) < 0.0
+
+    def test_direct_construction_with_dip_does_not_raise(self) -> None:
+        # Stored values are all non-negative; the vertex of epoch 1 dips below zero.
+        rate = PiecewiseQuadraticRate(
+            jnp.array([1.0, 1.0]),
+            jnp.array([1.0, 0.05]),
+            jnp.array([1.0, 0.0]),
+            _TIMES,
+        )
+        assert float(rate.min_values()[1]) < 0.0
+
+    def test_continuous_and_from_linear_raise_for_a_dip(self) -> None:
         with pytest.raises(ValueError, match="epoch 0"):
-            PiecewiseQuadraticRate.spline(
-                jnp.array([1.0, 0.1, 1.0]), -3.0, jnp.array([1.0, 2.0])
+            PiecewiseQuadraticRate.continuous(
+                jnp.array([1.0, 1.0, 1.0]), jnp.array([-0.5, 1.0]), _TIMES
+            )
+        with pytest.raises(ValueError, match="epoch 1"):
+            PiecewiseQuadraticRate.from_linear(
+                jnp.array([1.0, -1.0]), jnp.array([1.0, 0.5]), _TIMES
             )
 
-    def test_interior_minimum_below_zero_raises(self) -> None:
-        # Stored values are all non-negative; the vertex of epoch 1 dips below zero.
-        with pytest.raises(ValueError, match="epoch 1"):
-            PiecewiseQuadraticRate(
-                jnp.array([1.0, 1.0]),
-                jnp.array([1.0, 0.05]),
-                jnp.array([1.0, 0.0]),
-                _TIMES,
-            )
+    def test_dipping_spline_survives_pytree_round_trip_and_jit(self) -> None:
+        rate = PiecewiseQuadraticRate.spline(
+            jnp.array([1.0, 0.01, 1.0]), -40.0, jnp.array([1.0, 2.0])
+        )
+        mapped = jax.tree.map(lambda x: x, rate)
+        returned = jax.jit(lambda q: q)(rate)
+        for out in (mapped, returned):
+            assert float(out.min_values().min()) < 0.0
 
     def test_vertex_outside_the_epoch_is_allowed(self) -> None:
         # Increasing on the epoch; the parabola dips below zero only before it.

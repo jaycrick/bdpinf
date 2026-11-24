@@ -16,6 +16,7 @@ from bdpinf.inference import (
     BayesianMCMCConfig,
     BayesianPriorConfig,
     BirthDeathModel,
+    Constraints,
     fit,
     fit_bayesian,
 )
@@ -108,3 +109,38 @@ class TestBayesianMleConsistency:
     def test_multi_epoch_posterior_near_mle(self) -> None:
         """Two-epoch Bayesian fit agrees with MLE birth and death rates."""
         _compare(_AGES_MULTI, _TIMES_MULTI, list(_TIMES_MULTI))
+
+
+@pytest.mark.slow
+class TestBayesianQuadraticSpline:
+    """NUTS on a quadratic birth spline must not crash at initialisation."""
+
+    def test_quadratic_spline_with_fixed_final_knot_runs(self) -> None:
+        epochs = [500.0, 1000.0, 1500.0]
+        last = len(epochs)
+        model = BirthDeathModel.spline(epochs, birth_kind="quadratic")
+        constraints = Constraints(fixed={f"birth.knot{last}": 0.0})
+        data = AgeData.from_groups([_AGES_SINGLE], 1500.0)
+        cfg = BayesianMCMCConfig(
+            num_samples=100,
+            warmup_steps=100,
+            num_chains=1,
+            max_tree_depth=6,
+            disable_progressbar=True,
+        )
+        mle = fit(
+            data, model, constraints=constraints, seed=0, compute_covariance=False
+        )
+        for label, init in (("default", None), ("MLE", mle)):
+            bay = fit_bayesian(
+                data,
+                model,
+                constraints=constraints,
+                prior=_WEAK_PRIOR,
+                mcmc=cfg,
+                init=init,
+                rng_seed=0,
+            )
+            assert np.all(np.isfinite(bay.samples_by_chain))
+            n = bay.samples_by_chain.shape[0] * bay.samples_by_chain.shape[1]
+            print(f"divergences ({label} start): {bay.num_divergences} / {n}")

@@ -5,6 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-24
+
+### Fixed
+
+- `models.rate_functions.PiecewiseQuadraticRate.spline` (and so `SplineModel.build` for `kind="quadratic"`) no longer raises for a rate that dips below zero; the likelihood guard returns `-inf` instead, as for the cubic families, so `fit_bayesian` no longer crashes in NumPyro's initial trace at a random prior draw.
+  `PiecewiseQuadraticRate.__post_init__` now checks finiteness and shape only, so direct construction and pytree unflattening never raise for a dip either; only `continuous` and `from_linear` still check non-negativity.
+
 ## [0.8.0] - 2026-11-20
 
 ### Added

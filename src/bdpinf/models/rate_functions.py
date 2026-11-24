@@ -455,8 +455,15 @@ def _quadratic_coefficients(
     return v0, -3.0 * v0 + 4.0 * vm - v1, 2.0 * v0 - 4.0 * vm + 2.0 * v1
 
 
-def _validate_quadratic(times: object, start: object, mid: object, end: object) -> None:
-    """Finite, and non-negative everywhere on every epoch (vertex included)."""
+def _validate_quadratic(
+    times: object,
+    start: object,
+    mid: object,
+    end: object,
+    *,
+    nonnegative: bool = True,
+) -> None:
+    """Finite and well-shaped, and (optionally) non-negative on every epoch."""
     if not is_concrete(times, start, mid, end):
         return
     t = _checked_epoch_times(times)
@@ -466,6 +473,8 @@ def _validate_quadratic(times: object, start: object, mid: object, end: object) 
             raise ValueError(f"rate values shape {v.shape} != times shape {t.shape}")
         if not np.all(np.isfinite(v)):
             raise ValueError("rate values must be finite")
+    if not nonnegative:
+        return
     a0, a1, a2 = (np.asarray(c) for c in _quadratic_coefficients(v0, vm, v1))
     with np.errstate(divide="ignore", invalid="ignore"):
         vertex = np.where(a2 != 0, -a1 / (2.0 * a2), np.nan)
@@ -510,12 +519,19 @@ class PiecewiseQuadraticRate:
 
     Notes
     -----
-    Concrete inputs are validated (and validation is skipped under tracing):
-    the values must be finite and the quadratic non-negative on every epoch,
-    which is checked at the three stored values and, when the vertex lies
-    inside the epoch, at the vertex.
-    A rounding allowance of $10^{-12}$ times the largest stored value is made.
-    The error message names the offending epoch.
+    Concrete inputs must be finite with matching shapes
+    (checked in the constructor, and skipped under tracing).
+    The constructor does **not** check non-negativity,
+    so that unflattening the pytree (``jax.tree.map``, ``jit``) never raises
+    and the class matches :class:`PiecewiseCubicRate`:
+    a rate that dips below zero is handled by :meth:`min_values`
+    and the likelihood guard, which returns $-\infty$.
+    Only the :meth:`continuous` and :meth:`from_linear` constructors check
+    non-negativity (at the three stored values and, when the vertex lies
+    inside the epoch, at the vertex,
+    with a rounding allowance of $10^{-12}$ times the largest stored value;
+    the error message names the offending epoch).
+    :meth:`spline`, and so ``SplineModel.build``, never checks it.
 
     The integral is exact: from the epoch start to offset $u$ it is
     $d_k\,(a_0 u + a_1 u^2 / 2 + a_2 u^3 / 3)$ with
@@ -536,7 +552,11 @@ class PiecewiseQuadraticRate:
         object.__setattr__(self, "end_values", _as_f64(self.end_values))
         object.__setattr__(self, "epoch_end_times", _as_f64(self.epoch_end_times))
         _validate_quadratic(
-            self.epoch_end_times, self.start_values, self.mid_values, self.end_values
+            self.epoch_end_times,
+            self.start_values,
+            self.mid_values,
+            self.end_values,
+            nonnegative=False,
         )
 
     @classmethod
@@ -552,12 +572,10 @@ class PiecewiseQuadraticRate:
         ``mid_values`` has length ``n_epochs``.
         """
         knots = jnp.asarray(knot_values, dtype=jnp.float64)
-        return cls(
-            knots[:-1],
-            jnp.asarray(mid_values, dtype=jnp.float64),
-            knots[1:],
-            jnp.asarray(epoch_end_times),
-        )
+        mid = jnp.asarray(mid_values, dtype=jnp.float64)
+        times = jnp.asarray(epoch_end_times)
+        _validate_quadratic(times, knots[:-1], mid, knots[1:])
+        return cls(knots[:-1], mid, knots[1:], times)
 
     @classmethod
     def spline(
@@ -574,7 +592,9 @@ class PiecewiseQuadraticRate:
         start slope $s_k$ and end value $v_{k+1}$;
         the next epoch's start slope is this epoch's end slope,
         $s_{k+1} = 2 (v_{k+1} - v_k) / d_k - s_k$.
-        Raises ``ValueError`` if the resulting rate dips below zero.
+        The rate may dip below zero between knots; this does not raise
+        (finiteness and shape are still checked).
+        Use :meth:`min_values` or the likelihood guard to handle a dip.
         """
         knots = jnp.asarray(knot_values, dtype=jnp.float64)
         times = jnp.asarray(epoch_end_times, dtype=jnp.float64)
@@ -604,7 +624,10 @@ class PiecewiseQuadraticRate:
         """Zero-curvature rate equal to the matching :class:`PiecewiseLinearRate`."""
         v0 = jnp.asarray(start_values, dtype=jnp.float64)
         v1 = jnp.asarray(end_values, dtype=jnp.float64)
-        return cls(v0, 0.5 * (v0 + v1), v1, jnp.asarray(epoch_end_times))
+        mid = 0.5 * (v0 + v1)
+        times = jnp.asarray(epoch_end_times)
+        _validate_quadratic(times, v0, mid, v1)
+        return cls(v0, mid, v1, times)
 
     @property
     def end_time(self) -> jax.Array:

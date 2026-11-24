@@ -196,7 +196,7 @@ wheels = [
 
 [[package]]
 name = "bdpinf"
-version = "0.8.0"
+version = "0.8.1"
 source = { editable = "." }
 dependencies = [
     { name = "altair" },
