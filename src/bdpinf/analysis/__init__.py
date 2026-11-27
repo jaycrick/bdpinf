@@ -8,9 +8,12 @@ from .bootstrap_date_density import (
     save_bootstrap_samples,
 )
 from .date_density import (
+    RangeBandwidthSelection,
     date_range_density,
     explode_date_ranges,
     quantile_resample_dates,
+    range_loo_log_likelihood,
+    select_range_bandwidth,
 )
 from .latex_tables import (
     BAYESIAN_COLUMNS,
@@ -78,6 +81,7 @@ __all__ = [
     "LatexColumn",
     "LatexParamGroup",
     "LatexRateRow",
+    "RangeBandwidthSelection",
     "SubsetFitResult",
     "bayesian_results_halflife_latex_by_epoch",
     "bayesian_results_halflife_latex_by_subset",
@@ -104,6 +108,7 @@ __all__ = [
     "load_bootstrap_samples",
     "proportion_not_at_upper",
     "quantile_resample_dates",
+    "range_loo_log_likelihood",
     "rates_latex_table",
     "robust_y_max",
     "run_single_epoch_recovery_replicate",
@@ -114,6 +119,7 @@ __all__ = [
     "save_bootstrap_samples",
     "select_extreme_replicates",
     "select_max_ci_times",
+    "select_range_bandwidth",
     "simulate_zero_birth_second_epoch",
     "subset_fits_halflife_latex_by_epoch",
     "subset_fits_halflife_latex_by_subset",

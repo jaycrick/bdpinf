@@ -1,5 +1,7 @@
 """Test sampling ages from the exact age laws for arbitrary rate functions."""
 
+from itertools import pairwise
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -10,6 +12,7 @@ from bdpinf.models.rate_functions import PiecewiseConstantRate, PiecewiseLinearR
 from bdpinf.simulation import (
     SampledAges,
     sample_ages_in_ranges,
+    sample_ages_in_ranges_with_spine,
     simulate_ages_from_rates,
 )
 
@@ -146,3 +149,100 @@ class TestSampleAgesInRanges:
             sample_ages_in_ranges(birth, death, [0.0], [1.0, 2.0], rng, n_draws=2)
         with pytest.raises(ValueError, match="exceed"):
             sample_ages_in_ranges(birth, death, [2.0], [1.0], rng, n_draws=2)
+
+
+def _mass(grid_pdf: np.ndarray, grid: np.ndarray, lo: float, hi: float) -> float:
+    inside = (grid >= lo) & (grid <= hi)
+    return float(np.trapezoid(grid_pdf[inside], grid[inside]))
+
+
+class TestSampleAgesInRangesWithSpine:
+    """Test the spine-aware range sampler."""
+
+    def _densities(self, birth, death, n=40001):
+        terms = math_general.terms_for(birth, death)
+        grid = np.linspace(0.0, 4.0, n)
+        jgrid = jnp.asarray(grid)
+        f = np.exp(np.asarray(math_general.non_spine_log_density(terms, jgrid)))
+        fs = np.exp(
+            np.asarray(
+                math_general.spine_log_density(terms, jgrid, atom_at_boundary=False)
+            )
+        )
+        atom = float(np.exp(math_general.spine_log_atom(terms)))
+        return grid, f, fs, atom
+
+    def test_full_ranges_spine_marginal_matches_spine_density(self) -> None:
+        birth, death = _constant(1.0, 0.4)
+        grid, _, fs, atom = self._densities(birth, death)
+        n = 5
+        ages, spine = sample_ages_in_ranges_with_spine(
+            birth, death, np.zeros(n), np.full(n, 4.0),
+            np.random.default_rng(1), n_draws=20000,
+        )  # fmt: skip
+        spine_ages = ages[np.arange(len(spine)), spine]
+        edges = np.linspace(0.0, 4.0, 9)
+        observed = np.histogram(spine_ages[spine_ages < 4.0], bins=edges)[0] / len(
+            spine
+        )
+        expected = np.array([_mass(fs, grid, a, b) for a, b in pairwise(edges)])
+        assert np.allclose(observed, expected, atol=0.012)
+        assert np.mean(spine_ages == 4.0) == pytest.approx(atom, abs=0.012)
+        assert np.bincount(spine, minlength=n) / len(spine) == pytest.approx(
+            1 / n, abs=0.015
+        )
+
+    def test_spine_index_frequencies_match_numerical_integration(self) -> None:
+        birth, death = _constant(1.0, 0.4)
+        grid, f, fs, _ = self._densities(birth, death)
+        lower = np.array([0.2, 1.4, 2.6])
+        upper = np.array([0.5, 1.7, 2.9])
+        weights = np.array(
+            [
+                _mass(fs, grid, a, b) / _mass(f, grid, a, b)
+                for a, b in zip(lower, upper, strict=True)
+            ]
+        )
+        expected = weights / weights.sum()
+        ages, spine = sample_ages_in_ranges_with_spine(
+            birth, death, lower, upper, np.random.default_rng(2), n_draws=30000
+        )
+        observed = np.bincount(spine, minlength=3) / len(spine)
+        assert np.allclose(observed, expected, atol=0.012)
+        assert np.all((ages >= lower) & (ages <= upper))
+
+    def test_range_containing_end_time_uses_atom(self) -> None:
+        birth, death = _constant(1.0, 0.4)
+        atom = float(
+            np.exp(math_general.spine_log_atom(math_general.terms_for(birth, death)))
+        )
+        ages, spine = sample_ages_in_ranges_with_spine(
+            birth, death, [0.0, 3.5], [1.0, 9.0], np.random.default_rng(3), n_draws=8000
+        )
+        on_boundary = ages[np.arange(len(spine)), spine] == 4.0
+        assert on_boundary[spine == 1].mean() > 0.5 * atom
+        assert not np.any(on_boundary[spine == 0])
+        assert np.all(ages[:, 1] <= 4.0)
+
+    def test_shapes_and_validation(self) -> None:
+        birth, death = _constant(1.0, 0.4)
+        ages, spine = sample_ages_in_ranges_with_spine(
+            birth, death, [0.0, 1.0, 2.0, 5.0], [1.0, 2.0, 3.0, 6.0],
+            np.random.default_rng(4), n_draws=7,
+        )  # fmt: skip
+        assert ages.shape == (7, 4)
+        assert spine.shape == (7,)
+        assert np.all((spine >= 0) & (spine < 4))
+        ages1, spine1 = sample_ages_in_ranges_with_spine(
+            birth, death, [0.0], [1.0], np.random.default_rng(5)
+        )
+        assert ages1.shape == (1, 1)
+        assert spine1.tolist() == [0]
+        with pytest.raises(ValueError, match="must not exceed"):
+            sample_ages_in_ranges_with_spine(
+                birth, death, [2.0], [1.0], np.random.default_rng(0)
+            )
+        with pytest.raises(ValueError, match="1-D"):
+            sample_ages_in_ranges_with_spine(
+                birth, death, [], [], np.random.default_rng(0)
+            )

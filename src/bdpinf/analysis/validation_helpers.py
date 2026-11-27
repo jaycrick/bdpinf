@@ -174,6 +174,7 @@ def boundary_corrected_kde_on_support(
     support_upper: float,
     n_grid: int = 300,
     weights: NDArray[np.float64] | None = None,
+    bandwidth: float | None = None,
 ) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
     """Reflection KDE on [0, support_upper], normalized on support.
 
@@ -190,8 +191,22 @@ def boundary_corrected_kde_on_support(
         samples are dropped together with their corresponding weights before the
         KDE is fit.  When *None* all samples are weighted equally (Scott's rule
         bandwidth; unchanged from the unweighted behaviour).
+    bandwidth : float | None
+        Absolute kernel standard deviation, in the units of the samples.
+        *None* (the default) keeps scipy's Scott's rule.
+        Otherwise scipy's factor is set to ``bandwidth`` divided by the
+        weighted sample standard deviation, so the Gaussian kernel has
+        standard deviation exactly ``bandwidth``.
+
+    Raises
+    ------
+    ValueError
+        If *bandwidth* is not a positive finite number.
 
     """
+    if bandwidth is not None and not (np.isfinite(bandwidth) and bandwidth > 0):
+        msg = "bandwidth must be a positive finite number"
+        raise ValueError(msg)
     samples = np.asarray(samples, dtype=np.float64)
     finite_mask = np.isfinite(samples)
     finite_samples = samples[finite_mask]
@@ -204,6 +219,10 @@ def boundary_corrected_kde_on_support(
         finite_weights = w[finite_mask]
 
     kde = gaussian_kde(finite_samples, weights=finite_weights)
+    if bandwidth is not None:
+        # covariance = weighted data covariance * factor**2 (scipy convention).
+        data_sd = float(np.sqrt(kde.covariance[0, 0])) / float(kde.factor)
+        kde.set_bandwidth(bandwidth / data_sd)
     x_grid = np.linspace(0.0, float(support_upper), int(n_grid))
     y_kde = kde(x_grid) + kde(-x_grid) + kde(2.0 * support_upper - x_grid)
 

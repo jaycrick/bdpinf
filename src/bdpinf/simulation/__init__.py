@@ -18,7 +18,12 @@ from bdsurv import (
     simulate_birth_death_lifespans_arrays,
 )
 
-from .age_sampling import SampledAges, sample_ages_in_ranges, simulate_ages_from_rates
+from .age_sampling import (
+    SampledAges,
+    sample_ages_in_ranges,
+    sample_ages_in_ranges_with_spine,
+    simulate_ages_from_rates,
+)
 from .conditioned import (
     ConditionedTrajectory,
     simulate_contour_given_survival,
@@ -43,6 +48,7 @@ __all__ = [
     "SampledAges",
     "build_target_ranges",
     "sample_ages_in_ranges",
+    "sample_ages_in_ranges_with_spine",
     "sample_conditioned_survival_per_posterior",
     "sample_conditioned_survival_process",
     "simulate_ages_from_rates",
