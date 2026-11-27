@@ -36,7 +36,6 @@ from .bayesian_plots import (
     trace_chart,
 )
 from .correlation_plots import correlation_heatmap_chart, posterior_rate_correlation
-from .date_distribution_plots import plot_date_range_kde_comparison
 from .figure_manifest import (
     PruneReport,
     current_source,
@@ -72,7 +71,6 @@ __all__ = [
     "get_figure_dir",
     "plot_conditioned_trajectories",
     "plot_creation_year_fit",
-    "plot_date_range_kde_comparison",
     "plot_empirical_population_mean",
     "posterior_rate_correlation",
     "posterior_rates_chart",

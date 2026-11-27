@@ -12,6 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - All date-range KDE code moved to the `nt-manuscripts` application repo; there are no deprecation aliases.
   The removed modules are `analysis.date_density` (`date_range_density`, `explode_date_ranges`, `quantile_resample_dates`, `range_loo_log_likelihood`, `select_range_bandwidth`, `RangeBandwidthSelection`) and `analysis.bootstrap_date_density` (`bootstrap_quantile_resample_dates`, `bootstrap_target_ranges`, `bootstrap_epoch_counts`, `save_bootstrap_samples`, `load_bootstrap_samples`).
   `analysis.validation_helpers.boundary_corrected_kde_on_support` and `boundary_corrected_kde_at_zero` are removed too.
+  `visualization.plot_date_range_kde_comparison` (module `visualization.date_distribution_plots`) is removed without a replacement; nothing used it.
 
 ### Added
 
