@@ -5,11 +5,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-11-27
+
 ### Added
 
 - `simulation.age_sampling.sample_ages_in_ranges_with_spine`: draws exact ages inside date ranges with the spine chosen first, with probability proportional to the ratio of its range's spine mass (atom at $T$ included) to its non-spine mass, and returns the ages with `spine_index`.
 - `analysis.date_density.range_loo_log_likelihood` and `select_range_bandwidth` (with `RangeBandwidthSelection`): choose the date-range KDE bandwidth by leave-one-out range likelihood, in closed form with the Gaussian CDF, per source and shared, with `leave_out="identical"` for tied ranges.
 - `bandwidth` option (absolute kernel standard deviation) on `analysis.date_density.date_range_density` and `analysis.validation_helpers.boundary_corrected_kde_on_support`; `None` keeps Scott's rule.
+
+### Fixed
+
+- `bdpinf.__version__` reported 0.6.0; it now matches the package version.
 
 ## [0.8.4] - 2026-11-24
 

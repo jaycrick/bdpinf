@@ -1,5 +1,7 @@
 """Tests for bdpinf package basics."""
 
+from importlib.metadata import version
+
 
 class TestBasic:
     """Test basic package-level functionality."""
@@ -8,4 +10,4 @@ class TestBasic:
         """Test that the package can be imported."""
         import bdpinf
 
-        assert bdpinf.__version__ == "0.6.0"
+        assert bdpinf.__version__ == version("bdpinf")
