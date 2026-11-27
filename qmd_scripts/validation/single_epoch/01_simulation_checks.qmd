@@ -41,7 +41,7 @@ from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 import bdpinf  # noqa: F401 — triggers jax_enable_x64  # pyright: ignore[reportUnusedImport]
 from bdpinf import find_project_root
 from bdpinf.analysis import (
-    boundary_corrected_kde_on_support,
+    density_histogram,
     proportion_not_at_upper,
     robust_y_max,
     theoretical_age_density,
@@ -432,15 +432,15 @@ non_spine_prop_not_at_max = proportion_not_at_upper(
     non_spine_age_samples_all, time_span
 )
 
-spine_grid_process, spine_kde_process = boundary_corrected_kde_on_support(
+spine_grid_process, spine_hist_process = density_histogram(
     spine_age_samples_process,
     support_upper=time_span,
 )
-spine_grid_direct, spine_kde_direct = boundary_corrected_kde_on_support(
+spine_grid_direct, spine_hist_direct = density_histogram(
     spine_age_samples_direct,
     support_upper=time_span,
 )
-spine_grid_lifespans, spine_kde_lifespans = boundary_corrected_kde_on_support(
+spine_grid_lifespans, spine_hist_lifespans = density_histogram(
     spine_age_samples_lifespans,
     support_upper=time_span,
 )
@@ -456,15 +456,15 @@ spine_theory_x, spine_theory_y = theoretical_age_density(
     include_endpoint=False,
     proportion_not_at_upper=spine_prop_not_at_max,
 )
-non_spine_grid_process, non_spine_kde_process = boundary_corrected_kde_on_support(
+non_spine_grid_process, non_spine_hist_process = density_histogram(
     non_spine_age_samples_process,
     support_upper=time_span,
 )
-non_spine_grid_direct, non_spine_kde_direct = boundary_corrected_kde_on_support(
+non_spine_grid_direct, non_spine_hist_direct = density_histogram(
     non_spine_age_samples_direct,
     support_upper=time_span,
 )
-non_spine_grid_lifespans, non_spine_kde_lifespans = boundary_corrected_kde_on_support(
+non_spine_grid_lifespans, non_spine_hist_lifespans = density_histogram(
     non_spine_age_samples_lifespans,
     support_upper=time_span,
 )
@@ -483,21 +483,21 @@ non_spine_theory_x, non_spine_theory_y = theoretical_age_density(
 )
 
 spine_y_max = robust_y_max(
-    [spine_kde_process, spine_kde_direct, spine_kde_lifespans, spine_theory_y]
+    [spine_hist_process, spine_hist_direct, spine_hist_lifespans, spine_theory_y]
 )
 non_spine_y_max = robust_y_max(
     [
-        non_spine_kde_process,
-        non_spine_kde_direct,
-        non_spine_kde_lifespans,
+        non_spine_hist_process,
+        non_spine_hist_direct,
+        non_spine_hist_lifespans,
         non_spine_theory_y,
     ]
 )
 
 
-def _kde_panel(
-    kde_x: np.ndarray | None,
-    kde_y: np.ndarray | None,
+def _hist_panel(
+    hist_x: np.ndarray | None,
+    hist_y: np.ndarray | None,
     theory_x: np.ndarray,
     theory_y: np.ndarray,
     color: str,
@@ -508,15 +508,21 @@ def _kde_panel(
 ) -> alt.LayerChart:
     x_dom = [0.0, float(time_span)]
     layers: list[alt.Chart] = []
-    if kde_x is not None and kde_y is not None:
-        kde_df = pd.DataFrame({"Age": kde_x.tolist(), "Density": kde_y.tolist()})
+    if hist_x is not None and hist_y is not None:
+        half = 0.5 * float(hist_x[1] - hist_x[0])
+        hist_df = pd.DataFrame(
+            {
+                "Age": (hist_x - half).tolist(),
+                "AgeEnd": (hist_x + half).tolist(),
+                "Density": hist_y.tolist(),
+            }
+        )
         layers.append(
-            alt.Chart(kde_df)
-            .mark_area(
-                opacity=0.4, color=color, line={"color": color, "strokeWidth": 2}
-            )
+            alt.Chart(hist_df)
+            .mark_bar(opacity=0.4, color=color, stroke=color)
             .encode(
                 x=alt.X("Age:Q", title=x_label, scale=alt.Scale(domain=x_dom)),
+                x2="AgeEnd:Q",
                 y=alt.Y("Density:Q", title=y_label, scale=alt.Scale(domain=y_domain)),
             )
         )
@@ -536,9 +542,9 @@ ns_dom = [0.0, non_spine_y_max]
 sp_dom = [0.0, spine_y_max]
 fig_summary = alt.vconcat(
     alt.hconcat(
-        _kde_panel(
+        _hist_panel(
             non_spine_grid_process,
-            non_spine_kde_process,
+            non_spine_hist_process,
             non_spine_theory_x,
             non_spine_theory_y,
             PTOLQUAL[2],
@@ -547,9 +553,9 @@ fig_summary = alt.vconcat(
             "Density (non-spine)",
             ns_dom,
         ),
-        _kde_panel(
+        _hist_panel(
             non_spine_grid_direct,
-            non_spine_kde_direct,
+            non_spine_hist_direct,
             non_spine_theory_x,
             non_spine_theory_y,
             PTOLQUAL[0],
@@ -558,9 +564,9 @@ fig_summary = alt.vconcat(
             "",
             ns_dom,
         ),
-        _kde_panel(
+        _hist_panel(
             non_spine_grid_lifespans,
-            non_spine_kde_lifespans,
+            non_spine_hist_lifespans,
             non_spine_theory_x,
             non_spine_theory_y,
             PTOLQUAL[3],
@@ -571,9 +577,9 @@ fig_summary = alt.vconcat(
         ),
     ),
     alt.hconcat(
-        _kde_panel(
+        _hist_panel(
             spine_grid_process,
-            spine_kde_process,
+            spine_hist_process,
             spine_theory_x,
             spine_theory_y,
             PTOLQUAL[2],
@@ -582,9 +588,9 @@ fig_summary = alt.vconcat(
             "Density (spine)",
             sp_dom,
         ),
-        _kde_panel(
+        _hist_panel(
             spine_grid_direct,
-            spine_kde_direct,
+            spine_hist_direct,
             spine_theory_x,
             spine_theory_y,
             PTOLQUAL[0],
@@ -593,9 +599,9 @@ fig_summary = alt.vconcat(
             "",
             sp_dom,
         ),
-        _kde_panel(
+        _hist_panel(
             spine_grid_lifespans,
-            spine_kde_lifespans,
+            spine_hist_lifespans,
             spine_theory_x,
             spine_theory_y,
             PTOLQUAL[3],

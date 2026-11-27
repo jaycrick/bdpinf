@@ -5,6 +5,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-27
+
+### Removed
+
+- All date-range KDE code moved to the `nt-manuscripts` application repo; there are no deprecation aliases.
+  The removed modules are `analysis.date_density` (`date_range_density`, `explode_date_ranges`, `quantile_resample_dates`, `range_loo_log_likelihood`, `select_range_bandwidth`, `RangeBandwidthSelection`) and `analysis.bootstrap_date_density` (`bootstrap_quantile_resample_dates`, `bootstrap_target_ranges`, `bootstrap_epoch_counts`, `save_bootstrap_samples`, `load_bootstrap_samples`).
+  `analysis.validation_helpers.boundary_corrected_kde_on_support` and `boundary_corrected_kde_at_zero` are removed too.
+
+### Added
+
+- `models.rate_functions.LogisticRate(L, k, c, *, end_time, floor=0.0)`, the rate $f + L\,\sigma(k(t-c))$ with $k$ of either sign (a falling, defective logistic for $k<0$ and $f=0$), exact `integral` by stable softplus differences, jittable and differentiable, with `LogisticRate.with_floor(floor, L, k, c, end_time=...)`.
+  Exported from `bdpinf.models`.
+- `simulation.to_bdsurv_rate` maps `LogisticRate` to `bdsurv.LogisticHazard`, or to `bdsurv.SumHazard.with_floor` when it has a floor, so the forward and conditioned simulators accept it (pass `terminal_time`).
+- `analysis.validation_helpers.density_histogram` (also in `bdpinf.analysis`): a density-normalised histogram of simulated ages, which replaces the KDE overlays in the validation notebooks.
+- `05_parametric_hazard_shapes.qmd` has logistic scenarios (rising, falling defective, and with a floor) in its numerical checks.
+
+### Changed
+
+- `bdsurv` is pinned to `v0.9.0`.
+  Its closed-form inversion for `QuadraticHazard` and `CubicHazard` changes seeded simulations of the spline rates at round-off.
+- `simulation.forward.tree_to_birth_death_process` accepts smooth hazards without epochs (one epoch ending at the terminal time).
+- The three simulation validation notebooks (`single_epoch/01`, `multi_epoch/01`, `survival_conditioned_simulation/01`) compare density-normalised histograms with the exact densities instead of KDEs.
+
 ## [0.8.5] - 2026-11-27
 
 ### Added

@@ -94,60 +94,15 @@ uv run quarto render
   synthetic data with known ground-truth parameters
 - Exact-event (`simulate_birth_death`, constant or linear rates) and lifespan-at-birth
   simulators, plus survival-conditioned simulation (`simulate_contour_given_survival`,
-  `simulate_survival_splitting`), delegated to `bdsurv` 0.5
+  `simulate_survival_splitting`), delegated to `bdsurv` 0.9
   and returned as `BirthDeathProcess`
 - A shared Altair chart theme and export chokepoint (`visualization.save_chart`)
-- Generic KDE-quantile date-range resampling (`analysis.date_density`) and its
-  vectorized bootstrap extension (`analysis.bootstrap_date_density`) for
-  quantifying uncertainty over interval-censored dates, independent of any
-  particular dataset
 
 ## Date-range uncertainty
 
-Given a dataset where each item is dated as an interval rather than a point
-(e.g. `[earlyYear, lateYear]`), this library resolves that in two stages.
-
-### Deterministic KDE-quantile resampling
-
-`quantile_resample_dates(early, late, current_year, n_samples)` (in
-`analysis/date_density.py`) assigns one integer year to each item via a
-boundary-corrected weighted Gaussian KDE:
-
-1. Each range `[early, late]` is expanded into `n = late - early + 1`
-   pseudo-points with weight `1/n` (exact dates are unchanged).
-2. The pseudo-points feed a weighted `gaussian_kde` with Scott's-rule bandwidth
-   and boundary correction (reflection at age 0 and at the oldest item).
-3. The CDF is inverted at Hazen positions `(k - 0.5) / N` to produce one
-   sorted resampled year per item.
-
-See `docs/date_uncertainty.qmd` in the application repo for the full
-mathematical derivation and its NT-manuscript-specific wrapper
-(`add_resampled_year_column`); see `analysis/date_density.py` and
-`analysis/validation_helpers.py` here for the generic implementation.
-
-### Bootstrap uncertainty quantification
-
-`analysis/bootstrap_date_density.py`'s `bootstrap_quantile_resample_dates`
-propagates date uncertainty through downstream inference by resampling the
-dataset itself with replacement (not just the KDE), applying the identical
-KDE-quantile pipeline to each bootstrap draw.
-The vectorized implementation
-avoids calling scipy in a loop by exploiting the fixed integer-year support:
-per-item multiplicities are the only bootstrap-varying quantity, and all
-bandwidth and KDE computations reduce to batched matrix operations
-(`k @ A / N`, chunked einsum).
-`save_bootstrap_samples`/`load_bootstrap_samples`
-persist results to a compressed `.npz`:
-
-```python
-from bdpinf.analysis import load_bootstrap_samples
-
-result = load_bootstrap_samples("bootstrap_samples/full.npz")
-resampled_years = result["resampled_years"]  # int16 [n_bootstrap, n]
-```
-
-The application repo's `scripts/generate_bootstrap_kde_samples.py` is the
-concrete driver for the NT-manuscript dataset; see it for a worked example.
+Interval-censored dates are handled by `AgeData.from_ranges` (the density is averaged over each range)
+and `simulation.age_sampling.sample_ages_in_ranges_with_spine`.
+The date-range KDE resampling and its bootstrap, which used to live here, are in the `nt-manuscripts` application repo.
 
 ## Development
 

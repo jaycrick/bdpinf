@@ -9,6 +9,7 @@ import pytest
 from scipy.integrate import IntegrationWarning, quad
 
 from bdpinf.models.rate_functions import (
+    LogisticRate,
     LogLogisticRate,
     LomaxRate,
     PiecewiseConstantRate,
@@ -78,6 +79,9 @@ _EXAMPLES: dict[str, RateFunction] = {
     "power-weibull-wearout": PowerRate.weibull(2.5, 3.0, end_time=2.5),
     "loglogistic-unimodal": LogLogisticRate(2.0, 3.0, end_time=2.5),
     "lomax": LomaxRate(1.5, 2.0, end_time=2.5),
+    "logistic-rising": LogisticRate(1.2, 3.0, 1.0, end_time=2.5),
+    "logistic-falling-defective": LogisticRate(1.5, -2.0, 1.2, end_time=2.5),
+    "logistic-with-floor": LogisticRate.with_floor(0.2, 1.0, 4.0, 0.8, end_time=2.5),
     "piecewise-mixed-families": PiecewiseRate(
         (
             PiecewiseExponentialRate.gompertz(0.3, 0.5, 0.8),

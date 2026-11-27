@@ -149,8 +149,6 @@ reference:
       - analysis.single_epoch
       - analysis.subset_fitting
       - analysis.latex_tables
-      - analysis.date_density
-      - analysis.bootstrap_date_density
       - analysis.validation_helpers
       - analysis.spike_detection
       - analysis.asymptotic_consistency

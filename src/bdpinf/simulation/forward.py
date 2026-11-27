@@ -24,15 +24,21 @@ import numpy as np
 from bdsurv import (
     ConstantRateLike,
     LinearRateLike,
+    LogisticHazard,
     PiecewiseHazard,
     RateInput,
     SimulatedTree,
+    SumHazard,
 )
 from bdsurv import simulate_birth_death as _simulate_birth_death
 from bdsurv import simulate_birth_death_lifespans as _lifespans
 from numpy.typing import NDArray
 
-from bdpinf.models.rate_functions import PiecewiseCubicRate, PiecewiseQuadraticRate
+from bdpinf.models.rate_functions import (
+    LogisticRate,
+    PiecewiseCubicRate,
+    PiecewiseQuadraticRate,
+)
 from bdpinf.process import BirthDeathProcess
 
 __all__ = [
@@ -49,7 +55,16 @@ def to_bdsurv_rate(rate: object) -> RateInput:
     ``bdsurv.PiecewiseHazard`` built with ``PiecewiseHazard.from_polynomials``
     from their local-time coefficients (needs ``bdsurv`` 0.8 or later).
     ``bdsurv`` checks that the rate is non-negative on ``[0, T]``.
+    :class:`~bdpinf.models.rate_functions.LogisticRate` becomes
+    ``bdsurv.LogisticHazard(L, k, c)``, or
+    ``bdsurv.SumHazard.with_floor(floor, ...)`` when it has a floor
+    (needs ``bdsurv`` 0.9 or later; ``k`` must be non-zero and the parameters
+    concrete).
+    A hazard has no end time, so pass ``terminal_time`` to the simulators.
     """
+    if isinstance(rate, LogisticRate):
+        hazard = LogisticHazard(float(rate.L), float(rate.k), float(rate.c))  # pyright: ignore[reportArgumentType]
+        return cast("RateInput", SumHazard.with_floor(float(rate.floor), hazard))  # pyright: ignore[reportArgumentType]
     if isinstance(rate, PiecewiseQuadraticRate | PiecewiseCubicRate):
         return PiecewiseHazard.from_polynomials(
             rate.local_coefficients(),
@@ -58,8 +73,14 @@ def to_bdsurv_rate(rate: object) -> RateInput:
     return cast("RateInput", rate)
 
 
-def _epoch_ends(rate: ConstantRateLike | LinearRateLike) -> NDArray[np.float64]:
-    return np.atleast_1d(np.asarray(rate.epoch_end_times, dtype=np.float64))
+def _epoch_ends(
+    rate: ConstantRateLike | LinearRateLike, terminal_time: float
+) -> NDArray[np.float64]:
+    """Epoch end times; a smooth hazard has one epoch, ending at ``terminal_time``."""
+    ends = getattr(rate, "epoch_end_times", None)
+    if ends is None:
+        return np.array([float(terminal_time)], dtype=np.float64)
+    return np.atleast_1d(np.asarray(ends, dtype=np.float64))
 
 
 def tree_to_birth_death_process(tree: SimulatedTree) -> BirthDeathProcess:
@@ -74,8 +95,8 @@ def tree_to_birth_death_process(tree: SimulatedTree) -> BirthDeathProcess:
     simulates.
     """
     birth, death = tree.birth_rate, tree.death_rate
-    birth_ends = _epoch_ends(birth)
-    death_ends = _epoch_ends(death)
+    birth_ends = _epoch_ends(birth, tree.terminal_time)
+    death_ends = _epoch_ends(death, tree.terminal_time)
     if (
         hasattr(birth, "values")
         and hasattr(death, "values")

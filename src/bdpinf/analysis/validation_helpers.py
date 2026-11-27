@@ -7,7 +7,6 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.stats import gaussian_kde
 
 from bdpinf.inference import (
     AgeData,
@@ -169,14 +168,20 @@ def iqr_plotting_subset(
     return {name: array[mask] for name, array in arrays.items()}, mask
 
 
-def boundary_corrected_kde_on_support(
+def density_histogram(
     samples: NDArray[np.float64],
     support_upper: float,
-    n_grid: int = 300,
-    weights: NDArray[np.float64] | None = None,
-    bandwidth: float | None = None,
+    n_bins: int = 40,
 ) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
-    """Reflection KDE on [0, support_upper], normalized on support.
+    """Density-normalised histogram of ``samples`` on ``[0, support_upper)``.
+
+    Each bar's height is ``count / (n * width)`` with ``n`` the number of
+    finite samples (including any at ``support_upper``, which are not binned),
+    so the bars integrate to the proportion of samples strictly below
+    ``support_upper``.
+    That is the scale of a density that excludes a point mass at the upper
+    boundary, as :func:`theoretical_age_density` does with
+    ``proportion_not_at_upper``.
 
     Parameters
     ----------
@@ -184,101 +189,25 @@ def boundary_corrected_kde_on_support(
         1-D array of non-negative sample values.
     support_upper : float
         Upper boundary of the support.
-    n_grid : int
-        Number of evaluation grid points. Default 300.
-    weights : NDArray[np.float64] | None
-        Optional per-sample weights (same length as *samples*). Non-finite
-        samples are dropped together with their corresponding weights before the
-        KDE is fit.  When *None* all samples are weighted equally (Scott's rule
-        bandwidth; unchanged from the unweighted behaviour).
-    bandwidth : float | None
-        Absolute kernel standard deviation, in the units of the samples.
-        *None* (the default) keeps scipy's Scott's rule.
-        Otherwise scipy's factor is set to ``bandwidth`` divided by the
-        weighted sample standard deviation, so the Gaussian kernel has
-        standard deviation exactly ``bandwidth``.
+    n_bins : int
+        Number of equal-width bins. Default 40.
 
-    Raises
-    ------
-    ValueError
-        If *bandwidth* is not a positive finite number.
+    Returns
+    -------
+    tuple
+        Bin centres and bar heights, or ``(None, None)`` with fewer than two
+        finite samples.
 
     """
-    if bandwidth is not None and not (np.isfinite(bandwidth) and bandwidth > 0):
-        msg = "bandwidth must be a positive finite number"
-        raise ValueError(msg)
-    samples = np.asarray(samples, dtype=np.float64)
-    finite_mask = np.isfinite(samples)
-    finite_samples = samples[finite_mask]
-    if len(finite_samples) < 2 or np.std(finite_samples) == 0.0:
+    values = np.asarray(samples, dtype=np.float64)
+    values = values[np.isfinite(values)]
+    if values.size < 2:
         return None, None
-
-    finite_weights: NDArray[np.float64] | None = None
-    if weights is not None:
-        w = np.asarray(weights, dtype=np.float64)
-        finite_weights = w[finite_mask]
-
-    kde = gaussian_kde(finite_samples, weights=finite_weights)
-    if bandwidth is not None:
-        # covariance = weighted data covariance * factor**2 (scipy convention).
-        data_sd = float(np.sqrt(kde.covariance[0, 0])) / float(kde.factor)
-        kde.set_bandwidth(bandwidth / data_sd)
-    x_grid = np.linspace(0.0, float(support_upper), int(n_grid))
-    y_kde = kde(x_grid) + kde(-x_grid) + kde(2.0 * support_upper - x_grid)
-
-    normalization = np.trapezoid(y_kde, x_grid)
-    if normalization > 0.0 and np.isfinite(normalization):
-        y_kde = y_kde / normalization
-    return x_grid, y_kde
-
-
-def boundary_corrected_kde_at_zero(
-    samples: NDArray[np.float64],
-    n_grid: int = 300,
-    upper_padding: float = 1.15,
-    weights: NDArray[np.float64] | None = None,
-) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
-    """Reflection KDE for nonnegative support [0, inf), normalized on grid.
-
-    Parameters
-    ----------
-    samples : NDArray[np.float64]
-        1-D array of non-negative sample values.
-    n_grid : int
-        Number of evaluation grid points. Default 300.
-    upper_padding : float
-        Multiplier applied to the sample maximum to set the grid upper bound.
-        Default 1.15.
-    weights : NDArray[np.float64] | None
-        Optional per-sample weights (same length as *samples*). Non-finite
-        samples are dropped together with their corresponding weights before the
-        KDE is fit.  When *None* all samples are weighted equally.
-
-    """
-    samples = np.asarray(samples, dtype=np.float64)
-    finite_mask = np.isfinite(samples)
-    finite_samples = samples[finite_mask]
-    if len(finite_samples) < 2 or np.std(finite_samples) == 0.0:
-        return None, None
-
-    finite_weights: NDArray[np.float64] | None = None
-    if weights is not None:
-        w = np.asarray(weights, dtype=np.float64)
-        finite_weights = w[finite_mask]
-
-    x_max = float(np.max(finite_samples))
-    if not np.isfinite(x_max) or x_max <= 0.0:
-        x_max = 1.0
-    x_max *= float(upper_padding)
-
-    kde = gaussian_kde(finite_samples, weights=finite_weights)
-    x_grid = np.linspace(0.0, x_max, int(n_grid))
-    y_kde = kde(x_grid) + kde(-x_grid)
-
-    normalization = np.trapezoid(y_kde, x_grid)
-    if normalization > 0.0 and np.isfinite(normalization):
-        y_kde = y_kde / normalization
-    return x_grid, y_kde
+    edges = np.linspace(0.0, float(support_upper), int(n_bins) + 1)
+    inside = values[(values >= 0.0) & (values < support_upper)]
+    counts, _ = np.histogram(inside, bins=edges)
+    width = float(edges[1] - edges[0])
+    return 0.5 * (edges[:-1] + edges[1:]), counts / (values.size * width)
 
 
 def safe_mean(values: Any) -> float:

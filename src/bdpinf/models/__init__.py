@@ -18,6 +18,7 @@ from .math_populations import (
     calculate_populations_log_pmf,
 )
 from .rate_functions import (
+    LogisticRate,
     LogLogisticRate,
     LomaxRate,
     PiecewiseConstantRate,
@@ -33,6 +34,7 @@ from .rate_functions import (
 
 __all__ = [
     "LogLogisticRate",
+    "LogisticRate",
     "LomaxRate",
     "PiecewiseConstantRate",
     "PiecewiseCubicRate",

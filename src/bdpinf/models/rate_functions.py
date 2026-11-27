@@ -23,6 +23,7 @@ constructor), :class:`PiecewiseQuadraticRate`
 :class:`SinusoidalRate`,
 the parametric hazards :class:`PowerRate` (with Weibull and Rayleigh
 constructors), :class:`LogLogisticRate` and :class:`LomaxRate`,
+the logistic step :class:`LogisticRate` (either direction, with an optional floor),
 and :class:`PiecewiseRate`, which glues any rate functions together
 epoch by epoch in local time.
 All are JAX pytrees, so they can be passed through ``jit``/``grad``.
@@ -40,6 +41,7 @@ from bdpinf.models.validation import is_concrete, is_concrete_value
 
 __all__ = [
     "LogLogisticRate",
+    "LogisticRate",
     "LomaxRate",
     "PiecewiseConstantRate",
     "PiecewiseCubicRate",
@@ -1668,6 +1670,120 @@ class LomaxRate:
         return self.shape * jnp.log1p((e - s) / (self.scale + s))
 
 
+def _softplus_between(a: jax.Array, b: jax.Array) -> jax.Array:
+    r"""$\mathrm{softplus}(a) - \mathrm{softplus}(b)$ without cancellation.
+
+    With $hi = \max(a, b)$, $lo = \min(a, b)$ and $d = hi - lo$, the magnitude is
+    $\mathrm{log1p}(\sigma(lo)\,\mathrm{expm1}(d))$ for moderate $d$;
+    for large $d$ it is $d + \mathrm{softplus}(-hi) - \mathrm{softplus}(-lo)$
+    when $lo \ge 0$ and the direct difference otherwise.
+    """
+    hi, lo = jnp.maximum(a, b), jnp.minimum(a, b)
+    d = hi - lo
+    small = d < 30.0
+    d_small = jnp.where(small, d, 1.0)
+    near = jnp.log1p(jax.nn.sigmoid(lo) * jnp.expm1(d_small))
+    far = jnp.where(
+        lo >= 0.0,
+        d + jax.nn.softplus(-hi) - jax.nn.softplus(-lo),
+        jax.nn.softplus(hi) - jax.nn.softplus(lo),
+    )
+    return jnp.sign(a - b) * jnp.where(small, near, far)
+
+
+@dataclasses.dataclass(frozen=True)
+class LogisticRate:
+    r"""Logistic rate $w(t) = f + L\,\sigma(k(t - c))$ on $[0, T]$.
+
+    Here $\sigma$ is the logistic function, $L > 0$ is the asymptote of the
+    logistic part, $c$ its midpoint, $k$ its steepness (of either sign)
+    and $f \ge 0$ an optional floor.
+    For $k > 0$ the rate rises from about $f$ to $f + L$;
+    for $k < 0$ it falls from $f + L\sigma(-kc)$ towards $f$
+    (a *defective* logistic when $f = 0$: it decays to 0).
+    With $k = 0$ the rate is the constant $f + L/2$.
+
+    Parameters
+    ----------
+    L : float or jax.Array
+        Asymptote $L > 0$ (scalar, differentiable).
+    k : float or jax.Array
+        Steepness, finite, of either sign (scalar, differentiable).
+    c : float or jax.Array
+        Midpoint, finite (scalar, differentiable).
+    end_time : float
+        Observation time $T > 0$ (static, keyword-only).
+    floor : float or jax.Array
+        Constant floor $f \ge 0$ added to the rate (keyword-only, default 0).
+
+    Notes
+    -----
+    Concrete inputs are validated; validation is skipped under tracing.
+    ``L``, ``k``, ``c`` and ``floor`` are data fields and ``end_time`` is static.
+
+    The integral is
+    $f(e - s) + (L/k)\,[\mathrm{softplus}(k(e - c)) - \mathrm{softplus}(k(s - c))]$,
+    with the softplus difference evaluated without cancellation
+    (:func:`_softplus_between`), and $L(e - s)/2$ at $k = 0$.
+    The rate is smooth, but a steep step needs its own quadrature segment,
+    so ``breakpoints`` is the midpoint $c$ when it lies inside $(0, T)$
+    (clipped to $[0, T]$ when traced, which gives a harmless empty segment).
+
+    """
+
+    L: jax.Array | float
+    k: jax.Array | float
+    c: jax.Array | float
+    end_time: float = dataclasses.field(default=0.0, kw_only=True)
+    floor: jax.Array | float = dataclasses.field(default=0.0, kw_only=True)
+
+    def __post_init__(self) -> None:
+        """Coerce, and validate concrete inputs."""
+        for name in ("L", "k", "c", "floor"):
+            object.__setattr__(self, name, _as_f64(getattr(self, name)))
+        object.__setattr__(self, "end_time", _check_end_time(self.end_time))
+        _check_positive(L=self.L)
+        _check_finite(k=self.k, c=self.c, floor=self.floor)
+        if is_concrete_value(self.floor) and np.any(np.asarray(self.floor) < 0.0):
+            raise ValueError("floor must be non-negative")
+
+    @classmethod
+    def with_floor(
+        cls,
+        floor: float | jax.Array,
+        L: float | jax.Array,
+        k: float | jax.Array,
+        c: float | jax.Array,
+        *,
+        end_time: float,
+    ) -> "LogisticRate":
+        r"""Return the rate $f + L\sigma(k(t - c))$ (the same as passing ``floor=``)."""
+        return cls(L, k, c, end_time=end_time, floor=floor)
+
+    @property
+    def breakpoints(self) -> jax.Array:
+        """The midpoint $c$ when inside $(0, T)$ (clipped to $[0, T]$ if traced)."""
+        if is_concrete_value(self.c):
+            c = float(np.asarray(self.c))
+            if 0.0 < c < float(self.end_time):
+                return jnp.asarray([c], dtype=jnp.float64)
+            return jnp.zeros(0, dtype=jnp.float64)
+        return jnp.clip(jnp.atleast_1d(jnp.asarray(self.c)), 0.0, self.end_time)
+
+    def __call__(self, t: jax.Array) -> jax.Array:
+        """Evaluate the rate at ``t``."""
+        return self.floor + self.L * jax.nn.sigmoid(self.k * (jnp.asarray(t) - self.c))
+
+    def integral(self, s: jax.Array, e: jax.Array) -> jax.Array:
+        r"""Exact $\int_s^e w$ (stable form in the class docstring)."""
+        s, e = jnp.asarray(s), jnp.asarray(e)
+        zero_k = self.k == 0.0
+        k_safe = jnp.where(zero_k, 1.0, self.k)
+        diff = _softplus_between(k_safe * (e - self.c), k_safe * (s - self.c))
+        logistic = jnp.where(zero_k, 0.5 * self.L * (e - s), self.L / k_safe * diff)
+        return self.floor * (e - s) + logistic
+
+
 # ---------------------------------------------------------------------------
 # Piecewise composition of arbitrary rate functions
 # ---------------------------------------------------------------------------
@@ -1836,6 +1952,11 @@ jax.tree_util.register_dataclass(
 )
 jax.tree_util.register_dataclass(
     LogLogisticRate, data_fields=["shape", "scale"], meta_fields=["end_time"]
+)
+jax.tree_util.register_dataclass(
+    LogisticRate,
+    data_fields=["L", "k", "c", "floor"],
+    meta_fields=["end_time"],
 )
 jax.tree_util.register_dataclass(
     LomaxRate, data_fields=["shape", "scale"], meta_fields=["end_time"]

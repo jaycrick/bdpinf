@@ -1,6 +1,6 @@
 ---
 title: "Time-Varying Rates: Spine and Non-Spine Age Densities for Parametric Hazards"
-subtitle: "Weibull, Rayleigh, Gompertz, Log-Logistic, Lomax, Quadratic and Piecewise Birth and Death Rates"
+subtitle: "Weibull, Rayleigh, Gompertz, Log-Logistic, Lomax, Logistic, Quadratic and Piecewise Birth and Death Rates"
 author: "JC"
 date: last-modified
 ---
@@ -24,7 +24,8 @@ and `04_spine_age_shapes_nonlinear.qmd` adds exponential, quadratic and sinusoid
 This notebook repeats the exercise for the parametric hazard families
 that survival analysis uses:
 Weibull (and its special case Rayleigh), Gompertz, log-logistic and Lomax,
-together with a U-shaped quadratic rate and two-epoch piecewise compositions.
+together with the logistic step (rising, falling and defective, and with a floor),
+a U-shaped quadratic rate and two-epoch piecewise compositions.
 Each family is used as a birth rate $\lambda$ against a constant death rate,
 and Gompertz is also used as a death rate against a constant birth rate.
 
@@ -82,6 +83,7 @@ from scipy.integrate import quad
 
 from bdpinf import find_project_root
 from bdpinf.models import (
+    LogisticRate,
     LogLogisticRate,
     LomaxRate,
     PiecewiseExponentialRate,
@@ -389,6 +391,61 @@ display(summary_lomax_non_spine)
 The non-spine density is largest at $a=0$ (0.604) and decreases monotonically, to 0.112 at $a=T-0.001$.
 Its decay is slower than for the increasing rates above: the value at $a=2.5$ is 0.179.
 
+## Logistic birth rate
+
+The logistic rate is $L\,\sigma(k(t-c))$ with asymptote $L$, midpoint $c$ and steepness $k$ of either sign,
+optionally plus a constant floor $f$ (`LogisticRate.with_floor`).
+It is the smooth analogue of a step in the birth rate.
+For $k>0$ it rises from about $f$ to $f+L$;
+for $k<0$ it falls from $L\,\sigma(-kc)$ to $f$,
+and with $f=0$ it is *defective*: it decays to zero, so the cumulative rate stays finite.
+Three scenarios have a constant death rate $\mu=0.7$:
+
+- rising: $L=1.6$, $k=3$, $c=1.5$ (from $0.02$ to $1.6$, with the step at $\tau=1.5$);
+- falling and defective: $L=1.8$, $k=-2.5$, $c=1$ (from $1.65$ to $0.01$, no floor);
+- rising with a floor: $f=0.3$, $L=1.2$, $k=4$, $c=1.5$ (from $0.3$ to $1.5$).
+
+Because the step is steep, `LogisticRate.breakpoints` returns the midpoint $c$,
+so that the quadrature is split there.
+
+```{python}
+rising_logistic = LogisticRate(1.6, 3.0, 1.5, end_time=T)
+falling_logistic = LogisticRate(1.8, -2.5, 1.0, end_time=T)
+floored_logistic = LogisticRate.with_floor(0.3, 1.2, 4.0, 1.5, end_time=T)
+
+logistic_scenarios = {
+    "λ logistic, k=3": (rising_logistic, const(MU_FIXED)),
+    "λ logistic, k=-2.5 (defective)": (falling_logistic, const(MU_FIXED)),
+    "λ logistic, k=4 with floor 0.3": (floored_logistic, const(MU_FIXED)),
+}
+
+summary_logistic_spine = spine_figure(logistic_scenarios, "vtv05_logistic_spine")
+display(summary_logistic_spine)
+```
+
+For the rising step ($k=3$) the spine density has one mode, at age 0.78 (peak 0.337), and the atom is 0.504:
+the spine is born after the step, at ages below $T-c=1.5$, and the density at $a=2.5$ is only 0.026.
+The step at $\tau=1.5$ is mirrored at age 1.5, where the density is already falling (0.206).
+The falling defective logistic ($k=-2.5$) puts the births early, so the spine is old:
+one mode at age 2.27 (peak 0.489), atom 0.309, and a density of 0.066 at $a=1$ against 0.447 at $a=2$.
+The floored logistic has the same shape as the rising one but its floor of $0.3$ keeps late ages from emptying:
+mode at age 0.83 (peak 0.342), atom 0.420,
+and the density at $a=2.5$ is 0.094 against 0.026 without the floor.
+
+```{python}
+summary_logistic_non_spine = non_spine_figure(
+    logistic_scenarios, "vtv05_logistic_non_spine"
+)
+display(summary_logistic_non_spine)
+```
+
+For the rising logistic the non-spine density is largest at $a=0$ (1.926) and decreases monotonically, to 0.082 at $a=1.5$ and 0.003 at $a=2.5$.
+The floored rate gives almost the same curve (1.780 at $a=0$),
+but with a heavier tail at old ages (0.012 at $a=2.5$ against 0.003).
+The falling defective logistic is the opposite:
+the density is 0.025 at $a=0$, has a single maximum of 0.656 at age 2.04
+and falls to 0.211 at $a=T-0.001$, since almost no individuals are born late.
+
 ## Quadratic (bathtub) birth rate
 
 A quadratic rate through the values $1.6$, $0.3$ and $1.2$ at the start, midpoint and end of $[0,T]$ is U-shaped:
@@ -479,7 +536,8 @@ separated by a very shallow dip (the minimum between them is 0.494, at the bound
 
 ## Numerical checks
 
-Two checks support the figures above, over every scenario drawn in this notebook.
+Two checks support the figures above, over every scenario drawn in this notebook
+(including the three logistic scenarios, whose largest mass error is $1.1\times10^{-15}$ and largest oracle relative error $4.5\times10^{-16}$).
 Each check has an `assert`, so rendering fails if one fails.
 
 1. Total mass: the spine CDF at $T$ (including the atom) and the non-spine CDF at $T$ both equal 1.

@@ -515,8 +515,7 @@ def prior_rate_samples(
     deterministic quantile points — standard-normal quantiles at Hazen
     plotting positions ``(i - 0.5) / n_quantiles``, transformed through
     ``exp(loc + scale * z)`` — so downstream charts are reproducible without
-    an RNG seed.  This mirrors the deterministic quantile-resampling idiom
-    used in :func:`~.analysis.date_density.quantile_resample_dates`.
+    an RNG seed.
 
     Parameters
     ----------

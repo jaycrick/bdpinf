@@ -84,7 +84,7 @@ class TestSubject:
 ## Architecture
 
 **bdpinf** is a library for linear birth-death (branching) processes: exact likelihoods, MLE and Bayesian inference, simulation and plotting.
-It has no domain-specific content; the New Testament manuscript application lives in the separate `nt-manuscripts` repo, and rare-event simulation methodology in `bdsurv` (a runtime dependency, installed from its public GitHub repository and pinned to release tag `v0.8.0`, used by `simulation/forward.py` and `simulation/conditioned.py`).
+It has no domain-specific content; the New Testament manuscript application lives in the separate `nt-manuscripts` repo, and rare-event simulation methodology in `bdsurv` (a runtime dependency, installed from its public GitHub repository and pinned to release tag `v0.9.0`, used by `simulation/forward.py` and `simulation/conditioned.py`).
 Public names, signatures and docstrings are in the generated API reference (`great-docs.yml` defines its structure), so this section only records the layering and the ideas that are not obvious from the code.
 
 ### Layers
@@ -99,7 +99,7 @@ Imports may only point at the same or a lower layer; `tests/test_layering.py` en
   | 3     | `inference`                                                                                             | `AgeData` and likelihood, rate-model families, constraints, Newton MLE fitting, NumPyro/NUTS, persistence |
   | 4-5   | `models.genealogy`, `process`                                                                           | `BirthDeathProcess`, the canonical object passed between modules                                          |
   | 6     | `simulation`                                                                                            | Exact-event and lifespan-at-birth simulators, survival conditioning, `bdsurv` adapters                    |
-  | 7     | `analysis`                                                                                              | Notebook-facing helpers: subset fits, recovery studies, date-density pipelines, LaTeX tables              |
+  | 7     | `analysis`                                                                                              | Notebook-facing helpers: subset fits, recovery studies, spike detection, LaTeX tables                     |
   | 8     | `visualization`                                                                                         | Altair charts (house theme in `altair_theme.py`, the single export path `save_chart`)                     |
 
 ### Ideas worth knowing
@@ -125,6 +125,8 @@ Imports may only point at the same or a lower layer; `tests/test_layering.py` en
   Splines can dip below zero between knots, so `log_likelihood_rates` is the one guard (`-inf` when a rate's duck-typed `min_values()` is negative; the fitters turn that into the finite penalty and Newton steps are rejected).
   `BirthDeathModel.n_free(constraints)` is the single source of truth for $p$ in AIC/BIC (see `docs/spline_rates.qmd`).
   Optima often sit on that wall (end slope $w'(T^-)\le 0$ under a fixed zero at $T$, or an interior tangency), where plain Newton cannot converge, so `fit` adds a constrained post-step (`inference.constrained`: `nonneg_margins` rows, SLSQP, KKT Newton polish, `verify_kkt`) for rates exposing `nonneg_margins`, reporting `at_guard`, `kkt_residual` and `constrained_optimum`; `fit_knots` runs it only in its final and joint fits.
+- **Logistic rates.** `LogisticRate(L, k, c, end_time=T, floor=f)` is the rate $f+L\sigma(k(t-c))$ with $k$ of either sign (defective for $k<0$, $f=0$), with the exact `integral` as a stable softplus difference and the midpoint as its `breakpoint`; the floor is a keyword (`LogisticRate.with_floor`) rather than a general sum of rates.
+  `to_bdsurv_rate` maps it to `bdsurv.LogisticHazard` (`SumHazard.with_floor` when floored); hazards have no end time, so pass `terminal_time` to the simulators.
 - **Plots.** Reusable, tested builders live in `visualization`; one-off diagnostic charts are built inline in notebooks with `alt.Chart(...)`, the shared `PTOLQUAL` palette and `save_chart`/`display_svg`.
 
 ## Design rules

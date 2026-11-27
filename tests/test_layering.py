@@ -46,8 +46,6 @@ _LAYERS: dict[str, int] = {
     "bdpinf.simulation.simulator": 6,
     "bdpinf.simulation": 6,
     "bdpinf.analysis.asymptotic_consistency": 7,
-    "bdpinf.analysis.bootstrap_date_density": 7,
-    "bdpinf.analysis.date_density": 7,
     "bdpinf.analysis.latex_tables": 7,
     "bdpinf.analysis.multi_epoch_recovery": 7,
     "bdpinf.analysis.single_epoch": 7,

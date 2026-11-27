@@ -35,7 +35,7 @@ exercises both mild and extreme rare-event behaviour.
 
 The simulators come from the standalone
 [`bdsurv`](https://github.com/jaycrick/bdsurv) package; the theoretical age
-densities, KDE utilities and Altair theme come from `bdpinf`, so the paper's
+densities, histogram utilities and Altair theme come from `bdpinf`, so the paper's
 experiment section plots simulated draws against theory.
 
 **Splitting: per-level replicate enrichment (RESTART).** `bdsurv` selects the level grid and
@@ -75,7 +75,7 @@ from scipy.stats import PermutationMethod, anderson_ksamp, ks_2samp
 
 from bdpinf import find_project_root
 from bdpinf.analysis import (
-    boundary_corrected_kde_on_support,
+    density_histogram,
     proportion_not_at_upper,
     theoretical_age_density,
 )
@@ -315,7 +315,7 @@ for rd in regime_data:
 Each column is a parameter regime.
 Row 1 = non-spine individuals; Row 2 = spine
 individual.
-Solid fill = empirical KDE; dashed = theoretical density.
+Bars = density-normalised histogram of the simulated ages; dashed = theoretical density.
 Both methods
 should agree with theory.
 
@@ -329,9 +329,6 @@ for rd in regime_data:
     c_ns = np.asarray(rd["contour_non_spine"], dtype=np.float64)
     s_spine = np.asarray(rd["splitting_spine"], dtype=np.float64)
     s_ns = np.asarray(rd["splitting_non_spine"], dtype=np.float64)
-
-    c_spine_kde_s = c_spine[c_spine < TERMINAL_TIME]
-    s_spine_kde_s = s_spine[s_spine < TERMINAL_TIME]
 
     all_spine = np.concatenate([a for a in [c_spine, s_spine] if a.size > 0])
     spine_prop = (
@@ -356,33 +353,33 @@ for rd in regime_data:
         proportion_not_at_upper=ns_prop if ns_prop > 0.0 else None,
     )
 
-    # Compute KDEs for both methods
-    c_ns_grid, c_ns_kde = (
-        boundary_corrected_kde_on_support(c_ns, support_upper=TERMINAL_TIME)
+    # Density-normalised histograms for both methods
+    c_ns_grid, c_ns_hist = (
+        density_histogram(c_ns, support_upper=TERMINAL_TIME)
         if c_ns.size > 1
         else (None, None)
     )
-    s_ns_grid, s_ns_kde = (
-        boundary_corrected_kde_on_support(s_ns, support_upper=TERMINAL_TIME)
+    s_ns_grid, s_ns_hist = (
+        density_histogram(s_ns, support_upper=TERMINAL_TIME)
         if s_ns.size > 1
         else (None, None)
     )
-    c_sp_grid, c_sp_kde = (
-        boundary_corrected_kde_on_support(c_spine_kde_s, support_upper=TERMINAL_TIME)
-        if c_spine_kde_s.size > 1
+    c_sp_grid, c_sp_hist = (
+        density_histogram(c_spine, support_upper=TERMINAL_TIME)
+        if c_spine.size > 1
         else (None, None)
     )
-    s_sp_grid, s_sp_kde = (
-        boundary_corrected_kde_on_support(s_spine_kde_s, support_upper=TERMINAL_TIME)
-        if s_spine_kde_s.size > 1
+    s_sp_grid, s_sp_hist = (
+        density_histogram(s_spine, support_upper=TERMINAL_TIME)
+        if s_spine.size > 1
         else (None, None)
     )
 
     # Y domains from both methods combined
     from bdpinf.analysis import robust_y_max
 
-    ns_y_max = robust_y_max([c_ns_kde, s_ns_kde, ns_y])
-    sp_y_max = robust_y_max([c_sp_kde, s_sp_kde, spine_y])
+    ns_y_max = robust_y_max([c_ns_hist, s_ns_hist, ns_y])
+    sp_y_max = robust_y_max([c_sp_hist, s_sp_hist, spine_y])
     ns_dom = [0.0, ns_y_max]
     sp_dom = [0.0, sp_y_max]
 
@@ -390,36 +387,44 @@ for rd in regime_data:
     # Build two-layer panels per regime column: one for each method, overlaid
     ns_layers: list[alt.Chart] = []
     sp_layers: list[alt.Chart] = []
-    for color, ns_grid_m, ns_kde_m, sp_grid_m, sp_kde_m in [
-        (method_colors[0], c_ns_grid, c_ns_kde, c_sp_grid, c_sp_kde),
-        (method_colors[1], s_ns_grid, s_ns_kde, s_sp_grid, s_sp_kde),
+    for color, ns_grid_m, ns_hist_m, sp_grid_m, sp_hist_m in [
+        (method_colors[0], c_ns_grid, c_ns_hist, c_sp_grid, c_sp_hist),
+        (method_colors[1], s_ns_grid, s_ns_hist, s_sp_grid, s_sp_hist),
     ]:
         x_dom = [0.0, float(TERMINAL_TIME)]
-        if ns_grid_m is not None and ns_kde_m is not None:
+        if ns_grid_m is not None and ns_hist_m is not None:
+            half = 0.5 * float(ns_grid_m[1] - ns_grid_m[0])
             ns_df = pd.DataFrame(
-                {"Age": ns_grid_m.tolist(), "Density": ns_kde_m.tolist()}
+                {
+                    "Age": (ns_grid_m - half).tolist(),
+                    "AgeEnd": (ns_grid_m + half).tolist(),
+                    "Density": ns_hist_m.tolist(),
+                }
             )
             ns_layers.append(
                 alt.Chart(ns_df)
-                .mark_area(
-                    opacity=0.4, color=color, line={"color": color, "strokeWidth": 2}
-                )
+                .mark_bar(opacity=0.4, color=color, stroke=color)
                 .encode(
                     x=alt.X("Age:Q", scale=alt.Scale(domain=x_dom)),
+                    x2="AgeEnd:Q",
                     y=alt.Y("Density:Q", scale=alt.Scale(domain=ns_dom)),
                 )
             )
-        if sp_grid_m is not None and sp_kde_m is not None:
+        if sp_grid_m is not None and sp_hist_m is not None:
+            half = 0.5 * float(sp_grid_m[1] - sp_grid_m[0])
             sp_df = pd.DataFrame(
-                {"Age": sp_grid_m.tolist(), "Density": sp_kde_m.tolist()}
+                {
+                    "Age": (sp_grid_m - half).tolist(),
+                    "AgeEnd": (sp_grid_m + half).tolist(),
+                    "Density": sp_hist_m.tolist(),
+                }
             )
             sp_layers.append(
                 alt.Chart(sp_df)
-                .mark_area(
-                    opacity=0.4, color=color, line={"color": color, "strokeWidth": 2}
-                )
+                .mark_bar(opacity=0.4, color=color, stroke=color)
                 .encode(
                     x=alt.X("Age:Q", scale=alt.Scale(domain=x_dom)),
+                    x2="AgeEnd:Q",
                     y=alt.Y("Density:Q", scale=alt.Scale(domain=sp_dom)),
                 )
             )

@@ -8,9 +8,8 @@ import pytest
 import bdpinf.analysis.validation_helpers as validation_helpers_module
 from bdpinf.analysis import (
     FitModelConfig,
-    boundary_corrected_kde_at_zero,
-    boundary_corrected_kde_on_support,
     build_hist_bins,
+    density_histogram,
     fit_single_model,
     has_ages_in_each_epoch,
     iqr_plotting_subset,
@@ -37,73 +36,18 @@ class TestValidationHelpers:
         assert np.isnan(vh.safe_mean(empty))
         assert np.isnan(vh.safe_var(empty))
 
-    def test_boundary_corrected_kde_on_support_stays_on_domain(self) -> None:
-        samples = np.array([10.0, 20.0, 25.0, 30.0, 35.0], dtype=np.float64)
-        x_grid, y_kde = boundary_corrected_kde_on_support(samples, support_upper=100.0)
+    def test_density_histogram_integrates_to_proportion_below_upper(self) -> None:
+        rng = np.random.default_rng(0)
+        samples = np.concatenate([rng.uniform(0.0, 10.0, 900), np.full(100, 10.0)])
+        centres, heights = density_histogram(samples, support_upper=10.0, n_bins=20)
+        assert centres is not None and heights is not None
+        width = centres[1] - centres[0]
+        assert float(np.sum(heights) * width) == pytest.approx(0.9)
+        assert np.all(centres > 0.0) and np.all(centres < 10.0)
 
-        assert x_grid is not None
-        assert y_kde is not None
-        assert np.all(x_grid >= 0.0)
-        assert np.all(x_grid <= 100.0)
-        assert np.all(y_kde >= 0.0)
-
-    def test_boundary_corrected_kde_at_zero_starts_at_zero(self) -> None:
-        samples = np.array([0.001, 0.002, 0.004, 0.006], dtype=np.float64)
-        x_grid, y_kde = boundary_corrected_kde_at_zero(samples)
-
-        assert x_grid is not None
-        assert y_kde is not None
-        assert x_grid[0] == 0.0
-        assert np.all(x_grid >= 0.0)
-        assert np.all(y_kde >= 0.0)
-
-    def test_weighted_kde_on_support_stays_on_domain(self) -> None:
-        samples = np.array([10.0, 20.0, 25.0, 30.0, 35.0], dtype=np.float64)
-        weights = np.array([0.5, 0.5, 1.0, 1.0, 2.0], dtype=np.float64)
-        x_grid, y_kde = boundary_corrected_kde_on_support(
-            samples, support_upper=100.0, weights=weights
-        )
-        assert x_grid is not None
-        assert y_kde is not None
-        assert np.all(x_grid >= 0.0)
-        assert np.all(x_grid <= 100.0)
-        assert np.all(y_kde >= 0.0)
-        # density should integrate to ~1 on support
-        integral = float(np.trapezoid(y_kde, x_grid))
-        assert abs(integral - 1.0) < 0.01
-
-    def test_weighted_kde_at_zero_nonnegative(self) -> None:
-        samples = np.array([0.001, 0.002, 0.004, 0.006], dtype=np.float64)
-        weights = np.array([1.0, 2.0, 2.0, 1.0], dtype=np.float64)
-        x_grid, y_kde = boundary_corrected_kde_at_zero(samples, weights=weights)
-        assert x_grid is not None
-        assert y_kde is not None
-        assert x_grid[0] == 0.0
-        assert np.all(y_kde >= 0.0)
-
-    def test_uniform_weights_reproduce_unweighted_on_support(self) -> None:
-        samples = np.array([10.0, 20.0, 25.0, 30.0, 35.0], dtype=np.float64)
-        uniform_weights = np.ones(len(samples), dtype=np.float64)
-        x_unweighted, y_unweighted = boundary_corrected_kde_on_support(
-            samples, support_upper=100.0
-        )
-        x_weighted, y_weighted = boundary_corrected_kde_on_support(
-            samples, support_upper=100.0, weights=uniform_weights
-        )
-        assert x_unweighted is not None and y_unweighted is not None
-        assert x_weighted is not None and y_weighted is not None
-        np.testing.assert_allclose(y_weighted, y_unweighted, rtol=1e-10)
-
-    def test_uniform_weights_reproduce_unweighted_at_zero(self) -> None:
-        samples = np.array([0.001, 0.002, 0.004, 0.006], dtype=np.float64)
-        uniform_weights = np.ones(len(samples), dtype=np.float64)
-        x_unweighted, y_unweighted = boundary_corrected_kde_at_zero(samples)
-        x_weighted, y_weighted = boundary_corrected_kde_at_zero(
-            samples, weights=uniform_weights
-        )
-        assert x_unweighted is not None and y_unweighted is not None
-        assert x_weighted is not None and y_weighted is not None
-        np.testing.assert_allclose(y_weighted, y_unweighted, rtol=1e-10)
+    def test_density_histogram_too_few_samples(self) -> None:
+        assert density_histogram(np.array([1.0]), 10.0) == (None, None)
+        assert density_histogram(np.array([np.nan, 2.0]), 10.0) == (None, None)
 
     def test_fit_single_model_handles_empty_input(self) -> None:
         config = FitModelConfig(times=1000.0)
